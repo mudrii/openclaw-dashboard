@@ -1,0 +1,14 @@
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+*.swp
+*.swo
+*~
+
+# Logs
+*.log
+
+# Local overrides (users should copy from examples/)
+# config.json is included as example, users can modify

@@ -1,0 +1,492 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OpenClaw Dashboard</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'SF Pro', 'Helvetica Neue', sans-serif; background: var(--bg, #0a0a0a); color: #e5e5e5; min-height: 100vh; padding: 24px; }
+  :root { --accent: #6366f1; --accent2: #9333ea; --bg: #0a0a0a; --surface: rgba(255,255,255,0.03); }
+  
+  .container { max-width: 1200px; margin: 0 auto; }
+  
+  /* Header */
+  .header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 24px; }
+  .header-left { display: flex; align-items: center; gap: 12px; }
+  .avatar { width: 40px; height: 40px; border-radius: 12px; background: linear-gradient(135deg, var(--accent), var(--accent2)); display: flex; align-items: center; justify-content: center; font-size: 18px; }
+  .header-title { font-size: 20px; font-weight: 600; color: #fff; }
+  .header-status { display: flex; align-items: center; gap: 6px; font-size: 13px; }
+  .refresh-btn { background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06); padding: 6px 12px; border-radius: 8px; color: #a3a3a3; font-size: 12px; cursor: pointer; }
+  .refresh-btn:hover { background: rgba(255,255,255,0.06); color: #fff; }
+  .last-update { font-size: 11px; color: #525252; }
+
+  /* Status dots */
+  .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+  .dot-online { background: #4ade80; box-shadow: 0 0 8px rgba(74,222,128,0.5); }
+  .dot-idle { background: #facc15; box-shadow: 0 0 8px rgba(250,204,21,0.5); }
+  .dot-pulse { animation: pulse 2s ease-in-out infinite; }
+  @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.5; } }
+
+  /* Banner */
+  .banner { background: linear-gradient(90deg, rgba(99,102,241,0.1), rgba(99,102,241,0.05), rgba(99,102,241,0.1)); border: 1px solid rgba(99,102,241,0.2); border-radius: 12px; padding: 12px 20px; display: flex; align-items: center; gap: 12px; margin-bottom: 24px; }
+  .banner-label { color: #818cf8; font-size: 11px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; white-space: nowrap; }
+  .banner-text { color: #fff; font-weight: 500; font-size: 14px; }
+  .banner-meta { color: #525252; font-size: 13px; margin-left: auto; }
+
+  /* Glass card base */
+  .glass { background: var(--surface); border: 1px solid rgba(255,255,255,0.06); border-radius: 12px; }
+  .glass:hover { background: rgba(255,255,255,0.05); }
+
+  /* Stats row */
+  .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 32px; }
+  .stat { padding: 16px; position: relative; overflow: hidden; }
+  .stat::before { content:''; position: absolute; top:0; left:0; right:0; height: 2px; background: linear-gradient(90deg, transparent, rgba(99,102,241,0.4), transparent); }
+  .stat-label { font-size: 10px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: #737373; margin-bottom: 4px; }
+  .stat-value { font-size: 28px; font-weight: 700; color: #fff; }
+  .stat-meta { font-size: 11px; color: #525252; margin-top: 4px; }
+
+  /* Kanban */
+  .kanban { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 32px; }
+  .kanban-col-header { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; padding: 6px 10px; border-radius: 8px; }
+  .kanban-col-dot { width: 8px; height: 8px; border-radius: 50%; }
+  .dot-todo { background: #818cf8; }
+  .dot-doing { background: #facc15; }
+  .dot-waiting-col { background: #f87171; }
+  .dot-done-col { background: #4ade80; }
+  .kanban-header { display: flex; align-items: center; justify-content: space-between; padding: 0 4px; margin-bottom: 12px; }
+  .section-title { font-size: 10px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: #737373; }
+  .count { font-size: 11px; color: #525252; }
+  .kanban-list { display: flex; flex-direction: column; gap: 8px; min-height: 200px; max-height: 500px; overflow-y: auto; }
+  .kanban-list::-webkit-scrollbar { width: 3px; }
+  .kanban-list::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 2px; }
+
+  /* Task card */
+  .task { padding: 12px; border-radius: 10px; transition: all 0.15s ease; cursor: default; }
+  .task:hover { transform: translateY(-1px); background: rgba(255,255,255,0.06); }
+  .task-title { font-size: 13px; color: #fff; font-weight: 500; margin-bottom: 8px; line-height: 1.3; }
+  .task-footer { display: flex; align-items: center; justify-content: space-between; }
+  .task-meta { font-size: 11px; color: #525252; }
+
+  /* Tags */
+  .tag { font-size: 9px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; padding: 2px 8px; border-radius: 4px; }
+  .tag-system { background: rgba(99,102,241,0.15); color: #818cf8; }
+  .tag-cron { background: rgba(234,179,8,0.15); color: #facc15; }
+  .tag-chat { background: rgba(34,197,94,0.15); color: #4ade80; }
+  .tag-research { background: rgba(236,72,153,0.15); color: #f472b6; }
+  .tag-blocked { background: rgba(239,68,68,0.15); color: #f87171; }
+  .tag-done { background: rgba(34,197,94,0.1); color: #4ade80; }
+
+  /* Skills grid */
+  .skills-grid { display: flex; flex-wrap: wrap; gap: 6px; }
+  .skill-chip { padding: 4px 10px; border-radius: 6px; font-size: 11px; font-weight: 500; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06); color: #a3a3a3; }
+  .skill-chip-active { color: #4ade80; border-color: rgba(34,197,94,0.2); background: rgba(34,197,94,0.05); }
+  .skill-chip-custom { color: #818cf8; border-color: rgba(99,102,241,0.2); background: rgba(99,102,241,0.05); }
+  .skill-chip-inactive { color: #525252; border-color: rgba(255,255,255,0.04); background: rgba(255,255,255,0.01); }
+
+  /* Two-col layout */
+  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-bottom: 32px; }
+  .panel-list { display: flex; flex-direction: column; gap: 8px; }
+  .panel-item { padding: 12px; display: flex; align-items: center; justify-content: space-between; }
+  .panel-left { display: flex; align-items: center; gap: 10px; }
+  .panel-name { font-size: 13px; color: #fff; font-weight: 500; }
+  .panel-sub { font-size: 11px; color: #525252; }
+  .panel-right { text-align: right; }
+  .panel-right-top { font-size: 11px; color: #a3a3a3; }
+  .panel-right-bot { font-size: 11px; color: #404040; }
+
+  /* Models */
+  .models { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 12px; margin-bottom: 32px; }
+  .model-card { padding: 12px; text-align: center; }
+  .model-ctx { font-size: 10px; color: #525252; margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.05em; }
+  .model-name { font-size: 13px; color: #fff; font-weight: 600; }
+  .model-note { font-size: 11px; color: #525252; margin-top: 4px; }
+
+  /* Available models */
+  .model-status { display: inline-block; padding: 2px 6px; border-radius: 4px; font-size: 9px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; }
+  .model-active { background: rgba(34,197,94,0.15); color: #4ade80; }
+  .model-available { background: rgba(99,102,241,0.15); color: #818cf8; }
+
+  /* Footer */
+  .footer { text-align: center; padding: 16px; font-size: 11px; color: #404040; }
+
+  /* Empty state */
+  .empty-state { text-align: center; padding: 32px; color: #525252; font-size: 13px; }
+
+  /* Responsive */
+  @media (max-width: 768px) {
+    .stats, .kanban { grid-template-columns: repeat(2, 1fr); }
+    .two-col { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+<div class="container">
+
+  <!-- Header -->
+  <div class="header">
+    <div class="header-left">
+      <div class="avatar" id="botEmoji">🦞</div>
+      <div>
+        <div class="header-title" id="botName">OpenClaw Dashboard</div>
+        <div class="header-status">
+          <span class="dot dot-online dot-pulse"></span>
+          <span style="color:#4ade80;font-weight:500" id="statusText">Online</span>
+        </div>
+      </div>
+    </div>
+    <div style="display:flex;align-items:center;gap:12px">
+      <span class="last-update" id="lastUpdate"></span>
+      <button class="refresh-btn" onclick="loadData()">↻ Refresh</button>
+    </div>
+  </div>
+
+  <!-- Working On Banner -->
+  <div class="banner">
+    <span class="banner-label">● Status</span>
+    <span class="banner-text" id="workingOn">Loading...</span>
+    <span class="banner-meta" id="workingOnMeta"></span>
+  </div>
+
+  <!-- Stats -->
+  <div class="stats">
+    <div class="glass stat">
+      <div class="stat-label">Sessions</div>
+      <div class="stat-value" id="statSessions">—</div>
+      <div class="stat-meta" id="statSessionsMeta"></div>
+    </div>
+    <div class="glass stat">
+      <div class="stat-label">Cron Jobs</div>
+      <div class="stat-value" id="statCrons">—</div>
+      <div class="stat-meta" id="statCronsMeta"></div>
+    </div>
+    <div class="glass stat">
+      <div class="stat-label">Skills</div>
+      <div class="stat-value" id="statSkills">—</div>
+      <div class="stat-meta" id="statSkillsMeta"></div>
+    </div>
+    <div class="glass stat">
+      <div class="stat-label">Total Cost</div>
+      <div class="stat-value" id="statCost">—</div>
+      <div class="stat-meta" id="statCostMeta"></div>
+    </div>
+  </div>
+
+  <!-- Kanban (optional) -->
+  <div class="kanban" id="kanbanSection">
+    <div>
+      <div class="kanban-col-header" style="background:rgba(99,102,241,0.08)">
+        <span class="kanban-col-dot dot-todo"></span>
+        <span class="section-title" style="color:#818cf8">To Do</span>
+        <span class="count" id="queueCount" style="margin-left:auto">0</span>
+      </div>
+      <div class="kanban-list" id="queueCol"></div>
+    </div>
+    <div>
+      <div class="kanban-col-header" style="background:rgba(234,179,8,0.08)">
+        <span class="kanban-col-dot dot-doing"></span>
+        <span class="section-title" style="color:#facc15">Doing</span>
+        <span class="count" id="progressCount" style="margin-left:auto">0</span>
+      </div>
+      <div class="kanban-list" id="progressCol"></div>
+    </div>
+    <div>
+      <div class="kanban-col-header" style="background:rgba(239,68,68,0.08)">
+        <span class="kanban-col-dot dot-waiting-col"></span>
+        <span class="section-title" style="color:#f87171">Blocked</span>
+        <span class="count" id="waitingCount" style="margin-left:auto">0</span>
+      </div>
+      <div class="kanban-list" id="waitingCol"></div>
+    </div>
+    <div>
+      <div class="kanban-col-header" style="background:rgba(34,197,94,0.08)">
+        <span class="kanban-col-dot dot-done-col"></span>
+        <span class="section-title" style="color:#4ade80">Done</span>
+        <span class="count" id="doneCount" style="margin-left:auto">0</span>
+      </div>
+      <div class="kanban-list" id="doneCol"></div>
+    </div>
+  </div>
+
+  <!-- Sessions & Crons -->
+  <div class="two-col">
+    <div>
+      <div class="kanban-header"><span class="section-title">Cron Jobs</span></div>
+      <div class="panel-list" id="cronsPanel">
+        <div class="empty-state">No cron jobs configured</div>
+      </div>
+    </div>
+    <div>
+      <div class="kanban-header"><span class="section-title">Skills</span></div>
+      <div class="skills-grid" id="skillsGrid">
+        <div class="empty-state">No skills found</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Token Usage -->
+  <div style="margin-bottom:32px">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:0 4px;margin-bottom:12px">
+      <span class="section-title">Token Usage & Cost</span>
+      <div style="display:flex;gap:4px" id="usageTabs">
+        <button onclick="switchUsageTab('today')" id="tabToday" style="padding:4px 12px;border-radius:6px;font-size:11px;font-weight:500;cursor:pointer;border:1px solid rgba(255,255,255,0.1);background:rgba(99,102,241,0.15);color:#818cf8">Today</button>
+        <button onclick="switchUsageTab('total')" id="tabTotal" style="padding:4px 12px;border-radius:6px;font-size:11px;font-weight:500;cursor:pointer;border:1px solid rgba(255,255,255,0.06);background:transparent;color:#525252">All Time</button>
+      </div>
+    </div>
+    <div style="overflow-x:auto">
+      <table style="width:100%;border-collapse:separate;border-spacing:0 4px;">
+        <thead>
+          <tr style="text-align:left">
+            <th style="padding:8px 12px;font-size:10px;text-transform:uppercase;letter-spacing:0.1em;color:#525252;font-weight:600">Model</th>
+            <th style="padding:8px 12px;font-size:10px;text-transform:uppercase;letter-spacing:0.1em;color:#525252;font-weight:600;text-align:right">Calls</th>
+            <th style="padding:8px 12px;font-size:10px;text-transform:uppercase;letter-spacing:0.1em;color:#525252;font-weight:600;text-align:right">Input</th>
+            <th style="padding:8px 12px;font-size:10px;text-transform:uppercase;letter-spacing:0.1em;color:#525252;font-weight:600;text-align:right">Output</th>
+            <th style="padding:8px 12px;font-size:10px;text-transform:uppercase;letter-spacing:0.1em;color:#525252;font-weight:600;text-align:right">Cache</th>
+            <th style="padding:8px 12px;font-size:10px;text-transform:uppercase;letter-spacing:0.1em;color:#525252;font-weight:600;text-align:right">Total</th>
+            <th style="padding:8px 12px;font-size:10px;text-transform:uppercase;letter-spacing:0.1em;color:#525252;font-weight:600;text-align:right">Cost</th>
+            <th style="padding:8px 12px;font-size:10px;text-transform:uppercase;letter-spacing:0.1em;color:#525252;font-weight:600;width:25%">Usage</th>
+          </tr>
+        </thead>
+        <tbody id="usageBody"></tbody>
+      </table>
+      <div id="usageEmpty" class="empty-state" style="display:none">No usage data yet. Run refresh.sh to populate.</div>
+    </div>
+  </div>
+
+  <!-- Sub-Agent Usage -->
+  <div style="margin-bottom:32px" id="subagentSection">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:0 4px;margin-bottom:12px">
+      <span class="section-title">Sub-Agent Usage</span>
+      <div style="display:flex;gap:8px;align-items:center">
+        <span id="subagentCostLabel" style="font-size:12px;color:#a3a3a3;font-weight:500"></span>
+        <div style="display:flex;gap:4px">
+          <button onclick="switchSubagentTab('today')" id="subTabToday" style="padding:4px 12px;border-radius:6px;font-size:11px;font-weight:500;cursor:pointer;border:1px solid rgba(255,255,255,0.1);background:rgba(168,85,247,0.15);color:#c084fc">Today</button>
+          <button onclick="switchSubagentTab('total')" id="subTabTotal" style="padding:4px 12px;border-radius:6px;font-size:11px;font-weight:500;cursor:pointer;border:1px solid rgba(255,255,255,0.06);background:transparent;color:#525252">All Time</button>
+        </div>
+      </div>
+    </div>
+    <div style="overflow-x:auto">
+      <table style="width:100%;border-collapse:separate;border-spacing:0 4px;">
+        <thead>
+          <tr style="text-align:left">
+            <th style="padding:8px 12px;font-size:10px;text-transform:uppercase;letter-spacing:0.1em;color:#525252;font-weight:600">Model</th>
+            <th style="padding:8px 12px;font-size:10px;text-transform:uppercase;letter-spacing:0.1em;color:#525252;font-weight:600;text-align:right">Calls</th>
+            <th style="padding:8px 12px;font-size:10px;text-transform:uppercase;letter-spacing:0.1em;color:#525252;font-weight:600;text-align:right">Input</th>
+            <th style="padding:8px 12px;font-size:10px;text-transform:uppercase;letter-spacing:0.1em;color:#525252;font-weight:600;text-align:right">Output</th>
+            <th style="padding:8px 12px;font-size:10px;text-transform:uppercase;letter-spacing:0.1em;color:#525252;font-weight:600;text-align:right">Cache</th>
+            <th style="padding:8px 12px;font-size:10px;text-transform:uppercase;letter-spacing:0.1em;color:#525252;font-weight:600;text-align:right">Total</th>
+            <th style="padding:8px 12px;font-size:10px;text-transform:uppercase;letter-spacing:0.1em;color:#525252;font-weight:600;text-align:right">Cost</th>
+            <th style="padding:8px 12px;font-size:10px;text-transform:uppercase;letter-spacing:0.1em;color:#525252;font-weight:600;width:25%">Usage</th>
+          </tr>
+        </thead>
+        <tbody id="subagentBody"></tbody>
+      </table>
+      <div id="subagentEmpty" class="empty-state" style="display:none">No sub-agent usage recorded</div>
+    </div>
+  </div>
+
+  <!-- Available Models -->
+  <div style="margin-bottom:32px">
+    <div class="kanban-header"><span class="section-title">Available Models</span></div>
+    <div class="models" id="modelsPanel">
+      <div class="empty-state">No models configured</div>
+    </div>
+  </div>
+
+  <div class="footer" id="footer">OpenClaw Dashboard · localhost</div>
+</div>
+
+<script>
+let DATA = {};
+let CONFIG = {};
+let currentUsageTab = 'today';
+let currentSubagentTab = 'today';
+
+async function loadConfig() {
+  try {
+    const res = await fetch('config.json?t=' + Date.now());
+    CONFIG = await res.json();
+    applyConfig();
+  } catch(e) {
+    console.log('No config.json found, using defaults');
+  }
+}
+
+function applyConfig() {
+  if (CONFIG.bot) {
+    if (CONFIG.bot.name) {
+      document.getElementById('botName').textContent = CONFIG.bot.name;
+      document.title = CONFIG.bot.name + ' Dashboard';
+    }
+    if (CONFIG.bot.emoji) {
+      document.getElementById('botEmoji').textContent = CONFIG.bot.emoji;
+    }
+  }
+  if (CONFIG.theme) {
+    if (CONFIG.theme.accent) document.documentElement.style.setProperty('--accent', CONFIG.theme.accent);
+    if (CONFIG.theme.accentSecondary) document.documentElement.style.setProperty('--accent2', CONFIG.theme.accentSecondary);
+  }
+  if (CONFIG.panels) {
+    if (CONFIG.panels.kanban === false) document.getElementById('kanbanSection').style.display = 'none';
+    if (CONFIG.panels.subagentUsage === false) document.getElementById('subagentSection').style.display = 'none';
+  }
+}
+
+function switchSubagentTab(tab) {
+  currentSubagentTab = tab;
+  document.getElementById('subTabToday').style.background = tab === 'today' ? 'rgba(168,85,247,0.15)' : 'transparent';
+  document.getElementById('subTabToday').style.color = tab === 'today' ? '#c084fc' : '#525252';
+  document.getElementById('subTabTotal').style.background = tab === 'total' ? 'rgba(168,85,247,0.15)' : 'transparent';
+  document.getElementById('subTabTotal').style.color = tab === 'total' ? '#c084fc' : '#525252';
+  render();
+}
+
+function switchUsageTab(tab) {
+  currentUsageTab = tab;
+  document.getElementById('tabToday').style.background = tab === 'today' ? 'rgba(99,102,241,0.15)' : 'transparent';
+  document.getElementById('tabToday').style.color = tab === 'today' ? '#818cf8' : '#525252';
+  document.getElementById('tabTotal').style.background = tab === 'total' ? 'rgba(99,102,241,0.15)' : 'transparent';
+  document.getElementById('tabTotal').style.color = tab === 'total' ? '#818cf8' : '#525252';
+  render();
+}
+
+async function loadData() {
+  try {
+    const res = await fetch('data.json?t=' + Date.now());
+    DATA = await res.json();
+    render();
+    document.getElementById('lastUpdate').textContent = 'Updated: ' + new Date().toLocaleTimeString();
+  } catch(e) {
+    document.getElementById('workingOn').textContent = 'Error loading data';
+    document.getElementById('workingOnMeta').textContent = 'Run ./refresh.sh to generate data.json';
+  }
+}
+
+function taskCard(title, tag, tagClass, meta) {
+  return '<div class="glass task"><div class="task-title">' + title + '</div><div class="task-footer"><span class="tag ' + tagClass + '">' + tag + '</span><span class="task-meta">' + (meta||'') + '</span></div></div>';
+}
+
+function render() {
+  var d = DATA;
+
+  // Apply bot info from data if not in config
+  if (d.botName && !CONFIG.bot?.name) document.getElementById('botName').textContent = d.botName;
+  if (d.botEmoji && !CONFIG.bot?.emoji) document.getElementById('botEmoji').textContent = d.botEmoji;
+
+  document.getElementById('workingOn').textContent = d.workingOn || 'Ready';
+  document.getElementById('workingOnMeta').textContent = d.workingOnMeta || '';
+
+  var sessionCount = d.sessions ? d.sessions.length : (d.sessionsMeta ? d.sessionsMeta.split(' ')[0] : '0');
+  document.getElementById('statSessions').textContent = sessionCount;
+  document.getElementById('statSessionsMeta').textContent = d.sessionsMeta || '';
+  document.getElementById('statCrons').textContent = d.crons ? d.crons.length : 0;
+  document.getElementById('statCronsMeta').textContent = d.cronsMeta || '';
+  document.getElementById('statSkills').textContent = d.skillCount || (d.skills ? d.skills.filter(s=>s.active).length : 0);
+  document.getElementById('statSkillsMeta').textContent = d.skillsMeta || '';
+  
+  var costToday = d.totalCostToday || 0;
+  var costAll = d.totalCostAllTime || 0;
+  document.getElementById('statCost').textContent = '$' + costToday.toFixed(2);
+  document.getElementById('statCostMeta').textContent = 'All time: $' + costAll.toFixed(2);
+
+  // Kanban columns
+  var cols = [
+    ['queueCol','queueCount', d.queue],
+    ['progressCol','progressCount', d.inProgress],
+    ['waitingCol','waitingCount', d.waiting],
+    ['doneCol','doneCount', d.doneToday]
+  ];
+  for (var i=0; i<cols.length; i++) {
+    var el = document.getElementById(cols[i][0]);
+    var items = cols[i][2] || [];
+    el.innerHTML = items.length ? items.map(function(t) { return taskCard(t.title, t.tag, t.tagClass, t.meta); }).join('') : '<div class="empty-state">No items</div>';
+    document.getElementById(cols[i][1]).textContent = items.length;
+  }
+
+  // Crons
+  var cronEl = document.getElementById('cronsPanel');
+  var crons = d.crons || [];
+  cronEl.innerHTML = crons.length ? crons.map(function(c) {
+    var dc = c.enabled !== false ? 'dot-online' : 'dot-idle';
+    return '<div class="glass panel-item"><div class="panel-left"><span class="dot '+dc+'"></span><div><div class="panel-name">'+c.name+'</div><div class="panel-sub">'+c.schedule+'</div></div></div><div class="panel-right"><div class="panel-right-top">'+(c.next||'')+'</div><div class="panel-right-bot">'+(c.lastRun||'')+'</div></div></div>';
+  }).join('') : '<div class="empty-state">No cron jobs configured</div>';
+
+  // Skills
+  var skillsEl = document.getElementById('skillsGrid');
+  var skills = d.skills || [];
+  skillsEl.innerHTML = skills.length ? skills.map(function(s) {
+    var cls = s.type === 'custom' ? 'skill-chip-custom' : s.active ? 'skill-chip-active' : 'skill-chip-inactive';
+    return '<span class="skill-chip ' + cls + '">' + s.name + (s.type === 'custom' ? ' ★' : '') + '</span>';
+  }).join('') : '<span class="empty-state">No skills found</span>';
+
+  // Usage table
+  var usageEl = document.getElementById('usageBody');
+  var usage = currentUsageTab === 'today' ? (d.tokenUsageToday || []) : (d.tokenUsage || []);
+  document.getElementById('usageEmpty').style.display = usage.length === 0 ? 'block' : 'none';
+  var maxCost = Math.max.apply(null, usage.map(function(u){return u.cost})) || 1;
+  usageEl.innerHTML = usage.map(function(u) {
+    var pct = Math.round((u.cost / maxCost) * 100);
+    var barColor = u.cost > 100 ? '#f87171' : u.cost > 10 ? '#facc15' : '#4ade80';
+    return '<tr style="background:rgba(255,255,255,0.03);border-radius:8px">'
+      + '<td style="padding:10px 12px;border-radius:8px 0 0 8px;font-size:13px;color:#fff;font-weight:500">' + u.model + '</td>'
+      + '<td style="padding:10px 12px;font-size:13px;color:#a3a3a3;text-align:right">' + u.calls.toLocaleString() + '</td>'
+      + '<td style="padding:10px 12px;font-size:13px;color:#a3a3a3;text-align:right">' + u.input + '</td>'
+      + '<td style="padding:10px 12px;font-size:13px;color:#a3a3a3;text-align:right">' + u.output + '</td>'
+      + '<td style="padding:10px 12px;font-size:13px;color:#a3a3a3;text-align:right">' + u.cacheRead + '</td>'
+      + '<td style="padding:10px 12px;font-size:13px;color:#fff;text-align:right;font-weight:500">' + u.totalTokens + '</td>'
+      + '<td style="padding:10px 12px;font-size:13px;color:#fff;text-align:right;font-weight:600">$' + u.cost.toFixed(2) + '</td>'
+      + '<td style="padding:10px 12px;border-radius:0 8px 8px 0">'
+      + '<div style="background:rgba(255,255,255,0.05);border-radius:4px;height:8px;overflow:hidden">'
+      + '<div style="background:' + barColor + ';height:100%;width:' + pct + '%;border-radius:4px"></div>'
+      + '</div></td></tr>';
+  }).join('')
+  + (usage.length ? '<tr style="border-top:1px solid rgba(255,255,255,0.06)"><td style="padding:10px 12px;font-size:13px;color:#737373;font-weight:600">TOTAL</td>'
+  + '<td style="padding:10px 12px;font-size:13px;color:#737373;text-align:right;font-weight:600">' + usage.reduce(function(a,u){return a+u.calls},0).toLocaleString() + '</td>'
+  + '<td colspan="4"></td>'
+  + '<td style="padding:10px 12px;font-size:13px;color:#fff;text-align:right;font-weight:700">$' + usage.reduce(function(a,u){return a+u.cost},0).toFixed(2) + '</td>'
+  + '<td></td></tr>' : '');
+
+  // Sub-agent usage
+  var subEl = document.getElementById('subagentBody');
+  var subUsage = currentSubagentTab === 'today' ? (d.subagentUsageToday || []) : (d.subagentUsage || []);
+  var subCost = currentSubagentTab === 'today' ? (d.subagentCostToday || 0) : (d.subagentCostAllTime || 0);
+  document.getElementById('subagentCostLabel').textContent = 'Total: $' + subCost.toFixed(2);
+  document.getElementById('subagentEmpty').style.display = subUsage.length === 0 ? 'block' : 'none';
+  var subMaxCost = Math.max.apply(null, subUsage.map(function(u){return u.cost})) || 1;
+  subEl.innerHTML = subUsage.map(function(u) {
+    var pct = Math.round((u.cost / subMaxCost) * 100);
+    var barColor = u.cost > 50 ? '#f87171' : u.cost > 5 ? '#facc15' : '#a78bfa';
+    return '<tr style="background:rgba(255,255,255,0.03);border-radius:8px">'
+      + '<td style="padding:10px 12px;border-radius:8px 0 0 8px;font-size:13px;color:#fff;font-weight:500">' + u.model + '</td>'
+      + '<td style="padding:10px 12px;font-size:13px;color:#a3a3a3;text-align:right">' + u.calls.toLocaleString() + '</td>'
+      + '<td style="padding:10px 12px;font-size:13px;color:#a3a3a3;text-align:right">' + u.input + '</td>'
+      + '<td style="padding:10px 12px;font-size:13px;color:#a3a3a3;text-align:right">' + u.output + '</td>'
+      + '<td style="padding:10px 12px;font-size:13px;color:#a3a3a3;text-align:right">' + u.cacheRead + '</td>'
+      + '<td style="padding:10px 12px;font-size:13px;color:#fff;text-align:right;font-weight:500">' + u.totalTokens + '</td>'
+      + '<td style="padding:10px 12px;font-size:13px;color:#fff;text-align:right;font-weight:600">$' + u.cost.toFixed(2) + '</td>'
+      + '<td style="padding:10px 12px;border-radius:0 8px 8px 0">'
+      + '<div style="background:rgba(255,255,255,0.05);border-radius:4px;height:8px;overflow:hidden">'
+      + '<div style="background:' + barColor + ';height:100%;width:' + pct + '%;border-radius:4px"></div>'
+      + '</div></td></tr>';
+  }).join('')
+  + (subUsage.length ? '<tr style="border-top:1px solid rgba(255,255,255,0.06)"><td style="padding:10px 12px;font-size:13px;color:#737373;font-weight:600">TOTAL</td>'
+  + '<td style="padding:10px 12px;font-size:13px;color:#737373;text-align:right;font-weight:600">' + subUsage.reduce(function(a,u){return a+u.calls},0).toLocaleString() + '</td>'
+  + '<td colspan="4"></td>'
+  + '<td style="padding:10px 12px;font-size:13px;color:#fff;text-align:right;font-weight:700">$' + subUsage.reduce(function(a,u){return a+u.cost},0).toFixed(2) + '</td>'
+  + '<td></td></tr>' : '');
+
+  // Available models
+  var modEl = document.getElementById('modelsPanel');
+  var avail = d.availableModels || [];
+  modEl.innerHTML = avail.length ? avail.map(function(m) {
+    var sc = m.status === 'active' ? 'model-active' : 'model-available';
+    return '<div class="glass model-card"><div class="model-status '+sc+'">'+m.status+'</div><div class="model-name" style="margin-top:8px">'+m.name+'</div><div class="model-note">'+m.provider+'</div></div>';
+  }).join('') : '<div class="empty-state">No models configured</div>';
+}
+
+// Initialize
+loadConfig().then(loadData);
+setInterval(loadData, (CONFIG.refresh?.intervalSeconds || 30) * 1000);
+</script>
+</body>
+</html>
