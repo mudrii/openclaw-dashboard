@@ -441,9 +441,6 @@ function render(){
   $('gitPanel').innerHTML=(D.gitLog||[]).slice(0,5).map(g=>`<div class="git-item"><span class="git-hash">${g.hash}</span><span class="git-msg" title="${esc(g.message)}">${esc(g.message)}</span><span class="git-ago">${g.ago}</span></div>`).join('')||'<div class="empty">No git history</div>';
 }
 
-  $(countId).textContent=items.length;
-}
-
 function renderTokenTbl(bodyId,data,accentColor){
   data=data||[];
   const max=Math.max(...data.map(u=>u.cost))||1;
