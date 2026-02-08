@@ -1,13 +1,15 @@
-# Configuration Reference
+# Configuration Guide
 
-All configuration is done via `config.json` in the dashboard directory.
+## config.json
 
-## Full Configuration Example
+The dashboard is configured via `config.json` in the dashboard directory.
+
+### Full Example
 
 ```json
 {
   "bot": {
-    "name": "My Bot",
+    "name": "My OpenClaw Bot",
     "emoji": "🤖"
   },
   "theme": {
@@ -32,80 +34,71 @@ All configuration is done via `config.json` in the dashboard directory.
     "port": 8080,
     "host": "127.0.0.1"
   },
-  "openclawPath": "~/.openclaw",
-  "timezoneOffset": 0
+  "openclawPath": "~/.openclaw"
 }
 ```
 
-## Options
+### Bot Settings
 
-### bot
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `bot.name` | string | `"OpenClaw Dashboard"` | Displayed in the header |
+| `bot.emoji` | string | `"🦞"` | Avatar emoji in the header |
 
-| Option | Type | Default | Description |
-|--------|------|---------|-------------|
-| `name` | string | "OpenClaw Bot" | Bot name displayed in header |
-| `emoji` | string | "🦞" | Emoji shown in avatar |
+### Theme
 
-### theme
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `theme.preset` | string | `"dark"` | Theme preset (currently only `dark`) |
+| `theme.accent` | string | `"#6366f1"` | Primary accent color (hex) |
+| `theme.accentSecondary` | string | `"#9333ea"` | Secondary accent color (hex) |
 
-| Option | Type | Default | Description |
-|--------|------|---------|-------------|
-| `preset` | string | "dark" | Theme preset: `dark`, `light` |
-| `accent` | string | "#6366f1" | Primary accent color (hex) |
-| `accentSecondary` | string | "#9333ea" | Secondary accent color (hex) |
+### Panels
 
-### panels
+Toggle individual panels on/off. All default to `true`.
 
-Toggle visibility of dashboard sections:
+| Key | Description |
+|-----|-------------|
+| `panels.kanban` | Kanban task board |
+| `panels.sessions` | Active sessions table |
+| `panels.crons` | Cron jobs table |
+| `panels.skills` | Skills grid |
+| `panels.tokenUsage` | Token usage & cost table |
+| `panels.subagentUsage` | Sub-agent activity tables |
+| `panels.models` | Available models grid |
 
-| Option | Type | Default | Description |
-|--------|------|---------|-------------|
-| `kanban` | boolean | true | Show kanban task board |
-| `sessions` | boolean | true | Show live sessions |
-| `crons` | boolean | true | Show cron jobs |
-| `skills` | boolean | true | Show skills grid |
-| `tokenUsage` | boolean | true | Show token usage table |
-| `subagentUsage` | boolean | true | Show sub-agent usage |
-| `models` | boolean | true | Show available models |
+### Refresh
 
-### refresh
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `refresh.intervalSeconds` | number | `30` | Minimum seconds between data refreshes (debounce) |
+| `refresh.autoRefresh` | boolean | `true` | Enable auto-refresh on the frontend |
 
-| Option | Type | Default | Description |
-|--------|------|---------|-------------|
-| `intervalSeconds` | number | 30 | Auto-refresh interval |
-| `autoRefresh` | boolean | true | Enable auto-refresh |
+### Server
 
-### server
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `server.port` | number | `8080` | HTTP server port |
+| `server.host` | string | `"127.0.0.1"` | Bind address (`0.0.0.0` for network access) |
 
-| Option | Type | Default | Description |
-|--------|------|---------|-------------|
-| `port` | number | 8080 | HTTP server port |
-| `host` | string | "127.0.0.1" | Bind address |
+### OpenClaw Path
 
-### Paths
-
-| Option | Type | Default | Description |
-|--------|------|---------|-------------|
-| `openclawPath` | string | "~/.openclaw" | Path to OpenClaw installation |
-| `timezoneOffset` | number | 0 | Timezone offset in hours (0 = system local) |
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `openclawPath` | string | `"~/.openclaw"` | Path to OpenClaw installation. Can also be set via `OPENCLAW_HOME` env var. |
 
 ## Environment Variables
 
 | Variable | Description |
 |----------|-------------|
-| `OPENCLAW_HOME` | Override OpenClaw path |
+| `OPENCLAW_HOME` | Override OpenClaw installation path (takes precedence over config) |
 
-## Minimal Configuration
+## Data Flow
 
-For most users, this is enough:
-
-```json
-{
-  "bot": {
-    "name": "My Bot",
-    "emoji": "🤖"
-  }
-}
-```
-
-Everything else uses sensible defaults.
+1. Browser opens `index.html`
+2. JavaScript calls `GET /api/refresh`
+3. `server.py` runs `refresh.sh` (debounced)
+4. `refresh.sh` reads OpenClaw data → writes `data.json`
+5. `server.py` returns `data.json` content
+6. Dashboard renders all panels
+7. Auto-refresh repeats every 60 seconds

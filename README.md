@@ -6,54 +6,77 @@ A beautiful, zero-dependency command center for [OpenClaw](https://github.com/op
 
 ## Features
 
-- 📊 **Token Usage Tracking** — Monitor API costs across all models (today vs all-time)
-- ⏰ **Cron Jobs** — View scheduled jobs and their status
-- 🧩 **Skills Grid** — All enabled skills at a glance
-- 📋 **Kanban Board** — Track tasks and progress (optional)
-- 🎨 **Customizable** — Configure bot name, theme colors, visible panels
-- 📱 **Responsive** — Works on desktop and mobile
+### 10 Dashboard Panels
+
+1. **🔔 Header Bar** — Bot name, online/offline status, auto-refresh countdown
+2. **⚠️ Alerts Banner** — Smart alerts for high costs, failed crons, high context usage, gateway offline
+3. **💚 System Health** — Gateway status, PID, uptime, memory, compaction mode, active session count
+4. **💰 Cost Cards** — Today's cost, all-time cost, projected monthly, cost breakdown donut chart
+5. **📋 Kanban Board** — To Do / In Progress / Blocked / Done Today task tracking
+6. **⏰ Cron Jobs** — All scheduled jobs with status, schedule, last/next run, duration, model
+7. **📡 Active Sessions** — Recent sessions with model, type badges (DM/group/cron/subagent), context %, tokens
+8. **📊 Token Usage & Cost** — Per-model breakdown with today/all-time toggle, usage bars, totals
+9. **🤖 Sub-Agent Activity** — Sub-agent runs with cost, duration, status + token breakdown
+10. **🧩 Bottom Row** — Available models grid, skills list, git log
+
+### Key Features
+
+- 🔄 **On-Demand Refresh** — `server.py` refreshes data when you open the dashboard (no stale data)
+- ⏱️ **Auto-Refresh** — Page auto-refreshes every 60 seconds with countdown timer
+- 🎨 **Glass Morphism UI** — Dark theme with subtle transparency and hover effects
+- 📱 **Responsive** — Adapts to desktop, tablet, and mobile
 - 🔒 **Local Only** — Runs on localhost, no external dependencies
-- 🐧 **Cross-Platform** — macOS and Linux supported
+- 🐧 **Cross-Platform** — macOS and Linux
+- ⚡ **Zero Dependencies** — Pure HTML/CSS/JS frontend, Python stdlib backend
 
 ## Quick Start
 
-### One-Line Install (Recommended)
+### One-Line Install
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/openclaw-community/dashboard/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/mudrii/openclaw-dashboard/main/install.sh | bash
 ```
 
 This will:
 1. Install to `~/.openclaw/dashboard`
 2. Create a default config
-3. Start the server automatically
-4. Open http://127.0.0.1:8080
+3. Run initial data refresh
+4. Start `server.py` as a system service
+5. Open http://127.0.0.1:8080
 
 ### Manual Install
 
 ```bash
 # Clone the repo
-git clone https://github.com/openclaw-community/dashboard.git ~/.openclaw/dashboard
+git clone https://github.com/mudrii/openclaw-dashboard.git ~/.openclaw/dashboard
 cd ~/.openclaw/dashboard
 
 # Create your config
 cp examples/config.minimal.json config.json
 nano config.json  # Set your bot name
 
-# Generate initial data
-./refresh.sh
-
-# Start the server
-python3 -m http.server 8080 &
+# Start the server (refreshes data on-demand)
+python3 server.py &
 
 # Open in browser
 open http://127.0.0.1:8080  # macOS
 xdg-open http://127.0.0.1:8080  # Linux
 ```
 
+## Architecture
+
+```
+server.py          ← HTTP server + /api/refresh endpoint
+  ├── index.html   ← Single-page dashboard (fetches /api/refresh)
+  ├── refresh.sh   ← Data collection script (called by server.py)
+  └── data.json    ← Generated data (auto-refreshed)
+```
+
+When you open the dashboard, `index.html` calls `/api/refresh`. The server runs `refresh.sh` (with 30s debounce) to collect fresh data from your OpenClaw installation, then returns the JSON. No cron jobs needed.
+
 ## Configuration
 
-Edit `config.json` to customize:
+Edit `config.json`:
 
 ```json
 {
@@ -66,24 +89,38 @@ Edit `config.json` to customize:
   },
   "panels": {
     "kanban": false
-  }
+  },
+  "server": {
+    "port": 8080,
+    "host": "127.0.0.1"
+  },
+  "openclawPath": "~/.openclaw"
 }
 ```
 
-See [docs/CONFIGURATION.md](docs/CONFIGURATION.md) for all options.
+### Configuration Options
 
-## Data Refresh
+| Key | Default | Description |
+|-----|---------|-------------|
+| `bot.name` | `"OpenClaw Dashboard"` | Dashboard title |
+| `bot.emoji` | `"🦞"` | Avatar emoji |
+| `theme.preset` | `"dark"` | Theme preset |
+| `theme.accent` | `"#6366f1"` | Primary accent color |
+| `panels.*` | `true` | Show/hide individual panels |
+| `refresh.intervalSeconds` | `30` | Debounce interval for refresh |
+| `server.port` | `8080` | Server port |
+| `server.host` | `"127.0.0.1"` | Server bind address |
+| `openclawPath` | `"~/.openclaw"` | Path to OpenClaw installation |
 
-The dashboard reads data from your OpenClaw installation. To update:
+See [docs/CONFIGURATION.md](docs/CONFIGURATION.md) for full details.
 
-```bash
-# Manual refresh
-./refresh.sh
+## Screenshots
 
-# Or set up automatic refresh via cron
-crontab -e
-# Add: */15 * * * * ~/.openclaw/dashboard/refresh.sh
-```
+> Screenshots coming soon. The dashboard features a dark glass-morphism UI with:
+> - Gradient header with live status indicator
+> - Cost cards with animated donut chart
+> - Sortable tables with usage bars
+> - Responsive grid layout
 
 ## Uninstall
 
@@ -104,22 +141,33 @@ rm -rf ~/.openclaw/dashboard
 
 ## Requirements
 
-### Dependencies
+- **Python 3.6+** — Backend server and data collection
+- **OpenClaw** — Installed at `~/.openclaw` ([docs](https://docs.openclaw.ai))
+- **macOS** 10.15+ or **Linux** (Ubuntu 18.04+, Debian 10+)
+- Modern web browser
 
-- **Python 3.6+** — For data refresh script and local server
-- **Git** — For cloning the repository (optional, can download ZIP)
-- **OpenClaw** — Installed at `~/.openclaw` ([install guide](https://docs.openclaw.ai))
+## Changelog
 
-### System Requirements
+### v2.0.0
 
-- **macOS** 10.15+ or **Linux** (Ubuntu 18.04+, Debian 10+, etc.)
-- Modern web browser (Chrome, Firefox, Safari, Edge)
-- ~10MB disk space
+- **New**: Complete UI redesign with glass morphism dark theme
+- **New**: `server.py` with on-demand `/api/refresh` endpoint (replaces `python3 -m http.server`)
+- **New**: 10 dashboard panels (up from 4)
+- **New**: Sub-agent activity tracking with cost and token breakdown
+- **New**: Smart alerts system (cost warnings, failed crons, high context, gateway offline)
+- **New**: System health row (gateway, PID, uptime, memory, compaction, sessions)
+- **New**: Cost donut chart with per-model breakdown
+- **New**: Kanban board for task tracking
+- **New**: Active sessions panel with context % bars and type badges
+- **New**: Git log panel
+- **New**: Auto-refresh with 60s countdown
+- **Improved**: Token usage tables with today/all-time toggle
+- **Improved**: `refresh.sh` auto-discovers all sessions, crons, models, skills
+- **Improved**: Responsive layout for mobile/tablet
 
-### Optional
+### v1.0.0
 
-- **jq** — For debugging JSON files
-- **cron** — For automatic data refresh
+- Initial release with basic token usage and cron panels
 
 ## Contributing
 

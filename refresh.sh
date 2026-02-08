@@ -1,58 +1,36 @@
 #!/bin/bash
 # OpenClaw Dashboard — Data Refresh Script
-# Parses JSONL logs and generates data.json
+# Generates data.json with all dashboard data
 
 set -e
 
-# Get script directory
 DIR="$(cd "$(dirname "$0")" && pwd)"
-
-# Load config if exists
 OPENCLAW_PATH="${OPENCLAW_HOME:-$HOME/.openclaw}"
-TIMEZONE_OFFSET=0  # Default UTC
-
-if [ -f "$DIR/config.json" ]; then
-  CONFIG_PATH=$(python3 -c "import json; c=json.load(open('$DIR/config.json')); print(c.get('openclawPath','~/.openclaw').replace('~','$HOME'))" 2>/dev/null || echo "$HOME/.openclaw")
-  OPENCLAW_PATH="${CONFIG_PATH:-$OPENCLAW_PATH}"
-  TIMEZONE_OFFSET=$(python3 -c "import json; c=json.load(open('$DIR/config.json')); print(c.get('timezoneOffset', 0))" 2>/dev/null || echo "0")
-fi
-
-# Expand ~ if present
 OPENCLAW_PATH="${OPENCLAW_PATH/#\~/$HOME}"
 
 echo "Dashboard dir: $DIR"
 echo "OpenClaw path: $OPENCLAW_PATH"
 
-# Check if OpenClaw exists
 if [ ! -d "$OPENCLAW_PATH" ]; then
   echo "❌ OpenClaw not found at $OPENCLAW_PATH"
-  echo "   Set OPENCLAW_HOME or update config.json"
   exit 1
 fi
 
-# Find Python
 PYTHON=$(command -v python3 || command -v python)
 if [ -z "$PYTHON" ]; then
   echo "❌ Python not found"
   exit 1
 fi
 
-$PYTHON - "$DIR" "$OPENCLAW_PATH" "$TIMEZONE_OFFSET" << 'PYEOF' > "$DIR/data.json.tmp"
-import json, glob, os, sys
+$PYTHON - "$DIR" "$OPENCLAW_PATH" << 'PYEOF' > "$DIR/data.json.tmp"
+import json, glob, os, sys, subprocess, time
 from collections import defaultdict
 from datetime import datetime, timezone, timedelta
 
 dashboard_dir = sys.argv[1]
 openclaw_path = sys.argv[2]
-tz_offset = int(sys.argv[3]) if len(sys.argv) > 3 else 0
 
-# Use configured timezone or system local
-if tz_offset != 0:
-    local_tz = timezone(timedelta(hours=tz_offset))
-else:
-    # Use system local timezone
-    local_tz = datetime.now().astimezone().tzinfo
-
+local_tz = timezone(timedelta(hours=8))  # GMT+8
 now = datetime.now(local_tz)
 today_str = now.strftime('%Y-%m-%d')
 
@@ -60,34 +38,160 @@ base = os.path.join(openclaw_path, "agents")
 config_path = os.path.join(openclaw_path, "openclaw.json")
 cron_path = os.path.join(openclaw_path, "cron/jobs.json")
 
-# Load bot config from dashboard config
-bot_name = "OpenClaw Bot"
-bot_emoji = "🦞"
-dashboard_config = os.path.join(dashboard_dir, "config.json")
-if os.path.exists(dashboard_config):
+# ── Bot config ──
+bot_name = "OpenClaw Dashboard"
+bot_emoji = "⚡"
+dc_path = os.path.join(dashboard_dir, "config.json")
+if os.path.exists(dc_path):
     try:
-        dc = json.load(open(dashboard_config))
+        dc = json.load(open(dc_path))
         bot_name = dc.get('bot', {}).get('name', bot_name)
         bot_emoji = dc.get('bot', {}).get('emoji', bot_emoji)
     except: pass
 
-# Load session stores to identify which JSONLs belong to known sessions
+# ── Gateway health ──
+gateway = {"status": "offline", "pid": None, "uptime": "", "memory": "", "rss": 0}
+try:
+    result = subprocess.run("ps aux | grep 'openclaw-gateway' | grep -v grep | awk '{print $2}'",
+                          shell=True, capture_output=True, text=True)
+    pids = result.stdout.strip().split('\n')
+    if pids and pids[0]:
+        pid = pids[0]
+        gateway["pid"] = int(pid)
+        gateway["status"] = "online"
+        ps = subprocess.run(['ps', '-p', pid, '-o', 'etime=,rss='], capture_output=True, text=True)
+        parts = ps.stdout.strip().split()
+        if len(parts) >= 2:
+            gateway["uptime"] = parts[0].strip()
+            rss_kb = int(parts[1])
+            gateway["rss"] = rss_kb
+            if rss_kb > 1048576: gateway["memory"] = f"{rss_kb/1048576:.1f} GB"
+            elif rss_kb > 1024: gateway["memory"] = f"{rss_kb/1024:.0f} MB"
+            else: gateway["memory"] = f"{rss_kb} KB"
+except: pass
+
+# ── OpenClaw config ──
+skills = []
+available_models = []
+compaction_mode = "unknown"
+if os.path.exists(config_path):
+    try:
+        with open(config_path) as cf:
+            oc = json.load(cf)
+        # Compaction
+        compaction_mode = oc.get('agents', {}).get('defaults', {}).get('compaction', {}).get('mode', 'auto')
+        # Skills
+        for name, conf in oc.get('skills', {}).get('entries', {}).items():
+            enabled = conf.get('enabled', True) if isinstance(conf, dict) else True
+            skills.append({'name': name, 'active': enabled, 'type': 'builtin'})
+        # Models
+        primary = oc.get('agents', {}).get('defaults', {}).get('model', {}).get('primary', '')
+        for mid, mconf in oc.get('agents', {}).get('defaults', {}).get('models', {}).items():
+            provider = mid.split('/')[0] if '/' in mid else 'unknown'
+            available_models.append({
+                'provider': provider.title(),
+                'name': mconf.get('alias', mid),
+                'id': mid,
+                'status': 'active' if mid == primary else 'available'
+            })
+    except: pass
+
+# ── Sessions ──
 known_sids = {}
+sessions_list = []
 for store_file in glob.glob(os.path.join(base, '*/sessions/sessions.json')):
     try:
         store = json.load(open(store_file))
+        agent_name = store_file.split('/agents/')[1].split('/')[0]
         for key, val in store.items():
             sid = val.get('sessionId', '')
             if not sid: continue
             if 'cron:' in key: stype = 'cron'
+            elif 'subagent:' in key: stype = 'subagent'
             elif 'group:' in key: stype = 'group'
-            elif 'whatsapp' in key: stype = 'whatsapp'
             elif 'telegram' in key: stype = 'telegram'
             elif key.endswith(':main'): stype = 'main'
             else: stype = 'other'
             known_sids[sid] = stype
+
+            # Build session info for active sessions panel
+            ctx_tokens = val.get('contextTokens', 0)
+            total_tokens = val.get('totalTokens', 0)
+            ctx_pct = round(total_tokens / ctx_tokens * 100, 1) if ctx_tokens > 0 else 0
+            updated = val.get('updatedAt', 0)
+            if updated > 0:
+                try:
+                    updated_dt = datetime.fromtimestamp(updated/1000, tz=local_tz)
+                    updated_str = updated_dt.strftime('%H:%M:%S')
+                    age_min = (now - updated_dt).total_seconds() / 60
+                except: updated_str = ''; age_min = 9999
+            else: updated_str = ''; age_min = 9999
+
+            # Only include recently active sessions (last 24h)
+            if age_min < 1440:
+                label = val.get('origin', {}).get('label', key)
+                sessions_list.append({
+                    'name': label[:50],
+                    'key': key,
+                    'agent': agent_name,
+                    'model': val.get('model', 'unknown'),
+                    'contextPct': min(ctx_pct, 100),
+                    'lastActivity': updated_str,
+                    'updatedAt': updated,
+                    'totalTokens': total_tokens,
+                    'type': stype
+                })
     except: pass
 
+sessions_list.sort(key=lambda x: -x.get('updatedAt', 0))
+sessions_list = sessions_list[:20]  # Top 20 most recent
+
+# ── Cron jobs ──
+crons = []
+if os.path.exists(cron_path):
+    try:
+        jobs = json.load(open(cron_path)).get('jobs', [])
+        for job in jobs:
+            sched = job.get('schedule', {})
+            kind = sched.get('kind', '')
+            if kind == 'cron': schedule_str = sched.get('expr', '')
+            elif kind == 'every':
+                ms = sched.get('everyMs', 0)
+                if ms >= 86400000: schedule_str = f"Every {ms//86400000}d"
+                elif ms >= 3600000: schedule_str = f"Every {ms//3600000}h"
+                elif ms >= 60000: schedule_str = f"Every {ms//60000}m"
+                else: schedule_str = f"Every {ms}ms"
+            elif kind == 'at': schedule_str = sched.get('at', '')[:16]
+            else: schedule_str = str(sched)
+
+            state = job.get('state', {})
+            last_status = state.get('lastStatus', 'none')
+            last_run_ms = state.get('lastRunAtMs', 0)
+            next_run_ms = state.get('nextRunAtMs', 0)
+            duration_ms = state.get('lastDurationMs', 0)
+
+            last_run_str = ''
+            if last_run_ms:
+                try: last_run_str = datetime.fromtimestamp(last_run_ms/1000, tz=local_tz).strftime('%Y-%m-%d %H:%M')
+                except: pass
+            next_run_str = ''
+            if next_run_ms:
+                try: next_run_str = datetime.fromtimestamp(next_run_ms/1000, tz=local_tz).strftime('%Y-%m-%d %H:%M')
+                except: pass
+
+            crons.append({
+                'name': job.get('name', 'Unknown'),
+                'schedule': schedule_str,
+                'enabled': job.get('enabled', True),
+                'lastRun': last_run_str,
+                'lastStatus': last_status,
+                'lastDurationMs': duration_ms,
+                'nextRun': next_run_str,
+                'model': job.get('payload', {}).get('model', '')
+            })
+    except: pass
+
+# ── Token usage from JSONL ──
 def model_name(model):
     ml = model.lower()
     if 'opus-4-6' in ml: return 'Claude Opus 4.6'
@@ -111,15 +215,34 @@ def model_name(model):
 def new_bucket():
     return {'calls':0,'input':0,'output':0,'cacheRead':0,'totalTokens':0,'cost':0.0}
 
-# Main counters
 models_all = defaultdict(new_bucket)
 models_today = defaultdict(new_bucket)
 subagent_all = defaultdict(new_bucket)
 subagent_today = defaultdict(new_bucket)
 
+# Sub-agent activity tracking
+subagent_runs = []
+
 for f in glob.glob(os.path.join(base, '*/sessions/*.jsonl')):
     sid = os.path.basename(f).replace('.jsonl', '')
     is_subagent = sid not in known_sids
+    session_key = None
+    # Find session key for this sid
+    for store_file in glob.glob(os.path.join(base, '*/sessions/sessions.json')):
+        try:
+            store = json.load(open(store_file))
+            for k, v in store.items():
+                if v.get('sessionId') == sid:
+                    session_key = k
+                    break
+        except: pass
+        if session_key: break
+
+    session_cost = 0
+    session_model = ''
+    session_first_ts = None
+    session_last_ts = None
+    session_task = session_key or sid[:12]
 
     try:
         with open(f) as fh:
@@ -135,7 +258,6 @@ for f in glob.glob(os.path.join(base, '*/sessions/*.jsonl')):
 
                     name = model_name(model)
                     cost_total = usage.get('cost',{}).get('total',0) if isinstance(usage.get('cost'),dict) else 0
-
                     inp = usage.get('input',0)
                     out = usage.get('output',0)
                     cr = usage.get('cacheRead',0)
@@ -155,10 +277,15 @@ for f in glob.glob(os.path.join(base, '*/sessions/*.jsonl')):
                         subagent_all[name]['cacheRead'] += cr
                         subagent_all[name]['totalTokens'] += tt
                         subagent_all[name]['cost'] += cost_total
+                        session_cost += cost_total
+                        session_model = name
 
                     ts = obj.get('timestamp','')
                     try:
-                        msg_date = datetime.fromisoformat(ts.replace('Z','+00:00')).astimezone(local_tz).strftime('%Y-%m-%d')
+                        msg_dt = datetime.fromisoformat(ts.replace('Z','+00:00')).astimezone(local_tz)
+                        msg_date = msg_dt.strftime('%Y-%m-%d')
+                        if not session_first_ts: session_first_ts = msg_dt
+                        session_last_ts = msg_dt
                     except: msg_date = ''
 
                     if msg_date == today_str:
@@ -168,7 +295,6 @@ for f in glob.glob(os.path.join(base, '*/sessions/*.jsonl')):
                         models_today[name]['cacheRead'] += cr
                         models_today[name]['totalTokens'] += tt
                         models_today[name]['cost'] += cost_total
-
                         if is_subagent:
                             subagent_today[name]['calls'] += 1
                             subagent_today[name]['input'] += inp
@@ -179,6 +305,21 @@ for f in glob.glob(os.path.join(base, '*/sessions/*.jsonl')):
                 except: pass
     except: pass
 
+    if is_subagent and session_cost > 0 and session_last_ts:
+        duration_s = (session_last_ts - session_first_ts).total_seconds() if session_first_ts and session_last_ts else 0
+        subagent_runs.append({
+            'task': session_task[:60],
+            'model': session_model,
+            'cost': round(session_cost, 4),
+            'durationSec': int(duration_s),
+            'status': 'completed',
+            'timestamp': session_last_ts.strftime('%Y-%m-%d %H:%M'),
+            'date': session_last_ts.strftime('%Y-%m-%d')
+        })
+
+subagent_runs.sort(key=lambda x: x.get('timestamp',''), reverse=True)
+subagent_runs_today = [r for r in subagent_runs if r.get('date') == today_str]
+
 def fmt(n):
     if n >= 1_000_000: return f'{n/1_000_000:.1f}M'
     if n >= 1_000: return f'{n/1_000:.1f}K'
@@ -186,66 +327,69 @@ def fmt(n):
 
 def to_list(d):
     return [{'model':k,'calls':v['calls'],'input':fmt(v['input']),'output':fmt(v['output']),
-             'cacheRead':fmt(v['cacheRead']),'totalTokens':fmt(v['totalTokens']),'cost':round(v['cost'],2)}
+             'cacheRead':fmt(v['cacheRead']),'totalTokens':fmt(v['totalTokens']),'cost':round(v['cost'],2),
+             'inputRaw':v['input'],'outputRaw':v['output'],'cacheReadRaw':v['cacheRead'],'totalTokensRaw':v['totalTokens']}
             for k,v in sorted(d.items(), key=lambda x:-x[1]['cost'])]
 
-# Load skills from openclaw.json
-skills = []
-available_models = []
-if os.path.exists(config_path):
-    try:
-        with open(config_path) as cf:
-            oc = json.load(cf)
-        # Skills
-        skill_entries = oc.get('skills', {}).get('entries', {})
-        for name, conf in skill_entries.items():
-            enabled = conf.get('enabled', True) if isinstance(conf, dict) else True
-            skills.append({'name': name, 'active': enabled, 'type': 'builtin'})
-        # Models
-        model_aliases = oc.get('agents', {}).get('defaults', {}).get('models', {})
-        primary = oc.get('agents', {}).get('defaults', {}).get('model', {}).get('primary', '')
-        for mid, mconf in model_aliases.items():
-            status = 'active' if mid == primary else 'available'
-            provider = mid.split('/')[0] if '/' in mid else 'unknown'
-            available_models.append({
-                'provider': provider.title(),
-                'name': mconf.get('alias', mid),
-                'id': mid,
-                'status': status
-            })
-    except: pass
+# ── Git log ──
+git_log = []
+try:
+    result = subprocess.run(['git', '-C', openclaw_path, 'log', '--oneline', '-5', '--format=%h|%s|%ar'],
+                          capture_output=True, text=True)
+    for line in result.stdout.strip().split('\n'):
+        if '|' in line:
+            parts = line.split('|', 2)
+            git_log.append({'hash': parts[0], 'message': parts[1], 'ago': parts[2] if len(parts)>2 else ''})
+except: pass
 
-# Load crons from jobs.json
-crons = []
-if os.path.exists(cron_path):
-    try:
-        jobs = json.load(open(cron_path)).get('jobs', [])
-        for job in jobs:
-            sched = job.get('schedule', {})
-            kind = sched.get('kind', '')
-            if kind == 'cron':
-                schedule_str = sched.get('expr', '')
-            elif kind == 'every':
-                ms = sched.get('everyMs', 0)
-                if ms >= 86400000: schedule_str = f"Every {ms // 86400000}d"
-                elif ms >= 3600000: schedule_str = f"Every {ms // 3600000}h"
-                elif ms >= 60000: schedule_str = f"Every {ms // 60000}m"
-                else: schedule_str = f"Every {ms}ms"
-            elif kind == 'at':
-                schedule_str = sched.get('at', '')[:16]
-            else:
-                schedule_str = str(sched)
-            
-            crons.append({
-                'name': job.get('name', job.get('id', 'Unknown')),
-                'schedule': schedule_str,
-                'enabled': job.get('enabled', True),
-                'next': '',
-                'lastRun': ''
-            })
-    except: pass
+# ── Alerts ──
+alerts = []
+total_cost_today = sum(v['cost'] for v in models_today.values())
+total_cost_all = sum(v['cost'] for v in models_all.values())
 
-# Load existing data.json to preserve manual entries (kanban tasks)
+if total_cost_today > 50:
+    alerts.append({'type': 'warning', 'icon': '💰', 'message': f'High daily cost: ${total_cost_today:.2f}', 'severity': 'high'})
+elif total_cost_today > 20:
+    alerts.append({'type': 'info', 'icon': '💵', 'message': f'Daily cost above $20: ${total_cost_today:.2f}', 'severity': 'medium'})
+
+for c in crons:
+    if c.get('lastStatus') == 'error':
+        alerts.append({'type': 'error', 'icon': '❌', 'message': f'Cron failed: {c["name"]}', 'severity': 'high'})
+
+for s in sessions_list:
+    if s.get('contextPct', 0) > 80:
+        alerts.append({'type': 'warning', 'icon': '⚠️', 'message': f'High context: {s["name"][:30]} ({s["contextPct"]}%)', 'severity': 'medium'})
+
+if gateway['status'] == 'offline':
+    alerts.append({'type': 'error', 'icon': '🔴', 'message': 'Gateway is offline', 'severity': 'critical'})
+
+if gateway.get('rss', 0) > 512000:  # > 500MB
+    alerts.append({'type': 'warning', 'icon': '🧠', 'message': f'High memory usage: {gateway["memory"]}', 'severity': 'medium'})
+
+# ── Cost breakdown by model (for pie chart) ──
+cost_breakdown = []
+for name, bucket in sorted(models_all.items(), key=lambda x: -x[1]['cost']):
+    if bucket['cost'] > 0:
+        cost_breakdown.append({'model': name, 'cost': round(bucket['cost'], 2)})
+
+cost_breakdown_today = []
+for name, bucket in sorted(models_today.items(), key=lambda x: -x[1]['cost']):
+    if bucket['cost'] > 0:
+        cost_breakdown_today.append({'model': name, 'cost': round(bucket['cost'], 2)})
+
+# ── Projected monthly cost ──
+day_of_month = now.day
+if day_of_month > 0:
+    # Simple projection based on days elapsed
+    days_in_month = 30
+    projected = (total_cost_all / max(day_of_month, 1)) * days_in_month  # rough
+    # Better: use today's cost * 30
+    projected_from_today = total_cost_today * 30
+else:
+    projected = 0
+    projected_from_today = 0
+
+# ── Preserve kanban ──
 existing = {}
 data_path = os.path.join(dashboard_dir, 'data.json')
 if os.path.exists(data_path):
@@ -254,37 +398,57 @@ if os.path.exists(data_path):
             existing = json.load(ef)
     except: pass
 
-# Build output - preserve kanban tasks from existing
 output = {
     'botName': bot_name,
     'botEmoji': bot_emoji,
-    'workingOn': existing.get('workingOn', 'Ready'),
-    'workingOnMeta': existing.get('workingOnMeta', ''),
-    'sessionsMeta': f'{len(known_sids)} tracked',
-    'cronsMeta': f'{len(crons)} scheduled',
-    'skillCount': len([s for s in skills if s.get('active')]),
-    'skillsMeta': f'{len(skills)} total',
-    'nextScheduled': '—',
-    'nextScheduledMeta': '',
-    # Preserve kanban tasks
-    'inProgress': existing.get('inProgress', []),
-    'queue': existing.get('queue', []),
-    'waiting': existing.get('waiting', []),
-    'doneToday': existing.get('doneToday', []),
-    'sessions': [],
+    'lastRefresh': now.strftime('%Y-%m-%d %H:%M:%S GMT+8'),
+    'lastRefreshMs': int(now.timestamp() * 1000),
+
+    # Gateway health
+    'gateway': gateway,
+    'compactionMode': compaction_mode,
+
+    # Costs
+    'totalCostToday': round(total_cost_today, 2),
+    'totalCostAllTime': round(total_cost_all, 2),
+    'projectedMonthly': round(projected_from_today, 2),
+    'costBreakdown': cost_breakdown,
+    'costBreakdownToday': cost_breakdown_today,
+
+    # Sessions
+    'sessions': sessions_list,
+    'sessionCount': len(known_sids),
+
+    # Crons
     'crons': crons,
-    'models': [],
-    'availableModels': available_models,
-    'skills': skills,
+
+    # Sub-agents
+    'subagentRuns': subagent_runs[:30],
+    'subagentRunsToday': subagent_runs_today[:20],
+    'subagentCostAllTime': round(sum(v['cost'] for v in subagent_all.values()), 2),
+    'subagentCostToday': round(sum(v['cost'] for v in subagent_today.values()), 2),
+
+    # Token usage
     'tokenUsage': to_list(models_all),
     'tokenUsageToday': to_list(models_today),
     'subagentUsage': to_list(subagent_all),
     'subagentUsageToday': to_list(subagent_today),
-    'lastRefresh': now.strftime('%Y-%m-%d %H:%M:%S %Z'),
-    'totalCostAllTime': round(sum(v['cost'] for v in models_all.values()), 2),
-    'totalCostToday': round(sum(v['cost'] for v in models_today.values()), 2),
-    'subagentCostAllTime': round(sum(v['cost'] for v in subagent_all.values()), 2),
-    'subagentCostToday': round(sum(v['cost'] for v in subagent_today.values()), 2)
+
+    # Models & skills
+    'availableModels': available_models,
+    'skills': skills,
+
+    # Git log
+    'gitLog': git_log,
+
+    # Alerts
+    'alerts': alerts,
+
+    # Preserved kanban
+    'inProgress': existing.get('inProgress', []),
+    'queue': existing.get('queue', []),
+    'waiting': existing.get('waiting', []),
+    'doneToday': existing.get('doneToday', []),
 }
 
 print(json.dumps(output, indent=2))

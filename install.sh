@@ -1,11 +1,11 @@
 #!/bin/bash
 # OpenClaw Dashboard Installer
 # Supports: macOS, Linux
-# Usage: curl -fsSL https://raw.githubusercontent.com/openclaw-community/dashboard/main/install.sh | bash
+# Usage: curl -fsSL https://raw.githubusercontent.com/mudrii/openclaw-dashboard/main/install.sh | bash
 
 set -e
 
-REPO="https://github.com/openclaw-community/dashboard"
+REPO="https://github.com/mudrii/openclaw-dashboard"
 INSTALL_DIR="${OPENCLAW_HOME:-$HOME/.openclaw}/dashboard"
 
 echo "🦞 OpenClaw Dashboard Installer"
@@ -50,11 +50,14 @@ else
   cd "$INSTALL_DIR"
 fi
 
+# Make scripts executable
+chmod +x refresh.sh server.py
+
 # Create config if not exists
 if [ ! -f "config.json" ]; then
   echo "📝 Creating default config.json..."
   cp examples/config.minimal.json config.json
-  echo "   Edit config.json to customize your bot name"
+  echo "   Edit config.json to customize your dashboard"
 fi
 
 # Initial data refresh
@@ -64,10 +67,10 @@ echo "🔄 Running initial data refresh..."
 # Setup auto-start based on OS
 echo ""
 if [ "$OS" = "Darwin" ]; then
-  # macOS: LaunchAgent
+  # macOS: LaunchAgent using server.py
   PLIST_DIR="$HOME/Library/LaunchAgents"
   PLIST_FILE="$PLIST_DIR/com.openclaw.dashboard.plist"
-  
+
   mkdir -p "$PLIST_DIR"
   cat > "$PLIST_FILE" << PLISTEOF
 <?xml version="1.0" encoding="UTF-8"?>
@@ -79,20 +82,18 @@ if [ "$OS" = "Darwin" ]; then
   <key>ProgramArguments</key>
   <array>
     <string>/usr/bin/python3</string>
-    <string>-m</string>
-    <string>http.server</string>
-    <string>8080</string>
+    <string>${INSTALL_DIR}/server.py</string>
   </array>
   <key>WorkingDirectory</key>
-  <string>$INSTALL_DIR</string>
+  <string>${INSTALL_DIR}</string>
   <key>RunAtLoad</key>
   <true/>
   <key>KeepAlive</key>
   <true/>
   <key>StandardOutPath</key>
-  <string>$INSTALL_DIR/server.log</string>
+  <string>${INSTALL_DIR}/server.log</string>
   <key>StandardErrorPath</key>
-  <string>$INSTALL_DIR/server.log</string>
+  <string>${INSTALL_DIR}/server.log</string>
 </dict>
 </plist>
 PLISTEOF
@@ -102,21 +103,21 @@ PLISTEOF
   echo "🚀 Server started via LaunchAgent (auto-starts on login)"
 
 elif [ "$OS" = "Linux" ]; then
-  # Linux: systemd user service
+  # Linux: systemd user service using server.py
   if command -v systemctl >/dev/null 2>&1; then
     SERVICE_DIR="$HOME/.config/systemd/user"
     SERVICE_FILE="$SERVICE_DIR/openclaw-dashboard.service"
-    
+
     mkdir -p "$SERVICE_DIR"
     cat > "$SERVICE_FILE" << SERVICEEOF
 [Unit]
-Description=OpenClaw Dashboard
+Description=OpenClaw Dashboard Server
 After=network.target
 
 [Service]
 Type=simple
-WorkingDirectory=$INSTALL_DIR
-ExecStart=/usr/bin/python3 -m http.server 8080
+WorkingDirectory=${INSTALL_DIR}
+ExecStart=/usr/bin/python3 ${INSTALL_DIR}/server.py
 Restart=always
 RestartSec=5
 
@@ -130,22 +131,21 @@ SERVICEEOF
     echo "🚀 Server started via systemd user service"
   else
     echo "⚠️  systemd not found. Start manually:"
-    echo "   cd $INSTALL_DIR && python3 -m http.server 8080 &"
+    echo "   cd $INSTALL_DIR && python3 server.py &"
   fi
 else
   echo "⚠️  Unknown OS. Start manually:"
-  echo "   cd $INSTALL_DIR && python3 -m http.server 8080 &"
+  echo "   cd $INSTALL_DIR && python3 server.py &"
 fi
 
 echo ""
 echo "✅ Installation complete!"
 echo ""
 echo "📊 Dashboard: http://127.0.0.1:8080"
+echo "🔄 API:       http://127.0.0.1:8080/api/refresh (on-demand refresh)"
 echo "⚙️  Config:    $INSTALL_DIR/config.json"
-echo "🔄 Refresh:   $INSTALL_DIR/refresh.sh"
 echo "📚 Docs:      $INSTALL_DIR/docs/CONFIGURATION.md"
 echo ""
-echo "Next steps:"
-echo "  1. Edit config.json to set your bot name"
-echo "  2. Open http://127.0.0.1:8080 in your browser"
-echo "  3. (Optional) Set up a cron job to run refresh.sh periodically"
+echo "The server runs server.py which serves the dashboard AND"
+echo "refreshes data on-demand when you open the page."
+echo "No separate cron job needed!"

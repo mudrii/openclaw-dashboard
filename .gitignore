@@ -10,5 +10,12 @@ Thumbs.db
 # Logs
 *.log
 
+# Generated data (contains local system info)
+data.json
+
 # Local overrides (users should copy from examples/)
 # config.json is included as example, users can modify
+.DS_Store
+__pycache__/
+*.pyc
+server.log

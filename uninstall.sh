@@ -26,9 +26,13 @@ if [ "$(uname)" = "Linux" ] && command -v systemctl >/dev/null 2>&1; then
     systemctl --user stop openclaw-dashboard
     systemctl --user disable openclaw-dashboard
     rm -f "$HOME/.config/systemd/user/openclaw-dashboard.service"
+    systemctl --user daemon-reload
     echo "✅ Systemd service removed"
   fi
 fi
+
+# Kill any running server.py processes for this install
+pkill -f "${INSTALL_DIR}/server.py" 2>/dev/null || true
 
 # Remove installation
 if [ -d "$INSTALL_DIR" ]; then
