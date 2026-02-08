@@ -389,14 +389,6 @@ else:
     projected = 0
     projected_from_today = 0
 
-# ── Preserve kanban ──
-existing = {}
-data_path = os.path.join(dashboard_dir, 'data.json')
-if os.path.exists(data_path):
-    try:
-        with open(data_path) as ef:
-            existing = json.load(ef)
-    except: pass
 
 output = {
     'botName': bot_name,
@@ -444,11 +436,6 @@ output = {
     # Alerts
     'alerts': alerts,
 
-    # Preserved kanban
-    'inProgress': existing.get('inProgress', []),
-    'queue': existing.get('queue', []),
-    'waiting': existing.get('waiting', []),
-    'doneToday': existing.get('doneToday', []),
 }
 
 print(json.dumps(output, indent=2))

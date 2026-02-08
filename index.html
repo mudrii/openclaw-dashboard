@@ -62,25 +62,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'SF Pro','Helvetica Neue',sans
 .donut-legend-item{display:flex;align-items:center;gap:6px;font-size:11px;color:#a3a3a3;white-space:nowrap}
 .donut-legend-dot{width:8px;height:8px;border-radius:2px;flex-shrink:0}
 
-/* Kanban */
-.kanban{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:24px}
-.kanban-col{min-height:80px}
-.kanban-col-header{font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;padding:10px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px}
-.kanban-col-header .count{font-size:9px;background:rgba(255,255,255,.06);padding:1px 6px;border-radius:4px;color:var(--dim)}
-.kanban-items{padding:8px}
-.kanban-card{padding:10px 12px;border-radius:8px;background:rgba(255,255,255,.02);margin-bottom:6px;border-left:3px solid transparent}
-.kanban-card:hover{background:rgba(255,255,255,.05)}
-.kanban-card-title{font-size:12px;color:#fff;font-weight:500;margin-bottom:4px}
-.kanban-card-meta{font-size:10px;color:var(--dim)}
-.kanban-tag{font-size:9px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;padding:1px 6px;border-radius:3px;margin-right:4px}
-.tag-system{background:rgba(99,102,241,.12);color:#818cf8}
-.tag-interview{background:rgba(74,222,128,.12);color:var(--green)}
-.tag-feature{background:rgba(147,51,234,.12);color:#c084fc}
-.tag-bug{background:rgba(248,113,113,.12);color:var(--red)}
-.col-todo .kanban-card{border-left-color:var(--accent)}
-.col-doing .kanban-card{border-left-color:var(--yellow)}
-.col-blocked .kanban-card{border-left-color:var(--red)}
-.col-done .kanban-card{border-left-color:var(--green)}
+/* Kanban removed */
 
 /* Section header */
 .section-header{display:flex;align-items:center;justify-content:space-between;padding:0 4px;margin-bottom:10px;flex-wrap:wrap;gap:8px}
@@ -169,8 +151,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'SF Pro','Helvetica Neue',sans
 .empty{text-align:center;padding:24px;color:var(--dim);font-size:12px}
 ::-webkit-scrollbar{width:4px}::-webkit-scrollbar-thumb{background:rgba(255,255,255,.1);border-radius:2px}
 
-@media(max-width:1024px){.cost-row{grid-template-columns:repeat(2,1fr)}.health-row{grid-template-columns:repeat(3,1fr)}.kanban{grid-template-columns:repeat(2,1fr)}}
-@media(max-width:768px){.grid-2,.grid-3{grid-template-columns:1fr}.cost-row,.kanban{grid-template-columns:1fr}.health-row{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:1024px){.cost-row{grid-template-columns:repeat(2,1fr)}.health-row{grid-template-columns:repeat(3,1fr)}}
+@media(max-width:768px){.grid-2,.grid-3{grid-template-columns:1fr}.cost-row.health-row{grid-template-columns:repeat(2,1fr)}}
 </style>
 </head>
 <body>
@@ -234,14 +216,6 @@ body{font-family:-apple-system,BlinkMacSystemFont,'SF Pro','Helvetica Neue',sans
   </div>
 </div>
 
-<!-- 5. Kanban Board -->
-<div class="section-header"><span class="section-title">📋 Kanban Board</span></div>
-<div class="kanban" id="kanban">
-  <div class="glass kanban-col col-todo"><div class="kanban-col-header" style="color:var(--accent)">📝 To Do <span class="count" id="kTodoN">0</span></div><div class="kanban-items" id="kTodo"></div></div>
-  <div class="glass kanban-col col-doing"><div class="kanban-col-header" style="color:var(--yellow)">🔨 In Progress <span class="count" id="kDoingN">0</span></div><div class="kanban-items" id="kDoing"></div></div>
-  <div class="glass kanban-col col-blocked"><div class="kanban-col-header" style="color:var(--red)">🚫 Blocked <span class="count" id="kBlockN">0</span></div><div class="kanban-items" id="kBlock"></div></div>
-  <div class="glass kanban-col col-done"><div class="kanban-col-header" style="color:var(--green)">✅ Done Today <span class="count" id="kDoneN">0</span></div><div class="kanban-items" id="kDone"></div></div>
-</div>
 
 <!-- 6. Cron Jobs Panel -->
 <div style="margin-bottom:24px">
@@ -414,12 +388,8 @@ function render(){
   $('donutLegend').innerHTML=legend;
 
   // Kanban
-  renderKanban('kTodo','kTodoN',D.queue||[]);
-  renderKanban('kDoing','kDoingN',D.inProgress||[]);
-  renderKanban('kBlock','kBlockN',D.waiting||[]);
-  renderKanban('kDone','kDoneN',D.doneToday||[]);
 
-  // Crons
+
   const crons=D.crons||[];
   $('cronCount').textContent=crons.length+' jobs';
   $('cronBody').innerHTML=crons.map(c=>{
@@ -471,9 +441,7 @@ function render(){
   $('gitPanel').innerHTML=(D.gitLog||[]).slice(0,5).map(g=>`<div class="git-item"><span class="git-hash">${g.hash}</span><span class="git-msg" title="${esc(g.message)}">${esc(g.message)}</span><span class="git-ago">${g.ago}</span></div>`).join('')||'<div class="empty">No git history</div>';
 }
 
-function renderKanban(elId,countId,items){
   $(countId).textContent=items.length;
-  $(elId).innerHTML=items.length?items.map(i=>`<div class="kanban-card"><div style="margin-bottom:4px">${i.tag?`<span class="kanban-tag ${i.tagClass||''}">${esc(i.tag)}</span>`:''}</div><div class="kanban-card-title">${esc(i.title)}</div><div class="kanban-card-meta">${esc(i.meta||'')}</div></div>`).join(''):'<div class="empty">Empty</div>';
 }
 
 function renderTokenTbl(bodyId,data,accentColor){
