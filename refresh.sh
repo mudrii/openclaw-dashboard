@@ -106,6 +106,8 @@ for store_file in glob.glob(os.path.join(base, '*/sessions/sessions.json')):
         for key, val in store.items():
             sid = val.get('sessionId', '')
             if not sid: continue
+            # Skip cron run sessions (duplicates of parent cron)
+            if ':run:' in key: continue
             if 'cron:' in key: stype = 'cron'
             elif 'subagent:' in key: stype = 'subagent'
             elif 'group:' in key: stype = 'group'
@@ -225,7 +227,6 @@ subagent_runs = []
 
 for f in glob.glob(os.path.join(base, '*/sessions/*.jsonl')):
     sid = os.path.basename(f).replace('.jsonl', '')
-    is_subagent = sid not in known_sids
     session_key = None
     # Find session key for this sid
     for store_file in glob.glob(os.path.join(base, '*/sessions/sessions.json')):
@@ -237,6 +238,7 @@ for f in glob.glob(os.path.join(base, '*/sessions/*.jsonl')):
                     break
         except: pass
         if session_key: break
+    is_subagent = 'subagent:' in (session_key or '') or sid not in known_sids
 
     session_cost = 0
     session_model = ''
