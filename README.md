@@ -57,6 +57,9 @@ nano config.json  # Set your bot name
 # Start the server (refreshes data on-demand)
 python3 server.py &
 
+# Or bind to LAN for access from other devices
+python3 server.py --bind 0.0.0.0 &
+
 # Open in browser
 open http://127.0.0.1:8080  # macOS
 xdg-open http://127.0.0.1:8080  # Linux
@@ -107,8 +110,8 @@ Edit `config.json`:
 | `theme.accent` | `"#6366f1"` | Primary accent color |
 | `panels.*` | `true` | Show/hide individual panels |
 | `refresh.intervalSeconds` | `30` | Debounce interval for refresh |
-| `server.port` | `8080` | Server port |
-| `server.host` | `"127.0.0.1"` | Server bind address |
+| `server.port` | `8080` | Server port (also `--port` / `-p` flag or `DASHBOARD_PORT` env) |
+| `server.host` | `"127.0.0.1"` | Server bind address (also `--bind` / `-b` flag or `DASHBOARD_BIND` env) |
 | `openclawPath` | `"~/.openclaw"` | Path to OpenClaw installation |
 
 See [docs/CONFIGURATION.md](docs/CONFIGURATION.md) for full details.

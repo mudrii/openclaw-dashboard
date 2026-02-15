@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """OpenClaw Dashboard Server — static files + on-demand refresh."""
 
+import argparse
 import http.server
 import json
 import os
@@ -89,9 +90,24 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
 
 def main():
     import socket
-    server = http.server.HTTPServer((BIND, PORT), DashboardHandler)
+
+    parser = argparse.ArgumentParser(description="OpenClaw Dashboard Server")
+    parser.add_argument(
+        "--bind", "-b",
+        default=os.environ.get("DASHBOARD_BIND", BIND),
+        help="Address to bind to (default: 127.0.0.1, use 0.0.0.0 for LAN access)",
+    )
+    parser.add_argument(
+        "--port", "-p",
+        type=int,
+        default=int(os.environ.get("DASHBOARD_PORT", PORT)),
+        help="Port to listen on (default: 8080)",
+    )
+    args = parser.parse_args()
+
+    server = http.server.HTTPServer((args.bind, args.port), DashboardHandler)
     server.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    print(f"[dashboard] Serving on http://{BIND}:{PORT}/")
+    print(f"[dashboard] Serving on http://{args.bind}:{args.port}/")
     print(f"[dashboard] Refresh endpoint: /api/refresh (debounce: {DEBOUNCE_SEC}s)")
     try:
         server.serve_forever()
