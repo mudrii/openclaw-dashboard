@@ -150,6 +150,18 @@ rm -rf ~/.openclaw/dashboard
 
 ## Changelog
 
+### v2.3.0
+
+- **New**: `--bind` / `-b` flag for LAN access (`--bind 0.0.0.0`)
+- **New**: `--port` / `-p` flag for custom port
+- **New**: `--version` / `-V` flag
+- **New**: `DASHBOARD_BIND` and `DASHBOARD_PORT` environment variables
+- **New**: `config.json` support for `server.host` and `server.port` settings
+- **New**: `refresh.intervalSeconds` config option for debounce tuning
+- **New**: Auto-detect and display LAN IP when binding to `0.0.0.0`
+- **Improved**: Config priority chain: CLI flags > env vars > config.json > defaults
+- **Improved**: `--help` with usage examples
+
 ### v2.0.0
 
 - **New**: Complete UI redesign with glass morphism dark theme
