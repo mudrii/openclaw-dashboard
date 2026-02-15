@@ -110,6 +110,10 @@ Edit `config.json`:
 | `theme.accent` | `"#6366f1"` | Primary accent color |
 | `panels.*` | `true` | Show/hide individual panels |
 | `refresh.intervalSeconds` | `30` | Debounce interval for refresh |
+| `alerts.dailyCostHigh` | `50` | Daily cost threshold for high alert ($) |
+| `alerts.dailyCostWarn` | `20` | Daily cost threshold for warning alert ($) |
+| `alerts.contextPct` | `80` | Context usage % threshold for alerts |
+| `alerts.memoryMb` | `500` | Gateway memory threshold (MB) for alerts |
 | `server.port` | `8080` | Server port (also `--port` / `-p` flag or `DASHBOARD_PORT` env) |
 | `server.host` | `"127.0.0.1"` | Server bind address (also `--bind` / `-b` flag or `DASHBOARD_BIND` env) |
 | `openclawPath` | `"~/.openclaw"` | Path to OpenClaw installation |

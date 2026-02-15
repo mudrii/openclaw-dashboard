@@ -1,7 +1,7 @@
 {
   "bot": {
     "name": "OpenClaw Dashboard",
-    "emoji": "🦞"
+    "emoji": "\ud83e\udd9e"
   },
   "theme": {
     "preset": "dark",

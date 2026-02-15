@@ -47,7 +47,16 @@ if os.path.exists(dc_path):
         dc = json.load(open(dc_path))
         bot_name = dc.get('bot', {}).get('name', bot_name)
         bot_emoji = dc.get('bot', {}).get('emoji', bot_emoji)
-    except: pass
+    except: dc = {}
+else:
+    dc = {}
+
+# ── Alert thresholds (configurable via config.json) ──
+alert_cfg = dc.get('alerts', {})
+COST_THRESHOLD_HIGH = alert_cfg.get('dailyCostHigh', 50)
+COST_THRESHOLD_WARN = alert_cfg.get('dailyCostWarn', 20)
+CONTEXT_THRESHOLD = alert_cfg.get('contextPct', 80)
+MEMORY_THRESHOLD_KB = alert_cfg.get('memoryMb', 500) * 1024
 
 # ── Gateway health ──
 gateway = {"status": "offline", "pid": None, "uptime": "", "memory": "", "rss": 0}
@@ -357,23 +366,23 @@ alerts = []
 total_cost_today = sum(v['cost'] for v in models_today.values())
 total_cost_all = sum(v['cost'] for v in models_all.values())
 
-if total_cost_today > 50:
+if total_cost_today > COST_THRESHOLD_HIGH:
     alerts.append({'type': 'warning', 'icon': '💰', 'message': f'High daily cost: ${total_cost_today:.2f}', 'severity': 'high'})
-elif total_cost_today > 20:
-    alerts.append({'type': 'info', 'icon': '💵', 'message': f'Daily cost above $20: ${total_cost_today:.2f}', 'severity': 'medium'})
+elif total_cost_today > COST_THRESHOLD_WARN:
+    alerts.append({'type': 'info', 'icon': '💵', 'message': f'Daily cost above ${COST_THRESHOLD_WARN}: ${total_cost_today:.2f}', 'severity': 'medium'})
 
 for c in crons:
     if c.get('lastStatus') == 'error':
         alerts.append({'type': 'error', 'icon': '❌', 'message': f'Cron failed: {c["name"]}', 'severity': 'high'})
 
 for s in sessions_list:
-    if s.get('contextPct', 0) > 80:
+    if s.get('contextPct', 0) > CONTEXT_THRESHOLD:
         alerts.append({'type': 'warning', 'icon': '⚠️', 'message': f'High context: {s["name"][:30]} ({s["contextPct"]}%)', 'severity': 'medium'})
 
 if gateway['status'] == 'offline':
     alerts.append({'type': 'error', 'icon': '🔴', 'message': 'Gateway is offline', 'severity': 'critical'})
 
-if gateway.get('rss', 0) > 512000:  # > 500MB
+if gateway.get('rss', 0) > MEMORY_THRESHOLD_KB:
     alerts.append({'type': 'warning', 'icon': '🧠', 'message': f'High memory usage: {gateway["memory"]}', 'severity': 'medium'})
 
 # ── Cost breakdown by model (for pie chart) ──
