@@ -123,14 +123,14 @@ body{font-family:-apple-system,BlinkMacSystemFont,'SF Pro','Helvetica Neue',sans
 .badge-ok{background:rgba(74,222,128,.12);color:var(--green)}
 .badge-err{background:rgba(248,113,113,.12);color:var(--red)}
 .badge-active{background:rgba(74,222,128,.12);color:var(--green)}
-.badge-available{background:rgba(99,102,241,.12);color:#818cf8}
+.badge-available{background:rgba(99,102,241,.12);color:var(--accent)}
 .badge-none{background:var(--tableBg);color:var(--dim)}
 
 /* Tab buttons */
 .tab-group{display:flex;gap:4px}
 .tab-btn{padding:4px 12px;border-radius:6px;font-size:11px;font-weight:500;cursor:pointer;border:1px solid var(--border);background:transparent;color:var(--dim);transition:all .15s}
-.tab-btn.active{background:rgba(99,102,241,.15);color:#818cf8;border-color:rgba(99,102,241,.3)}
-.tab-btn.active-purple{background:rgba(168,85,247,.15);color:#c084fc;border-color:rgba(168,85,247,.3)}
+.tab-btn.active{background:rgba(99,102,241,.15);color:var(--accent);border-color:rgba(99,102,241,.3)}
+.tab-btn.active-purple{background:rgba(168,85,247,.15);color:var(--purple);border-color:rgba(168,85,247,.3)}
 
 /* Models grid */
 .models-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px}
@@ -154,13 +154,21 @@ body{font-family:-apple-system,BlinkMacSystemFont,'SF Pro','Helvetica Neue',sans
 
 /* Type badge */
 .type-badge{font-size:9px;padding:1px 6px;border-radius:3px;font-weight:500;text-transform:uppercase;letter-spacing:.05em}
-.type-dm{background:rgba(99,102,241,.12);color:#818cf8}
+.type-dm{background:rgba(99,102,241,.12);color:var(--accent)}
 .type-group{background:rgba(74,222,128,.12);color:var(--green)}
 .type-cron{background:rgba(250,204,21,.12);color:var(--yellow)}
-.type-subagent{background:rgba(168,85,247,.12);color:#c084fc}
+.type-subagent{background:rgba(168,85,247,.12);color:var(--purple)}
 .type-main{background:var(--tableBg);color:var(--muted)}
-.type-telegram{background:rgba(99,102,241,.12);color:#818cf8}
+.type-telegram{background:rgba(99,102,241,.12);color:var(--accent)}
 
+.charts-section{margin-bottom:24px}
+.chart-toggle{background:var(--surface);border:1px solid var(--border);padding:6px 14px;border-radius:8px;color:var(--muted);font-size:12px;cursor:pointer;transition:all .15s}
+.chart-toggle:hover{background:var(--surfaceHover);color:var(--textStrong)}
+.chart-container{padding:16px}
+.chart-title{font-size:11px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);margin-bottom:10px}
+.chart-legend{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
+.chart-legend-item{display:flex;align-items:center;gap:4px;font-size:10px;color:var(--muted)}
+.chart-legend-dot{width:8px;height:8px;border-radius:2px}
 .empty{text-align:center;padding:24px;color:var(--dim);font-size:12px}
 ::-webkit-scrollbar{width:4px}::-webkit-scrollbar-thumb{background:var(--scrollThumb);border-radius:2px}
 
@@ -234,6 +242,27 @@ body{font-family:-apple-system,BlinkMacSystemFont,'SF Pro','Helvetica Neue',sans
 </div>
 
 
+<!-- 5. Charts Section -->
+<div class="charts-section">
+  <div class="section-header">
+    <span class="section-title">📈 Charts & Trends</span>
+    <div style="display:flex;align-items:center;gap:8px">
+      <div class="tab-group" id="chartTabGroup" style="display:none">
+        <button class="tab-btn active" id="cTab7" onclick="chartDays=7;renderCharts()">7 Days</button>
+        <button class="tab-btn" id="cTab30" onclick="chartDays=30;renderCharts()">30 Days</button>
+      </div>
+      <button class="chart-toggle" id="chartToggleBtn" onclick="toggleCharts()">Show Charts</button>
+    </div>
+  </div>
+  <div id="chartsContainer" style="display:none">
+    <div class="grid-3">
+      <div class="glass chart-container"><div class="chart-title">Daily Cost Trend</div><div id="costChart"></div></div>
+      <div class="glass chart-container"><div class="chart-title">Cost by Model</div><div id="modelChart"></div></div>
+      <div class="glass chart-container"><div class="chart-title">Sub-Agent Activity</div><div id="subagentChart"></div></div>
+    </div>
+  </div>
+</div>
+
 <!-- 6. Cron Jobs Panel -->
 <div style="margin-bottom:24px">
   <div class="section-header"><span class="section-title">⏰ Cron Jobs</span><span class="section-count" id="cronCount"></span></div>
@@ -262,6 +291,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'SF Pro','Helvetica Neue',sans
     <span class="section-title">📊 Token Usage & Cost</span>
     <div class="tab-group">
       <button class="tab-btn active" id="uTabT" onclick="uTab='today';render()">Today</button>
+      <button class="tab-btn" id="uTab7" onclick="uTab='7d';render()">7 Days</button>
+      <button class="tab-btn" id="uTab30" onclick="uTab='30d';render()">30 Days</button>
       <button class="tab-btn" id="uTabA" onclick="uTab='all';render()">All Time</button>
     </div>
   </div>
@@ -281,6 +312,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'SF Pro','Helvetica Neue',sans
       <span id="subCostLbl" style="font-size:12px;color:var(--muted);font-weight:500"></span>
       <div class="tab-group">
         <button class="tab-btn active-purple" id="srTabT" onclick="srTab='today';render()">Today</button>
+        <button class="tab-btn" id="srTab7" onclick="srTab='7d';render()">7 Days</button>
+        <button class="tab-btn" id="srTab30" onclick="srTab='30d';render()">30 Days</button>
         <button class="tab-btn" id="srTabA" onclick="srTab='all';render()">All Time</button>
       </div>
     </div>
@@ -298,6 +331,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'SF Pro','Helvetica Neue',sans
       <span class="section-title" style="color:var(--purple)">Sub-Agent Token Breakdown</span>
       <div class="tab-group">
         <button class="tab-btn active-purple" id="stTabT" onclick="stTab='today';render()">Today</button>
+        <button class="tab-btn" id="stTab7" onclick="stTab='7d';render()">7 Days</button>
+        <button class="tab-btn" id="stTab30" onclick="stTab='30d';render()">30 Days</button>
         <button class="tab-btn" id="stTabA" onclick="stTab='all';render()">All Time</button>
       </div>
     </div>
@@ -498,13 +533,15 @@ function render(){
   }).join('');
 
   // Token usage
-  setTabCls('uTabT','uTabA',uTab,'active');
-  renderTokenTbl('uBody',uTab==='today'?D.tokenUsageToday:D.tokenUsage,'var(--accent)');
+  setTabCls4('uTab',uTab,'active');
+  const uData=uTab==='today'?D.tokenUsageToday:uTab==='7d'?D.tokenUsage7d:uTab==='30d'?D.tokenUsage30d:D.tokenUsage;
+  renderTokenTbl('uBody',uData,'var(--accent)');
 
   // Sub runs
-  setTabCls('srTabT','srTabA',srTab,'active-purple');
-  const runs=srTab==='today'?(D.subagentRunsToday||[]):(D.subagentRuns||[]);
-  $('subCostLbl').textContent='Total: $'+(srTab==='today'?(D.subagentCostToday||0):(D.subagentCostAllTime||0)).toFixed(2);
+  setTabCls4('srTab',srTab,'active-purple');
+  const runs=srTab==='today'?(D.subagentRunsToday||[]):srTab==='7d'?(D.subagentRuns7d||[]):srTab==='30d'?(D.subagentRuns30d||[]):(D.subagentRuns||[]);
+  const srCost=srTab==='today'?(D.subagentCostToday||0):srTab==='7d'?(D.subagentCost7d||0):srTab==='30d'?(D.subagentCost30d||0):(D.subagentCostAllTime||0);
+  $('subCostLbl').textContent='Total: $'+srCost.toFixed(2);
   $('srEmpty').style.display=runs.length?'none':'block';
   $('srBody').innerHTML=runs.slice(0,20).map(r=>{
     const dur=r.durationSec>=3600?(r.durationSec/3600).toFixed(1)+'h':r.durationSec>=60?Math.round(r.durationSec/60)+'m':r.durationSec+'s';
@@ -512,15 +549,19 @@ function render(){
   }).join('');
 
   // Sub token
-  setTabCls('stTabT','stTabA',stTab,'active-purple');
-  renderTokenTbl('stBody',stTab==='today'?D.subagentUsageToday:D.subagentUsage,'var(--purple)');
+  setTabCls4('stTab',stTab,'active-purple');
+  const stData=stTab==='today'?D.subagentUsageToday:stTab==='7d'?D.subagentUsage7d:stTab==='30d'?D.subagentUsage30d:D.subagentUsage;
+  renderTokenTbl('stBody',stData,'var(--purple)');
+
+  // Charts
+  if(chartsVisible)renderCharts();
 
   // Models
   $('modelsGrid').innerHTML=(D.availableModels||[]).map(m=>`<div class="glass model-card"><span class="badge badge-${m.status}">${m.status}</span><div class="model-name">${esc(m.name)}</div><div class="model-id">${esc(m.provider)}</div></div>`).join('');
 
   // Skills
   $('skillsGrid').innerHTML=(D.skills||[]).map(s=>{
-    const c=s.active?'color:var(--green);border-color:rgba(74,222,128,.2);background:rgba(74,222,128,.05)':'color:var(--dim);border-color:rgba(255,255,255,.04)';
+    const c=s.active?'color:var(--green);border-color:rgba(74,222,128,.2);background:rgba(74,222,128,.05)':'color:var(--dim);border-color:var(--border)';
     return `<span class="skill-tag" style="${c}">${esc(s.name)}</span>`;
   }).join('');
 
@@ -537,9 +578,91 @@ function renderTokenTbl(bodyId,data,accentColor){
   }).join('')+(data.length?`<tr class="total-row"><td class="w">TOTAL</td><td class="r">${data.reduce((a,u)=>a+u.calls,0).toLocaleString()}</td><td colspan="4"></td><td class="r cost">$${data.reduce((a,u)=>a+u.cost,0).toFixed(2)}</td><td></td></tr>`:'');
 }
 
-function setTabCls(tId,aId,tab,cls){
-  $(tId).className='tab-btn'+(tab==='today'?' '+cls:'');
-  $(aId).className='tab-btn'+(tab==='all'?' '+cls:'');
+function setTabCls4(prefix,tab,cls){
+  $(prefix+'T').className='tab-btn'+(tab==='today'?' '+cls:'');
+  $(prefix+'7').className='tab-btn'+(tab==='7d'?' '+cls:'');
+  $(prefix+'30').className='tab-btn'+(tab==='30d'?' '+cls:'');
+  $(prefix+'A').className='tab-btn'+(tab==='all'?' '+cls:'');
+}
+
+let chartsVisible=false,chartDays=7;
+
+function toggleCharts(){
+  chartsVisible=!chartsVisible;
+  $('chartsContainer').style.display=chartsVisible?'block':'none';
+  $('chartTabGroup').style.display=chartsVisible?'flex':'none';
+  $('chartToggleBtn').textContent=chartsVisible?'Hide Charts':'Show Charts';
+  if(chartsVisible)renderCharts();
+}
+
+function renderCharts(){
+  $('cTab7').className='tab-btn'+(chartDays===7?' active':'');
+  $('cTab30').className='tab-btn'+(chartDays===30?' active':'');
+  const data=(D.dailyChart||[]).slice(-chartDays);
+  if(!data.length)return;
+  renderCostChart('costChart',data);
+  renderModelChart('modelChart',data);
+  renderSubagentChart('subagentChart',data);
+}
+
+function renderCostChart(id,data){
+  const W=400,H=300,P={t:20,r:20,b:40,l:50};
+  const cw=W-P.l-P.r,ch=H-P.t-P.b;
+  const maxY=Math.max(...data.map(d=>d.total))||1;
+  const stepX=cw/(data.length-1||1);
+  let pts=data.map((d,i)=>[P.l+i*stepX,P.t+ch-(d.total/maxY)*ch]);
+  const line=pts.map((p,i)=>(i?'L':'M')+p[0]+','+p[1]).join(' ');
+  const area=line+` L${pts[pts.length-1][0]},${P.t+ch} L${pts[0][0]},${P.t+ch} Z`;
+  const dots=pts.map((p,i)=>`<circle cx="${p[0]}" cy="${p[1]}" r="3" fill="var(--accent)"><title>${data[i].label}: $${data[i].total.toFixed(2)}</title></circle>`).join('');
+  const yLabels=Array.from({length:5},(_, i)=>{const v=maxY*i/4;const y=P.t+ch-ch*i/4;return `<text x="${P.l-6}" y="${y+3}" text-anchor="end" fill="var(--dim)" font-size="9">$${v.toFixed(0)}</text><line x1="${P.l}" y1="${y}" x2="${W-P.r}" y2="${y}" stroke="var(--border)" stroke-dasharray="2"/>`}).join('');
+  const nth=Math.ceil(data.length/7);
+  const xLabels=data.map((d,i)=>i%nth===0?`<text x="${P.l+i*stepX}" y="${H-P.b+16}" text-anchor="middle" fill="var(--dim)" font-size="9">${d.label}</text>`:'').join('');
+  $(id).innerHTML=`<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:350px">${yLabels}${xLabels}<path d="${area}" fill="var(--accent)" opacity="0.15"/><path d="${line}" fill="none" stroke="var(--accent)" stroke-width="2"/>${dots}</svg>`;
+}
+
+function renderModelChart(id,data){
+  const W=400,H=300,P={t:20,r:20,b:55,l:50};
+  const cw=W-P.l-P.r,ch=H-P.t-P.b;
+  const models=new Set();data.forEach(d=>{if(d.models)Object.keys(d.models).forEach(m=>models.add(m))});
+  const mList=[...models];
+  const maxY=Math.max(...data.map(d=>Object.values(d.models||{}).reduce((a,v)=>a+v,0)))||1;
+  const barW=cw/data.length*0.7,gap=cw/data.length*0.3;
+  let bars='';
+  data.forEach((d,i)=>{
+    let cum=0;const x=P.l+i*(barW+gap)+gap/2;
+    mList.forEach((m,mi)=>{
+      const v=(d.models||{})[m]||0;const h=(v/maxY)*ch;
+      bars+=`<rect x="${x}" y="${P.t+ch-cum-h}" width="${barW}" height="${h}" fill="${COLORS[mi%COLORS.length]}"><title>${d.label} ${m}: $${v.toFixed(2)}</title></rect>`;
+      cum+=h;
+    });
+  });
+  const yLabels=Array.from({length:5},(_,i)=>{const v=maxY*i/4;const y=P.t+ch-ch*i/4;return `<text x="${P.l-6}" y="${y+3}" text-anchor="end" fill="var(--dim)" font-size="9">$${v.toFixed(0)}</text><line x1="${P.l}" y1="${y}" x2="${W-P.r}" y2="${y}" stroke="var(--border)" stroke-dasharray="2"/>`}).join('');
+  const nth=Math.ceil(data.length/7);
+  const xLabels=data.map((d,i)=>i%nth===0?`<text x="${P.l+i*(barW+gap)+gap/2+barW/2}" y="${H-P.b+16}" text-anchor="middle" fill="var(--dim)" font-size="9">${d.label}</text>`:'').join('');
+  const legend=mList.map((m,i)=>`<span class="chart-legend-item"><span class="chart-legend-dot" style="background:${COLORS[i%COLORS.length]}"></span>${esc(m)}</span>`).join('');
+  $(id).innerHTML=`<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:310px">${yLabels}${xLabels}${bars}</svg><div class="chart-legend">${legend}</div>`;
+}
+
+function renderSubagentChart(id,data){
+  const W=400,H=300,P={t:20,r:50,b:40,l:50};
+  const cw=W-P.l-P.r,ch=H-P.t-P.b;
+  const maxRuns=Math.max(...data.map(d=>d.subagentRuns||0))||1;
+  const maxCost=Math.max(...data.map(d=>d.subagentCost||0))||1;
+  const barW=cw/data.length*0.6,gap=cw/data.length*0.4;
+  let bars='',pts=[];
+  data.forEach((d,i)=>{
+    const x=P.l+i*(barW+gap)+gap/2;
+    const h=((d.subagentRuns||0)/maxRuns)*ch;
+    bars+=`<rect x="${x}" y="${P.t+ch-h}" width="${barW}" height="${h}" fill="var(--purple)" opacity="0.6"><title>${d.label}: ${d.subagentRuns||0} runs</title></rect>`;
+    pts.push([x+barW/2,P.t+ch-((d.subagentCost||0)/maxCost)*ch]);
+  });
+  const line=pts.map((p,i)=>(i?'L':'M')+p[0]+','+p[1]).join(' ');
+  const dots=pts.map((p,i)=>`<circle cx="${p[0]}" cy="${p[1]}" r="3" fill="var(--accent)"><title>${data[i].label}: $${(data[i].subagentCost||0).toFixed(2)}</title></circle>`).join('');
+  const yL=Array.from({length:5},(_,i)=>{const v=maxRuns*i/4;const y=P.t+ch-ch*i/4;return `<text x="${P.l-6}" y="${y+3}" text-anchor="end" fill="var(--dim)" font-size="9">${Math.round(v)}</text><line x1="${P.l}" y1="${y}" x2="${W-P.r}" y2="${y}" stroke="var(--border)" stroke-dasharray="2"/>`}).join('');
+  const yR=Array.from({length:5},(_,i)=>{const v=maxCost*i/4;const y=P.t+ch-ch*i/4;return `<text x="${W-P.r+6}" y="${y+3}" text-anchor="start" fill="var(--accent)" font-size="9">$${v.toFixed(0)}</text>`}).join('');
+  const nth=Math.ceil(data.length/7);
+  const xLabels=data.map((d,i)=>i%nth===0?`<text x="${P.l+i*(barW+gap)+gap/2+barW/2}" y="${H-P.b+16}" text-anchor="middle" fill="var(--dim)" font-size="9">${d.label}</text>`:'').join('');
+  $(id).innerHTML=`<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:350px">${yL}${yR}${xLabels}${bars}<path d="${line}" fill="none" stroke="var(--accent)" stroke-width="2"/>${dots}</svg><div class="chart-legend"><span class="chart-legend-item"><span class="chart-legend-dot" style="background:var(--purple)"></span>Runs</span><span class="chart-legend-item"><span class="chart-legend-dot" style="background:var(--accent)"></span>Cost</span></div>`;
 }
 
 setInterval(()=>{timer--;if(timer<=0){loadData();timer=60}$('countdown').textContent=timer+'s'},1000);

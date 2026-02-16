@@ -236,8 +236,22 @@ def new_bucket():
 
 models_all = defaultdict(new_bucket)
 models_today = defaultdict(new_bucket)
+models_7d = defaultdict(new_bucket)
+models_30d = defaultdict(new_bucket)
 subagent_all = defaultdict(new_bucket)
 subagent_today = defaultdict(new_bucket)
+subagent_7d = defaultdict(new_bucket)
+subagent_30d = defaultdict(new_bucket)
+
+# Daily cost/token tracking for charts
+daily_costs = defaultdict(lambda: defaultdict(float))  # date -> model -> cost
+daily_tokens = defaultdict(lambda: defaultdict(int))    # date -> model -> tokens
+daily_calls = defaultdict(lambda: defaultdict(int))     # date -> model -> calls
+daily_subagent_costs = defaultdict(float)               # date -> cost
+daily_subagent_count = defaultdict(int)                 # date -> run count
+
+date_7d = (now - timedelta(days=7)).strftime('%Y-%m-%d')
+date_30d = (now - timedelta(days=30)).strftime('%Y-%m-%d')
 
 # Sub-agent activity tracking
 subagent_runs = []
@@ -307,20 +321,36 @@ for f in glob.glob(os.path.join(base, '*/sessions/*.jsonl')) + glob.glob(os.path
                         session_last_ts = msg_dt
                     except: msg_date = ''
 
-                    if msg_date == today_str:
-                        models_today[name]['calls'] += 1
-                        models_today[name]['input'] += inp
-                        models_today[name]['output'] += out
-                        models_today[name]['cacheRead'] += cr
-                        models_today[name]['totalTokens'] += tt
-                        models_today[name]['cost'] += cost_total
+                    # Daily tracking for charts
+                    if msg_date:
+                        daily_costs[msg_date][name] += cost_total
+                        daily_tokens[msg_date][name] += tt
+                        daily_calls[msg_date][name] += 1
                         if is_subagent:
-                            subagent_today[name]['calls'] += 1
-                            subagent_today[name]['input'] += inp
-                            subagent_today[name]['output'] += out
-                            subagent_today[name]['cacheRead'] += cr
-                            subagent_today[name]['totalTokens'] += tt
-                            subagent_today[name]['cost'] += cost_total
+                            daily_subagent_costs[msg_date] += cost_total
+
+                    def add_bucket(bucket, n, i, o, c2, t, ct):
+                        bucket[n]['calls'] += 1
+                        bucket[n]['input'] += i
+                        bucket[n]['output'] += o
+                        bucket[n]['cacheRead'] += c2
+                        bucket[n]['totalTokens'] += t
+                        bucket[n]['cost'] += ct
+
+                    if msg_date == today_str:
+                        add_bucket(models_today, name, inp, out, cr, tt, cost_total)
+                        if is_subagent:
+                            add_bucket(subagent_today, name, inp, out, cr, tt, cost_total)
+
+                    if msg_date >= date_7d:
+                        add_bucket(models_7d, name, inp, out, cr, tt, cost_total)
+                        if is_subagent:
+                            add_bucket(subagent_7d, name, inp, out, cr, tt, cost_total)
+
+                    if msg_date >= date_30d:
+                        add_bucket(models_30d, name, inp, out, cr, tt, cost_total)
+                        if is_subagent:
+                            add_bucket(subagent_30d, name, inp, out, cr, tt, cost_total)
                 except: pass
     except: pass
 
@@ -338,6 +368,48 @@ for f in glob.glob(os.path.join(base, '*/sessions/*.jsonl')) + glob.glob(os.path
 
 subagent_runs.sort(key=lambda x: x.get('timestamp',''), reverse=True)
 subagent_runs_today = [r for r in subagent_runs if r.get('date') == today_str]
+subagent_runs_7d = [r for r in subagent_runs if r.get('date','') >= date_7d]
+subagent_runs_30d = [r for r in subagent_runs if r.get('date','') >= date_30d]
+
+# Count subagent runs per day
+for r in subagent_runs:
+    d = r.get('date','')
+    if d: daily_subagent_count[d] += 1
+
+# ── Build daily chart data (last 30 days) ──
+chart_dates = [(now - timedelta(days=i)).strftime('%Y-%m-%d') for i in range(29, -1, -1)]
+all_chart_models = set()
+for d in chart_dates:
+    all_chart_models.update(daily_costs.get(d, {}).keys())
+# Sort by total cost descending, keep top 6 + "Other"
+model_totals_30d = defaultdict(float)
+for d in chart_dates:
+    for m, c in daily_costs.get(d, {}).items():
+        model_totals_30d[m] += c
+top_chart_models = sorted(model_totals_30d.keys(), key=lambda m: -model_totals_30d[m])[:6]
+
+daily_chart = []
+for d in chart_dates:
+    day_models = daily_costs.get(d, {})
+    day_tokens_map = daily_tokens.get(d, {})
+    day_calls_map = daily_calls.get(d, {})
+    entry = {
+        'date': d,
+        'label': d[5:],  # MM-DD
+        'total': round(sum(day_models.values()), 2),
+        'tokens': sum(day_tokens_map.values()),
+        'calls': sum(day_calls_map.values()),
+        'subagentCost': round(daily_subagent_costs.get(d, 0), 2),
+        'subagentRuns': daily_subagent_count.get(d, 0),
+        'models': {}
+    }
+    for m in top_chart_models:
+        entry['models'][m] = round(day_models.get(m, 0), 4)
+    other = sum(c for m, c in day_models.items() if m not in top_chart_models)
+    if other > 0:
+        entry['models']['Other'] = round(other, 4)
+    daily_chart.append(entry)
+
 
 def fmt(n):
     if n >= 1_000_000: return f'{n/1_000_000:.1f}M'
@@ -436,14 +508,25 @@ output = {
     # Sub-agents
     'subagentRuns': subagent_runs[:30],
     'subagentRunsToday': subagent_runs_today[:20],
+    'subagentRuns7d': subagent_runs_7d[:50],
+    'subagentRuns30d': subagent_runs_30d[:100],
     'subagentCostAllTime': round(sum(v['cost'] for v in subagent_all.values()), 2),
     'subagentCostToday': round(sum(v['cost'] for v in subagent_today.values()), 2),
+    'subagentCost7d': round(sum(v['cost'] for v in subagent_7d.values()), 2),
+    'subagentCost30d': round(sum(v['cost'] for v in subagent_30d.values()), 2),
 
     # Token usage
     'tokenUsage': to_list(models_all),
     'tokenUsageToday': to_list(models_today),
+    'tokenUsage7d': to_list(models_7d),
+    'tokenUsage30d': to_list(models_30d),
     'subagentUsage': to_list(subagent_all),
     'subagentUsageToday': to_list(subagent_today),
+    'subagentUsage7d': to_list(subagent_7d),
+    'subagentUsage30d': to_list(subagent_30d),
+
+    # Charts (daily breakdown, last 30 days)
+    'dailyChart': daily_chart,
 
     # Models & skills
     'availableModels': available_models,
