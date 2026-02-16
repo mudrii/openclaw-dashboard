@@ -22,7 +22,8 @@ A beautiful, zero-dependency command center for [OpenClaw](https://github.com/op
 
 - 🔄 **On-Demand Refresh** — `server.py` refreshes data when you open the dashboard (no stale data)
 - ⏱️ **Auto-Refresh** — Page auto-refreshes every 60 seconds with countdown timer
-- 🎨 **Glass Morphism UI** — Dark theme with subtle transparency and hover effects
+- 🎨 **6 Built-in Themes** — 3 dark (Midnight, Nord, Catppuccin Mocha) + 3 light (GitHub, Solarized, Catppuccin Latte), switchable from the UI
+- 🖌️ **Glass Morphism UI** — Subtle transparency and hover effects
 - 📱 **Responsive** — Adapts to desktop, tablet, and mobile
 - 🔒 **Local Only** — Runs on localhost, no external dependencies
 - 🐧 **Cross-Platform** — macOS and Linux
@@ -65,11 +66,60 @@ open http://127.0.0.1:8080  # macOS
 xdg-open http://127.0.0.1:8080  # Linux
 ```
 
+## Themes
+
+Click the 🎨 button in the header to switch themes instantly — no reload or server restart needed. Choice persists via `localStorage`.
+
+| Theme | Type | Vibe |
+|-------|------|------|
+| 🌙 **Midnight** | Dark | Original glass morphism (default) |
+| 🏔️ **Nord** | Dark | Arctic blue, calm, great for long sessions |
+| 🌸 **Catppuccin Mocha** | Dark | Warm pastels, easy on eyes |
+| ☀️ **GitHub Light** | Light | Clean, professional, high readability |
+| 🌅 **Solarized Light** | Light | Scientifically optimized contrast |
+| 🌻 **Catppuccin Latte** | Light | Soft pastels |
+
+### Custom Themes
+
+Add your own themes by editing `themes.json`. Each theme defines 19 CSS color variables:
+
+```json
+{
+  "my-theme": {
+    "name": "My Theme",
+    "type": "dark",
+    "icon": "🎯",
+    "colors": {
+      "bg": "#1a1a2e",
+      "surface": "rgba(255,255,255,0.03)",
+      "surfaceHover": "rgba(255,255,255,0.045)",
+      "border": "rgba(255,255,255,0.06)",
+      "accent": "#e94560",
+      "accent2": "#0f3460",
+      "green": "#4ade80",
+      "yellow": "#facc15",
+      "red": "#f87171",
+      "orange": "#fb923c",
+      "purple": "#a78bfa",
+      "text": "#e5e5e5",
+      "textStrong": "#ffffff",
+      "muted": "#737373",
+      "dim": "#525252",
+      "darker": "#404040",
+      "tableBg": "rgba(255,255,255,0.025)",
+      "tableHover": "rgba(255,255,255,0.05)",
+      "scrollThumb": "rgba(255,255,255,0.1)"
+    }
+  }
+}
+```
+
 ## Architecture
 
 ```
 server.py          ← HTTP server + /api/refresh endpoint
   ├── index.html   ← Single-page dashboard (fetches /api/refresh)
+  ├── themes.json  ← Theme definitions (user-editable)
   ├── refresh.sh   ← Data collection script (called by server.py)
   └── data.json    ← Generated data (auto-refreshed)
 ```
@@ -87,7 +137,7 @@ Edit `config.json`:
     "emoji": "🤖"
   },
   "theme": {
-    "accent": "#22c55e"
+    "preset": "nord"
   },
   "panels": {
     "kanban": false
@@ -106,8 +156,7 @@ Edit `config.json`:
 |-----|---------|-------------|
 | `bot.name` | `"OpenClaw Dashboard"` | Dashboard title |
 | `bot.emoji` | `"🦞"` | Avatar emoji |
-| `theme.preset` | `"dark"` | Theme preset |
-| `theme.accent` | `"#6366f1"` | Primary accent color |
+| `theme.preset` | `"midnight"` | Default theme (`midnight`, `nord`, `catppuccin-mocha`, `github-light`, `solarized-light`, `catppuccin-latte`) |
 | `panels.*` | `true` | Show/hide individual panels |
 | `refresh.intervalSeconds` | `30` | Debounce interval for refresh |
 | `alerts.dailyCostHigh` | `50` | Daily cost threshold for high alert ($) |
@@ -153,6 +202,15 @@ rm -rf ~/.openclaw/dashboard
 - Modern web browser
 
 ## Changelog
+
+### v2.4.0
+
+- **New**: 🎨 Multi-theme support — 6 built-in themes (3 dark + 3 light)
+- **New**: Theme switcher in header bar — instant CSS variable swap, no reload needed
+- **New**: `themes.json` — external theme definitions, user-editable for custom themes
+- **New**: Themes persist via `localStorage` across page refreshes
+- **New**: `TECHNICAL.md` — comprehensive developer documentation (architecture, data pipeline, schema, security)
+- **Improved**: Replaced ~20 hardcoded color values with CSS custom properties for full theme support
 
 ### v2.3.0
 
