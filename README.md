@@ -2,7 +2,7 @@
 
 A beautiful, zero-dependency command center for [OpenClaw](https://github.com/openclaw/openclaw) AI agents.
 
-![Dashboard Screenshot](screenshots/dashboard-full.png)
+![Dashboard Screenshot](screenshots/dashboard-charts.png)
 
 ## Features
 
@@ -172,7 +172,7 @@ See [docs/CONFIGURATION.md](docs/CONFIGURATION.md) for full details.
 
 ## Screenshots
 
-![Dashboard with Charts](screenshots/dashboard-charts.png)
+See the full dashboard screenshot at the top of this README.
 
 ## Uninstall
 
