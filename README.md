@@ -2,7 +2,7 @@
 
 A beautiful, zero-dependency command center for [OpenClaw](https://github.com/openclaw/openclaw) AI agents.
 
-![Dashboard Screenshot](screenshots/dashboard-charts.png)
+![Dashboard Overview](screenshots/01-overview.png)
 
 ## Features
 
@@ -172,7 +172,29 @@ See [docs/CONFIGURATION.md](docs/CONFIGURATION.md) for full details.
 
 ## Screenshots
 
-See the full dashboard screenshot at the top of this README.
+### 🔔 Overview & System Health
+![Overview](screenshots/01-overview.png)
+
+### 📈 Charts & Trends
+![Charts & Trends](screenshots/02-charts-trends.png)
+
+### ⏰ Cron Jobs
+![Cron Jobs](screenshots/03-cron-jobs.png)
+
+### 📡 Active Sessions + Agent Hierarchy Tree
+![Active Sessions](screenshots/04-active-sessions.png)
+
+### 📊 Token Usage & Cost
+![Token Usage](screenshots/05-token-usage.png)
+
+### 🤖 Sub-Agent Activity
+![Sub-Agent Activity](screenshots/06-subagent-activity.png)
+
+### 🧩 Available Models, Skills & Git Log
+![Models Skills Git](screenshots/07-models-skills-git.png)
+
+### ⚙️ Agent & Model Configuration
+![Agent Config](screenshots/08-agent-config.png)
 
 ## Uninstall
 
