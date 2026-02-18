@@ -364,23 +364,42 @@ body{font-family:-apple-system,BlinkMacSystemFont,'SF Pro','Helvetica Neue',sans
 <!-- 11. Agent Configuration -->
 <div class="glass panel" style="margin-top:16px">
   <div class="section-header">
-    <span class="section-title">⚙️ Agent Configuration</span>
+    <span class="section-title">⚙️ Agent &amp; Model Configuration</span>
+    <span class="section-count" id="agentCount"></span>
   </div>
-  <div id="agentConfigPanel">
-    <div style="display:flex;gap:24px;flex-wrap:wrap;margin-bottom:14px" id="agentModelSummary"></div>
-    <table style="width:100%;border-collapse:collapse;font-size:11px" id="agentTable">
-      <thead>
-        <tr style="color:var(--muted);text-transform:uppercase;font-size:10px;letter-spacing:.06em">
-          <th style="text-align:left;padding:4px 8px;border-bottom:1px solid var(--border)">Agent</th>
-          <th style="text-align:left;padding:4px 8px;border-bottom:1px solid var(--border)">Role</th>
-          <th style="text-align:left;padding:4px 8px;border-bottom:1px solid var(--border)">Model</th>
-          <th style="text-align:left;padding:4px 8px;border-bottom:1px solid var(--border)">Model ID</th>
-          <th style="text-align:left;padding:4px 8px;border-bottom:1px solid var(--border)">Workspace</th>
-        </tr>
-      </thead>
-      <tbody id="agentTableBody"></tbody>
-    </table>
+
+  <!-- Agent Cards Row -->
+  <div id="agentCards" style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:18px"></div>
+
+  <!-- 2-col: Model Routing + Runtime Config -->
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:18px">
+    <!-- Model Routing -->
+    <div style="background:var(--glass);border:1px solid var(--border);border-radius:8px;padding:12px">
+      <div style="font-size:9px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-bottom:10px">🔀 Model Routing</div>
+      <div id="modelRoutingPanel"></div>
+    </div>
+    <!-- Runtime Config -->
+    <div style="background:var(--glass);border:1px solid var(--border);border-radius:8px;padding:12px">
+      <div style="font-size:9px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-bottom:10px">🛠️ Runtime Config</div>
+      <div id="runtimeConfigPanel"></div>
+    </div>
   </div>
+
+  <!-- Full Agent Table -->
+  <div style="font-size:9px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-bottom:8px">📋 Agent Details</div>
+  <table style="width:100%;border-collapse:collapse;font-size:11px" id="agentTable">
+    <thead>
+      <tr style="color:var(--muted);text-transform:uppercase;font-size:9px;letter-spacing:.08em">
+        <th style="text-align:left;padding:5px 8px;border-bottom:1px solid var(--border)">Agent ID</th>
+        <th style="text-align:left;padding:5px 8px;border-bottom:1px solid var(--border)">Role</th>
+        <th style="text-align:left;padding:5px 8px;border-bottom:1px solid var(--border)">Model</th>
+        <th style="text-align:left;padding:5px 8px;border-bottom:1px solid var(--border)">Provider</th>
+        <th style="text-align:left;padding:5px 8px;border-bottom:1px solid var(--border)">Workspace</th>
+        <th style="text-align:left;padding:5px 8px;border-bottom:1px solid var(--border)">Context 1M</th>
+      </tr>
+    </thead>
+    <tbody id="agentTableBody"></tbody>
+  </table>
 </div>
 
 <div style="text-align:center;padding:12px;font-size:10px;color:var(--darker)">OpenClaw Dashboard · Auto-refresh 60s</div>
@@ -583,24 +602,97 @@ function render(){
 
   // Agent Configuration
   const AC = D.agentConfig||{};
-  const summaryItems = [
-    {label:'Primary Model', value: AC.primaryModel||'—', color:'var(--green)'},
-    {label:'Image Model',   value: AC.imageModel||'—',   color:'var(--purple)'},
-    {label:'Fallbacks',     value: (AC.fallbacks||[]).join(', ')||'—', color:'var(--blue)'},
-  ];
-  $('agentModelSummary').innerHTML = summaryItems.map(s=>`
-    <div style="background:var(--glass);border:1px solid var(--border);border-radius:6px;padding:8px 12px;min-width:160px">
-      <div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:3px">${esc(s.label)}</div>
-      <div style="font-size:12px;font-weight:600;color:${s.color}">${esc(s.value)}</div>
-    </div>`).join('');
-  $('agentTableBody').innerHTML = (AC.agents||[]).map(a=>`
-    <tr class="dr">
-      <td style="padding:5px 8px;font-weight:600;color:var(--textStrong)">${esc(a.id)}${a.isDefault?' <span style="font-size:9px;color:var(--green);font-weight:400">(default)</span>':''}</td>
-      <td style="padding:5px 8px;color:var(--text)">${esc(a.role)}</td>
-      <td style="padding:5px 8px;color:var(--blue);font-weight:500">${esc(a.model)}</td>
-      <td style="padding:5px 8px;color:var(--dim);font-size:10px;font-family:monospace">${esc(a.modelId)}</td>
-      <td style="padding:5px 8px;color:var(--dim);font-size:10px;font-family:monospace">${esc(a.workspace)}</td>
-    </tr>`).join('')||'<tr><td colspan="5" style="padding:8px;color:var(--dim)">No agents configured</td></tr>';
+  const agentRoleColors = {main:'var(--green)',work:'var(--blue)',group:'var(--purple)'};
+  const agentEmojis = {main:'🤖',work:'⚙️',group:'👥'};
+
+  // Agent count badge
+  $('agentCount').textContent = (AC.agents||[]).length + ' agents';
+
+  // Agent Cards
+  $('agentCards').innerHTML = (AC.agents||[]).map(a=>{
+    const col = agentRoleColors[a.id]||'var(--yellow)';
+    const em = agentEmojis[a.id]||'🤖';
+    const provider = a.modelId.split('/')[0]||'';
+    return `<div style="background:var(--glass);border:1px solid var(--border);border-left:3px solid ${col};border-radius:8px;padding:12px 14px;min-width:200px;flex:1">
+      <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px">
+        <span style="font-size:16px">${em}</span>
+        <span style="font-size:13px;font-weight:700;color:var(--textStrong)">${esc(a.id)}</span>
+        ${a.isDefault?'<span style="font-size:9px;background:rgba(74,222,128,.15);color:var(--green);border:1px solid rgba(74,222,128,.3);border-radius:4px;padding:1px 5px">DEFAULT</span>':''}
+      </div>
+      <div style="font-size:11px;color:var(--muted);margin-bottom:4px">Role</div>
+      <div style="font-size:12px;color:${col};font-weight:600;margin-bottom:8px">${esc(a.role)}</div>
+      <div style="font-size:11px;color:var(--muted);margin-bottom:4px">Model</div>
+      <div style="font-size:12px;color:var(--textStrong);font-weight:600;margin-bottom:2px">${esc(a.model)}</div>
+      <div style="font-size:10px;color:var(--dim);font-family:monospace">${esc(provider)}</div>
+    </div>`;
+  }).join('');
+
+  // Model Routing Panel
+  const fallbacks = AC.fallbacks||[];
+  $('modelRoutingPanel').innerHTML = `
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap">
+      <div style="background:rgba(74,222,128,.1);border:1px solid rgba(74,222,128,.3);border-radius:6px;padding:6px 10px;text-align:center">
+        <div style="font-size:9px;color:var(--muted);margin-bottom:2px">PRIMARY</div>
+        <div style="font-size:12px;font-weight:700;color:var(--green)">${esc(AC.primaryModel||'—')}</div>
+      </div>
+      <div style="color:var(--dim);font-size:14px">→</div>
+      ${fallbacks.map((f,i)=>`
+        <div style="background:var(--glass);border:1px solid var(--border);border-radius:6px;padding:6px 10px;text-align:center;opacity:${1-i*0.15}">
+          <div style="font-size:9px;color:var(--muted);margin-bottom:2px">FALLBACK ${i+1}</div>
+          <div style="font-size:11px;font-weight:600;color:var(--text)">${esc(f)}</div>
+        </div>
+        ${i<fallbacks.length-1?'<div style="color:var(--dim);font-size:14px">→</div>':''}`).join('')}
+    </div>
+    <div style="margin-top:10px;padding-top:8px;border-top:1px solid var(--border)">
+      <div style="display:flex;justify-content:space-between;margin-bottom:5px">
+        <span style="font-size:10px;color:var(--muted)">🖼️ Image Model</span>
+        <span style="font-size:10px;color:var(--purple);font-weight:600">${esc(AC.imageModel||'—')}</span>
+      </div>
+      <div style="display:flex;justify-content:space-between">
+        <span style="font-size:10px;color:var(--muted)">📡 Stream Mode</span>
+        <span style="font-size:10px;color:var(--blue);font-weight:600">${esc(AC.streamMode||'—')}</span>
+      </div>
+    </div>`;
+
+  // Runtime Config Panel
+  const comp = AC.compaction||{};
+  $('runtimeConfigPanel').innerHTML = `
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:8px">
+      ${[
+        {k:'Compaction Mode', v:comp.mode||'—', c:'var(--yellow)'},
+        {k:'Reserve Tokens', v:(comp.reserveTokensFloor||0).toLocaleString(), c:'var(--text)'},
+        {k:'Memory Flush', v:comp.memoryFlush?.enabled?'Enabled':'Disabled', c:comp.memoryFlush?.enabled?'var(--green)':'var(--dim)'},
+        {k:'Soft Threshold', v:(comp.softThresholdTokens||0).toLocaleString()+' tok', c:'var(--text)'},
+      ].map(r=>`<div style="background:rgba(255,255,255,.03);border:1px solid var(--border);border-radius:5px;padding:6px 8px">
+        <div style="font-size:9px;color:var(--muted);margin-bottom:2px">${esc(r.k)}</div>
+        <div style="font-size:11px;font-weight:600;color:${r.c}">${esc(r.v)}</div>
+      </div>`).join('')}
+    </div>
+    <div style="padding-top:8px;border-top:1px solid var(--border)">
+      ${[
+        {k:'Telegram DM Policy', v:AC.telegramDmPolicy||'—'},
+        {k:'Active Channels', v:(AC.channels||[]).join(', ')||'—'},
+        {k:'Telegram Groups', v:(AC.telegramGroups||0)+' configured'},
+      ].map(r=>`<div style="display:flex;justify-content:space-between;margin-bottom:5px">
+        <span style="font-size:10px;color:var(--muted)">${esc(r.k)}</span>
+        <span style="font-size:10px;color:var(--text);font-weight:600">${esc(r.v)}</span>
+      </div>`).join('')}
+    </div>`;
+
+  // Agent Details Table
+  $('agentTableBody').innerHTML = (AC.agents||[]).map(a=>{
+    const col = agentRoleColors[a.id]||'var(--yellow)';
+    const provider = a.modelId.split('/')[0]||'';
+    const ctx1m = a.context1m===true?'✅':a.context1m===false?'❌':'—';
+    return `<tr class="dr">
+      <td style="padding:6px 8px;font-weight:700;color:${col}">${esc(a.id)}${a.isDefault?' <span style="font-size:9px;color:var(--green);font-weight:400">(default)</span>':''}</td>
+      <td style="padding:6px 8px;color:var(--text)">${esc(a.role)}</td>
+      <td style="padding:6px 8px;color:var(--textStrong);font-weight:600">${esc(a.model)}</td>
+      <td style="padding:6px 8px;color:var(--dim);font-size:10px">${esc(provider)}</td>
+      <td style="padding:6px 8px;color:var(--dim);font-size:10px;font-family:monospace">${esc(a.workspace)}</td>
+      <td style="padding:6px 8px;text-align:center">${ctx1m}</td>
+    </tr>`;
+  }).join('')||'<tr><td colspan="6" style="padding:8px;color:var(--dim)">No agents configured</td></tr>';
 
   // Skills
   $('skillsGrid').innerHTML=(D.skills||[]).map(s=>{

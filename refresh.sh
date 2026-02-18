@@ -83,6 +83,7 @@ except: pass
 skills = []
 available_models = []
 compaction_mode = "unknown"
+agent_config = {'primaryModel':'','primaryModelId':'','imageModel':'','imageModelId':'','fallbacks':[],'streamMode':'off','telegramDmPolicy':'—','telegramGroups':0,'channels':[],'compaction':{},'agents':[]}
 if os.path.exists(config_path):
     try:
         with open(config_path) as cf:
@@ -107,25 +108,43 @@ if os.path.exists(config_path):
                 'status': 'active' if mid == primary else 'available'
             })
         # Agent config
+        defs = oc.get('agents', {}).get('defaults', {})
         agent_list = oc.get('agents', {}).get('list', [])
+        compaction_cfg = defs.get('compaction', {})
+        model_params = {mid: mconf.get('params', {}) for mid, mconf in oc.get('agents', {}).get('defaults', {}).get('models', {}).items()}
+        tg_cfg = oc.get('channels', {}).get('telegram', {})
+        channels_enabled = [ch for ch, conf in oc.get('channels', {}).items() if isinstance(conf, dict) and conf.get('enabled', True)]
         agent_config = {
             'primaryModel': model_aliases.get(primary, primary),
             'primaryModelId': primary,
             'imageModel': model_aliases.get(image_model, image_model),
             'imageModelId': image_model,
             'fallbacks': [model_aliases.get(f, f) for f in fallbacks[:3]],
+            'streamMode': tg_cfg.get('streamMode', 'off'),
+            'telegramDmPolicy': tg_cfg.get('dmPolicy', '—'),
+            'telegramGroups': len(tg_cfg.get('groups', {})),
+            'channels': channels_enabled,
+            'compaction': {
+                'mode': compaction_cfg.get('mode', 'auto'),
+                'reserveTokensFloor': compaction_cfg.get('reserveTokensFloor', 0),
+                'memoryFlush': compaction_cfg.get('memoryFlush', {}),
+                'softThresholdTokens': compaction_cfg.get('memoryFlush', {}).get('softThresholdTokens', 0),
+            },
             'agents': []
         }
+        role_map = {'main': 'Main (Default)', 'work': 'Work / Dev', 'group': 'Group Chat'}
         for ag in agent_list:
             aid = ag.get('id', '')
             amodel = ag.get('model', primary)
+            params = model_params.get(amodel, {})
             agent_config['agents'].append({
                 'id': aid,
-                'role': 'Main (Default)' if ag.get('default') else ('Work' if 'work' in aid else ('Group' if 'group' in aid else aid.title())),
+                'role': role_map.get(aid, aid.title()),
                 'model': model_aliases.get(amodel, amodel),
                 'modelId': amodel,
                 'workspace': ag.get('workspace', '~/.openclaw/workspace'),
-                'isDefault': ag.get('default', False)
+                'isDefault': ag.get('default', False),
+                'context1m': params.get('context1m', None),
             })
     except: pass
 
