@@ -701,8 +701,16 @@ function render(){
     AC.imageModel ? {k:'🖼️ Image Model', v:AC.imageModel, c:'var(--purple)'} : null,
     AC.streamMode ? {k:'📡 Stream Mode', v:AC.streamMode, c:'var(--blue)'} : null,
   ].filter(Boolean);
+  // Sub-agent routing — derived from per-agent model assignments
+  const subAgentRoutes = agentList.filter(a=>!a.isDefault).map((a,i)=>{
+    const col=PALETTE[(agentList.indexOf(a))%PALETTE.length];
+    const purposeMap={'group':'🖥️ Dev / Coding','work':'⚙️ Work / Admin'};
+    const purpose=purposeMap[a.id]||`🤖 ${a.id}`;
+    return {purpose, agent:a.id, model:a.model, col};
+  });
   $('modelRoutingPanel').innerHTML = `
-    <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:${extraRows.length?'10':'0'}px">
+    <div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px">General</div>
+    <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:${extraRows.length||subAgentRoutes.length?'10':'0'}px">
       ${routingChain.map((r,i)=>`
         ${i>0?'<div style="color:var(--dim);font-size:12px">→</div>':''}
         <div style="background:${r.bg};border:1px solid ${r.color};border-radius:6px;padding:5px 9px;text-align:center${r.opacity?`;opacity:${r.opacity}`:''}">
@@ -710,6 +718,16 @@ function render(){
           <div style="font-size:13px;font-weight:700;color:${r.textCol}">${esc(r.model)}</div>
         </div>`).join('')}
     </div>
+    ${subAgentRoutes.length?`<div style="padding-top:8px;border-top:1px solid var(--border);margin-bottom:${extraRows.length?'8':'0'}px">
+      <div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px">Sub-agent Routing</div>
+      ${subAgentRoutes.map(r=>`
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+          <span style="font-size:12px;color:var(--dim);min-width:130px">${esc(r.purpose)}</span>
+          <span style="color:var(--dim);font-size:11px">→</span>
+          <span style="background:var(--glass);border:1px solid var(--border);border-left:3px solid ${r.col};border-radius:5px;padding:3px 8px;font-size:12px;font-weight:700;color:${r.col}">${esc(r.model)}</span>
+          <span style="font-size:10px;color:var(--dim)">(${esc(r.agent)} agent)</span>
+        </div>`).join('')}
+    </div>`:''}
     ${extraRows.length?`<div style="padding-top:8px;border-top:1px solid var(--border)">${
       extraRows.map(r=>`<div style="display:flex;justify-content:space-between;margin-bottom:4px">
         <span style="font-size:12px;color:var(--muted)">${esc(r.k)}</span>
