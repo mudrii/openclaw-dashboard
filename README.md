@@ -172,28 +172,64 @@ See [docs/CONFIGURATION.md](docs/CONFIGURATION.md) for full details.
 
 ## Screenshots
 
+Full dashboard view — all sections at a glance:
+
+![Dashboard Full View](screenshots/00-full-dashboard.png)
+
+---
+
 ### 🔔 Overview & System Health
+Real-time bot status, gateway uptime, memory usage, active session count, today's cost, all-time spend, projected monthly cost, and a per-model cost breakdown donut chart. Smart alert banners surface high costs, failed crons, and context overflows automatically.
+
 ![Overview](screenshots/01-overview.png)
 
+---
+
 ### 📈 Charts & Trends
+Three always-visible SVG charts with 7d/30d toggle: cost trend over time, per-model cost breakdown bars, and sub-agent activity volume. No external chart libraries — pure inline SVG.
+
 ![Charts & Trends](screenshots/02-charts-trends.png)
 
+---
+
 ### ⏰ Cron Jobs
+All scheduled jobs with status badges (active/idle/error), schedule expression, last run time, next run, duration, and the model used. At-a-glance view of your automation health.
+
 ![Cron Jobs](screenshots/03-cron-jobs.png)
 
+---
+
 ### 📡 Active Sessions + Agent Hierarchy Tree
+Live sessions with model, type badges (DM / group / subagent), context usage %, and token count. Above the session list: a visual agent hierarchy tree showing parent → sub-agent → sub-sub-agent relationships with live/idle status and trigger labels — updated every refresh.
+
 ![Active Sessions](screenshots/04-active-sessions.png)
 
+---
+
 ### 📊 Token Usage & Cost
+Per-model token and cost breakdown with 7d / 30d / all-time tabs. Includes input tokens, output tokens, cache reads, and total cost per model — sortable at a glance.
+
 ![Token Usage](screenshots/05-token-usage.png)
 
+---
+
 ### 🤖 Sub-Agent Activity
+All sub-agent runs with cost, duration, status, and token breakdown. Separate 7d/30d tabs. Useful for tracking which tasks spawn the most agents and where spend is concentrated.
+
 ![Sub-Agent Activity](screenshots/06-subagent-activity.png)
 
+---
+
 ### 🧩 Available Models, Skills & Git Log
+Quick reference panel showing all configured models, active skills, and the last 5 git commits from your OpenClaw workspace — so you always know what's deployed.
+
 ![Models Skills Git](screenshots/07-models-skills-git.png)
 
+---
+
 ### ⚙️ Agent & Model Configuration
+Full agent setup at a glance: model routing chain (primary → fallbacks), sub-agent routing by purpose (General / Dev+Coding / Work), agent details table with per-agent fallbacks, agent bindings with resolved group names, runtime config (compaction, memory flush), and subagent limits (max depth, max children/agent).
+
 ![Agent Config](screenshots/08-agent-config.png)
 
 ## Uninstall
