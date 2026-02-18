@@ -83,7 +83,7 @@ except: pass
 skills = []
 available_models = []
 compaction_mode = "unknown"
-agent_config = {'primaryModel':'','primaryModelId':'','imageModel':'','imageModelId':'','fallbacks':[],'streamMode':'off','telegramDmPolicy':'—','telegramGroups':0,'channels':[],'compaction':{},'agents':[]}
+agent_config = {'primaryModel':'','primaryModelId':'','imageModel':'','imageModelId':'','fallbacks':[],'streamMode':'off','telegramDmPolicy':'—','telegramGroups':0,'channels':[],'compaction':{},'agents':[],'search':{},'gateway':{},'hooks':[],'plugins':[],'skills':[],'bindings':[],'crons':[],'tts':False,'diagnostics':False}
 if os.path.exists(config_path):
     try:
         with open(config_path) as cf:
@@ -114,6 +114,26 @@ if os.path.exists(config_path):
         model_params = {mid: mconf.get('params', {}) for mid, mconf in oc.get('agents', {}).get('defaults', {}).get('models', {}).items()}
         tg_cfg = oc.get('channels', {}).get('telegram', {})
         channels_enabled = [ch for ch, conf in oc.get('channels', {}).items() if isinstance(conf, dict) and conf.get('enabled', True)]
+        # Search / web tools
+        web_cfg = oc.get('tools', {}).get('web', {}).get('search', {})
+        # Gateway
+        gw_cfg = oc.get('gateway', {})
+        # Hooks
+        hook_entries = oc.get('hooks', {}).get('internal', {}).get('entries', {})
+        hooks_list = [{'name': n, 'enabled': v.get('enabled', True) if isinstance(v, dict) else True} for n, v in hook_entries.items()]
+        # Plugins
+        plugin_entries = oc.get('plugins', {}).get('entries', {})
+        plugins_list = list(plugin_entries.keys()) if isinstance(plugin_entries, dict) else []
+        # Skills
+        skill_entries = oc.get('skills', {}).get('entries', {})
+        skills_cfg = [{'name': n, 'enabled': v.get('enabled', True) if isinstance(v, dict) else True} for n, v in skill_entries.items()]
+        # Bindings
+        bindings = oc.get('bindings', [])
+        bindings_list = [{'agentId': b.get('agentId',''), 'channel': b.get('match',{}).get('channel',''), 'kind': b.get('match',{}).get('peer',{}).get('kind',''), 'id': b.get('match',{}).get('peer',{}).get('id','')} for b in bindings]
+        # TTS
+        has_tts = bool(oc.get('talk', {}).get('apiKey'))
+        # Diagnostics
+        diag_enabled = oc.get('diagnostics', {}).get('enabled', False)
         agent_config = {
             'primaryModel': model_aliases.get(primary, primary),
             'primaryModelId': primary,
@@ -130,6 +150,24 @@ if os.path.exists(config_path):
                 'memoryFlush': compaction_cfg.get('memoryFlush', {}),
                 'softThresholdTokens': compaction_cfg.get('memoryFlush', {}).get('softThresholdTokens', 0),
             },
+            'search': {
+                'provider': web_cfg.get('provider', '—'),
+                'maxResults': web_cfg.get('maxResults', '—'),
+                'cacheTtlMinutes': web_cfg.get('cacheTtlMinutes', '—'),
+            },
+            'gateway': {
+                'port': gw_cfg.get('port', '—'),
+                'mode': gw_cfg.get('mode', '—'),
+                'bind': gw_cfg.get('bind', '—'),
+                'authMode': gw_cfg.get('auth', {}).get('mode', '—'),
+                'tailscale': gw_cfg.get('tailscale', {}).get('mode', 'off'),
+            },
+            'hooks': hooks_list,
+            'plugins': plugins_list,
+            'skills': skills_cfg,
+            'bindings': bindings_list,
+            'tts': has_tts,
+            'diagnostics': diag_enabled,
             'agents': []
         }
         # Build agent entries; if no agent list, synthesize a single default entry
