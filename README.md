@@ -2,7 +2,7 @@
 
 A beautiful, zero-dependency command center for [OpenClaw](https://github.com/openclaw/openclaw) AI agents.
 
-![Dashboard Overview](screenshots/01-overview.png)
+![Dashboard Full View](screenshots/00-full-dashboard.png)
 
 ## Features
 
