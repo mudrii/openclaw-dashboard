@@ -788,14 +788,23 @@ function render(){
 
   // Bindings
   const bindings = AC.bindings||[];
+  const agentColMap={};agentList.forEach((a,i)=>agentColMap[a.id]=PALETTE[i%PALETTE.length]);
   $('bindingsPanel').innerHTML = bindings.length
-    ? `<div style="display:flex;flex-wrap:wrap;gap:8px">${bindings.map(b=>`
-        <div style="background:var(--glass);border:1px solid var(--border);border-radius:6px;padding:6px 10px;font-size:12px">
-          <span style="color:var(--muted)">Agent </span><span style="color:var(--blue);font-weight:700">${esc(b.agentId)}</span>
-          <span style="color:var(--dim)"> ← ${esc(b.channel)} </span>
-          <span style="color:var(--muted)">${esc(b.kind)}</span>
-          <span style="color:var(--dim);font-family:monospace;font-size:9px"> ${esc(b.id)}</span>
-        </div>`).join('')}</div>`
+    ? `<div style="display:flex;flex-wrap:wrap;gap:8px">${bindings.map(b=>{
+        const col=agentColMap[b.agentId]||'var(--dim)';
+        const isDefault=b.kind==='default';
+        const displayName=b.name||(isDefault?'All unmatched channels':b.id);
+        const icon=isDefault?'🌐':b.channel==='telegram'?'✈️':'📡';
+        return `<div style="background:var(--glass);border:1px solid var(--border);border-left:3px solid ${col};border-radius:6px;padding:8px 12px;min-width:180px">
+          <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">
+            <span style="font-size:12px">${icon}</span>
+            <span style="font-size:12px;font-weight:700;color:${col}">${esc(b.agentId)}</span>
+            ${isDefault?'<span style="font-size:9px;background:rgba(74,222,128,.12);color:var(--green);border:1px solid rgba(74,222,128,.25);border-radius:3px;padding:1px 4px">DEFAULT</span>':''}
+          </div>
+          <div style="font-size:13px;font-weight:600;color:var(--textStrong)">${esc(displayName)}</div>
+          ${!isDefault?`<div style="font-size:10px;color:var(--dim);margin-top:2px;font-family:monospace">${esc(b.channel)} · ${esc(b.kind)} · ${esc(b.id)}</div>`:'<div style="font-size:10px;color:var(--dim);margin-top:2px">catch-all fallback</div>'}
+        </div>`;
+      }).join('')}</div>`
     : '<span style="color:var(--dim);font-size:12px">No explicit bindings — all messages go to default agent</span>';
 
     // Subagent config panel

@@ -128,8 +128,24 @@ if os.path.exists(config_path):
         skill_entries = oc.get('skills', {}).get('entries', {})
         skills_cfg = [{'name': n, 'enabled': v.get('enabled', True) if isinstance(v, dict) else True} for n, v in skill_entries.items()]
         # Bindings
+        # Build group ID → friendly name map from session data
+        group_names = {}
+        for store_file2 in glob.glob(os.path.join(base, '*/sessions/sessions.json')):
+            try:
+                store2 = json.load(open(store_file2))
+                for key2, val2 in store2.items():
+                    if 'group:' not in key2 or 'topic' in key2 or 'run:' in key2 or 'subagent' in key2: continue
+                    gid2 = key2.split('group:')[-1].split(':')[0]
+                    name2 = val2.get('subject','') or val2.get('displayName','') or ''
+                    # strip raw telegram paths
+                    if name2 and not name2.startswith('telegram:'):
+                        group_names[gid2] = name2
+            except: pass
         bindings = oc.get('bindings', [])
-        bindings_list = [{'agentId': b.get('agentId',''), 'channel': b.get('match',{}).get('channel',''), 'kind': b.get('match',{}).get('peer',{}).get('kind',''), 'id': b.get('match',{}).get('peer',{}).get('id','')} for b in bindings]
+        bindings_list = [{'agentId': b.get('agentId',''), 'channel': b.get('match',{}).get('channel',''), 'kind': b.get('match',{}).get('peer',{}).get('kind',''), 'id': b.get('match',{}).get('peer',{}).get('id',''), 'name': group_names.get(b.get('match',{}).get('peer',{}).get('id',''), '')} for b in bindings]
+        # Add synthetic entry for the default (main) agent — catches everything not explicitly bound
+        default_agent = next((a.get('id') for a in agent_list if a.get('default')), 'main')
+        bindings_list.append({'agentId': default_agent, 'channel': 'all', 'kind': 'default', 'id': '', 'name': 'All unmatched channels'})
         # TTS
         has_tts = bool(oc.get('talk', {}).get('apiKey'))
         # Diagnostics
