@@ -174,7 +174,7 @@ See [docs/CONFIGURATION.md](docs/CONFIGURATION.md) for full details.
 
 Full dashboard view — all sections at a glance:
 
-![Dashboard Full View](screenshots/00-full-dashboard.png)
+![Dashboard Full View](screenshots/00-full-page.png)
 
 ---
 
