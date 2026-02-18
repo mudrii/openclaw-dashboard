@@ -132,18 +132,34 @@ if os.path.exists(config_path):
             },
             'agents': []
         }
-        role_map = {'main': 'Main (Default)', 'work': 'Work / Dev', 'group': 'Group Chat'}
-        for ag in agent_list:
-            aid = ag.get('id', '')
-            amodel = ag.get('model', primary)
-            params = model_params.get(amodel, {})
+        # Build agent entries; if no agent list, synthesize a single default entry
+        if agent_list:
+            for i, ag in enumerate(agent_list):
+                aid = ag.get('id', f'agent-{i}')
+                amodel = ag.get('model', primary)
+                params = model_params.get(amodel, {})
+                is_default = ag.get('default', False)
+                # Derive a human role: prefer explicit 'role' field, else capitalise id
+                role = ag.get('role', 'Default' if is_default else aid.replace('-',' ').title())
+                agent_config['agents'].append({
+                    'id': aid,
+                    'role': role,
+                    'model': model_aliases.get(amodel, amodel),
+                    'modelId': amodel,
+                    'workspace': ag.get('workspace', '~/.openclaw/workspace'),
+                    'isDefault': is_default,
+                    'context1m': params.get('context1m', None),
+                })
+        else:
+            # Single-model / minimal config — synthesise one default entry
+            params = model_params.get(primary, {})
             agent_config['agents'].append({
-                'id': aid,
-                'role': role_map.get(aid, aid.title()),
-                'model': model_aliases.get(amodel, amodel),
-                'modelId': amodel,
-                'workspace': ag.get('workspace', '~/.openclaw/workspace'),
-                'isDefault': ag.get('default', False),
+                'id': 'default',
+                'role': 'Default',
+                'model': model_aliases.get(primary, primary),
+                'modelId': primary,
+                'workspace': '~/.openclaw/workspace',
+                'isDefault': True,
                 'context1m': params.get('context1m', None),
             })
     except: pass
