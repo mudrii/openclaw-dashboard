@@ -540,7 +540,7 @@ document.addEventListener('click',e=>{
 loadThemes();
 
 // ── Dashboard ──
-let D={},prevD=null,prevChartDays=null,uTab='today',srTab='today',stTab='today',timer=60;
+let D={},prevD=null,prevChartDays=null,prevUTab=null,prevSrTab=null,prevStTab=null,uTab='today',srTab='today',stTab='today',timer=60;
 const COLORS=['#6366f1','#9333ea','#ec4899','#f59e0b','#10b981','#06b6d4','#f87171','#84cc16'];
 const $=id=>document.getElementById(id);
 const esc = s => String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
@@ -661,14 +661,14 @@ function render(){
 
   // Token usage
   setTabCls4('uTab',uTab,'active');
-  if (sectionChanged(['tokenUsage','tokenUsageToday','tokenUsage7d','tokenUsage30d','subagentUsage','subagentUsageToday','subagentUsage7d','subagentUsage30d'])) {
+  if (sectionChanged(['tokenUsage','tokenUsageToday','tokenUsage7d','tokenUsage30d','subagentUsage','subagentUsageToday','subagentUsage7d','subagentUsage30d']) || uTab !== prevUTab || stTab !== prevStTab) {
     const uData=uTab==='today'?D.tokenUsageToday:uTab==='7d'?D.tokenUsage7d:uTab==='30d'?D.tokenUsage30d:D.tokenUsage;
     renderTokenTbl('uBody',uData,'var(--accent)');
   }
 
   // Sub runs
   setTabCls4('srTab',srTab,'active-purple');
-  if (sectionChanged(['subagentRuns','subagentRuns7d','subagentRuns30d','subagentRunsToday'])) {
+  if (sectionChanged(['subagentRuns','subagentRuns7d','subagentRuns30d','subagentRunsToday']) || srTab !== prevSrTab) {
     const runs=srTab==='today'?(D.subagentRunsToday||[]):srTab==='7d'?(D.subagentRuns7d||[]):srTab==='30d'?(D.subagentRuns30d||[]):(D.subagentRuns||[]);
     const srCost=srTab==='today'?(D.subagentCostToday||0):srTab==='7d'?(D.subagentCost7d||0):srTab==='30d'?(D.subagentCost30d||0):(D.subagentCostAllTime||0);
     $('subCostLbl').textContent='Total: $'+srCost.toFixed(2);
@@ -681,7 +681,7 @@ function render(){
 
   // Sub token
   setTabCls4('stTab',stTab,'active-purple');
-  if (sectionChanged(['tokenUsage','tokenUsageToday','tokenUsage7d','tokenUsage30d','subagentUsage','subagentUsageToday','subagentUsage7d','subagentUsage30d'])) {
+  if (sectionChanged(['tokenUsage','tokenUsageToday','tokenUsage7d','tokenUsage30d','subagentUsage','subagentUsageToday','subagentUsage7d','subagentUsage30d']) || uTab !== prevUTab || stTab !== prevStTab) {
     const stData=stTab==='today'?D.subagentUsageToday:stTab==='7d'?D.subagentUsage7d:stTab==='30d'?D.subagentUsage30d:D.subagentUsage;
     renderTokenTbl('stBody',stData,'var(--purple)');
   }
@@ -894,6 +894,7 @@ function render(){
   }
 
   prevChartDays=chartDays;
+  prevUTab=uTab; prevSrTab=srTab; prevStTab=stTab;
   prevD = JSON.parse(JSON.stringify(D));
 }
 
