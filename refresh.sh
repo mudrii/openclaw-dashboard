@@ -241,11 +241,14 @@ for store_file in glob.glob(os.path.join(base, '*/sessions/sessions.json')):
                 origin_label = val.get('origin', {}).get('label', '') if val.get('origin') else ''
                 subject = val.get('subject', '')
                 # Friendly display name: prefer task label for sub-agents, group subject for roots
-                # Last resort: strip agent prefix from key to get readable channel path
+                # Last resort: strip agent prefix + group id noise from key
                 key_short = key
                 for pfx in ('agent:work:','agent:main:','agent:group:'):
                     if key.startswith(pfx): key_short = key[len(pfx):]; break
-                display_name = raw_label or subject or origin_label or key_short
+                # Trim long Telegram group ids from display name (e.g. "OpenClaw Dev & Admin id:-100...")
+                import re as _re
+                def _trim(s): return _re.sub(r'\s*id[:\-]\s*-?\d+','',s).strip() if s else s
+                display_name = _trim(raw_label) or _trim(subject) or _trim(origin_label) or key_short
                 # Trigger: what context spawned/drives this session
                 trigger = subject or origin_label or raw_label or ''
                 sessions_list.append({
