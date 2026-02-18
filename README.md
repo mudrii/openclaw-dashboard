@@ -200,6 +200,16 @@ rm -rf ~/.openclaw/dashboard
 
 ## Changelog
 
+### v2.6.0
+
+- **New**: 🌳 Agent Hierarchy Tree in Active Sessions — 3-level CSS indented cards showing parent→child agent relationships
+- **New**: Sub-agent Routing section in Model Routing panel
+- **Improved**: Agent Bindings redesign — resolved group names + main agent catch-all display
+- **New**: Fallbacks column in Agent Details table
+- **New**: Subagent Limits panel
+- **Improved**: Font size consistency fixes across Agent Config section
+- **Improved**: Runtime Config channel rows compact layout
+
 ### v2.5.0
 
 - **New**: 📈 Charts & Trends section — 3 always-visible pure SVG charts (cost trend, model breakdown, sub-agent activity)
