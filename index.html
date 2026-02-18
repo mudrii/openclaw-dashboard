@@ -540,12 +540,17 @@ document.addEventListener('click',e=>{
 loadThemes();
 
 // ── Dashboard ──
-let D={},uTab='today',srTab='today',stTab='today',timer=60;
+let D={},prevD=null,prevChartDays=null,uTab='today',srTab='today',stTab='today',timer=60;
 const COLORS=['#6366f1','#9333ea','#ec4899','#f59e0b','#10b981','#06b6d4','#f87171','#84cc16'];
 const $=id=>document.getElementById(id);
 const esc = s => String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 function safeColor(v){
   return /^#[0-9a-fA-F]{3,8}$/.test(v||'') ? v : '#888888';
+}
+
+function sectionChanged(keys) {
+  if (!prevD) return true;
+  return keys.some(k => JSON.stringify(D[k]) !== JSON.stringify(prevD[k]));
 }
 
 function relTime(ts){
@@ -563,7 +568,8 @@ function relTime(ts){
 async function loadData(){
   try{
     const r=await fetch('/api/refresh?t='+Date.now());
-    D=await r.json();render();
+    D=await r.json();
+    requestAnimationFrame(() => render());
     $('lastUpdate').textContent='Updated: '+new Date().toLocaleTimeString();
     timer=60;
   }catch(e){
@@ -584,10 +590,12 @@ function render(){
   $('statusText').style.color=on?'var(--green)':'var(--red)';
 
   // Alerts
-  const alerts=D.alerts||[];
-  $('alertsSection').innerHTML=alerts.length?alerts.map(a=>`<div class="alert-item alert-${esc(a.severity)||'low'}"><span class="alert-icon">${esc(a.icon)||'ℹ️'}</span><span class="alert-msg">${esc(a.message)}</span></div>`).join(''):'';
+  if (sectionChanged(['alerts'])) {
+    const alerts=D.alerts||[];
+    $('alertsSection').innerHTML=alerts.length?alerts.map(a=>`<div class="alert-item alert-${esc(a.severity)||'low'}"><span class="alert-icon">${esc(a.icon)||'ℹ️'}</span><span class="alert-msg">${esc(a.message)}</span></div>`).join(''):'';
+  }
 
-  // Health
+  // Health (always update for volatile fields like uptime/status)
   $('hGw').innerHTML=on?'<span style="color:var(--green)">●</span> Online':'<span style="color:var(--red)">●</span> Offline';
   $('hGw').style.color='var(--textStrong)';
   $('hPid').textContent=gw.pid||'—';
@@ -597,272 +605,296 @@ function render(){
   $('hSess').textContent=D.sessionCount||0;
 
   // Cost
-  $('cToday').textContent='$'+(D.totalCostToday||0).toFixed(2);
-  $('cTodaySub').textContent='Sub-agents: $'+(D.subagentCostToday||0).toFixed(2);
-  $('cAll').textContent='$'+(D.totalCostAllTime||0).toFixed(2);
-  $('cAllSub').textContent='Sub-agents: $'+(D.subagentCostAllTime||0).toFixed(2);
-  $('cProj').textContent='$'+(D.projectedMonthly||0).toFixed(0);
+  if (sectionChanged(['totalCostToday','totalCostAllTime','projectedMonthly','subagentCostToday','subagentCostAllTime','costBreakdown'])) {
+    $('cToday').textContent='$'+(D.totalCostToday||0).toFixed(2);
+    $('cTodaySub').textContent='Sub-agents: $'+(D.subagentCostToday||0).toFixed(2);
+    $('cAll').textContent='$'+(D.totalCostAllTime||0).toFixed(2);
+    $('cAllSub').textContent='Sub-agents: $'+(D.subagentCostAllTime||0).toFixed(2);
+    $('cProj').textContent='$'+(D.projectedMonthly||0).toFixed(0);
 
-  // Donut (CSS conic-gradient)
-  const bd=D.costBreakdown||[];
-  const total=bd.reduce((a,d)=>a+d.cost,0)||1;
-  let grad='',cum=0,legend='';
-  bd.forEach((d,i)=>{
-    const pct=d.cost/total*100;
-    const c=COLORS[i%COLORS.length];
-    grad+=`${c} ${cum}% ${cum+pct}%,`;
-    cum+=pct;
-    legend+=`<div class="donut-legend-item"><span class="donut-legend-dot" style="background:${c}"></span>${esc(d.model)} $${d.cost.toFixed(0)} (${Math.round(pct)}%)</div>`;
-  });
-  $('donut').style.background=`conic-gradient(${grad.slice(0,-1)})`;
-  $('donutCenter').textContent='$'+total.toFixed(0);
-  $('donutLegend').innerHTML=legend;
+    // Donut (CSS conic-gradient)
+    const bd=D.costBreakdown||[];
+    const total=bd.reduce((a,d)=>a+d.cost,0)||1;
+    let grad='',cum=0,legend='';
+    bd.forEach((d,i)=>{
+      const pct=d.cost/total*100;
+      const c=COLORS[i%COLORS.length];
+      grad+=`${c} ${cum}% ${cum+pct}%,`;
+      cum+=pct;
+      legend+=`<div class="donut-legend-item"><span class="donut-legend-dot" style="background:${c}"></span>${esc(d.model)} $${d.cost.toFixed(0)} (${Math.round(pct)}%)</div>`;
+    });
+    $('donut').style.background=`conic-gradient(${grad.slice(0,-1)})`;
+    $('donutCenter').textContent='$'+total.toFixed(0);
+    $('donutLegend').innerHTML=legend;
+  }
 
-
-  const crons=D.crons||[];
-  $('cronCount').textContent=crons.length+' jobs';
-  $('cronBody').innerHTML=crons.map(c=>{
-    const st=c.lastStatus;
-    const dotCls=st==='ok'?'sd-ok':st==='error'?'sd-error':st==='none'?'sd-none':'sd-pending';
-    const tip=c.lastError?` data-tip="${esc(c.lastError)}"`:'';
-    const dur=c.lastDurationMs?((c.lastDurationMs/1000).toFixed(1)+'s'):'—';
-    return `<tr class="dr"><td><span class="sd ${dotCls}"${tip}></span>${esc(st)||'—'}</td><td class="w">${esc(c.name)}</td><td>${esc(c.schedule)}</td><td>${esc(c.lastRun||'—')}</td><td>${esc(c.nextRun||'—')}</td><td class="r">${dur}</td><td>${esc(c.model||'—')}</td></tr>`;
-  }).join('');
+  if (sectionChanged(['crons'])) {
+    const crons=D.crons||[];
+    $('cronCount').textContent=crons.length+' jobs';
+    const cronContainer = $('cronBody').closest('[style*="overflow"]') || $('cronBody').parentElement;
+    const cronScrollTop = cronContainer ? cronContainer.scrollTop : 0;
+    $('cronBody').innerHTML=crons.map(c=>{
+      const st=c.lastStatus;
+      const dotCls=st==='ok'?'sd-ok':st==='error'?'sd-error':st==='none'?'sd-none':'sd-pending';
+      const tip=c.lastError?` data-tip="${esc(c.lastError)}"`:'';
+      const dur=c.lastDurationMs?((c.lastDurationMs/1000).toFixed(1)+'s'):'—';
+      return `<tr class="dr"><td><span class="sd ${dotCls}"${tip}></span>${esc(st)||'—'}</td><td class="w">${esc(c.name)}</td><td>${esc(c.schedule)}</td><td>${esc(c.lastRun||'—')}</td><td>${esc(c.nextRun||'—')}</td><td class="r">${dur}</td><td>${esc(c.model||'—')}</td></tr>`;
+    }).join('');
+    if (cronContainer) cronContainer.scrollTop = cronScrollTop;
+  }
 
   // Sessions
-  const sess=(D.sessions||[]).slice(0,20);
-  $('sessCount').textContent=(D.sessionCount||sess.length)+' total, '+sess.length+' shown';
-  $('sessBody').innerHTML=sess.map(s=>{
-    const pct=s.contextPct||0;
-    const color=pct>80?'var(--red)':pct>50?'var(--yellow)':'var(--green)';
-    const typeCls='type-'+(esc(s.type)||'main');
-    return `<tr class="dr"><td class="w" style="max-width:250px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(s.name)}</td><td>${esc(s.model)}</td><td><span class="type-badge ${typeCls}">${esc(s.type)||'—'}</span></td><td><div class="ctx-bar"><div class="ctx-fill" style="width:${pct}%;background:${color}"></div></div> <span style="font-size:11px;color:${color}">${pct}%</span></td><td>${relTime(s.updatedAt)}</td><td class="r">${(s.totalTokens||0).toLocaleString()}</td></tr>`;
-  }).join('');
+  if (sectionChanged(['sessions'])) {
+    const sess=(D.sessions||[]).slice(0,20);
+    $('sessCount').textContent=(D.sessionCount||sess.length)+' total, '+sess.length+' shown';
+    const sessContainer = $('sessBody').closest('[style*="overflow"]') || $('sessBody').parentElement;
+    const sessScrollTop = sessContainer ? sessContainer.scrollTop : 0;
+    $('sessBody').innerHTML=sess.map(s=>{
+      const pct=s.contextPct||0;
+      const color=pct>80?'var(--red)':pct>50?'var(--yellow)':'var(--green)';
+      const typeCls='type-'+(esc(s.type)||'main');
+      return `<tr class="dr"><td class="w" style="max-width:250px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(s.name)}</td><td>${esc(s.model)}</td><td><span class="type-badge ${typeCls}">${esc(s.type)||'—'}</span></td><td><div class="ctx-bar"><div class="ctx-fill" style="width:${pct}%;background:${color}"></div></div> <span style="font-size:11px;color:${color}">${pct}%</span></td><td>${relTime(s.updatedAt)}</td><td class="r">${(s.totalTokens||0).toLocaleString()}</td></tr>`;
+    }).join('');
+    if (sessContainer) sessContainer.scrollTop = sessScrollTop;
+    renderAgentTree();
+  }
 
   // Token usage
   setTabCls4('uTab',uTab,'active');
-  const uData=uTab==='today'?D.tokenUsageToday:uTab==='7d'?D.tokenUsage7d:uTab==='30d'?D.tokenUsage30d:D.tokenUsage;
-  renderTokenTbl('uBody',uData,'var(--accent)');
+  if (sectionChanged(['tokenUsage','tokenUsageToday','tokenUsage7d','tokenUsage30d','subagentUsage','subagentUsageToday','subagentUsage7d','subagentUsage30d'])) {
+    const uData=uTab==='today'?D.tokenUsageToday:uTab==='7d'?D.tokenUsage7d:uTab==='30d'?D.tokenUsage30d:D.tokenUsage;
+    renderTokenTbl('uBody',uData,'var(--accent)');
+  }
 
   // Sub runs
   setTabCls4('srTab',srTab,'active-purple');
-  const runs=srTab==='today'?(D.subagentRunsToday||[]):srTab==='7d'?(D.subagentRuns7d||[]):srTab==='30d'?(D.subagentRuns30d||[]):(D.subagentRuns||[]);
-  const srCost=srTab==='today'?(D.subagentCostToday||0):srTab==='7d'?(D.subagentCost7d||0):srTab==='30d'?(D.subagentCost30d||0):(D.subagentCostAllTime||0);
-  $('subCostLbl').textContent='Total: $'+srCost.toFixed(2);
-  $('srEmpty').style.display=runs.length?'none':'block';
-  $('srBody').innerHTML=runs.slice(0,20).map(r=>{
-    const dur=r.durationSec>=3600?(r.durationSec/3600).toFixed(1)+'h':r.durationSec>=60?Math.round(r.durationSec/60)+'m':r.durationSec+'s';
-    return `<tr class="dr"><td class="w" style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(r.task)}</td><td>${esc(r.model)}</td><td class="r cost">$${r.cost.toFixed(4)}</td><td class="r">${dur}</td><td><span class="badge badge-ok">${esc(r.status)}</span></td><td>${esc(r.timestamp)}</td></tr>`;
-  }).join('');
+  if (sectionChanged(['subagentRuns','subagentRuns7d','subagentRuns30d','subagentRunsToday'])) {
+    const runs=srTab==='today'?(D.subagentRunsToday||[]):srTab==='7d'?(D.subagentRuns7d||[]):srTab==='30d'?(D.subagentRuns30d||[]):(D.subagentRuns||[]);
+    const srCost=srTab==='today'?(D.subagentCostToday||0):srTab==='7d'?(D.subagentCost7d||0):srTab==='30d'?(D.subagentCost30d||0):(D.subagentCostAllTime||0);
+    $('subCostLbl').textContent='Total: $'+srCost.toFixed(2);
+    $('srEmpty').style.display=runs.length?'none':'block';
+    $('srBody').innerHTML=runs.slice(0,20).map(r=>{
+      const dur=r.durationSec>=3600?(r.durationSec/3600).toFixed(1)+'h':r.durationSec>=60?Math.round(r.durationSec/60)+'m':r.durationSec+'s';
+      return `<tr class="dr"><td class="w" style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(r.task)}</td><td>${esc(r.model)}</td><td class="r cost">$${r.cost.toFixed(4)}</td><td class="r">${dur}</td><td><span class="badge badge-ok">${esc(r.status)}</span></td><td>${esc(r.timestamp)}</td></tr>`;
+    }).join('');
+  }
 
   // Sub token
   setTabCls4('stTab',stTab,'active-purple');
-  const stData=stTab==='today'?D.subagentUsageToday:stTab==='7d'?D.subagentUsage7d:stTab==='30d'?D.subagentUsage30d:D.subagentUsage;
-  renderTokenTbl('stBody',stData,'var(--purple)');
+  if (sectionChanged(['tokenUsage','tokenUsageToday','tokenUsage7d','tokenUsage30d','subagentUsage','subagentUsageToday','subagentUsage7d','subagentUsage30d'])) {
+    const stData=stTab==='today'?D.subagentUsageToday:stTab==='7d'?D.subagentUsage7d:stTab==='30d'?D.subagentUsage30d:D.subagentUsage;
+    renderTokenTbl('stBody',stData,'var(--purple)');
+  }
 
   // Charts
-  renderCharts();
-  renderAgentTree();
+  if (sectionChanged(['dailyChart','chartDays']) || chartDays!==prevChartDays) {
+    renderCharts();
+  }
 
-  // Models
-  $('modelsGrid').innerHTML=(D.availableModels||[]).map(m=>`<div class="glass model-card"><span class="badge badge-${esc(m.status)}">${esc(m.status)}</span><div class="model-name">${esc(m.name)}</div><div class="model-id">${esc(m.provider)}</div></div>`).join('');
+  if (sectionChanged(['models','skills','gitLog','agentConfig','subagentConfig'])) {
+    // Models
+    $('modelsGrid').innerHTML=(D.availableModels||[]).map(m=>`<div class="glass model-card"><span class="badge badge-${esc(m.status)}">${esc(m.status)}</span><div class="model-name">${esc(m.name)}</div><div class="model-id">${esc(m.provider)}</div></div>`).join('');
 
-  // Agent Configuration — fully generic, works with any number of agents/models
-  const AC = D.agentConfig||{};
-  // Cycle through a palette of colors for any number of agents
-  const PALETTE = ['var(--green)','var(--blue)','var(--purple)','var(--yellow)','var(--cyan,#22d3ee)','var(--orange,#fb923c)'];
-  const EMOJIS  = ['🤖','⚙️','👥','🔧','🧠','🦾','🛠️'];
+    // Agent Configuration — fully generic, works with any number of agents/models
+    const AC = D.agentConfig||{};
+    // Cycle through a palette of colors for any number of agents
+    const PALETTE = ['var(--green)','var(--blue)','var(--purple)','var(--yellow)','var(--cyan,#22d3ee)','var(--orange,#fb923c)'];
+    const EMOJIS  = ['🤖','⚙️','👥','🔧','🧠','🦾','🛠️'];
 
-  // Agent count badge
-  const agentList = AC.agents||[];
-  $('agentCount').textContent = agentList.length + (agentList.length===1?' agent':' agents');
+    // Agent count badge
+    const agentList = AC.agents||[];
+    $('agentCount').textContent = agentList.length + (agentList.length===1?' agent':' agents');
 
-  // Agent Cards — data-driven, no hardcoded IDs
-  $('agentCards').innerHTML = agentList.length ? agentList.map((a,i)=>{
-    const col = PALETTE[i % PALETTE.length];
-    const em  = EMOJIS[i % EMOJIS.length];
-    const provider = (a.modelId||'').split('/')[0]||'—';
-    return `<div style="background:var(--glass);border:1px solid var(--border);border-left:3px solid ${col};border-radius:8px;padding:12px 14px;min-width:180px;flex:1">
-      <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px">
-        <span style="font-size:16px">${em}</span>
-        <span style="font-size:13px;font-weight:700;color:var(--textStrong)">${esc(a.id)}</span>
-        ${a.isDefault?'<span style="font-size:9px;background:rgba(74,222,128,.15);color:var(--green);border:1px solid rgba(74,222,128,.3);border-radius:4px;padding:1px 5px">DEFAULT</span>':''}
+    // Agent Cards — data-driven, no hardcoded IDs
+    $('agentCards').innerHTML = agentList.length ? agentList.map((a,i)=>{
+      const col = PALETTE[i % PALETTE.length];
+      const em  = EMOJIS[i % EMOJIS.length];
+      const provider = (a.modelId||'').split('/')[0]||'—';
+      return `<div style="background:var(--glass);border:1px solid var(--border);border-left:3px solid ${col};border-radius:8px;padding:12px 14px;min-width:180px;flex:1">
+        <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px">
+          <span style="font-size:16px">${em}</span>
+          <span style="font-size:13px;font-weight:700;color:var(--textStrong)">${esc(a.id)}</span>
+          ${a.isDefault?'<span style="font-size:9px;background:rgba(74,222,128,.15);color:var(--green);border:1px solid rgba(74,222,128,.3);border-radius:4px;padding:1px 5px">DEFAULT</span>':''}
+        </div>
+        <div style="font-size:9px;color:var(--muted);text-transform:uppercase;margin-bottom:2px">Role</div>
+        <div style="font-size:13px;color:${col};font-weight:600;margin-bottom:8px">${esc(a.role||a.id)}</div>
+        <div style="font-size:9px;color:var(--muted);text-transform:uppercase;margin-bottom:2px">Model</div>
+        <div style="font-size:13px;color:var(--textStrong);font-weight:600;margin-bottom:2px">${esc(a.model||'—')}</div>
+        <div style="font-size:11px;color:var(--dim);font-family:monospace">${esc(provider)}</div>
+      </div>`;
+    }).join('') : '<div style="color:var(--dim);font-size:11px;padding:8px">No agents configured — using default model.</div>';
+
+    // Model Routing Panel — generic, handles 0–N fallbacks
+    const fallbacks = AC.fallbacks||[];
+    const routingChain = [
+      {label:'PRIMARY', model:AC.primaryModel||'—', color:'rgba(74,222,128,.3)', bg:'rgba(74,222,128,.1)', textCol:'var(--green)'},
+      ...fallbacks.map((f,i)=>({label:`FALLBACK ${i+1}`, model:f, color:'var(--border)', bg:'var(--glass)', textCol:'var(--text)', opacity:Math.max(0.5,1-i*0.15)}))
+    ];
+    const extraRows = [
+      AC.imageModel ? {k:'🖼️ Image Model', v:AC.imageModel, c:'var(--purple)'} : null,
+      AC.streamMode ? {k:'📡 Stream Mode', v:AC.streamMode, c:'var(--blue)'} : null,
+    ].filter(Boolean);
+    // Sub-agent routing — all agents including main
+    const subAgentRoutes = agentList.map((a,i)=>{
+      const col=PALETTE[i%PALETTE.length];
+      const purposeMap={'main':'🧠 General / Default','group':'🖥️ Dev / Coding','work':'⚙️ Work / Admin'};
+      const purpose=purposeMap[a.id]||`🤖 ${a.id}`;
+      return {purpose, agent:a.id, model:a.model, col, isDefault:a.isDefault};
+    });
+    $('modelRoutingPanel').innerHTML = `
+      <div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px">General</div>
+      <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:${extraRows.length||subAgentRoutes.length?'10':'0'}px">
+        ${routingChain.map((r,i)=>`
+          ${i>0?'<div style="color:var(--dim);font-size:12px">→</div>':''}
+          <div style="background:${r.bg};border:1px solid ${r.color};border-radius:6px;padding:5px 9px;text-align:center${r.opacity?`;opacity:${r.opacity}`:''}">
+            <div style="font-size:9px;color:var(--muted);margin-bottom:1px">${r.label}</div>
+            <div style="font-size:13px;font-weight:700;color:${r.textCol}">${esc(r.model)}</div>
+          </div>`).join('')}
       </div>
-      <div style="font-size:9px;color:var(--muted);text-transform:uppercase;margin-bottom:2px">Role</div>
-      <div style="font-size:13px;color:${col};font-weight:600;margin-bottom:8px">${esc(a.role||a.id)}</div>
-      <div style="font-size:9px;color:var(--muted);text-transform:uppercase;margin-bottom:2px">Model</div>
-      <div style="font-size:13px;color:var(--textStrong);font-weight:600;margin-bottom:2px">${esc(a.model||'—')}</div>
-      <div style="font-size:11px;color:var(--dim);font-family:monospace">${esc(provider)}</div>
-    </div>`;
-  }).join('') : '<div style="color:var(--dim);font-size:11px;padding:8px">No agents configured — using default model.</div>';
+      ${subAgentRoutes.length?`<div style="padding-top:8px;border-top:1px solid var(--border);margin-bottom:${extraRows.length?'8':'0'}px">
+        <div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px">Sub-agent Routing</div>
+        ${subAgentRoutes.map(r=>`
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+            <span style="font-size:12px;color:var(--dim);min-width:130px">${esc(r.purpose)}</span>
+            <span style="color:var(--dim);font-size:11px">→</span>
+            <span style="background:var(--glass);border:1px solid var(--border);border-left:3px solid ${r.col};border-radius:5px;padding:3px 8px;font-size:12px;font-weight:700;color:${r.col}">${esc(r.model)}</span>
+            <span style="font-size:10px;color:var(--dim)">(${esc(r.agent)} agent)</span>
+          </div>`).join('')}
+      </div>`:''}
+      ${extraRows.length?`<div style="padding-top:8px;border-top:1px solid var(--border)">${
+        extraRows.map(r=>`<div style="display:flex;justify-content:space-between;margin-bottom:4px">
+          <span style="font-size:12px;color:var(--muted)">${esc(r.k)}</span>
+          <span style="font-size:12px;color:${r.c};font-weight:600">${esc(r.v)}</span>
+        </div>`).join('')
+      }</div>`:''}`.trim();
 
-  // Model Routing Panel — generic, handles 0–N fallbacks
-  const fallbacks = AC.fallbacks||[];
-  const routingChain = [
-    {label:'PRIMARY', model:AC.primaryModel||'—', color:'rgba(74,222,128,.3)', bg:'rgba(74,222,128,.1)', textCol:'var(--green)'},
-    ...fallbacks.map((f,i)=>({label:`FALLBACK ${i+1}`, model:f, color:'var(--border)', bg:'var(--glass)', textCol:'var(--text)', opacity:Math.max(0.5,1-i*0.15)}))
-  ];
-  const extraRows = [
-    AC.imageModel ? {k:'🖼️ Image Model', v:AC.imageModel, c:'var(--purple)'} : null,
-    AC.streamMode ? {k:'📡 Stream Mode', v:AC.streamMode, c:'var(--blue)'} : null,
-  ].filter(Boolean);
-  // Sub-agent routing — all agents including main
-  const subAgentRoutes = agentList.map((a,i)=>{
-    const col=PALETTE[i%PALETTE.length];
-    const purposeMap={'main':'🧠 General / Default','group':'🖥️ Dev / Coding','work':'⚙️ Work / Admin'};
-    const purpose=purposeMap[a.id]||`🤖 ${a.id}`;
-    return {purpose, agent:a.id, model:a.model, col, isDefault:a.isDefault};
-  });
-  $('modelRoutingPanel').innerHTML = `
-    <div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px">General</div>
-    <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:${extraRows.length||subAgentRoutes.length?'10':'0'}px">
-      ${routingChain.map((r,i)=>`
-        ${i>0?'<div style="color:var(--dim);font-size:12px">→</div>':''}
-        <div style="background:${r.bg};border:1px solid ${r.color};border-radius:6px;padding:5px 9px;text-align:center${r.opacity?`;opacity:${r.opacity}`:''}">
-          <div style="font-size:9px;color:var(--muted);margin-bottom:1px">${r.label}</div>
-          <div style="font-size:13px;font-weight:700;color:${r.textCol}">${esc(r.model)}</div>
+    // Runtime Config Panel — only show rows that have actual data
+    const comp = AC.compaction||{};
+    const compCards = [
+      comp.mode                      ? {k:'Compaction Mode',  v:comp.mode,                                         c:'var(--yellow)'} : null,
+      comp.reserveTokensFloor        ? {k:'Reserve Tokens',   v:comp.reserveTokensFloor.toLocaleString(),           c:'var(--text)'}   : null,
+      comp.memoryFlush!=null         ? {k:'Memory Flush',     v:comp.memoryFlush?.enabled?'Enabled':'Disabled',     c:comp.memoryFlush?.enabled?'var(--green)':'var(--dim)'} : null,
+      comp.softThresholdTokens       ? {k:'Soft Threshold',   v:comp.softThresholdTokens.toLocaleString()+' tok',   c:'var(--text)'}   : null,
+    ].filter(Boolean);
+    const channelRows = [
+      (AC.channels||[]).length       ? {k:'Active Channels',    v:(AC.channels).join(', ')}                        : null,
+      AC.telegramDmPolicy            ? {k:'Telegram DM Policy', v:AC.telegramDmPolicy}                             : null,
+      AC.telegramGroups              ? {k:'Telegram Groups',    v:AC.telegramGroups+' configured'}                 : null,
+    ].filter(Boolean);
+    $('runtimeConfigPanel').innerHTML = [
+      compCards.length ? `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:6px;margin-bottom:${channelRows.length?8:0}px">
+        ${compCards.map(r=>`<div style="background:rgba(255,255,255,.03);border:1px solid var(--border);border-radius:5px;padding:6px 8px">
+          <div style="font-size:9px;color:var(--muted);margin-bottom:2px">${esc(r.k)}</div>
+          <div style="font-size:12px;font-weight:600;color:${r.c}">${esc(r.v)}</div>
         </div>`).join('')}
-    </div>
-    ${subAgentRoutes.length?`<div style="padding-top:8px;border-top:1px solid var(--border);margin-bottom:${extraRows.length?'8':'0'}px">
-      <div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px">Sub-agent Routing</div>
-      ${subAgentRoutes.map(r=>`
-        <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
-          <span style="font-size:12px;color:var(--dim);min-width:130px">${esc(r.purpose)}</span>
-          <span style="color:var(--dim);font-size:11px">→</span>
-          <span style="background:var(--glass);border:1px solid var(--border);border-left:3px solid ${r.col};border-radius:5px;padding:3px 8px;font-size:12px;font-weight:700;color:${r.col}">${esc(r.model)}</span>
-          <span style="font-size:10px;color:var(--dim)">(${esc(r.agent)} agent)</span>
+      </div>` : '',
+      channelRows.length ? `<div style="${compCards.length?'padding-top:8px;border-top:1px solid var(--border)':''}">
+        ${channelRows.map(r=>`<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+          <span style="font-size:12px;color:var(--muted);min-width:140px">${esc(r.k)}</span>
+          <span style="font-size:12px;color:var(--text);font-weight:600">${esc(r.v)}</span>
         </div>`).join('')}
-    </div>`:''}
-    ${extraRows.length?`<div style="padding-top:8px;border-top:1px solid var(--border)">${
-      extraRows.map(r=>`<div style="display:flex;justify-content:space-between;margin-bottom:4px">
-        <span style="font-size:12px;color:var(--muted)">${esc(r.k)}</span>
-        <span style="font-size:12px;color:${r.c};font-weight:600">${esc(r.v)}</span>
-      </div>`).join('')
-    }</div>`:''}`.trim();
+      </div>` : '',
+      !compCards.length && !channelRows.length ? '<div style="color:var(--dim);font-size:11px">No runtime config detected.</div>' : ''
+    ].join('');
 
-  // Runtime Config Panel — only show rows that have actual data
-  const comp = AC.compaction||{};
-  const compCards = [
-    comp.mode                      ? {k:'Compaction Mode',  v:comp.mode,                                         c:'var(--yellow)'} : null,
-    comp.reserveTokensFloor        ? {k:'Reserve Tokens',   v:comp.reserveTokensFloor.toLocaleString(),           c:'var(--text)'}   : null,
-    comp.memoryFlush!=null         ? {k:'Memory Flush',     v:comp.memoryFlush?.enabled?'Enabled':'Disabled',     c:comp.memoryFlush?.enabled?'var(--green)':'var(--dim)'} : null,
-    comp.softThresholdTokens       ? {k:'Soft Threshold',   v:comp.softThresholdTokens.toLocaleString()+' tok',   c:'var(--text)'}   : null,
-  ].filter(Boolean);
-  const channelRows = [
-    (AC.channels||[]).length       ? {k:'Active Channels',    v:(AC.channels).join(', ')}                        : null,
-    AC.telegramDmPolicy            ? {k:'Telegram DM Policy', v:AC.telegramDmPolicy}                             : null,
-    AC.telegramGroups              ? {k:'Telegram Groups',    v:AC.telegramGroups+' configured'}                 : null,
-  ].filter(Boolean);
-  $('runtimeConfigPanel').innerHTML = [
-    compCards.length ? `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:6px;margin-bottom:${channelRows.length?8:0}px">
-      ${compCards.map(r=>`<div style="background:rgba(255,255,255,.03);border:1px solid var(--border);border-radius:5px;padding:6px 8px">
-        <div style="font-size:9px;color:var(--muted);margin-bottom:2px">${esc(r.k)}</div>
-        <div style="font-size:12px;font-weight:600;color:${r.c}">${esc(r.v)}</div>
-      </div>`).join('')}
-    </div>` : '',
-    channelRows.length ? `<div style="${compCards.length?'padding-top:8px;border-top:1px solid var(--border)':''}">
-      ${channelRows.map(r=>`<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
-        <span style="font-size:12px;color:var(--muted);min-width:140px">${esc(r.k)}</span>
-        <span style="font-size:12px;color:var(--text);font-weight:600">${esc(r.v)}</span>
-      </div>`).join('')}
-    </div>` : '',
-    !compCards.length && !channelRows.length ? '<div style="color:var(--dim);font-size:11px">No runtime config detected.</div>' : ''
-  ].join('');
+    // Helper: key-value row
+    const kv = (k,v,c='var(--text)') => `<div style="display:flex;justify-content:space-between;margin-bottom:4px"><span style="font-size:12px;color:var(--muted)">${esc(k)}</span><span style="font-size:12px;color:${c};font-weight:600">${esc(String(v))}</span></div>`;
+    const badge = (label,on) => `<span style="display:inline-block;margin:2px 2px;padding:2px 7px;border-radius:4px;font-size:10px;font-weight:600;background:${on?'rgba(74,222,128,.12)':'rgba(255,255,255,.05)'};color:${on?'var(--green)':'var(--dim)'};border:1px solid ${on?'rgba(74,222,128,.3)':'var(--border)'}">${esc(label)}</span>`;
 
-  // Helper: key-value row
-  const kv = (k,v,c='var(--text)') => `<div style="display:flex;justify-content:space-between;margin-bottom:4px"><span style="font-size:12px;color:var(--muted)">${esc(k)}</span><span style="font-size:12px;color:${c};font-weight:600">${esc(String(v))}</span></div>`;
-  const badge = (label,on) => `<span style="display:inline-block;margin:2px 2px;padding:2px 7px;border-radius:4px;font-size:10px;font-weight:600;background:${on?'rgba(74,222,128,.12)':'rgba(255,255,255,.05)'};color:${on?'var(--green)':'var(--dim)'};border:1px solid ${on?'rgba(74,222,128,.3)':'var(--border)'}">${esc(label)}</span>`;
+    // Search Panel
+    const SR = AC.search||{};
+    $('searchPanelInner').innerHTML = SR.provider ? [
+      kv('Provider', SR.provider, 'var(--blue)'),
+      kv('Max Results', SR.maxResults),
+      kv('Cache TTL', (SR.cacheTtlMinutes||'—')+' min'),
+    ].join('') : '<span style="color:var(--dim);font-size:12px">Not configured</span>';
 
-  // Search Panel
-  const SR = AC.search||{};
-  $('searchPanelInner').innerHTML = SR.provider ? [
-    kv('Provider', SR.provider, 'var(--blue)'),
-    kv('Max Results', SR.maxResults),
-    kv('Cache TTL', (SR.cacheTtlMinutes||'—')+' min'),
-  ].join('') : '<span style="color:var(--dim);font-size:12px">Not configured</span>';
+    // Gateway Panel
+    const GW = AC.gateway||{};
+    $('gatewayPanelInner').innerHTML = GW.port ? [
+      kv('Port', GW.port, 'var(--green)'),
+      kv('Mode', GW.mode),
+      kv('Bind', GW.bind),
+      kv('Auth Mode', GW.authMode),
+      kv('Tailscale', GW.tailscale),
+    ].join('') : '<span style="color:var(--dim);font-size:12px">Not configured</span>';
 
-  // Gateway Panel
-  const GW = AC.gateway||{};
-  $('gatewayPanelInner').innerHTML = GW.port ? [
-    kv('Port', GW.port, 'var(--green)'),
-    kv('Mode', GW.mode),
-    kv('Bind', GW.bind),
-    kv('Auth Mode', GW.authMode),
-    kv('Tailscale', GW.tailscale),
-  ].join('') : '<span style="color:var(--dim);font-size:12px">Not configured</span>';
+    // Hooks Panel
+    const hooks = AC.hooks||[];
+    $('hooksPanelInner').innerHTML = hooks.length
+      ? hooks.map(h=>badge(h.name, h.enabled)).join('')
+      : '<span style="color:var(--dim);font-size:12px">No hooks configured</span>';
 
-  // Hooks Panel
-  const hooks = AC.hooks||[];
-  $('hooksPanelInner').innerHTML = hooks.length
-    ? hooks.map(h=>badge(h.name, h.enabled)).join('')
-    : '<span style="color:var(--dim);font-size:12px">No hooks configured</span>';
+    // Plugins & Extras
+    const plugins = AC.plugins||[];
+    const skills  = (AC.skills||[]).filter(s=>s.enabled);
+    $('capsPanelInner').innerHTML = [
+      plugins.length ? `<div style="margin-bottom:6px"><div style="font-size:9px;color:var(--muted);margin-bottom:3px">Plugins</div>${plugins.map(p=>badge(p,true)).join('')}</div>` : '',
+      skills.length  ? `<div style="margin-bottom:6px"><div style="font-size:9px;color:var(--muted);margin-bottom:3px">Active Skills</div>${skills.map(s=>badge(s.name,true)).join('')}</div>` : '',
+      `<div style="margin-top:6px;display:flex;gap:8px;flex-wrap:wrap">
+        ${badge('TTS', AC.tts)}
+        ${badge('Diagnostics', AC.diagnostics)}
+      </div>`,
+    ].join('');
 
-  // Plugins & Extras
-  const plugins = AC.plugins||[];
-  const skills  = (AC.skills||[]).filter(s=>s.enabled);
-  $('capsPanelInner').innerHTML = [
-    plugins.length ? `<div style="margin-bottom:6px"><div style="font-size:9px;color:var(--muted);margin-bottom:3px">Plugins</div>${plugins.map(p=>badge(p,true)).join('')}</div>` : '',
-    skills.length  ? `<div style="margin-bottom:6px"><div style="font-size:9px;color:var(--muted);margin-bottom:3px">Active Skills</div>${skills.map(s=>badge(s.name,true)).join('')}</div>` : '',
-    `<div style="margin-top:6px;display:flex;gap:8px;flex-wrap:wrap">
-      ${badge('TTS', AC.tts)}
-      ${badge('Diagnostics', AC.diagnostics)}
-    </div>`,
-  ].join('');
+    // Bindings
+    const bindings = AC.bindings||[];
+    const agentColMap={};agentList.forEach((a,i)=>agentColMap[a.id]=PALETTE[i%PALETTE.length]);
+    $('bindingsPanel').innerHTML = bindings.length
+      ? `<div style="display:flex;flex-wrap:wrap;gap:8px">${bindings.map(b=>{
+          const col=agentColMap[b.agentId]||'var(--dim)';
+          const isDefault=b.kind==='default';
+          const displayName=b.name||(isDefault?'All unmatched channels':b.id);
+          const icon=isDefault?'🌐':b.channel==='telegram'?'✈️':'📡';
+          return `<div style="background:var(--glass);border:1px solid var(--border);border-left:3px solid ${col};border-radius:6px;padding:8px 12px;min-width:180px">
+            <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">
+              <span style="font-size:12px">${icon}</span>
+              <span style="font-size:12px;font-weight:700;color:${col}">${esc(b.agentId)}</span>
+              ${isDefault?'<span style="font-size:9px;background:rgba(74,222,128,.12);color:var(--green);border:1px solid rgba(74,222,128,.25);border-radius:3px;padding:1px 4px">DEFAULT</span>':''}
+            </div>
+            <div style="font-size:13px;font-weight:600;color:var(--textStrong)">${esc(displayName)}</div>
+            ${!isDefault?`<div style="font-size:10px;color:var(--dim);margin-top:2px;font-family:monospace">${esc(b.channel)} · ${esc(b.kind)} · ${esc(b.id)}</div>`:'<div style="font-size:10px;color:var(--dim);margin-top:2px">catch-all fallback</div>'}
+          </div>`;
+        }).join('')}</div>`
+      : '<span style="color:var(--dim);font-size:12px">No explicit bindings — all messages go to default agent</span>';
 
-  // Bindings
-  const bindings = AC.bindings||[];
-  const agentColMap={};agentList.forEach((a,i)=>agentColMap[a.id]=PALETTE[i%PALETTE.length]);
-  $('bindingsPanel').innerHTML = bindings.length
-    ? `<div style="display:flex;flex-wrap:wrap;gap:8px">${bindings.map(b=>{
-        const col=agentColMap[b.agentId]||'var(--dim)';
-        const isDefault=b.kind==='default';
-        const displayName=b.name||(isDefault?'All unmatched channels':b.id);
-        const icon=isDefault?'🌐':b.channel==='telegram'?'✈️':'📡';
-        return `<div style="background:var(--glass);border:1px solid var(--border);border-left:3px solid ${col};border-radius:6px;padding:8px 12px;min-width:180px">
-          <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">
-            <span style="font-size:12px">${icon}</span>
-            <span style="font-size:12px;font-weight:700;color:${col}">${esc(b.agentId)}</span>
-            ${isDefault?'<span style="font-size:9px;background:rgba(74,222,128,.12);color:var(--green);border:1px solid rgba(74,222,128,.25);border-radius:3px;padding:1px 4px">DEFAULT</span>':''}
-          </div>
-          <div style="font-size:13px;font-weight:600;color:var(--textStrong)">${esc(displayName)}</div>
-          ${!isDefault?`<div style="font-size:10px;color:var(--dim);margin-top:2px;font-family:monospace">${esc(b.channel)} · ${esc(b.kind)} · ${esc(b.id)}</div>`:'<div style="font-size:10px;color:var(--dim);margin-top:2px">catch-all fallback</div>'}
-        </div>`;
-      }).join('')}</div>`
-    : '<span style="color:var(--dim);font-size:12px">No explicit bindings — all messages go to default agent</span>';
+      // Subagent config panel
+    const SC=AC.subagentConfig||{};
+    $('subagentConfigPanel').innerHTML=[
+      SC.maxSpawnDepth!=null    ? kv('Max Depth',        SC.maxSpawnDepth,    'var(--accent)') : '',
+      SC.maxChildrenPerAgent!=null ? kv('Max Children/Agent', SC.maxChildrenPerAgent, 'var(--text)') : '',
+      SC.maxConcurrent!=null    ? kv('Max Concurrent',   SC.maxConcurrent,    'var(--text)') : '',
+    ].join('')||'<span style="color:var(--dim);font-size:12px">Not configured</span>';
 
-    // Subagent config panel
-  const SC=AC.subagentConfig||{};
-  $('subagentConfigPanel').innerHTML=[
-    SC.maxSpawnDepth!=null    ? kv('Max Depth',        SC.maxSpawnDepth,    'var(--accent)') : '',
-    SC.maxChildrenPerAgent!=null ? kv('Max Children/Agent', SC.maxChildrenPerAgent, 'var(--text)') : '',
-    SC.maxConcurrent!=null    ? kv('Max Concurrent',   SC.maxConcurrent,    'var(--text)') : '',
-  ].join('')||'<span style="color:var(--dim);font-size:12px">Not configured</span>';
+    // Per-agent fallbacks in table — use agent-specific fallbacks
+    $('agentTableBody').innerHTML = agentList.map((a,i)=>{
+      const col = PALETTE[i % PALETTE.length];
+      const provider = (a.modelId||'').split('/')[0]||'—';
+      const ctx1m = a.context1m===true?'✅':a.context1m===false?'❌':'—';
+      const agentFallbacks = (a.fallbacks||AC.fallbacks||[]).join(' → ');
+      return `<tr class="dr">
+        <td style="padding:6px 8px;font-weight:700;color:${col}">${esc(a.id)}${a.isDefault?' <span style="font-size:9px;color:var(--green);font-weight:400">(default)</span>':''}</td>
+        <td style="padding:6px 8px;color:var(--text)">${esc(a.role||a.id)}</td>
+        <td style="padding:6px 8px;color:var(--textStrong);font-weight:600">${esc(a.model)}</td>
+        <td style="padding:6px 8px;color:var(--dim);font-size:12px">${esc(provider)}</td>
+        <td style="padding:6px 8px;color:var(--dim);font-size:12px;font-family:monospace">${esc(a.workspace)}</td>
+        <td style="padding:6px 8px;color:var(--dim);font-size:12px">${esc(agentFallbacks)}</td>
+        <td style="padding:6px 8px;text-align:center">${ctx1m}</td>
+      </tr>`;
+    }).join('')||'<tr><td colspan="7" style="padding:8px;color:var(--dim)">No agents configured</td></tr>';
 
-  // Per-agent fallbacks in table — use agent-specific fallbacks
-  $('agentTableBody').innerHTML = agentList.map((a,i)=>{
-    const col = PALETTE[i % PALETTE.length];
-    const provider = (a.modelId||'').split('/')[0]||'—';
-    const ctx1m = a.context1m===true?'✅':a.context1m===false?'❌':'—';
-    const agentFallbacks = (a.fallbacks||AC.fallbacks||[]).join(' → ');
-    return `<tr class="dr">
-      <td style="padding:6px 8px;font-weight:700;color:${col}">${esc(a.id)}${a.isDefault?' <span style="font-size:9px;color:var(--green);font-weight:400">(default)</span>':''}</td>
-      <td style="padding:6px 8px;color:var(--text)">${esc(a.role||a.id)}</td>
-      <td style="padding:6px 8px;color:var(--textStrong);font-weight:600">${esc(a.model)}</td>
-      <td style="padding:6px 8px;color:var(--dim);font-size:12px">${esc(provider)}</td>
-      <td style="padding:6px 8px;color:var(--dim);font-size:12px;font-family:monospace">${esc(a.workspace)}</td>
-      <td style="padding:6px 8px;color:var(--dim);font-size:12px">${esc(agentFallbacks)}</td>
-      <td style="padding:6px 8px;text-align:center">${ctx1m}</td>
-    </tr>`;
-  }).join('')||'<tr><td colspan="7" style="padding:8px;color:var(--dim)">No agents configured</td></tr>';
+    // Skills
+    $('skillsGrid').innerHTML=(D.skills||[]).map(s=>{
+      const c=s.active?'color:var(--green);border-color:rgba(74,222,128,.2);background:rgba(74,222,128,.05)':'color:var(--dim);border-color:var(--border)';
+      return `<span class="skill-tag" style="${c}">${esc(s.name)}</span>`;
+    }).join('');
 
-  // Skills
-  $('skillsGrid').innerHTML=(D.skills||[]).map(s=>{
-    const c=s.active?'color:var(--green);border-color:rgba(74,222,128,.2);background:rgba(74,222,128,.05)':'color:var(--dim);border-color:var(--border)';
-    return `<span class="skill-tag" style="${c}">${esc(s.name)}</span>`;
-  }).join('');
+    // Git
+    $('gitPanel').innerHTML=(D.gitLog||[]).slice(0,5).map(g=>`<div class="git-item"><span class="git-hash">${esc(g.hash)}</span><span class="git-msg" title="${esc(g.message)}">${esc(g.message)}</span><span class="git-ago">${esc(g.ago)}</span></div>`).join('')||'<div class="empty">No git history</div>';
+  }
 
-  // Git
-  $('gitPanel').innerHTML=(D.gitLog||[]).slice(0,5).map(g=>`<div class="git-item"><span class="git-hash">${esc(g.hash)}</span><span class="git-msg" title="${esc(g.message)}">${esc(g.message)}</span><span class="git-ago">${esc(g.ago)}</span></div>`).join('')||'<div class="empty">No git history</div>';
+  prevChartDays=chartDays;
+  prevD = JSON.parse(JSON.stringify(D));
 }
 
 function renderAgentTree(){
