@@ -280,7 +280,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'SF Pro','Helvetica Neue',sans
   <!-- Agent Hierarchy Mind Map -->
   <div class="card" style="margin-bottom:16px">
     <div style="font-size:11px;color:var(--dim);margin-bottom:8px;text-transform:uppercase;letter-spacing:.05em">Agent Hierarchy</div>
-    <svg id="agentMindMap" width="100%" style="min-height:200px;max-height:400px" viewBox="0 0 900 300" preserveAspectRatio="xMidYMid meet"></svg>
+    <svg id="agentMindMap" width="100%" style="min-height:160px;max-height:480px" viewBox="0 0 650 160" preserveAspectRatio="xMinYMid meet"></svg>
   </div>
   <div class="glass panel" style="overflow-x:auto;max-height:400px;overflow-y:auto">
     <table class="dtable">
@@ -810,78 +810,96 @@ function renderAgentTree(){
   const cAccent=cs.getPropertyValue('--accent').trim()||'#6366f1';
   const cPurple=cs.getPropertyValue('--purple').trim()||'#a855f7';
   const cDim=cs.getPropertyValue('--dim').trim()||'#64748b';
-  const COLORS={main:cGreen,work:cAccent,group:cPurple};
-  const DIM={main:cGreen+'44',work:cAccent+'44',group:cPurple+'44'};
+  const COLORS={main:cGreen,work:cAccent,group:cPurple,other:cDim};
+  const DIM={main:cGreen+'44',work:cAccent+'44',group:cPurple+'44',other:cDim+'44'};
   const SUB_COLOR=cDim;
-  const SUB_DIM=cDim+'44';
-  // Build lookup by key
+  // Build lookup
   const byKey={};sessions.forEach(s=>byKey[s.key]=s);
-  // Find roots (not subagents) and group by agent
   const roots=sessions.filter(s=>s.type!=='subagent');
   const subs=sessions.filter(s=>s.type==='subagent');
-  // Map sub->parent
   const childrenOf={};
   subs.forEach(s=>{
     const pk=s.spawnedBy||'';
     if(pk&&byKey[pk]){(childrenOf[pk]=childrenOf[pk]||[]).push(s);}
     else{(childrenOf['__unknown__']=childrenOf['__unknown__']||[]).push(s);}
   });
-  // Also find sub-sub-agents (subs whose spawnedBy points to another sub)
-  // Layout
-  const primaryY=60,subY=160,subsubY=260;
-  let html='<defs><filter id="glow"><feGaussianBlur stdDeviation="3" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs>';
-  // Separate true roots from sub-subs
   const trueRoots=roots.filter(r=>r.type!=='subagent');
   const orphans=childrenOf['__unknown__']||[];
-  if(orphans.length){
-    trueRoots.push({key:'__unknown__',name:'Unknown',agent:'other',model:'',active:false,lastActivity:'',totalTokens:0,type:'other'});
-  }
+  if(orphans.length) trueRoots.push({key:'__unknown__',name:'Unknown',agent:'other',model:'',active:false,label:'',subject:'',totalTokens:0,type:'other'});
   if(!trueRoots.length){svg.innerHTML='<text x="450" y="150" text-anchor="middle" fill="var(--dim)" font-size="13">No agent hierarchy</text>';return;}
-  const spacing=900/(trueRoots.length+1);
-  const nodePositions={};
-  // Draw roots
-  trueRoots.forEach((r,i)=>{
-    const x=spacing*(i+1),y=primaryY;
-    nodePositions[r.key]={x,y};
+  // ── Horizontal layout: roots on left, children middle, grandchildren right ──
+  const COL0=90, COL1=340, COL2=590;
+  const ROW_H=72, PAD_Y=44;
+  // Pre-compute row spans so we can centre each node over its subtree
+  const rootLayouts=[];
+  let totalRows=0;
+  trueRoots.forEach(r=>{
+    const children=childrenOf[r.key]||[];
+    const childLayouts=[];
+    let childRows=0;
+    children.forEach(c=>{
+      const gcs=childrenOf[c.key]||[];
+      const span=Math.max(1,gcs.length);
+      childLayouts.push({s:c,gcs,startRow:childRows,span});
+      childRows+=span;
+    });
+    const span=Math.max(1,childRows);
+    rootLayouts.push({r,children:childLayouts,startRow:totalRows,span});
+    totalRows+=span;
+  });
+  const W=650, H=Math.max(160,totalRows*ROW_H+PAD_Y*2);
+  svg.setAttribute('viewBox',`0 0 ${W} ${H}`);
+  svg.style.minHeight=Math.min(H,480)+'px';
+  const cy=(startRow,span)=>PAD_Y+(startRow+span/2)*ROW_H;
+  const bz=(x1,y1,x2,y2)=>{const mx=(x1+x2)/2;return `M${x1},${y1} C${mx},${y1} ${mx},${y2} ${x2},${y2}`;};
+  let html='<defs><filter id="glow"><feGaussianBlur stdDeviation="3" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs>';
+  rootLayouts.forEach(({r,children,startRow,span})=>{
+    const ry=cy(startRow,span);
     const col=COLORS[r.agent]||COLORS.work;
     const dim=DIM[r.agent]||DIM.work;
     const fill=r.active?col:dim;
-    const filter=r.active?' filter="url(#glow)"':'';
-    const label=(r.name||r.agent).slice(0,12);
-    const model=(r.model||'').split('/').pop()||'';
-    const tip=`${r.name}\nKey: ${r.key}\nTokens: ${(r.totalTokens||0).toLocaleString()}`;
-    html+=`<g><title>${esc(tip)}</title><circle cx="${x}" cy="${y}" r="22" fill="${fill}" stroke="${col}" stroke-width="2"${filter}/><text x="${x}" y="${y+36}" text-anchor="middle" fill="var(--fg)" font-size="10">${esc(label)}</text><text x="${x}" y="${y+48}" text-anchor="middle" fill="var(--dim)" font-size="9">${esc(model)}</text><text x="${x}" y="${y-30}" text-anchor="middle" fill="var(--dim)" font-size="9">${esc((r.subject||r.label||r.agent||'').slice(0,18))}</text></g>`;
-  });
-  // Draw children (depth 1)
-  trueRoots.forEach(r=>{
-    const children=childrenOf[r.key]||[];
-    const px=nodePositions[r.key].x,py=nodePositions[r.key].y;
-    const cSpacing=children.length>1?Math.min(120,600/children.length):0;
-    const startX=px-cSpacing*(children.length-1)/2;
-    children.forEach((c,ci)=>{
-      const cx=Math.max(20,Math.min(880,startX+ci*cSpacing)),cy=subY;
-      nodePositions[c.key]={x:cx,y:cy};
-      const parentCol=COLORS[r.agent]||COLORS.work;
-      const fill=c.active?SUB_COLOR:SUB_DIM;
-      const filter=c.active?' filter="url(#glow)"':'';
-      const label=(c.name||'sub').slice(0,12);
-      const model=(c.model||'').split('/').pop()||'';
-      const tip=`${c.name}\nKey: ${c.key}\nTokens: ${(c.totalTokens||0).toLocaleString()}`;
-      html+=`<path d="M${px},${py+22} C${px},${(py+22+cy-16)/2} ${cx},${(py+22+cy-16)/2} ${cx},${cy-16}" fill="none" stroke="${parentCol}" stroke-width="1.5" opacity="0.4"/>`;
-      const triggerLabel=esc((c.label||c.name||'').slice(0,16));
-      html+=`<g><title>${esc(tip)}</title><circle cx="${cx}" cy="${cy}" r="16" fill="${fill}" stroke="${SUB_COLOR}" stroke-width="1.5"${filter}/><text x="${cx}" y="${cy+26}" text-anchor="middle" fill="var(--fg)" font-size="9">${esc(label)}</text><text x="${cx}" y="${cy+36}" text-anchor="middle" fill="var(--dim)" font-size="8">${esc(model)}</text><text x="${cx}" y="${cy-22}" text-anchor="middle" fill="var(--dim)" font-size="8">${triggerLabel}</text></g>`;
-      // Depth 2: sub-sub-agents
-      const grandchildren=childrenOf[c.key]||[];
-      const gcSpacing=grandchildren.length>1?Math.min(80,300/grandchildren.length):0;
-      const gcStartX=cx-gcSpacing*(grandchildren.length-1)/2;
-      grandchildren.forEach((gc,gi)=>{
-        const gx=Math.max(20,Math.min(880,gcStartX+gi*gcSpacing)),gy=subsubY;
-        const fill2=gc.active?SUB_COLOR:SUB_DIM;
-        const filter2=gc.active?' filter="url(#glow)"':'';
-        const label2=(gc.name||'sub').slice(0,12);
-        const tip2=`${gc.name}\nKey: ${gc.key}\nTokens: ${(gc.totalTokens||0).toLocaleString()}`;
-        html+=`<path d="M${cx},${cy+16} C${cx},${(cy+16+gy-12)/2} ${gx},${(cy+16+gy-12)/2} ${gx},${gy-12}" fill="none" stroke="${SUB_COLOR}" stroke-width="1" opacity="0.3"/>`;
-        html+=`<g><title>${esc(tip2)}</title><circle cx="${gx}" cy="${gy}" r="12" fill="${fill2}" stroke="${SUB_COLOR}" stroke-width="1"${filter2}/><text x="${gx}" y="${gy+20}" text-anchor="middle" fill="var(--dim)" font-size="8">${esc(label2)}</text></g>`;
+    const glow=r.active?' filter="url(#glow)"':'';
+    const tip=`${r.name||r.agent}\nKey: ${r.key}\nTokens: ${(r.totalTokens||0).toLocaleString()}`;
+    const trigger=esc((r.subject||r.label||r.agent||'').slice(0,20));
+    const lbl=esc((r.name||r.agent).slice(0,18));
+    const mdl=esc((r.model||'').split('/').pop().slice(0,18));
+    // Root node circle + labels to the right
+    html+=`<g><title>${esc(tip)}</title>
+      <circle cx="${COL0}" cy="${ry}" r="22" fill="${fill}" stroke="${col}" stroke-width="2"${glow}/>
+      <text x="${COL0+30}" y="${ry-8}" fill="var(--textStrong)" font-size="11" font-weight="600">${lbl}</text>
+      <text x="${COL0+30}" y="${ry+6}" fill="var(--dim)" font-size="9">${mdl}</text>
+      <text x="${COL0+30}" y="${ry+18}" fill="${col}" font-size="9">${trigger}</text>
+    </g>`;
+    children.forEach(({s:c,gcs,startRow:cStart,span:cSpan})=>{
+      const cRowAbs=startRow+cStart;
+      const cY=cy(cRowAbs,cSpan);
+      const cfill=c.active?SUB_COLOR:SUB_COLOR+'44';
+      const cglow=c.active?' filter="url(#glow)"':'';
+      const ctip=`${c.name||'sub'}\nKey: ${c.key}\nTokens: ${(c.totalTokens||0).toLocaleString()}`;
+      const clbl=esc((c.name||'sub').slice(0,18));
+      const cmdl=esc((c.model||'').split('/').pop().slice(0,18));
+      const ctrigger=esc((c.label||c.name||'').slice(0,20));
+      // Line root→child
+      html+=`<path d="${bz(COL0+22,ry,COL1-16,cY)}" fill="none" stroke="${col}" stroke-width="1.5" opacity="0.35"/>`;
+      html+=`<g><title>${esc(ctip)}</title>
+        <circle cx="${COL1}" cy="${cY}" r="16" fill="${cfill}" stroke="${SUB_COLOR}" stroke-width="1.5"${cglow}/>
+        <text x="${COL1+22}" y="${cY-7}" fill="var(--fg)" font-size="10">${clbl}</text>
+        <text x="${COL1+22}" y="${cY+5}" fill="var(--dim)" font-size="8">${cmdl}</text>
+        <text x="${COL1+22}" y="${cY+16}" fill="${col}" font-size="8" opacity="0.8">${ctrigger}</text>
+      </g>`;
+      gcs.forEach((gc,gi)=>{
+        const gcY=PAD_Y+(cRowAbs+gi+0.5)*ROW_H;
+        const gfill=gc.active?SUB_COLOR:SUB_COLOR+'44';
+        const gglow=gc.active?' filter="url(#glow)"':'';
+        const gtip=`${gc.name||'sub'}\nKey: ${gc.key}\nTokens: ${(gc.totalTokens||0).toLocaleString()}`;
+        const glbl=esc((gc.name||'sub').slice(0,18));
+        const gtrigger=esc((gc.label||gc.name||'').slice(0,20));
+        html+=`<path d="${bz(COL1+16,cY,COL2-12,gcY)}" fill="none" stroke="${SUB_COLOR}" stroke-width="1" opacity="0.25"/>`;
+        html+=`<g><title>${esc(gtip)}</title>
+          <circle cx="${COL2}" cy="${gcY}" r="12" fill="${gfill}" stroke="${SUB_COLOR}" stroke-width="1"${gglow}/>
+          <text x="${COL2+16}" y="${gcY-4}" fill="var(--dim)" font-size="9">${glbl}</text>
+          <text x="${COL2+16}" y="${gcY+8}" fill="var(--dim)" font-size="8" opacity="0.7">${gtrigger}</text>
+        </g>`;
       });
     });
   });
