@@ -24,6 +24,7 @@ fi
 
 $PYTHON - "$DIR" "$OPENCLAW_PATH" << 'PYEOF' > "$DIR/data.json.tmp"
 import json, glob, os, sys, subprocess, time
+import re as _re
 from collections import defaultdict
 from datetime import datetime, timezone, timedelta
 
@@ -47,7 +48,9 @@ if os.path.exists(dc_path):
         dc = json.load(open(dc_path))
         bot_name = dc.get('bot', {}).get('name', bot_name)
         bot_emoji = dc.get('bot', {}).get('emoji', bot_emoji)
-    except: dc = {}
+    except Exception as _e:
+        import sys; print(f"[dashboard warn] {_e}", file=sys.stderr)
+        dc = {}
 else:
     dc = {}
 
@@ -77,7 +80,8 @@ try:
             if rss_kb > 1048576: gateway["memory"] = f"{rss_kb/1048576:.1f} GB"
             elif rss_kb > 1024: gateway["memory"] = f"{rss_kb/1024:.0f} MB"
             else: gateway["memory"] = f"{rss_kb} KB"
-except: pass
+except Exception as _e:
+    import sys; print(f"[dashboard warn] {_e}", file=sys.stderr)
 
 # ── OpenClaw config ──
 skills = []
@@ -140,7 +144,8 @@ if os.path.exists(config_path):
                     # strip raw telegram paths
                     if name2 and not name2.startswith('telegram:'):
                         group_names[gid2] = name2
-            except: pass
+            except Exception as _e:
+                import sys; print(f"[dashboard warn] {_e}", file=sys.stderr)
         bindings = oc.get('bindings', [])
         bindings_list = [{'agentId': b.get('agentId',''), 'channel': b.get('match',{}).get('channel',''), 'kind': b.get('match',{}).get('peer',{}).get('kind',''), 'id': b.get('match',{}).get('peer',{}).get('id',''), 'name': group_names.get(b.get('match',{}).get('peer',{}).get('id',''), '')} for b in bindings]
         # Add synthetic entry for the default (main) agent — catches everything not explicitly bound
@@ -228,7 +233,8 @@ if os.path.exists(config_path):
                 'isDefault': True,
                 'context1m': params.get('context1m', None),
             })
-    except: pass
+    except Exception as _e:
+        import sys; print(f"[dashboard warn] {_e}", file=sys.stderr)
 
 # ── Sessions ──
 known_sids = {}
@@ -260,7 +266,9 @@ for store_file in glob.glob(os.path.join(base, '*/sessions/sessions.json')):
                     updated_dt = datetime.fromtimestamp(updated/1000, tz=local_tz)
                     updated_str = updated_dt.strftime('%H:%M:%S')
                     age_min = (now - updated_dt).total_seconds() / 60
-                except: updated_str = ''; age_min = 9999
+                except Exception as _e:
+                    import sys; print(f"[dashboard warn] {_e}", file=sys.stderr)
+                    updated_str = ''; age_min = 9999
             else: updated_str = ''; age_min = 9999
 
             # Only include recently active sessions (last 24h)
@@ -274,7 +282,6 @@ for store_file in glob.glob(os.path.join(base, '*/sessions/sessions.json')):
                 for pfx in ('agent:work:','agent:main:','agent:group:'):
                     if key.startswith(pfx): key_short = key[len(pfx):]; break
                 # Trim long Telegram group ids from display name (e.g. "OpenClaw Dev & Admin id:-100...")
-                import re as _re
                 def _trim(s): return _re.sub(r'\s*id[:\-]\s*-?\d+','',s).strip() if s else s
                 display_name = _trim(raw_label) or _trim(subject) or _trim(origin_label) or key_short
                 # Trigger: what context spawned/drives this session
@@ -294,7 +301,8 @@ for store_file in glob.glob(os.path.join(base, '*/sessions/sessions.json')):
                     'label': raw_label,
                     'subject': trigger[:50]
                 })
-    except: pass
+    except Exception as _e:
+        import sys; print(f"[dashboard warn] {_e}", file=sys.stderr)
 
 sessions_list.sort(key=lambda x: -x.get('updatedAt', 0))
 sessions_list = sessions_list[:20]  # Top 20 most recent
@@ -326,11 +334,13 @@ if os.path.exists(cron_path):
             last_run_str = ''
             if last_run_ms:
                 try: last_run_str = datetime.fromtimestamp(last_run_ms/1000, tz=local_tz).strftime('%Y-%m-%d %H:%M')
-                except: pass
+                except Exception as _e:
+                    import sys; print(f"[dashboard warn] {_e}", file=sys.stderr)
             next_run_str = ''
             if next_run_ms:
                 try: next_run_str = datetime.fromtimestamp(next_run_ms/1000, tz=local_tz).strftime('%Y-%m-%d %H:%M')
-                except: pass
+                except Exception as _e:
+                    import sys; print(f"[dashboard warn] {_e}", file=sys.stderr)
 
             crons.append({
                 'name': job.get('name', 'Unknown'),
@@ -342,7 +352,8 @@ if os.path.exists(cron_path):
                 'nextRun': next_run_str,
                 'model': job.get('payload', {}).get('model', '')
             })
-    except: pass
+    except Exception as _e:
+        import sys; print(f"[dashboard warn] {_e}", file=sys.stderr)
 
 # ── Token usage from JSONL ──
 def model_name(model):
@@ -409,7 +420,8 @@ for f in glob.glob(os.path.join(base, '*/sessions/*.jsonl')) + glob.glob(os.path
                 if v.get('sessionId') == sid:
                     session_key = k
                     break
-        except: pass
+        except Exception as _e:
+            import sys; print(f"[dashboard warn] {_e}", file=sys.stderr)
         if session_key: break
     is_subagent = 'subagent:' in (session_key or '') or sid not in known_sids
 
@@ -461,7 +473,9 @@ for f in glob.glob(os.path.join(base, '*/sessions/*.jsonl')) + glob.glob(os.path
                         msg_date = msg_dt.strftime('%Y-%m-%d')
                         if not session_first_ts: session_first_ts = msg_dt
                         session_last_ts = msg_dt
-                    except: msg_date = ''
+                    except Exception as _e:
+                        import sys; print(f"[dashboard warn] {_e}", file=sys.stderr)
+                        msg_date = ''
 
                     # Daily tracking for charts
                     if msg_date:
@@ -493,8 +507,10 @@ for f in glob.glob(os.path.join(base, '*/sessions/*.jsonl')) + glob.glob(os.path
                         add_bucket(models_30d, name, inp, out, cr, tt, cost_total)
                         if is_subagent:
                             add_bucket(subagent_30d, name, inp, out, cr, tt, cost_total)
-                except: pass
-    except: pass
+                except Exception as _e:
+                    import sys; print(f"[dashboard warn] {_e}", file=sys.stderr)
+    except Exception as _e:
+        import sys; print(f"[dashboard warn] {_e}", file=sys.stderr)
 
     if is_subagent and session_cost > 0 and session_last_ts:
         duration_s = (session_last_ts - session_first_ts).total_seconds() if session_first_ts and session_last_ts else 0
@@ -520,9 +536,6 @@ for r in subagent_runs:
 
 # ── Build daily chart data (last 30 days) ──
 chart_dates = [(now - timedelta(days=i)).strftime('%Y-%m-%d') for i in range(29, -1, -1)]
-all_chart_models = set()
-for d in chart_dates:
-    all_chart_models.update(daily_costs.get(d, {}).keys())
 # Sort by total cost descending, keep top 6 + "Other"
 model_totals_30d = defaultdict(float)
 for d in chart_dates:
@@ -573,7 +586,8 @@ try:
         if '|' in line:
             parts = line.split('|', 2)
             git_log.append({'hash': parts[0], 'message': parts[1], 'ago': parts[2] if len(parts)>2 else ''})
-except: pass
+except Exception as _e:
+    import sys; print(f"[dashboard warn] {_e}", file=sys.stderr)
 
 # ── Alerts ──
 alerts = []
@@ -615,11 +629,9 @@ day_of_month = now.day
 if day_of_month > 0:
     # Simple projection based on days elapsed
     days_in_month = 30
-    projected = (total_cost_all / max(day_of_month, 1)) * days_in_month  # rough
     # Better: use today's cost * 30
     projected_from_today = total_cost_today * 30
 else:
-    projected = 0
     projected_from_today = 0
 
 

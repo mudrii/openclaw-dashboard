@@ -539,7 +539,7 @@ loadThemes();
 let D={},uTab='today',srTab='today',stTab='today',timer=60;
 const COLORS=['#6366f1','#9333ea','#ec4899','#f59e0b','#10b981','#06b6d4','#f87171','#84cc16'];
 const $=id=>document.getElementById(id);
-const esc=s=>s?String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'):'';
+const esc = s => String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 
 function relTime(ts){
   if(!ts)return'—';
@@ -611,8 +611,6 @@ function render(){
   $('donutCenter').textContent='$'+total.toFixed(0);
   $('donutLegend').innerHTML=legend;
 
-  // Kanban
-
 
   const crons=D.crons||[];
   $('cronCount').textContent=crons.length+' jobs';
@@ -621,7 +619,7 @@ function render(){
     const dotCls=st==='ok'?'sd-ok':st==='error'?'sd-error':st==='none'?'sd-none':'sd-pending';
     const tip=c.lastError?` data-tip="${esc(c.lastError)}"`:'';
     const dur=c.lastDurationMs?((c.lastDurationMs/1000).toFixed(1)+'s'):'—';
-    return `<tr class="dr"><td><span class="sd ${dotCls}"${tip}></span>${st||'—'}</td><td class="w">${esc(c.name)}</td><td>${esc(c.schedule)}</td><td>${c.lastRun||'—'}</td><td>${c.nextRun||'—'}</td><td class="r">${dur}</td><td>${esc(c.model||'—')}</td></tr>`;
+    return `<tr class="dr"><td><span class="sd ${dotCls}"${tip}></span>${st||'—'}</td><td class="w">${esc(c.name)}</td><td>${esc(c.schedule)}</td><td>${esc(c.lastRun||'—')}</td><td>${esc(c.nextRun||'—')}</td><td class="r">${dur}</td><td>${esc(c.model||'—')}</td></tr>`;
   }).join('');
 
   // Sessions
@@ -630,8 +628,8 @@ function render(){
   $('sessBody').innerHTML=sess.map(s=>{
     const pct=s.contextPct||0;
     const color=pct>80?'var(--red)':pct>50?'var(--yellow)':'var(--green)';
-    const typeCls='type-'+(s.type||'main');
-    return `<tr class="dr"><td class="w" style="max-width:250px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(s.name)}</td><td>${esc(s.model)}</td><td><span class="type-badge ${typeCls}">${s.type||'—'}</span></td><td><div class="ctx-bar"><div class="ctx-fill" style="width:${pct}%;background:${color}"></div></div> <span style="font-size:11px;color:${color}">${pct}%</span></td><td>${relTime(s.updatedAt)}</td><td class="r">${(s.totalTokens||0).toLocaleString()}</td></tr>`;
+    const typeCls='type-'+(esc(s.type)||'main');
+    return `<tr class="dr"><td class="w" style="max-width:250px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(s.name)}</td><td>${esc(s.model)}</td><td><span class="type-badge ${typeCls}">${esc(s.type)||'—'}</span></td><td><div class="ctx-bar"><div class="ctx-fill" style="width:${pct}%;background:${color}"></div></div> <span style="font-size:11px;color:${color}">${pct}%</span></td><td>${relTime(s.updatedAt)}</td><td class="r">${(s.totalTokens||0).toLocaleString()}</td></tr>`;
   }).join('');
 
   // Token usage
@@ -647,7 +645,7 @@ function render(){
   $('srEmpty').style.display=runs.length?'none':'block';
   $('srBody').innerHTML=runs.slice(0,20).map(r=>{
     const dur=r.durationSec>=3600?(r.durationSec/3600).toFixed(1)+'h':r.durationSec>=60?Math.round(r.durationSec/60)+'m':r.durationSec+'s';
-    return `<tr class="dr"><td class="w" style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(r.task)}</td><td>${esc(r.model)}</td><td class="r cost">$${r.cost.toFixed(4)}</td><td class="r">${dur}</td><td><span class="badge badge-ok">${r.status}</span></td><td>${r.timestamp}</td></tr>`;
+    return `<tr class="dr"><td class="w" style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(r.task)}</td><td>${esc(r.model)}</td><td class="r cost">$${r.cost.toFixed(4)}</td><td class="r">${dur}</td><td><span class="badge badge-ok">${esc(r.status)}</span></td><td>${esc(r.timestamp)}</td></tr>`;
   }).join('');
 
   // Sub token
@@ -660,7 +658,7 @@ function render(){
   renderAgentTree();
 
   // Models
-  $('modelsGrid').innerHTML=(D.availableModels||[]).map(m=>`<div class="glass model-card"><span class="badge badge-${m.status}">${m.status}</span><div class="model-name">${esc(m.name)}</div><div class="model-id">${esc(m.provider)}</div></div>`).join('');
+  $('modelsGrid').innerHTML=(D.availableModels||[]).map(m=>`<div class="glass model-card"><span class="badge badge-${esc(m.status)}">${esc(m.status)}</span><div class="model-name">${esc(m.name)}</div><div class="model-id">${esc(m.provider)}</div></div>`).join('');
 
   // Agent Configuration — fully generic, works with any number of agents/models
   const AC = D.agentConfig||{};
@@ -857,7 +855,7 @@ function render(){
   }).join('');
 
   // Git
-  $('gitPanel').innerHTML=(D.gitLog||[]).slice(0,5).map(g=>`<div class="git-item"><span class="git-hash">${g.hash}</span><span class="git-msg" title="${esc(g.message)}">${esc(g.message)}</span><span class="git-ago">${g.ago}</span></div>`).join('')||'<div class="empty">No git history</div>';
+  $('gitPanel').innerHTML=(D.gitLog||[]).slice(0,5).map(g=>`<div class="git-item"><span class="git-hash">${esc(g.hash)}</span><span class="git-msg" title="${esc(g.message)}">${esc(g.message)}</span><span class="git-ago">${esc(g.ago)}</span></div>`).join('')||'<div class="empty">No git history</div>';
 }
 
 function renderAgentTree(){
