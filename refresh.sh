@@ -168,7 +168,16 @@ if os.path.exists(config_path):
             'bindings': bindings_list,
             'tts': has_tts,
             'diagnostics': diag_enabled,
-            'agents': []
+            'agents': [],
+            'availableModels': [
+                {'id': mid, 'alias': mconf.get('alias', mid), 'provider': mid.split('/')[0] if '/' in mid else '—'}
+                for mid, mconf in oc.get('agents', {}).get('defaults', {}).get('models', {}).items()
+            ],
+            'subagentConfig': {
+                'maxConcurrent': defs.get('subagents', {}).get('maxConcurrent', '—'),
+                'maxSpawnDepth': defs.get('subagents', {}).get('maxSpawnDepth', '—'),
+                'maxChildrenPerAgent': defs.get('subagents', {}).get('maxChildrenPerAgent', '—'),
+            },
         }
         # Build agent entries; if no agent list, synthesize a single default entry
         if agent_list:
@@ -179,6 +188,8 @@ if os.path.exists(config_path):
                 is_default = ag.get('default', False)
                 # Derive a human role: prefer explicit 'role' field, else capitalise id
                 role = ag.get('role', 'Default' if is_default else aid.replace('-',' ').title())
+                # Per-agent fallbacks: agent-specific override or inherit globals
+                agent_fallbacks = ag.get('fallbacks', fallbacks)
                 agent_config['agents'].append({
                     'id': aid,
                     'role': role,
@@ -187,6 +198,7 @@ if os.path.exists(config_path):
                     'workspace': ag.get('workspace', '~/.openclaw/workspace'),
                     'isDefault': is_default,
                     'context1m': params.get('context1m', None),
+                    'fallbacks': [model_aliases.get(f, f) for f in agent_fallbacks[:3]],
                 })
         else:
             # Single-model / minimal config — synthesise one default entry

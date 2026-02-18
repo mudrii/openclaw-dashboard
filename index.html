@@ -451,6 +451,20 @@ body{font-family:-apple-system,BlinkMacSystemFont,'SF Pro','Helvetica Neue',sans
     </thead>
     <tbody id="agentTableBody"></tbody>
   </table>
+
+  <!-- Available Models + Subagent Config -->
+  <div style="display:grid;grid-template-columns:1fr auto;gap:12px;margin-top:18px;align-items:start">
+    <!-- Available Models -->
+    <div>
+      <div style="font-size:9px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-bottom:8px">🧩 Available Models</div>
+      <div id="availableModelsGrid" style="display:flex;flex-wrap:wrap;gap:6px"></div>
+    </div>
+    <!-- Subagent Limits -->
+    <div style="background:var(--glass);border:1px solid var(--border);border-radius:8px;padding:12px;min-width:180px">
+      <div style="font-size:9px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-bottom:10px">🕸️ Subagent Limits</div>
+      <div id="subagentConfigPanel"></div>
+    </div>
+  </div>
 </div>
 
 <div style="text-align:center;padding:12px;font-size:10px;color:var(--darker)">OpenClaw Dashboard · Auto-refresh 60s</div>
@@ -788,18 +802,37 @@ function render(){
         </div>`).join('')}</div>`
     : '<span style="color:var(--dim);font-size:12px">No explicit bindings — all messages go to default agent</span>';
 
-  // Agent Details Table — generic, uses palette colors by index
+    // Available Models grid
+  const PROVIDER_COLORS={'anthropic':'var(--green)','openai-codex':'var(--blue)','openai':'var(--blue)','xai':'var(--purple)','google':'var(--yellow)','kimi-coding':'var(--cyan,#22d3ee)','minimax':'var(--orange,#fb923c)','deepseek':'var(--accent)','zai':'var(--dim)'};
+  $('availableModelsGrid').innerHTML=(AC.availableModels||[]).map(m=>{
+    const col=PROVIDER_COLORS[m.provider]||'var(--dim)';
+    return `<div style="background:var(--glass);border:1px solid var(--border);border-left:2px solid ${col};border-radius:6px;padding:5px 10px;display:flex;flex-direction:column;gap:2px">
+      <span style="font-size:12px;font-weight:600;color:var(--textStrong)">${esc(m.alias)}</span>
+      <span style="font-size:10px;color:var(--dim)">${esc(m.provider)}</span>
+    </div>`;
+  }).join('')||'<span style="color:var(--dim);font-size:12px">No models configured</span>';
+
+  // Subagent config panel
+  const SC=AC.subagentConfig||{};
+  $('subagentConfigPanel').innerHTML=[
+    SC.maxSpawnDepth!=null    ? kv('Max Depth',        SC.maxSpawnDepth,    'var(--accent)') : '',
+    SC.maxChildrenPerAgent!=null ? kv('Max Children/Agent', SC.maxChildrenPerAgent, 'var(--text)') : '',
+    SC.maxConcurrent!=null    ? kv('Max Concurrent',   SC.maxConcurrent,    'var(--text)') : '',
+  ].join('')||'<span style="color:var(--dim);font-size:12px">Not configured</span>';
+
+  // Per-agent fallbacks in table — use agent-specific fallbacks
   $('agentTableBody').innerHTML = agentList.map((a,i)=>{
     const col = PALETTE[i % PALETTE.length];
     const provider = (a.modelId||'').split('/')[0]||'—';
     const ctx1m = a.context1m===true?'✅':a.context1m===false?'❌':'—';
+    const agentFallbacks = (a.fallbacks||AC.fallbacks||[]).join(' → ');
     return `<tr class="dr">
       <td style="padding:6px 8px;font-weight:700;color:${col}">${esc(a.id)}${a.isDefault?' <span style="font-size:9px;color:var(--green);font-weight:400">(default)</span>':''}</td>
       <td style="padding:6px 8px;color:var(--text)">${esc(a.role||a.id)}</td>
       <td style="padding:6px 8px;color:var(--textStrong);font-weight:600">${esc(a.model)}</td>
       <td style="padding:6px 8px;color:var(--dim);font-size:12px">${esc(provider)}</td>
       <td style="padding:6px 8px;color:var(--dim);font-size:12px;font-family:monospace">${esc(a.workspace)}</td>
-      <td style="padding:6px 8px;color:var(--dim);font-size:11px">${esc((AC.fallbacks||[]).join(' → '))}</td>
+      <td style="padding:6px 8px;color:var(--dim);font-size:11px">${esc(agentFallbacks)}</td>
       <td style="padding:6px 8px;text-align:center">${ctx1m}</td>
     </tr>`;
   }).join('')||'<tr><td colspan="7" style="padding:8px;color:var(--dim)">No agents configured</td></tr>';
