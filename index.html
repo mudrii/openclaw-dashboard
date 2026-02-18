@@ -147,6 +147,18 @@ body{font-family:-apple-system,BlinkMacSystemFont,'SF Pro','Helvetica Neue',sans
 
 /* Skills */
 .skill-tag{padding:4px 10px;border-radius:6px;font-size:11px;font-weight:500;border:1px solid;display:inline-block}
+.tree-root{display:flex;flex-direction:column;gap:8px}
+.tree-node-card{display:flex;align-items:center;gap:10px;padding:8px 12px;border-radius:8px;border:1px solid var(--border);background:var(--surface);border-left:3px solid var(--node-color,var(--accent));transition:background .15s}
+.tree-node-card:hover{background:var(--glass)}
+.tree-dot{width:10px;height:10px;border-radius:50%;background:var(--node-color,var(--accent));flex-shrink:0}
+.tree-name{font-size:12px;font-weight:600;color:var(--textStrong);flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tree-trigger{font-size:10px;color:var(--node-color,var(--accent));opacity:.85;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:160px}
+.tree-model{font-size:10px;color:var(--dim);white-space:nowrap}
+.tree-badge{font-size:9px;padding:2px 6px;border-radius:4px;font-weight:600;flex-shrink:0}
+.tree-badge.live{background:rgba(74,222,128,.12);color:var(--green);border:1px solid rgba(74,222,128,.25)}
+.tree-badge.idle{background:var(--glass);color:var(--dim);border:1px solid var(--border)}
+.tree-children{margin-left:20px;padding-left:14px;border-left:1px solid var(--border);margin-top:4px;display:flex;flex-direction:column;gap:4px}
+.tree-grandchildren{margin-left:16px;padding-left:12px;border-left:1px dashed var(--border);margin-top:4px;display:flex;flex-direction:column;gap:4px}
 
 /* Tooltip */
 [data-tip]{position:relative;cursor:help}
@@ -277,10 +289,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,'SF Pro','Helvetica Neue',sans
 <!-- 7. Active Sessions Panel -->
 <div style="margin-bottom:24px">
   <div class="section-header"><span class="section-title">📡 Active Sessions</span><span class="section-count" id="sessCount"></span></div>
-  <!-- Agent Hierarchy Mind Map -->
+  <!-- Agent Hierarchy Tree -->
   <div class="card" style="margin-bottom:16px">
-    <div style="font-size:11px;color:var(--dim);margin-bottom:8px;text-transform:uppercase;letter-spacing:.05em">Agent Hierarchy</div>
-    <svg id="agentMindMap" width="100%" style="min-height:160px;max-height:480px" viewBox="0 0 650 160" preserveAspectRatio="xMinYMid meet"></svg>
+    <div style="font-size:11px;color:var(--dim);margin-bottom:12px;text-transform:uppercase;letter-spacing:.05em">Agent Hierarchy</div>
+    <div id="agentTree"></div>
   </div>
   <div class="glass panel" style="overflow-x:auto;max-height:400px;overflow-y:auto">
     <table class="dtable">
@@ -801,109 +813,57 @@ function render(){
 }
 
 function renderAgentTree(){
-  const svg=document.getElementById('agentMindMap');
-  if(!svg)return;
+  const el=document.getElementById('agentTree');
+  if(!el)return;
   const sessions=(D.sessions||[]).filter(s=>s.active);
-  if(!sessions.length){svg.innerHTML='<text x="450" y="150" text-anchor="middle" fill="var(--dim)" font-size="13">No active sessions</text>';return;}
-  const cs=getComputedStyle(document.documentElement);
-  const cGreen=cs.getPropertyValue('--green').trim()||'#4ade80';
-  const cAccent=cs.getPropertyValue('--accent').trim()||'#6366f1';
-  const cPurple=cs.getPropertyValue('--purple').trim()||'#a855f7';
-  const cDim=cs.getPropertyValue('--dim').trim()||'#64748b';
-  const COLORS={main:cGreen,work:cAccent,group:cPurple,other:cDim};
-  const DIM={main:cGreen+'44',work:cAccent+'44',group:cPurple+'44',other:cDim+'44'};
-  const SUB_COLOR=cDim;
-  // Build lookup
+  if(!sessions.length){el.innerHTML='<div style="color:var(--dim);font-size:12px;padding:8px 0">No active sessions</div>';return;}
+  const COLORS={main:'var(--green)',work:'var(--accent)',group:'var(--purple)',other:'var(--dim)'};
   const byKey={};sessions.forEach(s=>byKey[s.key]=s);
   const roots=sessions.filter(s=>s.type!=='subagent');
   const subs=sessions.filter(s=>s.type==='subagent');
   const childrenOf={};
   subs.forEach(s=>{
     const pk=s.spawnedBy||'';
-    if(pk&&byKey[pk]){(childrenOf[pk]=childrenOf[pk]||[]).push(s);}
-    else{(childrenOf['__unknown__']=childrenOf['__unknown__']||[]).push(s);}
+    if(pk&&byKey[pk])(childrenOf[pk]=childrenOf[pk]||[]).push(s);
+    else(childrenOf['__unknown__']=childrenOf['__unknown__']||[]).push(s);
   });
   const trueRoots=roots.filter(r=>r.type!=='subagent');
-  const orphans=childrenOf['__unknown__']||[];
-  if(orphans.length) trueRoots.push({key:'__unknown__',name:'Unknown',agent:'other',model:'',active:false,label:'',subject:'',totalTokens:0,type:'other'});
-  if(!trueRoots.length){svg.innerHTML='<text x="450" y="150" text-anchor="middle" fill="var(--dim)" font-size="13">No agent hierarchy</text>';return;}
-  // ── Horizontal layout: roots on left, children middle, grandchildren right ──
-  const COL0=90, COL1=340, COL2=590;
-  const ROW_H=72, PAD_Y=44;
-  // Pre-compute row spans so we can centre each node over its subtree
-  const rootLayouts=[];
-  let totalRows=0;
+  if((childrenOf['__unknown__']||[]).length) trueRoots.push({key:'__unknown__',name:'Unknown',agent:'other',model:'',active:false,label:'',subject:'',totalTokens:0,type:'other'});
+  if(!trueRoots.length){el.innerHTML='<div style="color:var(--dim);font-size:12px;padding:8px 0">No agent hierarchy</div>';return;}
+  function nodeCard(s,col){
+    const name=esc((s.name||s.agent||'agent').slice(0,40));
+    const model=esc((s.model||'').split('/').pop().slice(0,24));
+    const trigger=esc((s.subject||s.label||'').slice(0,30));
+    const badge=s.active?'<span class="tree-badge live">● live</span>':'<span class="tree-badge idle">idle</span>';
+    return `<div class="tree-node-card" style="--node-color:${col}">
+      <div class="tree-dot"></div>
+      <span class="tree-name" title="${name}">${name}</span>
+      ${trigger?`<span class="tree-trigger">${trigger}</span>`:''}
+      <span class="tree-model">${model}</span>
+      ${badge}
+    </div>`;
+  }
+  let html='<div class="tree-root">';
   trueRoots.forEach(r=>{
-    const children=childrenOf[r.key]||[];
-    const childLayouts=[];
-    let childRows=0;
-    children.forEach(c=>{
-      const gcs=childrenOf[c.key]||[];
-      const span=Math.max(1,gcs.length);
-      childLayouts.push({s:c,gcs,startRow:childRows,span});
-      childRows+=span;
-    });
-    const span=Math.max(1,childRows);
-    rootLayouts.push({r,children:childLayouts,startRow:totalRows,span});
-    totalRows+=span;
-  });
-  const W=650, H=Math.max(160,totalRows*ROW_H+PAD_Y*2);
-  svg.setAttribute('viewBox',`0 0 ${W} ${H}`);
-  svg.style.minHeight=Math.min(H,480)+'px';
-  const cy=(startRow,span)=>PAD_Y+(startRow+span/2)*ROW_H;
-  const bz=(x1,y1,x2,y2)=>{const mx=(x1+x2)/2;return `M${x1},${y1} C${mx},${y1} ${mx},${y2} ${x2},${y2}`;};
-  let html='<defs><filter id="glow"><feGaussianBlur stdDeviation="3" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs>';
-  rootLayouts.forEach(({r,children,startRow,span})=>{
-    const ry=cy(startRow,span);
     const col=COLORS[r.agent]||COLORS.work;
-    const dim=DIM[r.agent]||DIM.work;
-    const fill=r.active?col:dim;
-    const glow=r.active?' filter="url(#glow)"':'';
-    const tip=`${r.name||r.agent}\nKey: ${r.key}\nTokens: ${(r.totalTokens||0).toLocaleString()}`;
-    const trigger=esc((r.subject||r.label||r.agent||'').slice(0,20));
-    const lbl=esc((r.name||r.agent).slice(0,18));
-    const mdl=esc((r.model||'').split('/').pop().slice(0,18));
-    // Root node circle + labels to the right
-    html+=`<g><title>${esc(tip)}</title>
-      <circle cx="${COL0}" cy="${ry}" r="22" fill="${fill}" stroke="${col}" stroke-width="2"${glow}/>
-      <text x="${COL0+30}" y="${ry-8}" fill="var(--textStrong)" font-size="11" font-weight="600">${lbl}</text>
-      <text x="${COL0+30}" y="${ry+6}" fill="var(--dim)" font-size="9">${mdl}</text>
-      <text x="${COL0+30}" y="${ry+18}" fill="${col}" font-size="9">${trigger}</text>
-    </g>`;
-    children.forEach(({s:c,gcs,startRow:cStart,span:cSpan})=>{
-      const cRowAbs=startRow+cStart;
-      const cY=cy(cRowAbs,cSpan);
-      const cfill=c.active?SUB_COLOR:SUB_COLOR+'44';
-      const cglow=c.active?' filter="url(#glow)"':'';
-      const ctip=`${c.name||'sub'}\nKey: ${c.key}\nTokens: ${(c.totalTokens||0).toLocaleString()}`;
-      const clbl=esc((c.name||'sub').slice(0,18));
-      const cmdl=esc((c.model||'').split('/').pop().slice(0,18));
-      const ctrigger=esc((c.label||c.name||'').slice(0,20));
-      // Line root→child
-      html+=`<path d="${bz(COL0+22,ry,COL1-16,cY)}" fill="none" stroke="${col}" stroke-width="1.5" opacity="0.35"/>`;
-      html+=`<g><title>${esc(ctip)}</title>
-        <circle cx="${COL1}" cy="${cY}" r="16" fill="${cfill}" stroke="${SUB_COLOR}" stroke-width="1.5"${cglow}/>
-        <text x="${COL1+22}" y="${cY-7}" fill="var(--fg)" font-size="10">${clbl}</text>
-        <text x="${COL1+22}" y="${cY+5}" fill="var(--dim)" font-size="8">${cmdl}</text>
-        <text x="${COL1+22}" y="${cY+16}" fill="${col}" font-size="8" opacity="0.8">${ctrigger}</text>
-      </g>`;
-      gcs.forEach((gc,gi)=>{
-        const gcY=PAD_Y+(cRowAbs+gi+0.5)*ROW_H;
-        const gfill=gc.active?SUB_COLOR:SUB_COLOR+'44';
-        const gglow=gc.active?' filter="url(#glow)"':'';
-        const gtip=`${gc.name||'sub'}\nKey: ${gc.key}\nTokens: ${(gc.totalTokens||0).toLocaleString()}`;
-        const glbl=esc((gc.name||'sub').slice(0,18));
-        const gtrigger=esc((gc.label||gc.name||'').slice(0,20));
-        html+=`<path d="${bz(COL1+16,cY,COL2-12,gcY)}" fill="none" stroke="${SUB_COLOR}" stroke-width="1" opacity="0.25"/>`;
-        html+=`<g><title>${esc(gtip)}</title>
-          <circle cx="${COL2}" cy="${gcY}" r="12" fill="${gfill}" stroke="${SUB_COLOR}" stroke-width="1"${gglow}/>
-          <text x="${COL2+16}" y="${gcY-4}" fill="var(--dim)" font-size="9">${glbl}</text>
-          <text x="${COL2+16}" y="${gcY+8}" fill="var(--dim)" font-size="8" opacity="0.7">${gtrigger}</text>
-        </g>`;
+    const children=childrenOf[r.key]||[];
+    html+=nodeCard(r,col);
+    if(children.length){
+      html+='<div class="tree-children">';
+      children.forEach(c=>{
+        html+=nodeCard(c,col);
+        const gcs=childrenOf[c.key]||[];
+        if(gcs.length){
+          html+='<div class="tree-grandchildren">';
+          gcs.forEach(gc=>{ html+=nodeCard(gc,'var(--dim)'); });
+          html+='</div>';
+        }
       });
-    });
+      html+='</div>';
+    }
   });
-  svg.innerHTML=html;
+  html+='</div>';
+  el.innerHTML=html;
 }
 function renderTokenTbl(bodyId,data,accentColor){
   data=data||[];
