@@ -701,12 +701,12 @@ function render(){
     AC.imageModel ? {k:'🖼️ Image Model', v:AC.imageModel, c:'var(--purple)'} : null,
     AC.streamMode ? {k:'📡 Stream Mode', v:AC.streamMode, c:'var(--blue)'} : null,
   ].filter(Boolean);
-  // Sub-agent routing — derived from per-agent model assignments
-  const subAgentRoutes = agentList.filter(a=>!a.isDefault).map((a,i)=>{
-    const col=PALETTE[(agentList.indexOf(a))%PALETTE.length];
-    const purposeMap={'group':'🖥️ Dev / Coding','work':'⚙️ Work / Admin'};
+  // Sub-agent routing — all agents including main
+  const subAgentRoutes = agentList.map((a,i)=>{
+    const col=PALETTE[i%PALETTE.length];
+    const purposeMap={'main':'🧠 General / Default','group':'🖥️ Dev / Coding','work':'⚙️ Work / Admin'};
     const purpose=purposeMap[a.id]||`🤖 ${a.id}`;
-    return {purpose, agent:a.id, model:a.model, col};
+    return {purpose, agent:a.id, model:a.model, col, isDefault:a.isDefault};
   });
   $('modelRoutingPanel').innerHTML = `
     <div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px">General</div>
