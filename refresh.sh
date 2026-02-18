@@ -237,9 +237,19 @@ for store_file in glob.glob(os.path.join(base, '*/sessions/sessions.json')):
 
             # Only include recently active sessions (last 24h)
             if age_min < 1440:
-                label = val.get('origin', {}).get('label', key)
+                raw_label = val.get('label', '')
+                origin_label = val.get('origin', {}).get('label', '') if val.get('origin') else ''
+                subject = val.get('subject', '')
+                # Friendly display name: prefer task label for sub-agents, group subject for roots
+                # Last resort: strip agent prefix from key to get readable channel path
+                key_short = key
+                for pfx in ('agent:work:','agent:main:','agent:group:'):
+                    if key.startswith(pfx): key_short = key[len(pfx):]; break
+                display_name = raw_label or subject or origin_label or key_short
+                # Trigger: what context spawned/drives this session
+                trigger = subject or origin_label or raw_label or ''
                 sessions_list.append({
-                    'name': label[:50],
+                    'name': display_name[:50],
                     'key': key,
                     'agent': agent_name,
                     'model': val.get('model', 'unknown'),
@@ -250,8 +260,8 @@ for store_file in glob.glob(os.path.join(base, '*/sessions/sessions.json')):
                     'type': stype,
                     'spawnedBy': val.get('spawnedBy', ''),
                     'active': age_min < 30,
-                    'label': val.get('label', ''),
-                    'subject': val.get('subject', '') or val.get('origin', {}).get('label', '') if val.get('origin') else val.get('subject', '')
+                    'label': raw_label,
+                    'subject': trigger[:50]
                 })
     except: pass
 
