@@ -443,7 +443,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'SF Pro','Helvetica Neue',sans
 
   <!-- Full Agent Table -->
   <div style="font-size:9px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-bottom:8px">📋 Agent Details</div>
-  <table style="width:100%;border-collapse:collapse;font-size:12px" id="agentTable">
+  <div style="overflow-x:auto">
+  <table style="width:100%;border-collapse:collapse;font-size:12px;min-width:700px" id="agentTable">
     <thead>
       <tr style="color:var(--muted);text-transform:uppercase;font-size:9px;letter-spacing:.08em">
         <th style="text-align:left;padding:5px 8px;border-bottom:1px solid var(--border)">Agent ID</th>
@@ -457,6 +458,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'SF Pro','Helvetica Neue',sans
     </thead>
     <tbody id="agentTableBody"></tbody>
   </table>
+  </div>
 
   <!-- subagentConfigPanel moved to extraConfigRow grid -->
 </div>
@@ -816,7 +818,7 @@ function render(){
       <td style="padding:6px 8px;color:var(--textStrong);font-weight:600">${esc(a.model)}</td>
       <td style="padding:6px 8px;color:var(--dim);font-size:12px">${esc(provider)}</td>
       <td style="padding:6px 8px;color:var(--dim);font-size:12px;font-family:monospace">${esc(a.workspace)}</td>
-      <td style="padding:6px 8px;color:var(--dim);font-size:11px">${esc(agentFallbacks)}</td>
+      <td style="padding:6px 8px;color:var(--dim);font-size:12px">${esc(agentFallbacks)}</td>
       <td style="padding:6px 8px;text-align:center">${ctx1m}</td>
     </tr>`;
   }).join('')||'<tr><td colspan="7" style="padding:8px;color:var(--dim)">No agents configured</td></tr>';
