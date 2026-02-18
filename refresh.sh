@@ -249,7 +249,9 @@ for store_file in glob.glob(os.path.join(base, '*/sessions/sessions.json')):
                     'totalTokens': total_tokens,
                     'type': stype,
                     'spawnedBy': val.get('spawnedBy', ''),
-                    'active': age_min < 30
+                    'active': age_min < 30,
+                    'label': val.get('label', ''),
+                    'subject': val.get('subject', '') or val.get('origin', {}).get('label', '') if val.get('origin') else val.get('subject', '')
                 })
     except: pass
 
