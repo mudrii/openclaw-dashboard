@@ -756,8 +756,8 @@ function render(){
       </div>`).join('')}
     </div>` : '',
     channelRows.length ? `<div style="${compCards.length?'padding-top:8px;border-top:1px solid var(--border)':''}">
-      ${channelRows.map(r=>`<div style="display:flex;justify-content:space-between;margin-bottom:4px">
-        <span style="font-size:12px;color:var(--muted)">${esc(r.k)}</span>
+      ${channelRows.map(r=>`<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+        <span style="font-size:12px;color:var(--muted);min-width:140px">${esc(r.k)}</span>
         <span style="font-size:12px;color:var(--text);font-weight:600">${esc(r.v)}</span>
       </div>`).join('')}
     </div>` : '',
