@@ -805,10 +805,15 @@ function renderAgentTree(){
   if(!svg)return;
   const sessions=(D.sessions||[]);
   if(!sessions.length){svg.innerHTML='<text x="450" y="150" text-anchor="middle" fill="var(--dim)" font-size="13">No active sessions</text>';return;}
-  const COLORS={main:'rgba(74,222,128,1)',work:'rgba(99,102,241,1)',group:'rgba(168,85,247,1)'};
-  const DIM={main:'rgba(74,222,128,0.3)',work:'rgba(99,102,241,0.3)',group:'rgba(168,85,247,0.3)'};
-  const SUB_COLOR='rgba(148,163,184,0.7)';
-  const SUB_DIM='rgba(148,163,184,0.3)';
+  const cs=getComputedStyle(document.documentElement);
+  const cGreen=cs.getPropertyValue('--green').trim()||'#4ade80';
+  const cAccent=cs.getPropertyValue('--accent').trim()||'#6366f1';
+  const cPurple=cs.getPropertyValue('--purple').trim()||'#a855f7';
+  const cDim=cs.getPropertyValue('--dim').trim()||'#64748b';
+  const COLORS={main:cGreen,work:cAccent,group:cPurple};
+  const DIM={main:cGreen+'44',work:cAccent+'44',group:cPurple+'44'};
+  const SUB_COLOR=cDim;
+  const SUB_DIM=cDim+'44';
   // Build lookup by key
   const byKey={};sessions.forEach(s=>byKey[s.key]=s);
   // Find roots (not subagents) and group by agent
@@ -819,19 +824,18 @@ function renderAgentTree(){
   subs.forEach(s=>{
     const pk=s.spawnedBy||'';
     if(pk&&byKey[pk]){(childrenOf[pk]=childrenOf[pk]||[]).push(s);}
-    else{
-      // Try to find parent by agent name match among roots
-      const parent=roots.find(r=>r.agent===s.agent);
-      if(parent)(childrenOf[parent.key]=childrenOf[parent.key]||[]).push(s);
-    }
+    else{(childrenOf['__unknown__']=childrenOf['__unknown__']||[]).push(s);}
   });
   // Also find sub-sub-agents (subs whose spawnedBy points to another sub)
-  const subKeys=new Set(subs.map(s=>s.key));
   // Layout
   const primaryY=60,subY=160,subsubY=260;
   let html='<defs><filter id="glow"><feGaussianBlur stdDeviation="3" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs>';
   // Separate true roots from sub-subs
   const trueRoots=roots.filter(r=>r.type!=='subagent');
+  const orphans=childrenOf['__unknown__']||[];
+  if(orphans.length){
+    trueRoots.push({key:'__unknown__',name:'Unknown',agent:'other',model:'',active:false,lastActivity:'',totalTokens:0,type:'other'});
+  }
   if(!trueRoots.length){svg.innerHTML='<text x="450" y="150" text-anchor="middle" fill="var(--dim)" font-size="13">No agent hierarchy</text>';return;}
   const spacing=900/(trueRoots.length+1);
   const nodePositions={};
@@ -855,7 +859,7 @@ function renderAgentTree(){
     const cSpacing=children.length>1?Math.min(120,600/children.length):0;
     const startX=px-cSpacing*(children.length-1)/2;
     children.forEach((c,ci)=>{
-      const cx=startX+ci*cSpacing,cy=subY;
+      const cx=Math.max(20,Math.min(880,startX+ci*cSpacing)),cy=subY;
       nodePositions[c.key]={x:cx,y:cy};
       const parentCol=COLORS[r.agent]||COLORS.work;
       const fill=c.active?SUB_COLOR:SUB_DIM;
@@ -870,7 +874,7 @@ function renderAgentTree(){
       const gcSpacing=grandchildren.length>1?Math.min(80,300/grandchildren.length):0;
       const gcStartX=cx-gcSpacing*(grandchildren.length-1)/2;
       grandchildren.forEach((gc,gi)=>{
-        const gx=gcStartX+gi*gcSpacing,gy=subsubY;
+        const gx=Math.max(20,Math.min(880,gcStartX+gi*gcSpacing)),gy=subsubY;
         const fill2=gc.active?SUB_COLOR:SUB_DIM;
         const filter2=gc.active?' filter="url(#glow)"':'';
         const label2=(gc.name||'sub').slice(0,12);
