@@ -276,6 +276,16 @@ rm -rf ~/.openclaw/dashboard
 
 ## Changelog
 
+### v2026.2.20
+
+- **New**: Dynamic channels panel renders all configured/runtime channels (Slack, Discord, Telegram, WhatsApp, and unknown future channels)
+- **Improved**: Connected/Health now show explicit `Unknown` fallback when runtime signal is absent
+- **New**: Runtime channel-status backfill from recent session activity (marks active channels as connected/health=active when explicit status is missing)
+- **New**: Agent Bindings includes inferred **IMPLICIT** routes for channels without explicit binding entries
+- **Quality**: Generic single-agent and multi-agent compatibility validated
+- **Security**: XSS-safe escaping preserved for all dynamic channel/binding values
+- **Tests**: 46/46 passing, independently validated with Opus
+
 ### v2026.2.19
 
 - **New**: Section dirty-checking — `prevD` snapshot + `sectionChanged()` skips unchanged DOM sections on every refresh
