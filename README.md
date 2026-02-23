@@ -298,6 +298,18 @@ rm -rf ~/.openclaw/dashboard
 
 ## Changelog
 
+### v2026.2.23 — AI Chat Integration
+
+- **New**: AI chat panel (💬 FAB) — ask natural language questions about costs, sessions, crons, and config
+- **New**: `/api/chat` endpoint backed by the OpenClaw gateway's OpenAI-compatible completions API
+- **New**: `read_dotenv()` loads `OPENCLAW_GATEWAY_TOKEN` from `~/.openclaw/.env` automatically
+- **New**: `build_dashboard_prompt()` compresses live `data.json` into a structured system prompt
+- **New**: `ai` config section — `enabled`, `gatewayPort`, `model`, `maxHistory`, `dotenvPath`
+- **Improved**: Stateless gateway calls — no agent memory or tool bleed between sessions
+- **Fixed**: 60s gateway timeout (up from 30s) to accommodate reasoning model latency
+- **Tests**: 14 new tests, 62/62 passing (AC-CHAT-1 through AC-CHAT-8)
+- **Version**: `2.3.0` → `2.4.0`
+
 ### v2026.2.21
 
 - **Fixed**: `refresh.sh` now correctly handles agents with dictionary-style `model` configs (containing `primary` and `fallbacks` keys). Previously, dict-type model configs caused TypeError and prevented those agents from appearing in the dashboard. (Fixes #2)
