@@ -10,6 +10,9 @@ Thumbs.db
 # Logs
 *.log
 
+# Worktrees
+.worktrees/
+
 # Generated data (contains local system info)
 data.json
 
