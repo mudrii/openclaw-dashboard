@@ -4,6 +4,8 @@
 
 The dashboard is configured via `config.json` in the dashboard directory.
 
+Note: some legacy compatibility keys still appear in examples (`refresh.autoRefresh`, `openclawPath`, `panels.kanban`) but are currently not read by runtime code.
+
 ### Full Example
 
 ```json
@@ -13,7 +15,7 @@ The dashboard is configured via `config.json` in the dashboard directory.
     "emoji": "🤖"
   },
   "theme": {
-    "preset": "dark",
+    "preset": "midnight",
     "accent": "#6366f1",
     "accentSecondary": "#9333ea"
   },
@@ -107,7 +109,7 @@ Toggle individual panels on/off. All default to `true`.
 
 | Key | Description |
 |-----|-------------|
-| `panels.kanban` | Kanban task board |
+| `panels.kanban` | Legacy key (kanban UI removed; currently no-op) |
 | `panels.sessions` | Active sessions table |
 | `panels.crons` | Cron jobs table |
 | `panels.skills` | Skills grid |
@@ -120,7 +122,7 @@ Toggle individual panels on/off. All default to `true`.
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
 | `refresh.intervalSeconds` | number | `30` | Minimum seconds between data refreshes (debounce) |
-| `refresh.autoRefresh` | boolean | `true` | Enable auto-refresh on the frontend |
+| `refresh.autoRefresh` | boolean | `true` | Legacy key (frontend currently always auto-refreshes every 60s) |
 
 ### Server
 
@@ -133,13 +135,13 @@ Toggle individual panels on/off. All default to `true`.
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
-| `openclawPath` | string | `"~/.openclaw"` | Path to OpenClaw installation. Can also be set via `OPENCLAW_HOME` env var. |
+| `openclawPath` | string | `"~/.openclaw"` | Legacy key (current runtime uses `OPENCLAW_HOME` env var instead). |
 
 ## Environment Variables
 
 | Variable | Description |
 |----------|-------------|
-| `OPENCLAW_HOME` | Override OpenClaw installation path (takes precedence over config) |
+| `OPENCLAW_HOME` | Set OpenClaw installation path for `refresh.sh` and installer (runtime source of truth) |
 
 ## Data Flow
 

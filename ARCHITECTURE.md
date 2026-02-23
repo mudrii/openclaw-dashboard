@@ -1,6 +1,10 @@
-# OpenClaw Dashboard — Architecture Plan
+# OpenClaw Dashboard — Architecture Refactor Plan
 
-> Single-file refactor. Zero dependencies. No build step.
+> Status (as of 2026-02-23): this is a target-state refactor plan, not the current implementation.
+>
+> Current code still uses global state and a monolithic `render()` flow in `index.html`.
+>
+> Constraints remain: single-file frontend, zero dependencies, no build step.
 
 ## Current State (~750 lines JS)
 

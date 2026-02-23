@@ -1,6 +1,6 @@
 # TECHNICAL.md — OpenClaw Dashboard Internals
 
-> **Version:** 2026.2.19 · **Repo:** [github.com/mudrii/openclaw-dashboard](https://github.com/mudrii/openclaw-dashboard)
+> **Version:** 2026.2.23 · **Repo:** [github.com/mudrii/openclaw-dashboard](https://github.com/mudrii/openclaw-dashboard)
 >
 > This document covers architecture, data flow, and implementation details for developers and contributors. For features and quick start, see [README.md](README.md).
 
@@ -28,17 +28,18 @@
 
 | File | Lines | Purpose |
 |------|------:|---------|
-| `index.html` | ~550 | Single-file frontend — embedded CSS + JS, glass morphism themed UI, 10 dashboard panels, 6 themes, 3 SVG charts |
-| `themes.json` | 168 | Theme definitions — 6 built-in themes (3 dark + 3 light), 19 CSS variables each |
-| `server.py` | 191 | Python HTTP server — static files + `/api/refresh` endpoint with debounce |
-| `refresh.sh` | 470 | Bash wrapper invoking inline Python to parse OpenClaw data → `data.json` |
+| `index.html` | 1160 | Single-file frontend — embedded CSS + JS, glass morphism themed UI, 11 dashboard sections, 6 themes, 3 SVG charts |
+| `themes.json` | 158 | Theme definitions — 6 built-in themes (3 dark + 3 light), 19 CSS variables each |
+| `server.py` | 195 | Python HTTP server — static files + `/api/refresh` endpoint with debounce |
+| `refresh.sh` | 774 | Bash wrapper invoking inline Python to parse OpenClaw data → `data.json` |
 | `install.sh` | 151 | Cross-platform installer (macOS LaunchAgent / Linux systemd) |
 | `uninstall.sh` | 47 | Service teardown + file cleanup |
-| `config.json` | — | Runtime configuration (bot name, theme, panels, server settings, alert thresholds) |
+| `config.json` | — | Runtime configuration (bot/theme/server/refresh/alerts; some compatibility keys are currently no-op) |
 | `data.json` | — | Generated dashboard data (gitignored) |
 | `docs/CONFIGURATION.md` | — | Configuration reference |
 | `examples/config.full.json` | — | All available config options |
 | `examples/config.minimal.json` | — | Minimal starter config |
+| `tests/*.py` | — | Automated static + integration tests (pytest/unittest compatible) |
 | `screenshots/` | — | Dashboard screenshots for README |
 
 ---
@@ -86,15 +87,15 @@ The `-s` check ensures an empty/failed output doesn't clobber the existing data.
 |-------------|-----------------|
 | `openclaw.json` | Bot config: models, skills, compaction mode |
 | `agents/*/sessions/sessions.json` | Session metadata (keys, tokens, context, model, timestamps) |
-| `agents/*/sessions/*.jsonl` | Per-message token usage and cost data |
+| `agents/*/sessions/*.jsonl` + `.jsonl.deleted.*` | Per-message token usage and cost data |
 | `cron/jobs.json` | Cron job definitions, schedules, state, last run status |
 | `.git/` (via `git log`) | Last 5 commits (hash, message, relative time) |
-| Process table (`ps aux`) | Gateway PID, uptime, RSS memory |
+| Process table (`pgrep` + `ps`) | Gateway PID, uptime, RSS memory |
 
 ### Gateway Detection
 
 ```bash
-ps aux | grep 'openclaw-gateway' | grep -v grep | awk '{print $2}'
+pgrep -f openclaw-gateway
 ```
 
 If a PID is found, a follow-up `ps -p <pid> -o etime=,rss=` extracts uptime and RSS memory.
@@ -234,9 +235,9 @@ loadData()
       → renderCostCards + donut chart
       → renderCronTable
       → renderSessionsTable
-      → renderTokenUsage (tabbed: today/all-time)
-      → renderSubagentActivity (tabbed: today/all-time)
-      → renderSubagentTokens (tabbed: today/all-time)
+      → renderTokenUsage (tabbed: today/7d/30d/all-time)
+      → renderSubagentActivity (tabbed: today/7d/30d/all-time)
+      → renderSubagentTokens (tabbed: today/7d/30d/all-time)
       → renderModels, Skills, GitLog
 ```
 
@@ -305,7 +306,8 @@ Theme state is stored globally in `THEMES` (all definitions) and `currentTheme` 
 3. Returns it with headers:
    - `Content-Type: application/json`
    - `Cache-Control: no-cache`
-   - `Access-Control-Allow-Origin: *`
+   - `Access-Control-Allow-Origin: <origin>` when origin is `http://localhost:*` or `http://127.0.0.1:*`
+   - fallback CORS origin: `http://localhost:8080`
 4. On error: returns 503 (no data.json) or 500 (other)
 
 ### Quiet Logging
@@ -326,8 +328,8 @@ Each setting resolves through a priority chain (highest wins):
 |---------|----------|---------|-------------------|---------|
 | Bind address | `--bind` / `-b` | `DASHBOARD_BIND` | `server.host` | `127.0.0.1` |
 | Port | `--port` / `-p` | `DASHBOARD_PORT` | `server.port` | `8080` |
-| OpenClaw path | — | `OPENCLAW_HOME` | `openclawPath` | `~/.openclaw` |
 | Debounce interval | — | — | `refresh.intervalSeconds` | `30` |
+| OpenClaw path (refresh script) | — | `OPENCLAW_HOME` | *(not read by runtime)* | `~/.openclaw` |
 | Bot name | — | — | `bot.name` | `OpenClaw Dashboard` |
 | Bot emoji | — | — | `bot.emoji` | `⚡` |
 | Daily cost high | — | — | `alerts.dailyCostHigh` | `50` |
@@ -335,7 +337,7 @@ Each setting resolves through a priority chain (highest wins):
 | Context % threshold | — | — | `alerts.contextPct` | `80` |
 | Memory threshold | — | — | `alerts.memoryMb` | `640` |
 
-**Implementation detail:** `server.py` loads config.json first, then applies env vars, then CLI args (via `argparse` defaults set to the env/config value). The `resolve_config_value()` utility function exists but the actual `main()` uses a manual cascade.
+**Implementation detail:** `server.py` applies `config.json` values, then env vars, then CLI args for bind/port. `refresh.sh` resolves OpenClaw path from `OPENCLAW_HOME` (or `~/.openclaw`) and does not read `config.openclawPath`.
 
 ---
 
@@ -556,7 +558,7 @@ systemctl --user status openclaw-dashboard
 |---------|---------|
 | **Default bind** | `127.0.0.1` — localhost only, safe |
 | **LAN mode** | `--bind 0.0.0.0` exposes the dashboard to the local network with **no authentication** |
-| **CORS** | `Access-Control-Allow-Origin: *` on `/api/refresh` |
+| **CORS** | Allows localhost/127.0.0.1 origins; fallback header is `http://localhost:8080` |
 | **No HTTPS** | Plain HTTP only; use a reverse proxy for TLS |
 | **Sensitive data in data.json** | Session keys, model usage, costs, cron config, gateway PID |
 | **No auth/authz** | Anyone who can reach the port can see all data |
@@ -570,12 +572,12 @@ systemctl --user status openclaw-dashboard
 - **No authentication** — relies on network-level access control
 - **Polling only** — no WebSocket; frontend polls every 60s, server debounces at 30s
 - **Limited historical data** — `dailyChart` provides 30 days of daily aggregates; no finer granularity
-- **Kanban panel** — referenced in `config.json` (`panels.kanban`) but removed from the UI
+- **Some config keys are compatibility no-op** — `refresh.autoRefresh`, `openclawPath`, and `panels.kanban` are currently not used by runtime code
 - **Simplistic cost projection** — `today × 30`, not based on historical average
 - **Context % calculation** — `totalTokens / contextTokens × 100` (may exceed 100% in edge cases, capped in display)
 - **Session limit** — only top 20 most recent sessions shown (last 24h)
 - **Sub-agent detection** — sessions not found in `sessions.json` are assumed to be sub-agents
-- **No `.jsonl.deleted.*` cleanup awareness** — deleted session files are still scanned
+- **Deleted session logs are included** — `.jsonl.deleted.*` files are intentionally scanned and counted
 
 ---
 
@@ -606,13 +608,17 @@ python3 server.py --bind 0.0.0.0 --port 9090
 
 ### Testing Checklist
 
+```bash
+python3 -m pytest tests/ -v
+```
+
 - [ ] `bash refresh.sh` produces valid JSON
 - [ ] `data.json` contains expected keys
 - [ ] Dashboard renders on desktop (1440px+)
 - [ ] Dashboard renders on tablet (768–1024px)
 - [ ] Dashboard renders on mobile (< 768px)
 - [ ] Auto-refresh countdown works
-- [ ] Tab switching (today/all-time) works for all tabbed panels
+- [ ] Tab switching (today/7d/30d/all-time) works for all tabbed panels
 - [ ] Gateway offline state renders correctly
 - [ ] Alerts display with correct severity styling
 
@@ -622,7 +628,7 @@ python3 server.py --bind 0.0.0.0 --port 9090
 2. **Single-file frontend** — CSS and JS stay embedded in `index.html`
 3. **Python stdlib only** — no third-party imports in `server.py` or `refresh.sh`
 4. **Test mobile + desktop** — check both responsive breakpoints
-5. **No test suite** — manual testing required (for now)
+5. **Run automated tests** — use `pytest` before submitting changes
 
 ### Adding a New Dashboard Panel
 

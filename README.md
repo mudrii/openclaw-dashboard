@@ -158,14 +158,13 @@ Edit `config.json`:
   "theme": {
     "preset": "nord"
   },
-  "panels": {
-    "kanban": false
+  "refresh": {
+    "intervalSeconds": 30
   },
   "server": {
     "port": 8080,
     "host": "127.0.0.1"
-  },
-  "openclawPath": "~/.openclaw"
+  }
 }
 ```
 
@@ -176,7 +175,7 @@ Edit `config.json`:
 | `bot.name` | `"OpenClaw Dashboard"` | Dashboard title |
 | `bot.emoji` | `"🦞"` | Avatar emoji |
 | `theme.preset` | `"midnight"` | Default theme (`midnight`, `nord`, `catppuccin-mocha`, `github-light`, `solarized-light`, `catppuccin-latte`) |
-| `panels.*` | `true` | Show/hide individual panels |
+| `panels.*` | `true` | Show/hide individual panels (`panels.kanban` is legacy/no-op) |
 | `refresh.intervalSeconds` | `30` | Debounce interval for refresh |
 | `alerts.dailyCostHigh` | `50` | Daily cost threshold for high alert ($) |
 | `alerts.dailyCostWarn` | `20` | Daily cost threshold for warning alert ($) |
@@ -184,7 +183,7 @@ Edit `config.json`:
 | `alerts.memoryMb` | `640` | Gateway memory threshold (MB) for alerts |
 | `server.port` | `8080` | Server port (also `--port` / `-p` flag or `DASHBOARD_PORT` env) |
 | `server.host` | `"127.0.0.1"` | Server bind address (also `--bind` / `-b` flag or `DASHBOARD_BIND` env) |
-| `openclawPath` | `"~/.openclaw"` | Path to OpenClaw installation |
+| `openclawPath` | `"~/.openclaw"` | Legacy key; runtime path is currently controlled by `OPENCLAW_HOME` env var |
 
 See [docs/CONFIGURATION.md](docs/CONFIGURATION.md) for full details.
 
