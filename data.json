@@ -1,19 +1,19 @@
 {
   "botName": "OpenClaw Dashboard",
   "botEmoji": "\ud83e\udd9e",
-  "lastRefresh": "2026-02-23 23:55:41 GMT+8",
-  "lastRefreshMs": 1771862141137,
+  "lastRefresh": "2026-02-24 00:10:23 GMT+8",
+  "lastRefreshMs": 1771863023075,
   "gateway": {
     "status": "online",
-    "pid": 322,
-    "uptime": "05:55:53",
-    "memory": "19 MB",
-    "rss": 18992
+    "pid": 76614,
+    "uptime": "07:55",
+    "memory": "35 MB",
+    "rss": 36192
   },
   "compactionMode": "safeguard",
-  "totalCostToday": 103.24,
+  "totalCostToday": 0.0,
   "totalCostAllTime": 1904.66,
-  "projectedMonthly": 3097.33,
+  "projectedMonthly": 0.0,
   "costBreakdown": [
     {
       "model": "Claude Opus 4.6",
@@ -68,46 +68,97 @@
       "cost": 0.02
     }
   ],
-  "costBreakdownToday": [
-    {
-      "model": "Claude Opus 4.6",
-      "cost": 103.2
-    },
-    {
-      "model": "Grok 4",
-      "cost": 0.04
-    }
-  ],
+  "costBreakdownToday": [],
   "sessions": [
     {
-      "name": "mudrii MY (@mudriion)",
+      "name": "telegram:8456335062",
       "key": "agent:main:telegram:default:direct:8456335062",
       "agent": "main",
       "model": "k2p5",
-      "contextPct": 32.7,
-      "lastActivity": "23:53:32",
-      "updatedAt": 1771862012057,
-      "totalTokens": 85780,
+      "contextPct": 37.4,
+      "lastActivity": "00:08:44",
+      "updatedAt": 1771862924275,
+      "totalTokens": 98072,
       "type": "telegram",
       "spawnedBy": "",
       "active": true,
       "label": "",
-      "subject": "mudrii MY (@mudriion) id:8456335062"
+      "subject": "telegram:8456335062"
     },
     {
-      "name": "8456335062",
+      "name": "telegram:8456335062",
       "key": "agent:main:main",
       "agent": "main",
       "model": "grok-4-1-fast",
-      "contextPct": 2.1,
-      "lastActivity": "23:53:17",
-      "updatedAt": 1771861997600,
-      "totalTokens": 42423,
+      "contextPct": 2.7,
+      "lastActivity": "00:07:28",
+      "updatedAt": 1771862848731,
+      "totalTokens": 54624,
       "type": "main",
       "spawnedBy": "",
       "active": true,
       "label": "",
-      "subject": "8456335062"
+      "subject": "telegram:8456335062"
+    },
+    {
+      "name": "mudrii MY",
+      "key": "telegram:slash:8456335062",
+      "agent": "main",
+      "model": "unknown",
+      "contextPct": 0,
+      "lastActivity": "00:06:54",
+      "updatedAt": 1771862814670,
+      "totalTokens": 0,
+      "type": "telegram",
+      "spawnedBy": "",
+      "active": true,
+      "label": "",
+      "subject": "mudrii MY"
+    },
+    {
+      "name": "CV & Career",
+      "key": "agent:work:telegram:group:-1003824555140",
+      "agent": "work",
+      "model": "claude-opus-4-6",
+      "contextPct": 81.0,
+      "lastActivity": "00:05:58",
+      "updatedAt": 1771862758032,
+      "totalTokens": 162096,
+      "type": "group",
+      "spawnedBy": "",
+      "active": true,
+      "label": "",
+      "subject": "CV & Career"
+    },
+    {
+      "name": "CV & Career",
+      "key": "telegram:slash:8456335062",
+      "agent": "work",
+      "model": "unknown",
+      "contextPct": 0,
+      "lastActivity": "00:05:57",
+      "updatedAt": 1771862757886,
+      "totalTokens": 0,
+      "type": "telegram",
+      "spawnedBy": "",
+      "active": true,
+      "label": "",
+      "subject": "CV & Career"
+    },
+    {
+      "name": "Cron: Vault Inbox Pipeline",
+      "key": "agent:main:cron:e3345b4e-bead-4376-ad69-b9727ca8df62",
+      "agent": "main",
+      "model": "k2p5",
+      "contextPct": 4.5,
+      "lastActivity": "00:02:34",
+      "updatedAt": 1771862554468,
+      "totalTokens": 11895,
+      "type": "cron",
+      "spawnedBy": "",
+      "active": true,
+      "label": "Cron: Vault Inbox Pipeline",
+      "subject": "Cron: Vault Inbox Pipeline"
     },
     {
       "name": "Cron: Work Agent: Daily Memory Curation",
@@ -318,69 +369,9 @@
       "active": false,
       "label": "",
       "subject": ""
-    },
-    {
-      "name": "openai:655a45ae-c6e5-4092-b2ef-9cf7cfe6751f",
-      "key": "agent:main:openai:655a45ae-c6e5-4092-b2ef-9cf7cfe6751f",
-      "agent": "main",
-      "model": "k2p5",
-      "contextPct": 8.5,
-      "lastActivity": "18:27:32",
-      "updatedAt": 1771842452978,
-      "totalTokens": 22171,
-      "type": "other",
-      "spawnedBy": "",
-      "active": false,
-      "label": "",
-      "subject": ""
-    },
-    {
-      "name": "openai:3139a858-f3dd-4bf8-9527-47e086a6ae40",
-      "key": "agent:main:openai:3139a858-f3dd-4bf8-9527-47e086a6ae40",
-      "agent": "main",
-      "model": "k2p5",
-      "contextPct": 8.0,
-      "lastActivity": "18:25:39",
-      "updatedAt": 1771842339904,
-      "totalTokens": 20946,
-      "type": "other",
-      "spawnedBy": "",
-      "active": false,
-      "label": "",
-      "subject": ""
-    },
-    {
-      "name": "openai:19042f20-ea27-426d-bf23-d2a20c346d9a",
-      "key": "agent:main:openai:19042f20-ea27-426d-bf23-d2a20c346d9a",
-      "agent": "main",
-      "model": "k2p5",
-      "contextPct": 8.2,
-      "lastActivity": "18:25:32",
-      "updatedAt": 1771842332757,
-      "totalTokens": 21409,
-      "type": "other",
-      "spawnedBy": "",
-      "active": false,
-      "label": "",
-      "subject": ""
-    },
-    {
-      "name": "openai:986f967d-c711-460a-b043-afbd87716388",
-      "key": "agent:main:openai:986f967d-c711-460a-b043-afbd87716388",
-      "agent": "main",
-      "model": "k2p5",
-      "contextPct": 30.1,
-      "lastActivity": "18:24:31",
-      "updatedAt": 1771842271868,
-      "totalTokens": 78827,
-      "type": "other",
-      "spawnedBy": "",
-      "active": false,
-      "label": "",
-      "subject": ""
     }
   ],
-  "sessionCount": 51,
+  "sessionCount": 53,
   "crons": [
     {
       "name": "Morning Briefing",
@@ -446,10 +437,10 @@
       "name": "Vault Inbox Pipeline",
       "schedule": "0 */6 * * *",
       "enabled": true,
-      "lastRun": "2026-02-23 18:02",
+      "lastRun": "2026-02-24 00:02",
       "lastStatus": "ok",
-      "lastDurationMs": 14788,
-      "nextRun": "2026-02-24 00:02",
+      "lastDurationMs": 106364,
+      "nextRun": "2026-02-24 06:02",
       "model": "kimi-coding/k2p5"
     }
   ],
@@ -725,17 +716,7 @@
       "date": "2026-02-20"
     }
   ],
-  "subagentRunsToday": [
-    {
-      "task": "db870206-68a",
-      "model": "Claude Opus 4.6",
-      "cost": 6.4102,
-      "durationSec": 45848,
-      "status": "completed",
-      "timestamp": "2026-02-23 03:33",
-      "date": "2026-02-23"
-    }
-  ],
+  "subagentRunsToday": [],
   "subagentRuns7d": [
     {
       "task": "db870206-68a",
@@ -2091,8 +2072,8 @@
     }
   ],
   "subagentCostAllTime": 1763.03,
-  "subagentCostToday": 6.41,
-  "subagentCost7d": 776.69,
+  "subagentCostToday": 0,
+  "subagentCost7d": 687.77,
   "subagentCost30d": 1763.03,
   "tokenUsage": [
     {
@@ -2266,16 +2247,16 @@
     },
     {
       "model": "Kimi K2.5",
-      "calls": 1110,
-      "input": "38.2M",
-      "output": "454.0K",
-      "cacheRead": "25.2M",
-      "totalTokens": "63.9M",
+      "calls": 1144,
+      "input": "38.4M",
+      "output": "458.6K",
+      "cacheRead": "27.3M",
+      "totalTokens": "66.2M",
       "cost": 0.0,
-      "inputRaw": 38241477,
-      "outputRaw": 453966,
-      "cacheReadRaw": 25181394,
-      "totalTokensRaw": 63876837
+      "inputRaw": 38418219,
+      "outputRaw": 458632,
+      "cacheReadRaw": 27276242,
+      "totalTokensRaw": 66153093
     },
     {
       "model": "GLM-5",
@@ -2293,58 +2274,32 @@
   ],
   "tokenUsageToday": [
     {
-      "model": "Claude Opus 4.6",
-      "calls": 269,
-      "input": "383",
-      "output": "57.1K",
-      "cacheRead": "27.4M",
-      "totalTokens": "30.5M",
-      "cost": 103.2,
-      "inputRaw": 383,
-      "outputRaw": 57080,
-      "cacheReadRaw": 27384151,
-      "totalTokensRaw": 30526271
-    },
-    {
-      "model": "Grok 4",
-      "calls": 19,
-      "input": "74.4K",
-      "output": "11.4K",
-      "cacheRead": "468.3K",
-      "totalTokens": "554.1K",
-      "cost": 0.04,
-      "inputRaw": 74357,
-      "outputRaw": 11442,
-      "cacheReadRaw": 468300,
-      "totalTokensRaw": 554099
-    },
-    {
       "model": "Kimi K2.5",
-      "calls": 138,
-      "input": "1.0M",
-      "output": "67.4K",
-      "cacheRead": "3.7M",
-      "totalTokens": "4.8M",
+      "calls": 20,
+      "input": "101.3K",
+      "output": "2.6K",
+      "cacheRead": "1.4M",
+      "totalTokens": "1.5M",
       "cost": 0.0,
-      "inputRaw": 1030943,
-      "outputRaw": 67406,
-      "cacheReadRaw": 3683026,
-      "totalTokensRaw": 4781375
+      "inputRaw": 101270,
+      "outputRaw": 2607,
+      "cacheReadRaw": 1376768,
+      "totalTokensRaw": 1480645
     }
   ],
   "tokenUsage7d": [
     {
       "model": "Claude Opus 4.6",
-      "calls": 2896,
-      "input": "4.2K",
-      "output": "773.3K",
-      "cacheRead": "181.5M",
-      "totalTokens": "230.7M",
-      "cost": 481.18,
-      "inputRaw": 4178,
-      "outputRaw": 773345,
-      "cacheReadRaw": 181525571,
-      "totalTokensRaw": 230664673
+      "calls": 2102,
+      "input": "3.0K",
+      "output": "522.6K",
+      "cacheRead": "124.8M",
+      "totalTokens": "165.1M",
+      "cost": 392.76,
+      "inputRaw": 3046,
+      "outputRaw": 522593,
+      "cacheReadRaw": 124806118,
+      "totalTokensRaw": 165088371
     },
     {
       "model": "Claude Sonnet",
@@ -2361,29 +2316,29 @@
     },
     {
       "model": "GPT-5.3 Codex",
-      "calls": 1422,
+      "calls": 1421,
       "input": "36.5M",
-      "output": "341.3K",
+      "output": "339.6K",
       "cacheRead": "72.5M",
       "totalTokens": "109.3M",
-      "cost": 81.36,
-      "inputRaw": 36514282,
-      "outputRaw": 341269,
+      "cost": 81.33,
+      "inputRaw": 36507985,
+      "outputRaw": 339584,
       "cacheReadRaw": 72479616,
-      "totalTokensRaw": 109335167
+      "totalTokensRaw": 109327185
     },
     {
       "model": "MiniMax M2.5",
-      "calls": 150,
-      "input": "4.1M",
-      "output": "39.3K",
-      "cacheRead": "1.4M",
-      "totalTokens": "5.6M",
-      "cost": 0.9,
-      "inputRaw": 4076143,
-      "outputRaw": 39259,
-      "cacheReadRaw": 1380050,
-      "totalTokensRaw": 5625189
+      "calls": 104,
+      "input": "2.9M",
+      "output": "29.8K",
+      "cacheRead": "1.0M",
+      "totalTokens": "4.1M",
+      "cost": 0.65,
+      "inputRaw": 2935332,
+      "outputRaw": 29845,
+      "cacheReadRaw": 1036575,
+      "totalTokensRaw": 4114930
     },
     {
       "model": "Gemini 2.5 Pro",
@@ -2399,19 +2354,6 @@
       "totalTokensRaw": 300263
     },
     {
-      "model": "Grok 4 Fast",
-      "calls": 135,
-      "input": "2.2M",
-      "output": "60.1K",
-      "cacheRead": "963.5K",
-      "totalTokens": "3.2M",
-      "cost": 0.52,
-      "inputRaw": 2198503,
-      "outputRaw": 60132,
-      "cacheReadRaw": 963510,
-      "totalTokensRaw": 3222145
-    },
-    {
       "model": "Grok 4",
       "calls": 112,
       "input": "1.5M",
@@ -2423,6 +2365,19 @@
       "outputRaw": 60482,
       "cacheReadRaw": 1988565,
       "totalTokensRaw": 3535459
+    },
+    {
+      "model": "Grok 4 Fast",
+      "calls": 80,
+      "input": "1.2M",
+      "output": "36.3K",
+      "cacheRead": "615.6K",
+      "totalTokens": "1.9M",
+      "cost": 0.3,
+      "inputRaw": 1230655,
+      "outputRaw": 36279,
+      "cacheReadRaw": 615638,
+      "totalTokensRaw": 1882572
     },
     {
       "model": "Gemini 3 Flash",
@@ -2439,16 +2394,16 @@
     },
     {
       "model": "Kimi K2.5",
-      "calls": 436,
-      "input": "2.8M",
-      "output": "155.7K",
-      "cacheRead": "10.7M",
-      "totalTokens": "13.7M",
+      "calls": 464,
+      "input": "3.0M",
+      "output": "154.1K",
+      "cacheRead": "12.8M",
+      "totalTokens": "15.9M",
       "cost": 0.0,
-      "inputRaw": 2792990,
-      "outputRaw": 155732,
-      "cacheReadRaw": 10734034,
-      "totalTokensRaw": 13682756
+      "inputRaw": 2952024,
+      "outputRaw": 154057,
+      "cacheReadRaw": 12754898,
+      "totalTokensRaw": 15860979
     },
     {
       "model": "GLM-5",
@@ -2636,16 +2591,16 @@
     },
     {
       "model": "Kimi K2.5",
-      "calls": 1110,
-      "input": "38.2M",
-      "output": "454.0K",
-      "cacheRead": "25.2M",
-      "totalTokens": "63.9M",
+      "calls": 1144,
+      "input": "38.4M",
+      "output": "458.6K",
+      "cacheRead": "27.3M",
+      "totalTokens": "66.2M",
       "cost": 0.0,
-      "inputRaw": 38241477,
-      "outputRaw": 453966,
-      "cacheReadRaw": 25181394,
-      "totalTokensRaw": 63876837
+      "inputRaw": 38418219,
+      "outputRaw": 458632,
+      "cacheReadRaw": 27276242,
+      "totalTokensRaw": 66153093
     },
     {
       "model": "GLM-5",
@@ -2833,16 +2788,16 @@
     },
     {
       "model": "Kimi K2.5",
-      "calls": 957,
+      "calls": 959,
       "input": "36.0M",
-      "output": "419.3K",
+      "output": "419.6K",
       "cacheRead": "22.4M",
       "totalTokens": "58.9M",
       "cost": 0.0,
-      "inputRaw": 36038887,
-      "outputRaw": 419314,
-      "cacheReadRaw": 22407936,
-      "totalTokensRaw": 58866137
+      "inputRaw": 36046101,
+      "outputRaw": 419550,
+      "cacheReadRaw": 22424064,
+      "totalTokensRaw": 58889715
     },
     {
       "model": "GLM-5",
@@ -2858,48 +2813,8 @@
       "totalTokensRaw": 1905701
     }
   ],
-  "subagentUsageToday": [
-    {
-      "model": "Claude Opus 4.6",
-      "calls": 33,
-      "input": "55",
-      "output": "7.2K",
-      "cacheRead": "2.7M",
-      "totalTokens": "2.8M",
-      "cost": 6.41,
-      "inputRaw": 55,
-      "outputRaw": 7211,
-      "cacheReadRaw": 2723571,
-      "totalTokensRaw": 2825943
-    },
-    {
-      "model": "Kimi K2.5",
-      "calls": 58,
-      "input": "365.4K",
-      "output": "48.1K",
-      "cacheRead": "2.4M",
-      "totalTokens": "2.8M",
-      "cost": 0.0,
-      "inputRaw": 365420,
-      "outputRaw": 48072,
-      "cacheReadRaw": 2430976,
-      "totalTokensRaw": 2844468
-    }
-  ],
+  "subagentUsageToday": [],
   "subagentUsage7d": [
-    {
-      "model": "Claude Opus 4.6",
-      "calls": 2633,
-      "input": "3.8K",
-      "output": "719.8K",
-      "cacheRead": "156.3M",
-      "totalTokens": "201.9M",
-      "cost": 380.81,
-      "inputRaw": 3783,
-      "outputRaw": 719794,
-      "cacheReadRaw": 156346275,
-      "totalTokensRaw": 201925172
-    },
     {
       "model": "Claude Sonnet",
       "calls": 1872,
@@ -2914,30 +2829,43 @@
       "totalTokensRaw": 219191655
     },
     {
+      "model": "Claude Opus 4.6",
+      "calls": 1839,
+      "input": "2.7K",
+      "output": "469.0K",
+      "cacheRead": "99.6M",
+      "totalTokens": "136.3M",
+      "cost": 292.39,
+      "inputRaw": 2651,
+      "outputRaw": 469042,
+      "cacheReadRaw": 99626822,
+      "totalTokensRaw": 136348870
+    },
+    {
       "model": "GPT-5.3 Codex",
-      "calls": 1420,
+      "calls": 1419,
       "input": "36.4M",
-      "output": "341.2K",
+      "output": "339.5K",
       "cacheRead": "72.5M",
       "totalTokens": "109.3M",
-      "cost": 81.24,
-      "inputRaw": 36443045,
-      "outputRaw": 341165,
+      "cost": 81.2,
+      "inputRaw": 36436748,
+      "outputRaw": 339480,
       "cacheReadRaw": 72476544,
-      "totalTokensRaw": 109260754
+      "totalTokensRaw": 109252772
     },
     {
       "model": "MiniMax M2.5",
-      "calls": 150,
-      "input": "4.1M",
-      "output": "39.3K",
-      "cacheRead": "1.4M",
-      "totalTokens": "5.6M",
-      "cost": 0.9,
-      "inputRaw": 4076143,
-      "outputRaw": 39259,
-      "cacheReadRaw": 1380050,
-      "totalTokensRaw": 5625189
+      "calls": 104,
+      "input": "2.9M",
+      "output": "29.8K",
+      "cacheRead": "1.0M",
+      "totalTokens": "4.1M",
+      "cost": 0.65,
+      "inputRaw": 2935332,
+      "outputRaw": 29845,
+      "cacheReadRaw": 1036575,
+      "totalTokensRaw": 4114930
     },
     {
       "model": "Gemini 2.5 Pro",
@@ -2953,19 +2881,6 @@
       "totalTokensRaw": 300263
     },
     {
-      "model": "Grok 4 Fast",
-      "calls": 135,
-      "input": "2.2M",
-      "output": "60.1K",
-      "cacheRead": "963.5K",
-      "totalTokens": "3.2M",
-      "cost": 0.52,
-      "inputRaw": 2198503,
-      "outputRaw": 60132,
-      "cacheReadRaw": 963510,
-      "totalTokensRaw": 3222145
-    },
-    {
       "model": "Grok 4",
       "calls": 93,
       "input": "1.4M",
@@ -2977,6 +2892,19 @@
       "outputRaw": 49040,
       "cacheReadRaw": 1520265,
       "totalTokensRaw": 2981360
+    },
+    {
+      "model": "Grok 4 Fast",
+      "calls": 80,
+      "input": "1.2M",
+      "output": "36.3K",
+      "cacheRead": "615.6K",
+      "totalTokens": "1.9M",
+      "cost": 0.3,
+      "inputRaw": 1230655,
+      "outputRaw": 36279,
+      "cacheReadRaw": 615638,
+      "totalTokensRaw": 1882572
     },
     {
       "model": "Gemini 3 Flash",
@@ -2993,16 +2921,16 @@
     },
     {
       "model": "Kimi K2.5",
-      "calls": 304,
+      "calls": 300,
       "input": "1.8M",
-      "output": "122.9K",
-      "cacheRead": "8.0M",
-      "totalTokens": "9.9M",
+      "output": "116.8K",
+      "cacheRead": "7.9M",
+      "totalTokens": "9.8M",
       "cost": 0.0,
-      "inputRaw": 1786610,
-      "outputRaw": 122926,
-      "cacheReadRaw": 7960576,
-      "totalTokensRaw": 9870112
+      "inputRaw": 1776116,
+      "outputRaw": 116821,
+      "cacheReadRaw": 7902720,
+      "totalTokensRaw": 9795657
     },
     {
       "model": "GLM-5",
@@ -3190,16 +3118,16 @@
     },
     {
       "model": "Kimi K2.5",
-      "calls": 957,
+      "calls": 959,
       "input": "36.0M",
-      "output": "419.3K",
+      "output": "419.6K",
       "cacheRead": "22.4M",
       "totalTokens": "58.9M",
       "cost": 0.0,
-      "inputRaw": 36038887,
-      "outputRaw": 419314,
-      "cacheReadRaw": 22407936,
-      "totalTokensRaw": 58866137
+      "inputRaw": 36046101,
+      "outputRaw": 419550,
+      "cacheReadRaw": 22424064,
+      "totalTokensRaw": 58889715
     },
     {
       "model": "GLM-5",
@@ -3216,23 +3144,6 @@
     }
   ],
   "dailyChart": [
-    {
-      "date": "2026-01-25",
-      "label": "01-25",
-      "total": 0,
-      "tokens": 0,
-      "calls": 0,
-      "subagentCost": 0,
-      "subagentRuns": 0,
-      "models": {
-        "Claude Opus 4.6": 0,
-        "Claude Opus 4.5": 0,
-        "Claude Sonnet": 0,
-        "GPT-5.3 Codex": 0,
-        "Grok 4 Fast": 0,
-        "Gemini 3 Flash": 0
-      }
-    },
     {
       "date": "2026-01-26",
       "label": "01-26",
@@ -3731,8 +3642,8 @@
       "date": "2026-02-23",
       "label": "02-23",
       "total": 103.24,
-      "tokens": 35861745,
-      "calls": 426,
+      "tokens": 36657356,
+      "calls": 440,
       "subagentCost": 6.41,
       "subagentRuns": 1,
       "models": {
@@ -3743,6 +3654,23 @@
         "Grok 4 Fast": 0,
         "Gemini 3 Flash": 0,
         "Other": 0.044
+      }
+    },
+    {
+      "date": "2026-02-24",
+      "label": "02-24",
+      "total": 0.0,
+      "tokens": 1480645,
+      "calls": 20,
+      "subagentCost": 0,
+      "subagentRuns": 0,
+      "models": {
+        "Claude Opus 4.6": 0,
+        "Claude Opus 4.5": 0,
+        "Claude Sonnet": 0,
+        "GPT-5.3 Codex": 0,
+        "Grok 4 Fast": 0,
+        "Gemini 3 Flash": 0
       }
     }
   ],
@@ -4132,7 +4060,7 @@
     {
       "hash": "1e50d22",
       "message": "memory(cron): Feb 23 idle day inner thoughts",
-      "ago": "40 minutes ago"
+      "ago": "55 minutes ago"
     },
     {
       "hash": "514286c",
@@ -4142,12 +4070,12 @@
     {
       "hash": "92fd88d",
       "message": "heartbeat(afternoon): security perms fix + dashboard data + work notes; v2026.2.17\u2192latest pending",
-      "ago": "7 hours ago"
+      "ago": "8 hours ago"
     },
     {
       "hash": "378ba85",
       "message": "feat(config): switch zai to coding plan endpoint, add GLM-4.7",
-      "ago": "21 hours ago"
+      "ago": "22 hours ago"
     },
     {
       "hash": "4a0c228",
@@ -4157,16 +4085,16 @@
   ],
   "alerts": [
     {
-      "type": "warning",
-      "icon": "\ud83d\udcb0",
-      "message": "High daily cost: $103.24",
-      "severity": "high"
-    },
-    {
       "type": "error",
       "icon": "\u274c",
       "message": "Cron failed: Daily Memory Curation",
       "severity": "high"
+    },
+    {
+      "type": "warning",
+      "icon": "\u26a0\ufe0f",
+      "message": "High context: CV & Career (81.0%)",
+      "severity": "medium"
     }
   ]
 }
