@@ -1,23 +1,23 @@
 {
   "botName": "OpenClaw Dashboard",
   "botEmoji": "\ud83e\udd9e",
-  "lastRefresh": "2026-02-18 22:11:55 GMT+8",
-  "lastRefreshMs": 1771423915027,
+  "lastRefresh": "2026-02-23 23:55:41 GMT+8",
+  "lastRefreshMs": 1771862141137,
   "gateway": {
     "status": "online",
-    "pid": 88282,
-    "uptime": "05:17:17",
-    "memory": "154 MB",
-    "rss": 157648
+    "pid": 322,
+    "uptime": "05:55:53",
+    "memory": "19 MB",
+    "rss": 18992
   },
   "compactionMode": "safeguard",
-  "totalCostToday": 123.26,
-  "totalCostAllTime": 1408.21,
-  "projectedMonthly": 3697.84,
+  "totalCostToday": 103.24,
+  "totalCostAllTime": 1904.66,
+  "projectedMonthly": 3097.33,
   "costBreakdown": [
     {
       "model": "Claude Opus 4.6",
-      "cost": 806.97
+      "cost": 1011.85
     },
     {
       "model": "Claude Opus 4.5",
@@ -25,11 +25,11 @@
     },
     {
       "model": "Claude Sonnet",
-      "cost": 81.72
+      "cost": 312.2
     },
     {
       "model": "GPT-5.3 Codex",
-      "cost": 25.04
+      "cost": 85.43
     },
     {
       "model": "Grok 4 Fast",
@@ -41,15 +41,15 @@
     },
     {
       "model": "Gemini 2.5 Pro",
-      "cost": 2.13
-    },
-    {
-      "model": "MiniMax M2.5",
-      "cost": 1.79
+      "cost": 2.4
     },
     {
       "model": "Grok 4",
-      "cost": 1.69
+      "cost": 2.09
+    },
+    {
+      "model": "MiniMax M2.5",
+      "cost": 1.83
     },
     {
       "model": "Gemini 2.5 Flash",
@@ -70,59 +70,24 @@
   ],
   "costBreakdownToday": [
     {
-      "model": "Claude Sonnet",
-      "cost": 81.72
-    },
-    {
       "model": "Claude Opus 4.6",
-      "cost": 23.21
-    },
-    {
-      "model": "GPT-5.3 Codex",
-      "cost": 17.92
-    },
-    {
-      "model": "Gemini 2.5 Pro",
-      "cost": 0.29
-    },
-    {
-      "model": "Grok 4 Fast",
-      "cost": 0.07
+      "cost": 103.2
     },
     {
       "model": "Grok 4",
-      "cost": 0.03
-    },
-    {
-      "model": "MiniMax M2.5",
-      "cost": 0.01
+      "cost": 0.04
     }
   ],
   "sessions": [
     {
-      "name": "OpenClaw Dev & Admin",
-      "key": "agent:work:telegram:group:-1003877951698",
-      "agent": "work",
-      "model": "claude-sonnet-4-6",
-      "contextPct": 81.3,
-      "lastActivity": "22:11:47",
-      "updatedAt": 1771423907044,
-      "totalTokens": 162573,
-      "type": "group",
-      "spawnedBy": "",
-      "active": true,
-      "label": "",
-      "subject": "OpenClaw Dev & Admin"
-    },
-    {
       "name": "mudrii MY (@mudriion)",
       "key": "agent:main:telegram:default:direct:8456335062",
       "agent": "main",
-      "model": "claude-sonnet-4-6",
-      "contextPct": 75.6,
-      "lastActivity": "22:11:18",
-      "updatedAt": 1771423878594,
-      "totalTokens": 151192,
+      "model": "k2p5",
+      "contextPct": 32.7,
+      "lastActivity": "23:53:32",
+      "updatedAt": 1771862012057,
+      "totalTokens": 85780,
       "type": "telegram",
       "spawnedBy": "",
       "active": true,
@@ -130,239 +95,29 @@
       "subject": "mudrii MY (@mudriion) id:8456335062"
     },
     {
-      "name": "mudrii MY (@mudriion)",
+      "name": "8456335062",
       "key": "agent:main:main",
       "agent": "main",
       "model": "grok-4-1-fast",
-      "contextPct": 2.3,
-      "lastActivity": "22:11:18",
-      "updatedAt": 1771423878577,
-      "totalTokens": 45648,
+      "contextPct": 2.1,
+      "lastActivity": "23:53:17",
+      "updatedAt": 1771861997600,
+      "totalTokens": 42423,
       "type": "main",
       "spawnedBy": "",
       "active": true,
       "label": "",
-      "subject": "mudrii MY (@mudriion) id:8456335062"
-    },
-    {
-      "name": "tool-calling-analysis",
-      "key": "agent:main:subagent:6c249234-c564-46e7-99bb-586d820892b2",
-      "agent": "main",
-      "model": "unknown",
-      "contextPct": 0,
-      "lastActivity": "22:10:20",
-      "updatedAt": 1771423820857,
-      "totalTokens": 0,
-      "type": "subagent",
-      "spawnedBy": "agent:main:telegram:default:direct:8456335062",
-      "active": true,
-      "label": "tool-calling-analysis",
-      "subject": "tool-calling-analysis"
-    },
-    {
-      "name": "opus-review-v2.6.0-fixes",
-      "key": "agent:work:subagent:8ad511cf-7c53-4312-b472-9cab3f208e36",
-      "agent": "work",
-      "model": "claude-opus-4-6",
-      "contextPct": 9.2,
-      "lastActivity": "22:08:29",
-      "updatedAt": 1771423709841,
-      "totalTokens": 18364,
-      "type": "subagent",
-      "spawnedBy": "agent:work:telegram:group:-1003877951698",
-      "active": true,
-      "label": "opus-review-v2.6.0-fixes",
-      "subject": "opus-review-v2.6.0-fixes"
-    },
-    {
-      "name": "v2.6.0-codex-fixes",
-      "key": "agent:work:subagent:c652f4ac-8507-4cb7-9d0b-f1b1bb215feb",
-      "agent": "work",
-      "model": "gpt-5.3-codex",
-      "contextPct": 11.3,
-      "lastActivity": "22:07:43",
-      "updatedAt": 1771423663671,
-      "totalTokens": 30650,
-      "type": "subagent",
-      "spawnedBy": "agent:work:telegram:group:-1003877951698",
-      "active": true,
-      "label": "v2.6.0-codex-fixes",
-      "subject": "v2.6.0-codex-fixes"
-    },
-    {
-      "name": "code-quality-review-v2.6.0",
-      "key": "agent:work:subagent:297a87a6-542a-4606-91a5-4fd4b4b84608",
-      "agent": "work",
-      "model": "gpt-5.3-codex",
-      "contextPct": 15.3,
-      "lastActivity": "21:57:29",
-      "updatedAt": 1771423049293,
-      "totalTokens": 41605,
-      "type": "subagent",
-      "spawnedBy": "agent:work:telegram:group:-1003877951698",
-      "active": true,
-      "label": "code-quality-review-v2.6.0",
-      "subject": "code-quality-review-v2.6.0"
-    },
-    {
-      "name": "v2.6.0-blocker-fixes",
-      "key": "agent:work:subagent:75a92919-a055-4484-8480-d81d0dcd07f7",
-      "agent": "work",
-      "model": "claude-opus-4-6",
-      "contextPct": 7.0,
-      "lastActivity": "21:55:35",
-      "updatedAt": 1771422935289,
-      "totalTokens": 13934,
-      "type": "subagent",
-      "spawnedBy": "agent:work:telegram:group:-1003877951698",
-      "active": true,
-      "label": "v2.6.0-blocker-fixes",
-      "subject": "v2.6.0-blocker-fixes"
-    },
-    {
-      "name": "pre-release-validation-v2.6.0",
-      "key": "agent:work:subagent:d32d1115-e2a3-421a-a7f7-68d879b1353a",
-      "agent": "work",
-      "model": "gpt-5.3-codex",
-      "contextPct": 6.7,
-      "lastActivity": "21:53:18",
-      "updatedAt": 1771422798605,
-      "totalTokens": 18337,
-      "type": "subagent",
-      "spawnedBy": "agent:work:telegram:group:-1003877951698",
-      "active": true,
-      "label": "pre-release-validation-v2.6.0",
-      "subject": "pre-release-validation-v2.6.0"
-    },
-    {
-      "name": "research-orchestrator",
-      "key": "agent:work:subagent:ccf8f1de-ab41-4a60-970c-b24382c8c99d",
-      "agent": "work",
-      "model": "claude-opus-4-6",
-      "contextPct": 6.4,
-      "lastActivity": "21:45:12",
-      "updatedAt": 1771422312342,
-      "totalTokens": 12825,
-      "type": "subagent",
-      "spawnedBy": "agent:work:telegram:group:-1003877951698",
-      "active": true,
-      "label": "research-orchestrator",
-      "subject": "research-orchestrator"
-    },
-    {
-      "name": "dev-orchestrator",
-      "key": "agent:work:subagent:dd7afc61-5a49-4162-a6e1-648af55bcd17",
-      "agent": "work",
-      "model": "claude-opus-4-6",
-      "contextPct": 6.1,
-      "lastActivity": "21:45:09",
-      "updatedAt": 1771422309637,
-      "totalTokens": 12151,
-      "type": "subagent",
-      "spawnedBy": "agent:work:telegram:group:-1003877951698",
-      "active": true,
-      "label": "dev-orchestrator",
-      "subject": "dev-orchestrator"
-    },
-    {
-      "name": "research-worker-analyst",
-      "key": "agent:work:subagent:0d0d9692-cce0-49f5-9b91-72085a8e8883",
-      "agent": "work",
-      "model": "claude-opus-4-6",
-      "contextPct": 6.0,
-      "lastActivity": "21:45:08",
-      "updatedAt": 1771422308905,
-      "totalTokens": 12065,
-      "type": "subagent",
-      "spawnedBy": "agent:work:subagent:ccf8f1de-ab41-4a60-970c-b24382c8c99d",
-      "active": true,
-      "label": "research-worker-analyst",
-      "subject": "research-worker-analyst"
-    },
-    {
-      "name": "dev-worker-codex",
-      "key": "agent:work:subagent:70090605-abf3-4a91-872e-d176af8930ee",
-      "agent": "work",
-      "model": "claude-opus-4-6",
-      "contextPct": 5.9,
-      "lastActivity": "21:43:42",
-      "updatedAt": 1771422222990,
-      "totalTokens": 11801,
-      "type": "subagent",
-      "spawnedBy": "agent:work:subagent:dd7afc61-5a49-4162-a6e1-648af55bcd17",
-      "active": true,
-      "label": "dev-worker-codex",
-      "subject": "dev-worker-codex"
-    },
-    {
-      "name": "Contractor remedy work palma",
-      "key": "agent:main:whatsapp:group:120363405220659994@g.us",
-      "agent": "main",
-      "model": "unknown",
-      "contextPct": 0,
-      "lastActivity": "19:33:07",
-      "updatedAt": 1771414387660,
-      "totalTokens": 0,
-      "type": "group",
-      "spawnedBy": "",
-      "active": false,
-      "label": "",
-      "subject": "Contractor remedy work palma"
-    },
-    {
-      "name": "Cron: Morning Briefing",
-      "key": "agent:main:cron:a90f27a5-0bdc-4246-865d-b45af0307ca1",
-      "agent": "main",
-      "model": "grok-4-fast",
-      "contextPct": 0.9,
-      "lastActivity": "13:18:26",
-      "updatedAt": 1771391906666,
-      "totalTokens": 17407,
-      "type": "cron",
-      "spawnedBy": "",
-      "active": false,
-      "label": "Cron: Morning Briefing",
-      "subject": "Cron: Morning Briefing"
-    },
-    {
-      "name": "telegram:group:-1003877951698",
-      "key": "agent:main:telegram:group:-1003877951698",
-      "agent": "main",
-      "model": "claude-opus-4-6",
-      "contextPct": 63.2,
-      "lastActivity": "13:05:31",
-      "updatedAt": 1771391131851,
-      "totalTokens": 126418,
-      "type": "group",
-      "spawnedBy": "",
-      "active": false,
-      "label": "",
-      "subject": "telegram:group:-1003877951698"
-    },
-    {
-      "name": "the moodreac's",
-      "key": "agent:main:whatsapp:group:6596442283-1511186715@g.us",
-      "agent": "main",
-      "model": "unknown",
-      "contextPct": 0,
-      "lastActivity": "12:19:10",
-      "updatedAt": 1771388350848,
-      "totalTokens": 0,
-      "type": "group",
-      "spawnedBy": "",
-      "active": false,
-      "label": "",
-      "subject": "the moodreac's"
+      "subject": "8456335062"
     },
     {
       "name": "Cron: Work Agent: Daily Memory Curation",
       "key": "agent:main:cron:1022c1c1-c152-41f6-ae12-7a8a37c2da2e",
       "agent": "main",
       "model": "k2p5",
-      "contextPct": 8.2,
+      "contextPct": 6.3,
       "lastActivity": "23:15:00",
-      "updatedAt": 1771341300063,
-      "totalTokens": 21620,
+      "updatedAt": 1771859700118,
+      "totalTokens": 16536,
       "type": "cron",
       "spawnedBy": "",
       "active": false,
@@ -373,58 +128,298 @@
       "name": "Cron: Daily Memory Curation",
       "key": "agent:main:cron:5bf18188-1bee-4c10-b65f-093fe7af33af",
       "agent": "main",
-      "model": "claude-opus-4-6",
-      "contextPct": 11.2,
+      "model": "k2p5",
+      "contextPct": 11.6,
       "lastActivity": "23:00:00",
-      "updatedAt": 1771340400065,
-      "totalTokens": 22380,
+      "updatedAt": 1771858800419,
+      "totalTokens": 30284,
       "type": "cron",
       "spawnedBy": "",
       "active": false,
       "label": "Cron: Daily Memory Curation",
       "subject": "Cron: Daily Memory Curation"
+    },
+    {
+      "name": "openai:554a6250-5899-4bce-946b-995b818d775a",
+      "key": "agent:main:openai:554a6250-5899-4bce-946b-995b818d775a",
+      "agent": "main",
+      "model": "k2p5",
+      "contextPct": 8.2,
+      "lastActivity": "22:19:13",
+      "updatedAt": 1771856353605,
+      "totalTokens": 21384,
+      "type": "other",
+      "spawnedBy": "",
+      "active": false,
+      "label": "",
+      "subject": ""
+    },
+    {
+      "name": "openai:6e1afb05-4685-42b3-8145-0b21c5d6032e",
+      "key": "agent:main:openai:6e1afb05-4685-42b3-8145-0b21c5d6032e",
+      "agent": "main",
+      "model": "k2p5",
+      "contextPct": 10.9,
+      "lastActivity": "18:46:39",
+      "updatedAt": 1771843599196,
+      "totalTokens": 28480,
+      "type": "other",
+      "spawnedBy": "",
+      "active": false,
+      "label": "",
+      "subject": ""
+    },
+    {
+      "name": "openai:f5dc4483-6007-4c7b-a455-88be3136e408",
+      "key": "agent:main:openai:f5dc4483-6007-4c7b-a455-88be3136e408",
+      "agent": "main",
+      "model": "k2p5",
+      "contextPct": 8.5,
+      "lastActivity": "18:40:08",
+      "updatedAt": 1771843208897,
+      "totalTokens": 22308,
+      "type": "other",
+      "spawnedBy": "",
+      "active": false,
+      "label": "",
+      "subject": ""
+    },
+    {
+      "name": "openai:32918c0c-aea5-406b-acf9-10d779dc380f",
+      "key": "agent:main:openai:32918c0c-aea5-406b-acf9-10d779dc380f",
+      "agent": "main",
+      "model": "k2p5",
+      "contextPct": 9.5,
+      "lastActivity": "18:38:45",
+      "updatedAt": 1771843125498,
+      "totalTokens": 24918,
+      "type": "other",
+      "spawnedBy": "",
+      "active": false,
+      "label": "",
+      "subject": ""
+    },
+    {
+      "name": "openai:2d90ab2d-9e57-4326-9dc2-dd4edc4123c1",
+      "key": "agent:main:openai:2d90ab2d-9e57-4326-9dc2-dd4edc4123c1",
+      "agent": "main",
+      "model": "k2p5",
+      "contextPct": 8.2,
+      "lastActivity": "18:37:25",
+      "updatedAt": 1771843045273,
+      "totalTokens": 21406,
+      "type": "other",
+      "spawnedBy": "",
+      "active": false,
+      "label": "",
+      "subject": ""
+    },
+    {
+      "name": "openai:c6bf9b89-1527-4f8b-9b97-b060a808b0e2",
+      "key": "agent:main:openai:c6bf9b89-1527-4f8b-9b97-b060a808b0e2",
+      "agent": "main",
+      "model": "k2p5",
+      "contextPct": 8.2,
+      "lastActivity": "18:37:20",
+      "updatedAt": 1771843040692,
+      "totalTokens": 21410,
+      "type": "other",
+      "spawnedBy": "",
+      "active": false,
+      "label": "",
+      "subject": ""
+    },
+    {
+      "name": "openai:e82f9466-5ea7-4b99-bdc8-2e1e22903e67",
+      "key": "agent:main:openai:e82f9466-5ea7-4b99-bdc8-2e1e22903e67",
+      "agent": "main",
+      "model": "k2p5",
+      "contextPct": 13.3,
+      "lastActivity": "18:36:40",
+      "updatedAt": 1771843000588,
+      "totalTokens": 34904,
+      "type": "other",
+      "spawnedBy": "",
+      "active": false,
+      "label": "",
+      "subject": ""
+    },
+    {
+      "name": "openai:39a5e291-0aa4-401f-9b07-9c071d971740",
+      "key": "agent:main:openai:39a5e291-0aa4-401f-9b07-9c071d971740",
+      "agent": "main",
+      "model": "k2p5",
+      "contextPct": 8.2,
+      "lastActivity": "18:36:38",
+      "updatedAt": 1771842998015,
+      "totalTokens": 21416,
+      "type": "other",
+      "spawnedBy": "",
+      "active": false,
+      "label": "",
+      "subject": ""
+    },
+    {
+      "name": "openai:c7730011-4008-4ad0-8fb6-990a6db9efba",
+      "key": "agent:main:openai:c7730011-4008-4ad0-8fb6-990a6db9efba",
+      "agent": "main",
+      "model": "k2p5",
+      "contextPct": 8.0,
+      "lastActivity": "18:36:24",
+      "updatedAt": 1771842984069,
+      "totalTokens": 20946,
+      "type": "other",
+      "spawnedBy": "",
+      "active": false,
+      "label": "",
+      "subject": ""
+    },
+    {
+      "name": "openai:b4690045-1c13-40e7-99bc-e5857b8ec62d",
+      "key": "agent:main:openai:b4690045-1c13-40e7-99bc-e5857b8ec62d",
+      "agent": "main",
+      "model": "k2p5",
+      "contextPct": 8.4,
+      "lastActivity": "18:33:37",
+      "updatedAt": 1771842817770,
+      "totalTokens": 22101,
+      "type": "other",
+      "spawnedBy": "",
+      "active": false,
+      "label": "",
+      "subject": ""
+    },
+    {
+      "name": "openai:5d2e504f-373c-4fa9-bbc7-8bcecd28f11f",
+      "key": "agent:main:openai:5d2e504f-373c-4fa9-bbc7-8bcecd28f11f",
+      "agent": "main",
+      "model": "k2p5",
+      "contextPct": 9.5,
+      "lastActivity": "18:28:40",
+      "updatedAt": 1771842520877,
+      "totalTokens": 24988,
+      "type": "other",
+      "spawnedBy": "",
+      "active": false,
+      "label": "",
+      "subject": ""
+    },
+    {
+      "name": "openai:72fc1a59-d5e2-4bd8-be57-5d1014fcc440",
+      "key": "agent:main:openai:72fc1a59-d5e2-4bd8-be57-5d1014fcc440",
+      "agent": "main",
+      "model": "k2p5",
+      "contextPct": 8.4,
+      "lastActivity": "18:28:13",
+      "updatedAt": 1771842493525,
+      "totalTokens": 22081,
+      "type": "other",
+      "spawnedBy": "",
+      "active": false,
+      "label": "",
+      "subject": ""
+    },
+    {
+      "name": "openai:655a45ae-c6e5-4092-b2ef-9cf7cfe6751f",
+      "key": "agent:main:openai:655a45ae-c6e5-4092-b2ef-9cf7cfe6751f",
+      "agent": "main",
+      "model": "k2p5",
+      "contextPct": 8.5,
+      "lastActivity": "18:27:32",
+      "updatedAt": 1771842452978,
+      "totalTokens": 22171,
+      "type": "other",
+      "spawnedBy": "",
+      "active": false,
+      "label": "",
+      "subject": ""
+    },
+    {
+      "name": "openai:3139a858-f3dd-4bf8-9527-47e086a6ae40",
+      "key": "agent:main:openai:3139a858-f3dd-4bf8-9527-47e086a6ae40",
+      "agent": "main",
+      "model": "k2p5",
+      "contextPct": 8.0,
+      "lastActivity": "18:25:39",
+      "updatedAt": 1771842339904,
+      "totalTokens": 20946,
+      "type": "other",
+      "spawnedBy": "",
+      "active": false,
+      "label": "",
+      "subject": ""
+    },
+    {
+      "name": "openai:19042f20-ea27-426d-bf23-d2a20c346d9a",
+      "key": "agent:main:openai:19042f20-ea27-426d-bf23-d2a20c346d9a",
+      "agent": "main",
+      "model": "k2p5",
+      "contextPct": 8.2,
+      "lastActivity": "18:25:32",
+      "updatedAt": 1771842332757,
+      "totalTokens": 21409,
+      "type": "other",
+      "spawnedBy": "",
+      "active": false,
+      "label": "",
+      "subject": ""
+    },
+    {
+      "name": "openai:986f967d-c711-460a-b043-afbd87716388",
+      "key": "agent:main:openai:986f967d-c711-460a-b043-afbd87716388",
+      "agent": "main",
+      "model": "k2p5",
+      "contextPct": 30.1,
+      "lastActivity": "18:24:31",
+      "updatedAt": 1771842271868,
+      "totalTokens": 78827,
+      "type": "other",
+      "spawnedBy": "",
+      "active": false,
+      "label": "",
+      "subject": ""
     }
   ],
-  "sessionCount": 36,
+  "sessionCount": 51,
   "crons": [
     {
       "name": "Morning Briefing",
       "schedule": "0 11 * * *",
       "enabled": true,
-      "lastRun": "2026-02-18 13:18",
+      "lastRun": "2026-02-23 11:00",
       "lastStatus": "ok",
-      "lastDurationMs": 32624,
-      "nextRun": "2026-02-19 11:00",
+      "lastDurationMs": 27837,
+      "nextRun": "2026-02-24 11:00",
       "model": "xai/grok-4-1-fast"
     },
     {
       "name": "Daily Memory Curation",
       "schedule": "0 23 * * *",
       "enabled": true,
-      "lastRun": "2026-02-17 23:00",
-      "lastStatus": "ok",
-      "lastDurationMs": 51419,
-      "nextRun": "2026-02-18 23:00",
-      "model": "anthropic/claude-opus-4-6"
+      "lastRun": "2026-02-23 23:00",
+      "lastStatus": "error",
+      "lastDurationMs": 300487,
+      "nextRun": "2026-02-24 23:00",
+      "model": "kimi-coding/k2p5"
     },
     {
       "name": "OpenClaw Security Check",
       "schedule": "0 10 * * 1",
       "enabled": true,
-      "lastRun": "2026-02-16 10:00",
+      "lastRun": "2026-02-23 10:00",
       "lastStatus": "ok",
-      "lastDurationMs": 22593,
-      "nextRun": "2026-02-23 10:00",
+      "lastDurationMs": 33250,
+      "nextRun": "2026-03-02 10:00",
       "model": "xai/grok-4-1-fast"
     },
     {
       "name": "Work Agent: Daily Memory Curation",
       "schedule": "15 23 * * *",
       "enabled": true,
-      "lastRun": "2026-02-17 23:15",
+      "lastRun": "2026-02-23 23:15",
       "lastStatus": "ok",
-      "lastDurationMs": 55112,
-      "nextRun": "2026-02-18 23:15",
+      "lastDurationMs": 38004,
+      "nextRun": "2026-02-24 23:15",
       "model": "kimi-coding/k2p5"
     },
     {
@@ -436,1833 +431,1682 @@
       "lastDurationMs": 0,
       "nextRun": "2026-02-27 09:00",
       "model": ""
+    },
+    {
+      "name": "Vault Maintenance",
+      "schedule": "0 10 * * 1,4",
+      "enabled": true,
+      "lastRun": "2026-02-23 10:00",
+      "lastStatus": "ok",
+      "lastDurationMs": 164240,
+      "nextRun": "2026-02-26 10:00",
+      "model": "kimi-coding/k2p5"
+    },
+    {
+      "name": "Vault Inbox Pipeline",
+      "schedule": "0 */6 * * *",
+      "enabled": true,
+      "lastRun": "2026-02-23 18:02",
+      "lastStatus": "ok",
+      "lastDurationMs": 14788,
+      "nextRun": "2026-02-24 00:02",
+      "model": "kimi-coding/k2p5"
     }
   ],
   "subagentRuns": [
     {
-      "task": "agent:main:subagent:6c249234-c564-46e7-99bb-586d820892b2",
-      "model": "Gemini 2.5 Pro",
-      "cost": 0.2923,
-      "durationSec": 69,
-      "status": "completed",
-      "timestamp": "2026-02-18 22:11",
-      "date": "2026-02-18"
-    },
-    {
-      "task": "agent:work:subagent:8ad511cf-7c53-4312-b472-9cab3f208e36",
+      "task": "db870206-68a",
       "model": "Claude Opus 4.6",
-      "cost": 0.1328,
-      "durationSec": 29,
+      "cost": 6.4102,
+      "durationSec": 45848,
       "status": "completed",
-      "timestamp": "2026-02-18 22:08",
-      "date": "2026-02-18"
+      "timestamp": "2026-02-23 03:33",
+      "date": "2026-02-23"
     },
     {
-      "task": "agent:work:subagent:c652f4ac-8507-4cb7-9d0b-f1b1bb215feb",
+      "task": "85b0e312-329",
+      "model": "Grok 4",
+      "cost": 0.1369,
+      "durationSec": 140765,
+      "status": "completed",
+      "timestamp": "2026-02-22 19:33",
+      "date": "2026-02-22"
+    },
+    {
+      "task": "8c1ba9a4-7fc",
+      "model": "Grok 4",
+      "cost": 0.0057,
+      "durationSec": 19,
+      "status": "completed",
+      "timestamp": "2026-02-22 11:00",
+      "date": "2026-02-22"
+    },
+    {
+      "task": "47028f72-11b",
       "model": "GPT-5.3 Codex",
-      "cost": 0.2842,
-      "durationSec": 137,
+      "cost": 394.7453,
+      "durationSec": 821556,
       "status": "completed",
-      "timestamp": "2026-02-18 22:07",
-      "date": "2026-02-18"
+      "timestamp": "2026-02-22 01:52",
+      "date": "2026-02-22"
     },
     {
-      "task": "agent:work:subagent:297a87a6-542a-4606-91a5-4fd4b4b84608",
+      "task": "2a385bb3-af3",
       "model": "GPT-5.3 Codex",
-      "cost": 0.268,
-      "durationSec": 118,
+      "cost": 0.1285,
+      "durationSec": 20519,
       "status": "completed",
-      "timestamp": "2026-02-18 21:57",
-      "date": "2026-02-18"
+      "timestamp": "2026-02-21 18:55",
+      "date": "2026-02-21"
     },
     {
-      "task": "agent:work:subagent:75a92919-a055-4484-8480-d81d0dcd07f7",
-      "model": "Claude Opus 4.6",
-      "cost": 0.1211,
-      "durationSec": 27,
+      "task": "93ac6549-a6f",
+      "model": "Grok 4",
+      "cost": 0.0114,
+      "durationSec": 7853,
       "status": "completed",
-      "timestamp": "2026-02-18 21:55",
-      "date": "2026-02-18"
+      "timestamp": "2026-02-21 13:11",
+      "date": "2026-02-21"
     },
     {
-      "task": "agent:work:subagent:d32d1115-e2a3-421a-a7f7-68d879b1353a",
+      "task": "9c92ea4b-5f2",
       "model": "GPT-5.3 Codex",
-      "cost": 0.1339,
-      "durationSec": 79,
+      "cost": 186.0829,
+      "durationSec": 198001,
       "status": "completed",
-      "timestamp": "2026-02-18 21:53",
-      "date": "2026-02-18"
+      "timestamp": "2026-02-21 03:28",
+      "date": "2026-02-21"
     },
     {
-      "task": "agent:work:subagent:dd7afc61-5a49-4162-a6e1-648af55bcd17",
+      "task": "6edbf6d8-d42",
       "model": "Claude Opus 4.6",
-      "cost": 0.0878,
-      "durationSec": 105,
+      "cost": 0.3155,
+      "durationSec": 13018,
       "status": "completed",
-      "timestamp": "2026-02-18 21:45",
-      "date": "2026-02-18"
+      "timestamp": "2026-02-20 23:01",
+      "date": "2026-02-20"
     },
     {
-      "task": "agent:work:subagent:ccf8f1de-ab41-4a60-970c-b24382c8c99d",
+      "task": "91449f2c-309",
       "model": "Claude Opus 4.6",
-      "cost": 0.1061,
-      "durationSec": 106,
+      "cost": 3.0796,
+      "durationSec": 455179,
       "status": "completed",
-      "timestamp": "2026-02-18 21:45",
-      "date": "2026-02-18"
+      "timestamp": "2026-02-20 21:10",
+      "date": "2026-02-20"
     },
     {
-      "task": "agent:work:subagent:0d0d9692-cce0-49f5-9b91-72085a8e8883",
-      "model": "Claude Opus 4.6",
-      "cost": 0.0683,
-      "durationSec": 97,
+      "task": "61636f74-633",
+      "model": "Grok 4",
+      "cost": 0.0814,
+      "durationSec": 141327,
       "status": "completed",
-      "timestamp": "2026-02-18 21:45",
-      "date": "2026-02-18"
+      "timestamp": "2026-02-20 20:27",
+      "date": "2026-02-20"
     },
     {
-      "task": "agent:work:subagent:70090605-abf3-4a91-872e-d176af8930ee",
-      "model": "Claude Opus 4.6",
-      "cost": 0.0526,
-      "durationSec": 4,
+      "task": "530e0e89-d88",
+      "model": "Grok 4",
+      "cost": 0.027,
+      "durationSec": 91,
       "status": "completed",
-      "timestamp": "2026-02-18 21:43",
-      "date": "2026-02-18"
+      "timestamp": "2026-02-20 19:26",
+      "date": "2026-02-20"
     },
     {
-      "task": "a33279aa-5eb",
-      "model": "Claude Opus 4.6",
-      "cost": 0.4909,
-      "durationSec": 100,
+      "task": "73f86c16-9ae",
+      "model": "Claude Sonnet",
+      "cost": 0.324,
+      "durationSec": 290,
       "status": "completed",
-      "timestamp": "2026-02-18 20:56",
-      "date": "2026-02-18"
+      "timestamp": "2026-02-20 18:15",
+      "date": "2026-02-20"
     },
     {
-      "task": "cbd5fa87-816",
+      "task": "b6318a50-b24",
       "model": "Claude Opus 4.6",
-      "cost": 0.0969,
+      "cost": 0.4983,
+      "durationSec": 108,
+      "status": "completed",
+      "timestamp": "2026-02-20 18:09",
+      "date": "2026-02-20"
+    },
+    {
+      "task": "4c5d72d6-dba",
+      "model": "Claude Sonnet",
+      "cost": 4.0653,
+      "durationSec": 796,
+      "status": "completed",
+      "timestamp": "2026-02-20 17:00",
+      "date": "2026-02-20"
+    },
+    {
+      "task": "501443ec-2b8",
+      "model": "Grok 4",
+      "cost": 0.0095,
+      "durationSec": 20995,
+      "status": "completed",
+      "timestamp": "2026-02-20 16:50",
+      "date": "2026-02-20"
+    },
+    {
+      "task": "c70a844b-422",
+      "model": "Claude Opus 4.6",
+      "cost": 2.2962,
+      "durationSec": 355,
+      "status": "completed",
+      "timestamp": "2026-02-20 10:40",
+      "date": "2026-02-20"
+    },
+    {
+      "task": "f11eb9ad-92c",
+      "model": "Claude Opus 4.6",
+      "cost": 0.1297,
+      "durationSec": 17,
+      "status": "completed",
+      "timestamp": "2026-02-20 10:34",
+      "date": "2026-02-20"
+    },
+    {
+      "task": "972e0f1f-823",
+      "model": "Claude Opus 4.6",
+      "cost": 0.1772,
+      "durationSec": 19,
+      "status": "completed",
+      "timestamp": "2026-02-20 10:26",
+      "date": "2026-02-20"
+    },
+    {
+      "task": "2ce6cc98-d6d",
+      "model": "Claude Opus 4.6",
+      "cost": 0.0757,
+      "durationSec": 0,
+      "status": "completed",
+      "timestamp": "2026-02-20 10:22",
+      "date": "2026-02-20"
+    },
+    {
+      "task": "4c23e56a-0b0",
+      "model": "Claude Opus 4.6",
+      "cost": 0.2707,
       "durationSec": 36,
       "status": "completed",
-      "timestamp": "2026-02-18 20:45",
-      "date": "2026-02-18"
+      "timestamp": "2026-02-20 10:22",
+      "date": "2026-02-20"
     },
     {
-      "task": "f962a01e-e70",
+      "task": "ba127525-d33",
       "model": "Claude Opus 4.6",
-      "cost": 0.1208,
-      "durationSec": 47,
+      "cost": 2.1957,
+      "durationSec": 110,
       "status": "completed",
-      "timestamp": "2026-02-18 20:45",
-      "date": "2026-02-18"
+      "timestamp": "2026-02-20 10:22",
+      "date": "2026-02-20"
     },
     {
-      "task": "6e31316f-549",
+      "task": "fe3d03a1-f77",
+      "model": "Grok 4",
+      "cost": 0.0039,
+      "durationSec": 6,
+      "status": "completed",
+      "timestamp": "2026-02-20 10:21",
+      "date": "2026-02-20"
+    },
+    {
+      "task": "636762b6-e96",
       "model": "Claude Opus 4.6",
-      "cost": 0.2629,
-      "durationSec": 57,
+      "cost": 0.0906,
+      "durationSec": 0,
       "status": "completed",
-      "timestamp": "2026-02-18 20:34",
-      "date": "2026-02-18"
+      "timestamp": "2026-02-20 10:21",
+      "date": "2026-02-20"
     },
     {
-      "task": "e15cbfd8-0ee",
+      "task": "f96a05cb-bf4",
+      "model": "Grok 4",
+      "cost": 0.0023,
+      "durationSec": 0,
+      "status": "completed",
+      "timestamp": "2026-02-20 10:20",
+      "date": "2026-02-20"
+    },
+    {
+      "task": "8f383ecf-a1a",
+      "model": "Gemini 2.5 Pro",
+      "cost": 0.1078,
+      "durationSec": 76,
+      "status": "completed",
+      "timestamp": "2026-02-20 09:56",
+      "date": "2026-02-20"
+    },
+    {
+      "task": "c7d99a70-06e",
+      "model": "Claude Opus 4.6",
+      "cost": 0.5502,
+      "durationSec": 138,
+      "status": "completed",
+      "timestamp": "2026-02-20 09:55",
+      "date": "2026-02-20"
+    },
+    {
+      "task": "5bc894ee-1ca",
+      "model": "Claude Opus 4.6",
+      "cost": 0.2118,
+      "durationSec": 58,
+      "status": "completed",
+      "timestamp": "2026-02-20 09:54",
+      "date": "2026-02-20"
+    },
+    {
+      "task": "33630c11-a00",
       "model": "GPT-5.3 Codex",
-      "cost": 0.188,
-      "durationSec": 52,
+      "cost": 0.0932,
+      "durationSec": 31,
       "status": "completed",
-      "timestamp": "2026-02-18 20:32",
-      "date": "2026-02-18"
+      "timestamp": "2026-02-20 09:54",
+      "date": "2026-02-20"
     },
     {
-      "task": "74a3e6c3-720",
-      "model": "Claude Opus 4.6",
-      "cost": 0.4047,
-      "durationSec": 94,
-      "status": "completed",
-      "timestamp": "2026-02-18 20:32",
-      "date": "2026-02-18"
-    },
-    {
-      "task": "4cb78823-5ff",
-      "model": "Claude Sonnet",
-      "cost": 243.0521,
-      "durationSec": 195504,
-      "status": "completed",
-      "timestamp": "2026-02-18 20:08",
-      "date": "2026-02-18"
-    },
-    {
-      "task": "9e13c990-ba6",
-      "model": "GPT-5.3 Codex",
-      "cost": 0.3786,
-      "durationSec": 188,
-      "status": "completed",
-      "timestamp": "2026-02-18 16:45",
-      "date": "2026-02-18"
-    },
-    {
-      "task": "32de8feb-a18",
-      "model": "Claude Opus 4.6",
-      "cost": 0.3722,
-      "durationSec": 83,
-      "status": "completed",
-      "timestamp": "2026-02-18 16:43",
-      "date": "2026-02-18"
-    },
-    {
-      "task": "a550b152-10a",
-      "model": "Claude Opus 4.6",
-      "cost": 0.3365,
-      "durationSec": 101,
-      "status": "completed",
-      "timestamp": "2026-02-18 15:28",
-      "date": "2026-02-18"
-    },
-    {
-      "task": "d09ed95b-8fe",
+      "task": "da5859ba-1d7",
       "model": "MiniMax M2.5",
-      "cost": 0.0065,
-      "durationSec": 68,
+      "cost": 0.0035,
+      "durationSec": 66,
       "status": "completed",
-      "timestamp": "2026-02-18 15:26",
-      "date": "2026-02-18"
+      "timestamp": "2026-02-20 09:54",
+      "date": "2026-02-20"
     },
     {
-      "task": "9f68a296-30c",
-      "model": "Claude Opus 4.6",
-      "cost": 0.1514,
-      "durationSec": 38,
+      "task": "46a9cae9-2c2",
+      "model": "Claude Sonnet",
+      "cost": 1.119,
+      "durationSec": 301,
       "status": "completed",
-      "timestamp": "2026-02-18 15:25",
-      "date": "2026-02-18"
-    },
-    {
-      "task": "23b9dcfb-e67",
-      "model": "GPT-5.3 Codex",
-      "cost": 0.0593,
-      "durationSec": 27,
-      "status": "completed",
-      "timestamp": "2026-02-18 15:25",
-      "date": "2026-02-18"
-    },
-    {
-      "task": "94ed0f49-902",
-      "model": "GPT-5.3 Codex",
-      "cost": 0.218,
-      "durationSec": 103,
-      "status": "completed",
-      "timestamp": "2026-02-18 15:20",
-      "date": "2026-02-18"
-    },
-    {
-      "task": "7b5b2259-9f9",
-      "model": "Claude Opus 4.6",
-      "cost": 0.2368,
-      "durationSec": 52,
-      "status": "completed",
-      "timestamp": "2026-02-18 15:19",
-      "date": "2026-02-18"
-    },
-    {
-      "task": "62049116-2a6",
-      "model": "GPT-5.3 Codex",
-      "cost": 0.0723,
-      "durationSec": 52,
-      "status": "completed",
-      "timestamp": "2026-02-18 15:00",
-      "date": "2026-02-18"
-    },
-    {
-      "task": "28203197-5db",
-      "model": "GPT-5.3 Codex",
-      "cost": 0.3144,
-      "durationSec": 221,
-      "status": "completed",
-      "timestamp": "2026-02-18 14:34",
-      "date": "2026-02-18"
-    },
-    {
-      "task": "c5124c27-5f6",
-      "model": "GPT-5.3 Codex",
-      "cost": 0.0723,
-      "durationSec": 128,
-      "status": "completed",
-      "timestamp": "2026-02-18 14:32",
-      "date": "2026-02-18"
-    },
-    {
-      "task": "dd93819c-bda",
-      "model": "GPT-5.3 Codex",
-      "cost": 0.0757,
-      "durationSec": 148,
-      "status": "completed",
-      "timestamp": "2026-02-18 14:32",
-      "date": "2026-02-18"
-    },
-    {
-      "task": "d3eca14c-650",
-      "model": "GPT-5.3 Codex",
-      "cost": 0.1363,
-      "durationSec": 139,
-      "status": "completed",
-      "timestamp": "2026-02-18 14:32",
-      "date": "2026-02-18"
+      "timestamp": "2026-02-20 09:52",
+      "date": "2026-02-20"
     }
   ],
   "subagentRunsToday": [
     {
-      "task": "agent:main:subagent:6c249234-c564-46e7-99bb-586d820892b2",
-      "model": "Gemini 2.5 Pro",
-      "cost": 0.2923,
-      "durationSec": 69,
-      "status": "completed",
-      "timestamp": "2026-02-18 22:11",
-      "date": "2026-02-18"
-    },
-    {
-      "task": "agent:work:subagent:8ad511cf-7c53-4312-b472-9cab3f208e36",
+      "task": "db870206-68a",
       "model": "Claude Opus 4.6",
-      "cost": 0.1328,
-      "durationSec": 29,
+      "cost": 6.4102,
+      "durationSec": 45848,
       "status": "completed",
-      "timestamp": "2026-02-18 22:08",
-      "date": "2026-02-18"
-    },
-    {
-      "task": "agent:work:subagent:c652f4ac-8507-4cb7-9d0b-f1b1bb215feb",
-      "model": "GPT-5.3 Codex",
-      "cost": 0.2842,
-      "durationSec": 137,
-      "status": "completed",
-      "timestamp": "2026-02-18 22:07",
-      "date": "2026-02-18"
-    },
-    {
-      "task": "agent:work:subagent:297a87a6-542a-4606-91a5-4fd4b4b84608",
-      "model": "GPT-5.3 Codex",
-      "cost": 0.268,
-      "durationSec": 118,
-      "status": "completed",
-      "timestamp": "2026-02-18 21:57",
-      "date": "2026-02-18"
-    },
-    {
-      "task": "agent:work:subagent:75a92919-a055-4484-8480-d81d0dcd07f7",
-      "model": "Claude Opus 4.6",
-      "cost": 0.1211,
-      "durationSec": 27,
-      "status": "completed",
-      "timestamp": "2026-02-18 21:55",
-      "date": "2026-02-18"
-    },
-    {
-      "task": "agent:work:subagent:d32d1115-e2a3-421a-a7f7-68d879b1353a",
-      "model": "GPT-5.3 Codex",
-      "cost": 0.1339,
-      "durationSec": 79,
-      "status": "completed",
-      "timestamp": "2026-02-18 21:53",
-      "date": "2026-02-18"
-    },
-    {
-      "task": "agent:work:subagent:dd7afc61-5a49-4162-a6e1-648af55bcd17",
-      "model": "Claude Opus 4.6",
-      "cost": 0.0878,
-      "durationSec": 105,
-      "status": "completed",
-      "timestamp": "2026-02-18 21:45",
-      "date": "2026-02-18"
-    },
-    {
-      "task": "agent:work:subagent:ccf8f1de-ab41-4a60-970c-b24382c8c99d",
-      "model": "Claude Opus 4.6",
-      "cost": 0.1061,
-      "durationSec": 106,
-      "status": "completed",
-      "timestamp": "2026-02-18 21:45",
-      "date": "2026-02-18"
-    },
-    {
-      "task": "agent:work:subagent:0d0d9692-cce0-49f5-9b91-72085a8e8883",
-      "model": "Claude Opus 4.6",
-      "cost": 0.0683,
-      "durationSec": 97,
-      "status": "completed",
-      "timestamp": "2026-02-18 21:45",
-      "date": "2026-02-18"
-    },
-    {
-      "task": "agent:work:subagent:70090605-abf3-4a91-872e-d176af8930ee",
-      "model": "Claude Opus 4.6",
-      "cost": 0.0526,
-      "durationSec": 4,
-      "status": "completed",
-      "timestamp": "2026-02-18 21:43",
-      "date": "2026-02-18"
-    },
-    {
-      "task": "a33279aa-5eb",
-      "model": "Claude Opus 4.6",
-      "cost": 0.4909,
-      "durationSec": 100,
-      "status": "completed",
-      "timestamp": "2026-02-18 20:56",
-      "date": "2026-02-18"
-    },
-    {
-      "task": "cbd5fa87-816",
-      "model": "Claude Opus 4.6",
-      "cost": 0.0969,
-      "durationSec": 36,
-      "status": "completed",
-      "timestamp": "2026-02-18 20:45",
-      "date": "2026-02-18"
-    },
-    {
-      "task": "f962a01e-e70",
-      "model": "Claude Opus 4.6",
-      "cost": 0.1208,
-      "durationSec": 47,
-      "status": "completed",
-      "timestamp": "2026-02-18 20:45",
-      "date": "2026-02-18"
-    },
-    {
-      "task": "6e31316f-549",
-      "model": "Claude Opus 4.6",
-      "cost": 0.2629,
-      "durationSec": 57,
-      "status": "completed",
-      "timestamp": "2026-02-18 20:34",
-      "date": "2026-02-18"
-    },
-    {
-      "task": "e15cbfd8-0ee",
-      "model": "GPT-5.3 Codex",
-      "cost": 0.188,
-      "durationSec": 52,
-      "status": "completed",
-      "timestamp": "2026-02-18 20:32",
-      "date": "2026-02-18"
-    },
-    {
-      "task": "74a3e6c3-720",
-      "model": "Claude Opus 4.6",
-      "cost": 0.4047,
-      "durationSec": 94,
-      "status": "completed",
-      "timestamp": "2026-02-18 20:32",
-      "date": "2026-02-18"
-    },
-    {
-      "task": "4cb78823-5ff",
-      "model": "Claude Sonnet",
-      "cost": 243.0521,
-      "durationSec": 195504,
-      "status": "completed",
-      "timestamp": "2026-02-18 20:08",
-      "date": "2026-02-18"
-    },
-    {
-      "task": "9e13c990-ba6",
-      "model": "GPT-5.3 Codex",
-      "cost": 0.3786,
-      "durationSec": 188,
-      "status": "completed",
-      "timestamp": "2026-02-18 16:45",
-      "date": "2026-02-18"
-    },
-    {
-      "task": "32de8feb-a18",
-      "model": "Claude Opus 4.6",
-      "cost": 0.3722,
-      "durationSec": 83,
-      "status": "completed",
-      "timestamp": "2026-02-18 16:43",
-      "date": "2026-02-18"
-    },
-    {
-      "task": "a550b152-10a",
-      "model": "Claude Opus 4.6",
-      "cost": 0.3365,
-      "durationSec": 101,
-      "status": "completed",
-      "timestamp": "2026-02-18 15:28",
-      "date": "2026-02-18"
+      "timestamp": "2026-02-23 03:33",
+      "date": "2026-02-23"
     }
   ],
   "subagentRuns7d": [
     {
-      "task": "agent:main:subagent:6c249234-c564-46e7-99bb-586d820892b2",
-      "model": "Gemini 2.5 Pro",
-      "cost": 0.2923,
-      "durationSec": 69,
-      "status": "completed",
-      "timestamp": "2026-02-18 22:11",
-      "date": "2026-02-18"
-    },
-    {
-      "task": "agent:work:subagent:8ad511cf-7c53-4312-b472-9cab3f208e36",
+      "task": "db870206-68a",
       "model": "Claude Opus 4.6",
-      "cost": 0.1328,
-      "durationSec": 29,
+      "cost": 6.4102,
+      "durationSec": 45848,
       "status": "completed",
-      "timestamp": "2026-02-18 22:08",
-      "date": "2026-02-18"
+      "timestamp": "2026-02-23 03:33",
+      "date": "2026-02-23"
     },
     {
-      "task": "agent:work:subagent:c652f4ac-8507-4cb7-9d0b-f1b1bb215feb",
+      "task": "85b0e312-329",
+      "model": "Grok 4",
+      "cost": 0.1369,
+      "durationSec": 140765,
+      "status": "completed",
+      "timestamp": "2026-02-22 19:33",
+      "date": "2026-02-22"
+    },
+    {
+      "task": "8c1ba9a4-7fc",
+      "model": "Grok 4",
+      "cost": 0.0057,
+      "durationSec": 19,
+      "status": "completed",
+      "timestamp": "2026-02-22 11:00",
+      "date": "2026-02-22"
+    },
+    {
+      "task": "47028f72-11b",
       "model": "GPT-5.3 Codex",
-      "cost": 0.2842,
-      "durationSec": 137,
+      "cost": 394.7453,
+      "durationSec": 821556,
       "status": "completed",
-      "timestamp": "2026-02-18 22:07",
-      "date": "2026-02-18"
+      "timestamp": "2026-02-22 01:52",
+      "date": "2026-02-22"
     },
     {
-      "task": "agent:work:subagent:297a87a6-542a-4606-91a5-4fd4b4b84608",
+      "task": "2a385bb3-af3",
       "model": "GPT-5.3 Codex",
-      "cost": 0.268,
-      "durationSec": 118,
+      "cost": 0.1285,
+      "durationSec": 20519,
       "status": "completed",
-      "timestamp": "2026-02-18 21:57",
-      "date": "2026-02-18"
+      "timestamp": "2026-02-21 18:55",
+      "date": "2026-02-21"
     },
     {
-      "task": "agent:work:subagent:75a92919-a055-4484-8480-d81d0dcd07f7",
-      "model": "Claude Opus 4.6",
-      "cost": 0.1211,
-      "durationSec": 27,
+      "task": "93ac6549-a6f",
+      "model": "Grok 4",
+      "cost": 0.0114,
+      "durationSec": 7853,
       "status": "completed",
-      "timestamp": "2026-02-18 21:55",
-      "date": "2026-02-18"
+      "timestamp": "2026-02-21 13:11",
+      "date": "2026-02-21"
     },
     {
-      "task": "agent:work:subagent:d32d1115-e2a3-421a-a7f7-68d879b1353a",
+      "task": "9c92ea4b-5f2",
       "model": "GPT-5.3 Codex",
-      "cost": 0.1339,
-      "durationSec": 79,
+      "cost": 186.0829,
+      "durationSec": 198001,
       "status": "completed",
-      "timestamp": "2026-02-18 21:53",
-      "date": "2026-02-18"
+      "timestamp": "2026-02-21 03:28",
+      "date": "2026-02-21"
     },
     {
-      "task": "agent:work:subagent:dd7afc61-5a49-4162-a6e1-648af55bcd17",
+      "task": "6edbf6d8-d42",
       "model": "Claude Opus 4.6",
-      "cost": 0.0878,
-      "durationSec": 105,
+      "cost": 0.3155,
+      "durationSec": 13018,
       "status": "completed",
-      "timestamp": "2026-02-18 21:45",
-      "date": "2026-02-18"
+      "timestamp": "2026-02-20 23:01",
+      "date": "2026-02-20"
     },
     {
-      "task": "agent:work:subagent:ccf8f1de-ab41-4a60-970c-b24382c8c99d",
+      "task": "91449f2c-309",
       "model": "Claude Opus 4.6",
-      "cost": 0.1061,
-      "durationSec": 106,
+      "cost": 3.0796,
+      "durationSec": 455179,
       "status": "completed",
-      "timestamp": "2026-02-18 21:45",
-      "date": "2026-02-18"
+      "timestamp": "2026-02-20 21:10",
+      "date": "2026-02-20"
     },
     {
-      "task": "agent:work:subagent:0d0d9692-cce0-49f5-9b91-72085a8e8883",
-      "model": "Claude Opus 4.6",
-      "cost": 0.0683,
-      "durationSec": 97,
+      "task": "61636f74-633",
+      "model": "Grok 4",
+      "cost": 0.0814,
+      "durationSec": 141327,
       "status": "completed",
-      "timestamp": "2026-02-18 21:45",
-      "date": "2026-02-18"
+      "timestamp": "2026-02-20 20:27",
+      "date": "2026-02-20"
     },
     {
-      "task": "agent:work:subagent:70090605-abf3-4a91-872e-d176af8930ee",
-      "model": "Claude Opus 4.6",
-      "cost": 0.0526,
-      "durationSec": 4,
+      "task": "530e0e89-d88",
+      "model": "Grok 4",
+      "cost": 0.027,
+      "durationSec": 91,
       "status": "completed",
-      "timestamp": "2026-02-18 21:43",
-      "date": "2026-02-18"
+      "timestamp": "2026-02-20 19:26",
+      "date": "2026-02-20"
     },
     {
-      "task": "a33279aa-5eb",
-      "model": "Claude Opus 4.6",
-      "cost": 0.4909,
-      "durationSec": 100,
+      "task": "73f86c16-9ae",
+      "model": "Claude Sonnet",
+      "cost": 0.324,
+      "durationSec": 290,
       "status": "completed",
-      "timestamp": "2026-02-18 20:56",
-      "date": "2026-02-18"
+      "timestamp": "2026-02-20 18:15",
+      "date": "2026-02-20"
     },
     {
-      "task": "cbd5fa87-816",
+      "task": "b6318a50-b24",
       "model": "Claude Opus 4.6",
-      "cost": 0.0969,
+      "cost": 0.4983,
+      "durationSec": 108,
+      "status": "completed",
+      "timestamp": "2026-02-20 18:09",
+      "date": "2026-02-20"
+    },
+    {
+      "task": "4c5d72d6-dba",
+      "model": "Claude Sonnet",
+      "cost": 4.0653,
+      "durationSec": 796,
+      "status": "completed",
+      "timestamp": "2026-02-20 17:00",
+      "date": "2026-02-20"
+    },
+    {
+      "task": "501443ec-2b8",
+      "model": "Grok 4",
+      "cost": 0.0095,
+      "durationSec": 20995,
+      "status": "completed",
+      "timestamp": "2026-02-20 16:50",
+      "date": "2026-02-20"
+    },
+    {
+      "task": "c70a844b-422",
+      "model": "Claude Opus 4.6",
+      "cost": 2.2962,
+      "durationSec": 355,
+      "status": "completed",
+      "timestamp": "2026-02-20 10:40",
+      "date": "2026-02-20"
+    },
+    {
+      "task": "f11eb9ad-92c",
+      "model": "Claude Opus 4.6",
+      "cost": 0.1297,
+      "durationSec": 17,
+      "status": "completed",
+      "timestamp": "2026-02-20 10:34",
+      "date": "2026-02-20"
+    },
+    {
+      "task": "972e0f1f-823",
+      "model": "Claude Opus 4.6",
+      "cost": 0.1772,
+      "durationSec": 19,
+      "status": "completed",
+      "timestamp": "2026-02-20 10:26",
+      "date": "2026-02-20"
+    },
+    {
+      "task": "2ce6cc98-d6d",
+      "model": "Claude Opus 4.6",
+      "cost": 0.0757,
+      "durationSec": 0,
+      "status": "completed",
+      "timestamp": "2026-02-20 10:22",
+      "date": "2026-02-20"
+    },
+    {
+      "task": "4c23e56a-0b0",
+      "model": "Claude Opus 4.6",
+      "cost": 0.2707,
       "durationSec": 36,
       "status": "completed",
-      "timestamp": "2026-02-18 20:45",
-      "date": "2026-02-18"
+      "timestamp": "2026-02-20 10:22",
+      "date": "2026-02-20"
     },
     {
-      "task": "f962a01e-e70",
+      "task": "ba127525-d33",
       "model": "Claude Opus 4.6",
-      "cost": 0.1208,
-      "durationSec": 47,
+      "cost": 2.1957,
+      "durationSec": 110,
       "status": "completed",
-      "timestamp": "2026-02-18 20:45",
-      "date": "2026-02-18"
+      "timestamp": "2026-02-20 10:22",
+      "date": "2026-02-20"
     },
     {
-      "task": "6e31316f-549",
+      "task": "fe3d03a1-f77",
+      "model": "Grok 4",
+      "cost": 0.0039,
+      "durationSec": 6,
+      "status": "completed",
+      "timestamp": "2026-02-20 10:21",
+      "date": "2026-02-20"
+    },
+    {
+      "task": "636762b6-e96",
       "model": "Claude Opus 4.6",
-      "cost": 0.2629,
-      "durationSec": 57,
-      "status": "completed",
-      "timestamp": "2026-02-18 20:34",
-      "date": "2026-02-18"
-    },
-    {
-      "task": "e15cbfd8-0ee",
-      "model": "GPT-5.3 Codex",
-      "cost": 0.188,
-      "durationSec": 52,
-      "status": "completed",
-      "timestamp": "2026-02-18 20:32",
-      "date": "2026-02-18"
-    },
-    {
-      "task": "74a3e6c3-720",
-      "model": "Claude Opus 4.6",
-      "cost": 0.4047,
-      "durationSec": 94,
-      "status": "completed",
-      "timestamp": "2026-02-18 20:32",
-      "date": "2026-02-18"
-    },
-    {
-      "task": "4cb78823-5ff",
-      "model": "Claude Sonnet",
-      "cost": 243.0521,
-      "durationSec": 195504,
-      "status": "completed",
-      "timestamp": "2026-02-18 20:08",
-      "date": "2026-02-18"
-    },
-    {
-      "task": "9e13c990-ba6",
-      "model": "GPT-5.3 Codex",
-      "cost": 0.3786,
-      "durationSec": 188,
-      "status": "completed",
-      "timestamp": "2026-02-18 16:45",
-      "date": "2026-02-18"
-    },
-    {
-      "task": "32de8feb-a18",
-      "model": "Claude Opus 4.6",
-      "cost": 0.3722,
-      "durationSec": 83,
-      "status": "completed",
-      "timestamp": "2026-02-18 16:43",
-      "date": "2026-02-18"
-    },
-    {
-      "task": "a550b152-10a",
-      "model": "Claude Opus 4.6",
-      "cost": 0.3365,
-      "durationSec": 101,
-      "status": "completed",
-      "timestamp": "2026-02-18 15:28",
-      "date": "2026-02-18"
-    },
-    {
-      "task": "d09ed95b-8fe",
-      "model": "MiniMax M2.5",
-      "cost": 0.0065,
-      "durationSec": 68,
-      "status": "completed",
-      "timestamp": "2026-02-18 15:26",
-      "date": "2026-02-18"
-    },
-    {
-      "task": "9f68a296-30c",
-      "model": "Claude Opus 4.6",
-      "cost": 0.1514,
-      "durationSec": 38,
-      "status": "completed",
-      "timestamp": "2026-02-18 15:25",
-      "date": "2026-02-18"
-    },
-    {
-      "task": "23b9dcfb-e67",
-      "model": "GPT-5.3 Codex",
-      "cost": 0.0593,
-      "durationSec": 27,
-      "status": "completed",
-      "timestamp": "2026-02-18 15:25",
-      "date": "2026-02-18"
-    },
-    {
-      "task": "94ed0f49-902",
-      "model": "GPT-5.3 Codex",
-      "cost": 0.218,
-      "durationSec": 103,
-      "status": "completed",
-      "timestamp": "2026-02-18 15:20",
-      "date": "2026-02-18"
-    },
-    {
-      "task": "7b5b2259-9f9",
-      "model": "Claude Opus 4.6",
-      "cost": 0.2368,
-      "durationSec": 52,
-      "status": "completed",
-      "timestamp": "2026-02-18 15:19",
-      "date": "2026-02-18"
-    },
-    {
-      "task": "62049116-2a6",
-      "model": "GPT-5.3 Codex",
-      "cost": 0.0723,
-      "durationSec": 52,
-      "status": "completed",
-      "timestamp": "2026-02-18 15:00",
-      "date": "2026-02-18"
-    },
-    {
-      "task": "28203197-5db",
-      "model": "GPT-5.3 Codex",
-      "cost": 0.3144,
-      "durationSec": 221,
-      "status": "completed",
-      "timestamp": "2026-02-18 14:34",
-      "date": "2026-02-18"
-    },
-    {
-      "task": "c5124c27-5f6",
-      "model": "GPT-5.3 Codex",
-      "cost": 0.0723,
-      "durationSec": 128,
-      "status": "completed",
-      "timestamp": "2026-02-18 14:32",
-      "date": "2026-02-18"
-    },
-    {
-      "task": "dd93819c-bda",
-      "model": "GPT-5.3 Codex",
-      "cost": 0.0757,
-      "durationSec": 148,
-      "status": "completed",
-      "timestamp": "2026-02-18 14:32",
-      "date": "2026-02-18"
-    },
-    {
-      "task": "d3eca14c-650",
-      "model": "GPT-5.3 Codex",
-      "cost": 0.1363,
-      "durationSec": 139,
-      "status": "completed",
-      "timestamp": "2026-02-18 14:32",
-      "date": "2026-02-18"
-    },
-    {
-      "task": "b76db233-b44",
-      "model": "GPT-5.3 Codex",
-      "cost": 0.1608,
-      "durationSec": 19,
-      "status": "completed",
-      "timestamp": "2026-02-18 13:55",
-      "date": "2026-02-18"
-    },
-    {
-      "task": "66e533ff-890",
-      "model": "GPT-5.3 Codex",
-      "cost": 0.5055,
-      "durationSec": 178,
-      "status": "completed",
-      "timestamp": "2026-02-18 13:53",
-      "date": "2026-02-18"
-    },
-    {
-      "task": "ea3188dd-71e",
-      "model": "GPT-5.3 Codex",
-      "cost": 1.2321,
-      "durationSec": 197,
-      "status": "completed",
-      "timestamp": "2026-02-18 13:53",
-      "date": "2026-02-18"
-    },
-    {
-      "task": "26af192d-224",
-      "model": "GPT-5.3 Codex",
-      "cost": 0.0138,
+      "cost": 0.0906,
       "durationSec": 0,
       "status": "completed",
-      "timestamp": "2026-02-18 13:30",
-      "date": "2026-02-18"
+      "timestamp": "2026-02-20 10:21",
+      "date": "2026-02-20"
     },
     {
-      "task": "381e2e72-6fb",
-      "model": "Claude Sonnet",
-      "cost": 0.0507,
+      "task": "f96a05cb-bf4",
+      "model": "Grok 4",
+      "cost": 0.0023,
       "durationSec": 0,
       "status": "completed",
-      "timestamp": "2026-02-18 13:05",
-      "date": "2026-02-18"
+      "timestamp": "2026-02-20 10:20",
+      "date": "2026-02-20"
     },
     {
-      "task": "36efe25f-ca9",
+      "task": "8f383ecf-a1a",
+      "model": "Gemini 2.5 Pro",
+      "cost": 0.1078,
+      "durationSec": 76,
+      "status": "completed",
+      "timestamp": "2026-02-20 09:56",
+      "date": "2026-02-20"
+    },
+    {
+      "task": "c7d99a70-06e",
       "model": "Claude Opus 4.6",
-      "cost": 0.0828,
-      "durationSec": 0,
+      "cost": 0.5502,
+      "durationSec": 138,
       "status": "completed",
-      "timestamp": "2026-02-18 04:22",
-      "date": "2026-02-18"
+      "timestamp": "2026-02-20 09:55",
+      "date": "2026-02-20"
     },
     {
-      "task": "08dfe545-8bd",
-      "model": "Grok 4 Fast",
-      "cost": 0.1832,
-      "durationSec": 62252,
-      "status": "completed",
-      "timestamp": "2026-02-17 22:12",
-      "date": "2026-02-17"
-    },
-    {
-      "task": "8a977d60-73d",
-      "model": "GPT-5.3 Codex",
-      "cost": 0.0378,
-      "durationSec": 14,
-      "status": "completed",
-      "timestamp": "2026-02-17 20:13",
-      "date": "2026-02-17"
-    },
-    {
-      "task": "944befd1-20c",
-      "model": "GPT-5.3 Codex",
-      "cost": 0.0653,
-      "durationSec": 42,
-      "status": "completed",
-      "timestamp": "2026-02-17 19:51",
-      "date": "2026-02-17"
-    },
-    {
-      "task": "d292f90e-66f",
-      "model": "GPT-5.3 Codex",
-      "cost": 0.0499,
-      "durationSec": 25,
-      "status": "completed",
-      "timestamp": "2026-02-17 18:35",
-      "date": "2026-02-17"
-    },
-    {
-      "task": "e259e936-b1a",
+      "task": "5bc894ee-1ca",
       "model": "Claude Opus 4.6",
-      "cost": 0.2287,
-      "durationSec": 50,
+      "cost": 0.2118,
+      "durationSec": 58,
       "status": "completed",
-      "timestamp": "2026-02-17 17:15",
-      "date": "2026-02-17"
+      "timestamp": "2026-02-20 09:54",
+      "date": "2026-02-20"
     },
     {
-      "task": "63bae0ec-4e0",
-      "model": "Claude Opus 4.6",
-      "cost": 0.13,
-      "durationSec": 19,
-      "status": "completed",
-      "timestamp": "2026-02-17 17:11",
-      "date": "2026-02-17"
-    },
-    {
-      "task": "03f4fccc-551",
+      "task": "33630c11-a00",
       "model": "GPT-5.3 Codex",
-      "cost": 0.0851,
+      "cost": 0.0932,
       "durationSec": 31,
       "status": "completed",
-      "timestamp": "2026-02-17 16:47",
-      "date": "2026-02-17"
+      "timestamp": "2026-02-20 09:54",
+      "date": "2026-02-20"
     },
     {
-      "task": "b305ccab-f3f",
-      "model": "Claude Opus 4.6",
-      "cost": 0.1453,
-      "durationSec": 28,
-      "status": "completed",
-      "timestamp": "2026-02-17 16:47",
-      "date": "2026-02-17"
-    },
-    {
-      "task": "a256e64a-456",
-      "model": "Claude Opus 4.6",
-      "cost": 2.0557,
-      "durationSec": 273,
-      "status": "completed",
-      "timestamp": "2026-02-17 16:22",
-      "date": "2026-02-17"
-    },
-    {
-      "task": "af51e7e3-aba",
-      "model": "Claude Opus 4.6",
-      "cost": 2.239,
-      "durationSec": 546,
-      "status": "completed",
-      "timestamp": "2026-02-17 16:05",
-      "date": "2026-02-17"
-    },
-    {
-      "task": "37f89403-bf5",
-      "model": "Claude Opus 4.6",
-      "cost": 4.6372,
-      "durationSec": 897,
-      "status": "completed",
-      "timestamp": "2026-02-17 15:59",
-      "date": "2026-02-17"
-    },
-    {
-      "task": "50621748-f58",
-      "model": "GPT-5.3 Codex",
-      "cost": 1.6414,
-      "durationSec": 544,
-      "status": "completed",
-      "timestamp": "2026-02-17 15:56",
-      "date": "2026-02-17"
-    },
-    {
-      "task": "5baeb41e-9ef",
+      "task": "da5859ba-1d7",
       "model": "MiniMax M2.5",
-      "cost": 0.6032,
-      "durationSec": 646,
+      "cost": 0.0035,
+      "durationSec": 66,
       "status": "completed",
-      "timestamp": "2026-02-17 15:55",
-      "date": "2026-02-17"
+      "timestamp": "2026-02-20 09:54",
+      "date": "2026-02-20"
     },
     {
-      "task": "d1cf3571-16c",
-      "model": "GPT-5.3 Codex",
-      "cost": 0.4892,
-      "durationSec": 131,
+      "task": "46a9cae9-2c2",
+      "model": "Claude Sonnet",
+      "cost": 1.119,
+      "durationSec": 301,
       "status": "completed",
-      "timestamp": "2026-02-17 15:46",
-      "date": "2026-02-17"
+      "timestamp": "2026-02-20 09:52",
+      "date": "2026-02-20"
+    },
+    {
+      "task": "77105896-0ad",
+      "model": "Claude Opus 4.6",
+      "cost": 0.3803,
+      "durationSec": 87,
+      "status": "completed",
+      "timestamp": "2026-02-20 09:51",
+      "date": "2026-02-20"
+    },
+    {
+      "task": "92738aed-513",
+      "model": "Claude Sonnet",
+      "cost": 0.5912,
+      "durationSec": 171,
+      "status": "completed",
+      "timestamp": "2026-02-20 09:11",
+      "date": "2026-02-20"
+    },
+    {
+      "task": "f11193fa-3b2",
+      "model": "GPT-5.3 Codex",
+      "cost": 0.055,
+      "durationSec": 195,
+      "status": "completed",
+      "timestamp": "2026-02-20 09:09",
+      "date": "2026-02-20"
+    },
+    {
+      "task": "8dc81133-8a1",
+      "model": "GPT-5.3 Codex",
+      "cost": 0.0465,
+      "durationSec": 202,
+      "status": "completed",
+      "timestamp": "2026-02-20 09:09",
+      "date": "2026-02-20"
+    },
+    {
+      "task": "2b576dfd-4c8",
+      "model": "GPT-5.3 Codex",
+      "cost": 0.0156,
+      "durationSec": 151,
+      "status": "completed",
+      "timestamp": "2026-02-20 09:08",
+      "date": "2026-02-20"
+    },
+    {
+      "task": "4c740b37-b62",
+      "model": "GPT-5.3 Codex",
+      "cost": 0.0249,
+      "durationSec": 151,
+      "status": "completed",
+      "timestamp": "2026-02-20 09:08",
+      "date": "2026-02-20"
+    },
+    {
+      "task": "7466d544-02e",
+      "model": "GPT-5.3 Codex",
+      "cost": 0.0269,
+      "durationSec": 15,
+      "status": "completed",
+      "timestamp": "2026-02-20 09:06",
+      "date": "2026-02-20"
+    },
+    {
+      "task": "6d0c0b2b-604",
+      "model": "GPT-5.3 Codex",
+      "cost": 0.0369,
+      "durationSec": 4,
+      "status": "completed",
+      "timestamp": "2026-02-20 09:05",
+      "date": "2026-02-20"
+    },
+    {
+      "task": "975fe38b-e19",
+      "model": "GPT-5.3 Codex",
+      "cost": 0.0258,
+      "durationSec": 3,
+      "status": "completed",
+      "timestamp": "2026-02-20 08:58",
+      "date": "2026-02-20"
+    },
+    {
+      "task": "1da91433-b33",
+      "model": "GPT-5.3 Codex",
+      "cost": 0.0123,
+      "durationSec": 0,
+      "status": "completed",
+      "timestamp": "2026-02-20 08:58",
+      "date": "2026-02-20"
+    },
+    {
+      "task": "d7ca5307-5b1",
+      "model": "GPT-5.3 Codex",
+      "cost": 0.0294,
+      "durationSec": 2,
+      "status": "completed",
+      "timestamp": "2026-02-20 08:58",
+      "date": "2026-02-20"
+    },
+    {
+      "task": "3d42b562-579",
+      "model": "GPT-5.3 Codex",
+      "cost": 0.0128,
+      "durationSec": 0,
+      "status": "completed",
+      "timestamp": "2026-02-20 08:58",
+      "date": "2026-02-20"
+    },
+    {
+      "task": "a2c21855-a71",
+      "model": "GPT-5.3 Codex",
+      "cost": 0.0373,
+      "durationSec": 3,
+      "status": "completed",
+      "timestamp": "2026-02-20 08:58",
+      "date": "2026-02-20"
+    },
+    {
+      "task": "55ff6820-48b",
+      "model": "GPT-5.3 Codex",
+      "cost": 0.0101,
+      "durationSec": 0,
+      "status": "completed",
+      "timestamp": "2026-02-20 08:58",
+      "date": "2026-02-20"
+    },
+    {
+      "task": "a820a108-753",
+      "model": "Claude Sonnet",
+      "cost": 0.9659,
+      "durationSec": 261,
+      "status": "completed",
+      "timestamp": "2026-02-20 08:57",
+      "date": "2026-02-20"
+    },
+    {
+      "task": "306037a1-177",
+      "model": "GPT-5.3 Codex",
+      "cost": 0.0442,
+      "durationSec": 11,
+      "status": "completed",
+      "timestamp": "2026-02-20 08:49",
+      "date": "2026-02-20"
+    },
+    {
+      "task": "fe241459-1ff",
+      "model": "GPT-5.3 Codex",
+      "cost": 0.0131,
+      "durationSec": 0,
+      "status": "completed",
+      "timestamp": "2026-02-20 08:49",
+      "date": "2026-02-20"
+    },
+    {
+      "task": "8a35c70e-b3d",
+      "model": "Claude Sonnet",
+      "cost": 1.2302,
+      "durationSec": 429,
+      "status": "completed",
+      "timestamp": "2026-02-20 08:19",
+      "date": "2026-02-20"
+    },
+    {
+      "task": "12fa303d-5c5",
+      "model": "Claude Opus 4.6",
+      "cost": 0.194,
+      "durationSec": 41,
+      "status": "completed",
+      "timestamp": "2026-02-20 08:01",
+      "date": "2026-02-20"
+    },
+    {
+      "task": "21dbcbe6-65f",
+      "model": "Claude Opus 4.6",
+      "cost": 0.107,
+      "durationSec": 0,
+      "status": "completed",
+      "timestamp": "2026-02-20 06:38",
+      "date": "2026-02-20"
     }
   ],
   "subagentRuns30d": [
     {
-      "task": "agent:main:subagent:6c249234-c564-46e7-99bb-586d820892b2",
-      "model": "Gemini 2.5 Pro",
-      "cost": 0.2923,
-      "durationSec": 69,
-      "status": "completed",
-      "timestamp": "2026-02-18 22:11",
-      "date": "2026-02-18"
-    },
-    {
-      "task": "agent:work:subagent:8ad511cf-7c53-4312-b472-9cab3f208e36",
+      "task": "db870206-68a",
       "model": "Claude Opus 4.6",
-      "cost": 0.1328,
-      "durationSec": 29,
+      "cost": 6.4102,
+      "durationSec": 45848,
       "status": "completed",
-      "timestamp": "2026-02-18 22:08",
-      "date": "2026-02-18"
+      "timestamp": "2026-02-23 03:33",
+      "date": "2026-02-23"
     },
     {
-      "task": "agent:work:subagent:c652f4ac-8507-4cb7-9d0b-f1b1bb215feb",
-      "model": "GPT-5.3 Codex",
-      "cost": 0.2842,
-      "durationSec": 137,
+      "task": "85b0e312-329",
+      "model": "Grok 4",
+      "cost": 0.1369,
+      "durationSec": 140765,
       "status": "completed",
-      "timestamp": "2026-02-18 22:07",
-      "date": "2026-02-18"
+      "timestamp": "2026-02-22 19:33",
+      "date": "2026-02-22"
     },
     {
-      "task": "agent:work:subagent:297a87a6-542a-4606-91a5-4fd4b4b84608",
-      "model": "GPT-5.3 Codex",
-      "cost": 0.268,
-      "durationSec": 118,
-      "status": "completed",
-      "timestamp": "2026-02-18 21:57",
-      "date": "2026-02-18"
-    },
-    {
-      "task": "agent:work:subagent:75a92919-a055-4484-8480-d81d0dcd07f7",
-      "model": "Claude Opus 4.6",
-      "cost": 0.1211,
-      "durationSec": 27,
-      "status": "completed",
-      "timestamp": "2026-02-18 21:55",
-      "date": "2026-02-18"
-    },
-    {
-      "task": "agent:work:subagent:d32d1115-e2a3-421a-a7f7-68d879b1353a",
-      "model": "GPT-5.3 Codex",
-      "cost": 0.1339,
-      "durationSec": 79,
-      "status": "completed",
-      "timestamp": "2026-02-18 21:53",
-      "date": "2026-02-18"
-    },
-    {
-      "task": "agent:work:subagent:dd7afc61-5a49-4162-a6e1-648af55bcd17",
-      "model": "Claude Opus 4.6",
-      "cost": 0.0878,
-      "durationSec": 105,
-      "status": "completed",
-      "timestamp": "2026-02-18 21:45",
-      "date": "2026-02-18"
-    },
-    {
-      "task": "agent:work:subagent:ccf8f1de-ab41-4a60-970c-b24382c8c99d",
-      "model": "Claude Opus 4.6",
-      "cost": 0.1061,
-      "durationSec": 106,
-      "status": "completed",
-      "timestamp": "2026-02-18 21:45",
-      "date": "2026-02-18"
-    },
-    {
-      "task": "agent:work:subagent:0d0d9692-cce0-49f5-9b91-72085a8e8883",
-      "model": "Claude Opus 4.6",
-      "cost": 0.0683,
-      "durationSec": 97,
-      "status": "completed",
-      "timestamp": "2026-02-18 21:45",
-      "date": "2026-02-18"
-    },
-    {
-      "task": "agent:work:subagent:70090605-abf3-4a91-872e-d176af8930ee",
-      "model": "Claude Opus 4.6",
-      "cost": 0.0526,
-      "durationSec": 4,
-      "status": "completed",
-      "timestamp": "2026-02-18 21:43",
-      "date": "2026-02-18"
-    },
-    {
-      "task": "a33279aa-5eb",
-      "model": "Claude Opus 4.6",
-      "cost": 0.4909,
-      "durationSec": 100,
-      "status": "completed",
-      "timestamp": "2026-02-18 20:56",
-      "date": "2026-02-18"
-    },
-    {
-      "task": "cbd5fa87-816",
-      "model": "Claude Opus 4.6",
-      "cost": 0.0969,
-      "durationSec": 36,
-      "status": "completed",
-      "timestamp": "2026-02-18 20:45",
-      "date": "2026-02-18"
-    },
-    {
-      "task": "f962a01e-e70",
-      "model": "Claude Opus 4.6",
-      "cost": 0.1208,
-      "durationSec": 47,
-      "status": "completed",
-      "timestamp": "2026-02-18 20:45",
-      "date": "2026-02-18"
-    },
-    {
-      "task": "6e31316f-549",
-      "model": "Claude Opus 4.6",
-      "cost": 0.2629,
-      "durationSec": 57,
-      "status": "completed",
-      "timestamp": "2026-02-18 20:34",
-      "date": "2026-02-18"
-    },
-    {
-      "task": "e15cbfd8-0ee",
-      "model": "GPT-5.3 Codex",
-      "cost": 0.188,
-      "durationSec": 52,
-      "status": "completed",
-      "timestamp": "2026-02-18 20:32",
-      "date": "2026-02-18"
-    },
-    {
-      "task": "74a3e6c3-720",
-      "model": "Claude Opus 4.6",
-      "cost": 0.4047,
-      "durationSec": 94,
-      "status": "completed",
-      "timestamp": "2026-02-18 20:32",
-      "date": "2026-02-18"
-    },
-    {
-      "task": "4cb78823-5ff",
-      "model": "Claude Sonnet",
-      "cost": 243.0521,
-      "durationSec": 195504,
-      "status": "completed",
-      "timestamp": "2026-02-18 20:08",
-      "date": "2026-02-18"
-    },
-    {
-      "task": "9e13c990-ba6",
-      "model": "GPT-5.3 Codex",
-      "cost": 0.3786,
-      "durationSec": 188,
-      "status": "completed",
-      "timestamp": "2026-02-18 16:45",
-      "date": "2026-02-18"
-    },
-    {
-      "task": "32de8feb-a18",
-      "model": "Claude Opus 4.6",
-      "cost": 0.3722,
-      "durationSec": 83,
-      "status": "completed",
-      "timestamp": "2026-02-18 16:43",
-      "date": "2026-02-18"
-    },
-    {
-      "task": "a550b152-10a",
-      "model": "Claude Opus 4.6",
-      "cost": 0.3365,
-      "durationSec": 101,
-      "status": "completed",
-      "timestamp": "2026-02-18 15:28",
-      "date": "2026-02-18"
-    },
-    {
-      "task": "d09ed95b-8fe",
-      "model": "MiniMax M2.5",
-      "cost": 0.0065,
-      "durationSec": 68,
-      "status": "completed",
-      "timestamp": "2026-02-18 15:26",
-      "date": "2026-02-18"
-    },
-    {
-      "task": "9f68a296-30c",
-      "model": "Claude Opus 4.6",
-      "cost": 0.1514,
-      "durationSec": 38,
-      "status": "completed",
-      "timestamp": "2026-02-18 15:25",
-      "date": "2026-02-18"
-    },
-    {
-      "task": "23b9dcfb-e67",
-      "model": "GPT-5.3 Codex",
-      "cost": 0.0593,
-      "durationSec": 27,
-      "status": "completed",
-      "timestamp": "2026-02-18 15:25",
-      "date": "2026-02-18"
-    },
-    {
-      "task": "94ed0f49-902",
-      "model": "GPT-5.3 Codex",
-      "cost": 0.218,
-      "durationSec": 103,
-      "status": "completed",
-      "timestamp": "2026-02-18 15:20",
-      "date": "2026-02-18"
-    },
-    {
-      "task": "7b5b2259-9f9",
-      "model": "Claude Opus 4.6",
-      "cost": 0.2368,
-      "durationSec": 52,
-      "status": "completed",
-      "timestamp": "2026-02-18 15:19",
-      "date": "2026-02-18"
-    },
-    {
-      "task": "62049116-2a6",
-      "model": "GPT-5.3 Codex",
-      "cost": 0.0723,
-      "durationSec": 52,
-      "status": "completed",
-      "timestamp": "2026-02-18 15:00",
-      "date": "2026-02-18"
-    },
-    {
-      "task": "28203197-5db",
-      "model": "GPT-5.3 Codex",
-      "cost": 0.3144,
-      "durationSec": 221,
-      "status": "completed",
-      "timestamp": "2026-02-18 14:34",
-      "date": "2026-02-18"
-    },
-    {
-      "task": "c5124c27-5f6",
-      "model": "GPT-5.3 Codex",
-      "cost": 0.0723,
-      "durationSec": 128,
-      "status": "completed",
-      "timestamp": "2026-02-18 14:32",
-      "date": "2026-02-18"
-    },
-    {
-      "task": "dd93819c-bda",
-      "model": "GPT-5.3 Codex",
-      "cost": 0.0757,
-      "durationSec": 148,
-      "status": "completed",
-      "timestamp": "2026-02-18 14:32",
-      "date": "2026-02-18"
-    },
-    {
-      "task": "d3eca14c-650",
-      "model": "GPT-5.3 Codex",
-      "cost": 0.1363,
-      "durationSec": 139,
-      "status": "completed",
-      "timestamp": "2026-02-18 14:32",
-      "date": "2026-02-18"
-    },
-    {
-      "task": "b76db233-b44",
-      "model": "GPT-5.3 Codex",
-      "cost": 0.1608,
+      "task": "8c1ba9a4-7fc",
+      "model": "Grok 4",
+      "cost": 0.0057,
       "durationSec": 19,
       "status": "completed",
-      "timestamp": "2026-02-18 13:55",
-      "date": "2026-02-18"
+      "timestamp": "2026-02-22 11:00",
+      "date": "2026-02-22"
     },
     {
-      "task": "66e533ff-890",
+      "task": "47028f72-11b",
       "model": "GPT-5.3 Codex",
-      "cost": 0.5055,
-      "durationSec": 178,
+      "cost": 394.7453,
+      "durationSec": 821556,
       "status": "completed",
-      "timestamp": "2026-02-18 13:53",
-      "date": "2026-02-18"
+      "timestamp": "2026-02-22 01:52",
+      "date": "2026-02-22"
     },
     {
-      "task": "ea3188dd-71e",
+      "task": "2a385bb3-af3",
       "model": "GPT-5.3 Codex",
-      "cost": 1.2321,
-      "durationSec": 197,
+      "cost": 0.1285,
+      "durationSec": 20519,
       "status": "completed",
-      "timestamp": "2026-02-18 13:53",
-      "date": "2026-02-18"
+      "timestamp": "2026-02-21 18:55",
+      "date": "2026-02-21"
     },
     {
-      "task": "26af192d-224",
+      "task": "93ac6549-a6f",
+      "model": "Grok 4",
+      "cost": 0.0114,
+      "durationSec": 7853,
+      "status": "completed",
+      "timestamp": "2026-02-21 13:11",
+      "date": "2026-02-21"
+    },
+    {
+      "task": "9c92ea4b-5f2",
       "model": "GPT-5.3 Codex",
-      "cost": 0.0138,
-      "durationSec": 0,
+      "cost": 186.0829,
+      "durationSec": 198001,
       "status": "completed",
-      "timestamp": "2026-02-18 13:30",
-      "date": "2026-02-18"
+      "timestamp": "2026-02-21 03:28",
+      "date": "2026-02-21"
     },
     {
-      "task": "381e2e72-6fb",
+      "task": "6edbf6d8-d42",
+      "model": "Claude Opus 4.6",
+      "cost": 0.3155,
+      "durationSec": 13018,
+      "status": "completed",
+      "timestamp": "2026-02-20 23:01",
+      "date": "2026-02-20"
+    },
+    {
+      "task": "91449f2c-309",
+      "model": "Claude Opus 4.6",
+      "cost": 3.0796,
+      "durationSec": 455179,
+      "status": "completed",
+      "timestamp": "2026-02-20 21:10",
+      "date": "2026-02-20"
+    },
+    {
+      "task": "61636f74-633",
+      "model": "Grok 4",
+      "cost": 0.0814,
+      "durationSec": 141327,
+      "status": "completed",
+      "timestamp": "2026-02-20 20:27",
+      "date": "2026-02-20"
+    },
+    {
+      "task": "530e0e89-d88",
+      "model": "Grok 4",
+      "cost": 0.027,
+      "durationSec": 91,
+      "status": "completed",
+      "timestamp": "2026-02-20 19:26",
+      "date": "2026-02-20"
+    },
+    {
+      "task": "73f86c16-9ae",
       "model": "Claude Sonnet",
-      "cost": 0.0507,
-      "durationSec": 0,
+      "cost": 0.324,
+      "durationSec": 290,
       "status": "completed",
-      "timestamp": "2026-02-18 13:05",
-      "date": "2026-02-18"
+      "timestamp": "2026-02-20 18:15",
+      "date": "2026-02-20"
     },
     {
-      "task": "36efe25f-ca9",
+      "task": "b6318a50-b24",
       "model": "Claude Opus 4.6",
-      "cost": 0.0828,
-      "durationSec": 0,
+      "cost": 0.4983,
+      "durationSec": 108,
       "status": "completed",
-      "timestamp": "2026-02-18 04:22",
-      "date": "2026-02-18"
+      "timestamp": "2026-02-20 18:09",
+      "date": "2026-02-20"
     },
     {
-      "task": "08dfe545-8bd",
-      "model": "Grok 4 Fast",
-      "cost": 0.1832,
-      "durationSec": 62252,
+      "task": "4c5d72d6-dba",
+      "model": "Claude Sonnet",
+      "cost": 4.0653,
+      "durationSec": 796,
       "status": "completed",
-      "timestamp": "2026-02-17 22:12",
-      "date": "2026-02-17"
+      "timestamp": "2026-02-20 17:00",
+      "date": "2026-02-20"
     },
     {
-      "task": "8a977d60-73d",
-      "model": "GPT-5.3 Codex",
-      "cost": 0.0378,
-      "durationSec": 14,
+      "task": "501443ec-2b8",
+      "model": "Grok 4",
+      "cost": 0.0095,
+      "durationSec": 20995,
       "status": "completed",
-      "timestamp": "2026-02-17 20:13",
-      "date": "2026-02-17"
+      "timestamp": "2026-02-20 16:50",
+      "date": "2026-02-20"
     },
     {
-      "task": "944befd1-20c",
-      "model": "GPT-5.3 Codex",
-      "cost": 0.0653,
-      "durationSec": 42,
-      "status": "completed",
-      "timestamp": "2026-02-17 19:51",
-      "date": "2026-02-17"
-    },
-    {
-      "task": "d292f90e-66f",
-      "model": "GPT-5.3 Codex",
-      "cost": 0.0499,
-      "durationSec": 25,
-      "status": "completed",
-      "timestamp": "2026-02-17 18:35",
-      "date": "2026-02-17"
-    },
-    {
-      "task": "e259e936-b1a",
+      "task": "c70a844b-422",
       "model": "Claude Opus 4.6",
-      "cost": 0.2287,
-      "durationSec": 50,
+      "cost": 2.2962,
+      "durationSec": 355,
       "status": "completed",
-      "timestamp": "2026-02-17 17:15",
-      "date": "2026-02-17"
+      "timestamp": "2026-02-20 10:40",
+      "date": "2026-02-20"
     },
     {
-      "task": "63bae0ec-4e0",
+      "task": "f11eb9ad-92c",
       "model": "Claude Opus 4.6",
-      "cost": 0.13,
-      "durationSec": 19,
-      "status": "completed",
-      "timestamp": "2026-02-17 17:11",
-      "date": "2026-02-17"
-    },
-    {
-      "task": "03f4fccc-551",
-      "model": "GPT-5.3 Codex",
-      "cost": 0.0851,
-      "durationSec": 31,
-      "status": "completed",
-      "timestamp": "2026-02-17 16:47",
-      "date": "2026-02-17"
-    },
-    {
-      "task": "b305ccab-f3f",
-      "model": "Claude Opus 4.6",
-      "cost": 0.1453,
-      "durationSec": 28,
-      "status": "completed",
-      "timestamp": "2026-02-17 16:47",
-      "date": "2026-02-17"
-    },
-    {
-      "task": "a256e64a-456",
-      "model": "Claude Opus 4.6",
-      "cost": 2.0557,
-      "durationSec": 273,
-      "status": "completed",
-      "timestamp": "2026-02-17 16:22",
-      "date": "2026-02-17"
-    },
-    {
-      "task": "af51e7e3-aba",
-      "model": "Claude Opus 4.6",
-      "cost": 2.239,
-      "durationSec": 546,
-      "status": "completed",
-      "timestamp": "2026-02-17 16:05",
-      "date": "2026-02-17"
-    },
-    {
-      "task": "37f89403-bf5",
-      "model": "Claude Opus 4.6",
-      "cost": 4.6372,
-      "durationSec": 897,
-      "status": "completed",
-      "timestamp": "2026-02-17 15:59",
-      "date": "2026-02-17"
-    },
-    {
-      "task": "50621748-f58",
-      "model": "GPT-5.3 Codex",
-      "cost": 1.6414,
-      "durationSec": 544,
-      "status": "completed",
-      "timestamp": "2026-02-17 15:56",
-      "date": "2026-02-17"
-    },
-    {
-      "task": "5baeb41e-9ef",
-      "model": "MiniMax M2.5",
-      "cost": 0.6032,
-      "durationSec": 646,
-      "status": "completed",
-      "timestamp": "2026-02-17 15:55",
-      "date": "2026-02-17"
-    },
-    {
-      "task": "d1cf3571-16c",
-      "model": "GPT-5.3 Codex",
-      "cost": 0.4892,
-      "durationSec": 131,
-      "status": "completed",
-      "timestamp": "2026-02-17 15:46",
-      "date": "2026-02-17"
-    },
-    {
-      "task": "df21e701-4ce",
-      "model": "Grok 4 Fast",
-      "cost": 0.0025,
-      "durationSec": 3,
-      "status": "completed",
-      "timestamp": "2026-02-17 15:06",
-      "date": "2026-02-17"
-    },
-    {
-      "task": "a3f26d19-727",
-      "model": "Grok 4 Fast",
-      "cost": 0.0018,
-      "durationSec": 0,
-      "status": "completed",
-      "timestamp": "2026-02-17 14:55",
-      "date": "2026-02-17"
-    },
-    {
-      "task": "3d04e39c-b6b",
-      "model": "Claude Opus 4.6",
-      "cost": 0.0318,
-      "durationSec": 0,
-      "status": "completed",
-      "timestamp": "2026-02-17 14:37",
-      "date": "2026-02-17"
-    },
-    {
-      "task": "ee888435-7e9",
-      "model": "GPT-5.3 Codex",
-      "cost": 0.6487,
-      "durationSec": 88,
-      "status": "completed",
-      "timestamp": "2026-02-17 13:58",
-      "date": "2026-02-17"
-    },
-    {
-      "task": "c5908595-0d5",
-      "model": "Claude Opus 4.6",
-      "cost": 0.5453,
-      "durationSec": 77,
-      "status": "completed",
-      "timestamp": "2026-02-17 13:50",
-      "date": "2026-02-17"
-    },
-    {
-      "task": "0d40abea-775",
-      "model": "Grok 4 Fast",
-      "cost": 0.0059,
-      "durationSec": 15,
-      "status": "completed",
-      "timestamp": "2026-02-17 12:45",
-      "date": "2026-02-17"
-    },
-    {
-      "task": "1256fc96-188",
-      "model": "Claude Opus 4.6",
-      "cost": 0.2456,
-      "durationSec": 417,
-      "status": "completed",
-      "timestamp": "2026-02-17 11:07",
-      "date": "2026-02-17"
-    },
-    {
-      "task": "dec2bb2c-584",
-      "model": "Grok 4 Fast",
-      "cost": 0.4443,
-      "durationSec": 82612,
-      "status": "completed",
-      "timestamp": "2026-02-17 03:55",
-      "date": "2026-02-17"
-    },
-    {
-      "task": "67062cd1-fd3",
-      "model": "Claude Opus 4.6",
-      "cost": 0.3104,
-      "durationSec": 66,
-      "status": "completed",
-      "timestamp": "2026-02-16 23:01",
-      "date": "2026-02-16"
-    },
-    {
-      "task": "0bd14c9a-732",
-      "model": "Claude Opus 4.6",
-      "cost": 0.2087,
-      "durationSec": 36,
-      "status": "completed",
-      "timestamp": "2026-02-16 18:12",
-      "date": "2026-02-16"
-    },
-    {
-      "task": "36e80bb4-e0f",
-      "model": "Claude Opus 4.6",
-      "cost": 0.0677,
-      "durationSec": 10,
-      "status": "completed",
-      "timestamp": "2026-02-16 18:12",
-      "date": "2026-02-16"
-    },
-    {
-      "task": "083918bc-629",
-      "model": "Claude Opus 4.6",
-      "cost": 0.2657,
-      "durationSec": 36,
-      "status": "completed",
-      "timestamp": "2026-02-16 18:10",
-      "date": "2026-02-16"
-    },
-    {
-      "task": "5b88e7c4-9fb",
-      "model": "Claude Opus 4.6",
-      "cost": 0.3707,
-      "durationSec": 77,
-      "status": "completed",
-      "timestamp": "2026-02-16 18:10",
-      "date": "2026-02-16"
-    },
-    {
-      "task": "ef333152-2ee",
-      "model": "Claude Opus 4.6",
-      "cost": 1.2656,
-      "durationSec": 135,
-      "status": "completed",
-      "timestamp": "2026-02-16 17:39",
-      "date": "2026-02-16"
-    },
-    {
-      "task": "2f046629-0c1",
-      "model": "Claude Opus 4.6",
-      "cost": 0.9974,
-      "durationSec": 154,
-      "status": "completed",
-      "timestamp": "2026-02-16 17:39",
-      "date": "2026-02-16"
-    },
-    {
-      "task": "e087d637-949",
-      "model": "Claude Opus 4.6",
-      "cost": 0.8266,
-      "durationSec": 145,
-      "status": "completed",
-      "timestamp": "2026-02-16 17:38",
-      "date": "2026-02-16"
-    },
-    {
-      "task": "17f3b8c3-7ef",
-      "model": "Claude Opus 4.6",
-      "cost": 0.3196,
-      "durationSec": 32,
-      "status": "completed",
-      "timestamp": "2026-02-16 17:36",
-      "date": "2026-02-16"
-    },
-    {
-      "task": "708dc16d-839",
-      "model": "Claude Opus 4.6",
-      "cost": 0.3794,
-      "durationSec": 35,
-      "status": "completed",
-      "timestamp": "2026-02-16 17:36",
-      "date": "2026-02-16"
-    },
-    {
-      "task": "e3d8fa8b-bf2",
-      "model": "Claude Opus 4.6",
-      "cost": 1.1565,
-      "durationSec": 198,
-      "status": "completed",
-      "timestamp": "2026-02-16 17:09",
-      "date": "2026-02-16"
-    },
-    {
-      "task": "4d532d84-9e2",
-      "model": "Claude Opus 4.6",
-      "cost": 0.1537,
-      "durationSec": 55,
-      "status": "completed",
-      "timestamp": "2026-02-16 16:51",
-      "date": "2026-02-16"
-    },
-    {
-      "task": "ac15c7e1-28e",
-      "model": "Claude Opus 4.6",
-      "cost": 0.2288,
-      "durationSec": 119,
-      "status": "completed",
-      "timestamp": "2026-02-16 16:45",
-      "date": "2026-02-16"
-    },
-    {
-      "task": "6e3927a8-a49",
-      "model": "MiniMax M2.5",
-      "cost": 0.0163,
-      "durationSec": 54,
-      "status": "completed",
-      "timestamp": "2026-02-16 16:27",
-      "date": "2026-02-16"
-    },
-    {
-      "task": "e9bd5452-6e2",
-      "model": "GPT-5.3 Codex",
-      "cost": 0.0346,
-      "durationSec": 0,
-      "status": "completed",
-      "timestamp": "2026-02-16 16:26",
-      "date": "2026-02-16"
-    },
-    {
-      "task": "ab58a2ef-299",
-      "model": "Claude Opus 4.6",
-      "cost": 0.1444,
-      "durationSec": 26,
-      "status": "completed",
-      "timestamp": "2026-02-16 16:15",
-      "date": "2026-02-16"
-    },
-    {
-      "task": "672742d8-dad",
-      "model": "Claude Opus 4.6",
-      "cost": 0.0632,
-      "durationSec": 12,
-      "status": "completed",
-      "timestamp": "2026-02-16 16:14",
-      "date": "2026-02-16"
-    },
-    {
-      "task": "d824776d-3c8",
-      "model": "Claude Opus 4.6",
-      "cost": 0.0646,
-      "durationSec": 12,
-      "status": "completed",
-      "timestamp": "2026-02-16 16:14",
-      "date": "2026-02-16"
-    },
-    {
-      "task": "abc963aa-e42",
-      "model": "Claude Opus 4.6",
-      "cost": 0.061,
-      "durationSec": 16,
-      "status": "completed",
-      "timestamp": "2026-02-16 16:14",
-      "date": "2026-02-16"
-    },
-    {
-      "task": "6c177725-589",
-      "model": "Claude Opus 4.6",
-      "cost": 0.0802,
+      "cost": 0.1297,
       "durationSec": 17,
       "status": "completed",
-      "timestamp": "2026-02-16 16:14",
-      "date": "2026-02-16"
+      "timestamp": "2026-02-20 10:34",
+      "date": "2026-02-20"
     },
     {
-      "task": "3339e2d7-f4b",
+      "task": "972e0f1f-823",
       "model": "Claude Opus 4.6",
-      "cost": 0.1527,
-      "durationSec": 32,
+      "cost": 0.1772,
+      "durationSec": 19,
       "status": "completed",
-      "timestamp": "2026-02-16 16:09",
-      "date": "2026-02-16"
+      "timestamp": "2026-02-20 10:26",
+      "date": "2026-02-20"
     },
     {
-      "task": "2960da97-f4b",
+      "task": "2ce6cc98-d6d",
       "model": "Claude Opus 4.6",
-      "cost": 0.1053,
-      "durationSec": 23,
+      "cost": 0.0757,
+      "durationSec": 0,
       "status": "completed",
-      "timestamp": "2026-02-16 16:09",
-      "date": "2026-02-16"
+      "timestamp": "2026-02-20 10:22",
+      "date": "2026-02-20"
     },
     {
-      "task": "9d3db4a4-bea",
+      "task": "4c23e56a-0b0",
       "model": "Claude Opus 4.6",
-      "cost": 0.106,
-      "durationSec": 23,
-      "status": "completed",
-      "timestamp": "2026-02-16 16:09",
-      "date": "2026-02-16"
-    },
-    {
-      "task": "ed2664d2-188",
-      "model": "Claude Opus 4.6",
-      "cost": 0.1169,
-      "durationSec": 26,
-      "status": "completed",
-      "timestamp": "2026-02-16 16:09",
-      "date": "2026-02-16"
-    },
-    {
-      "task": "98f5e7b8-dc1",
-      "model": "Claude Opus 4.6",
-      "cost": 0.4036,
-      "durationSec": 88,
-      "status": "completed",
-      "timestamp": "2026-02-16 14:20",
-      "date": "2026-02-16"
-    },
-    {
-      "task": "87e9d677-68a",
-      "model": "Claude Opus 4.6",
-      "cost": 0.6646,
-      "durationSec": 103,
-      "status": "completed",
-      "timestamp": "2026-02-16 13:57",
-      "date": "2026-02-16"
-    },
-    {
-      "task": "fe169d5a-5ed",
-      "model": "Grok 4 Fast",
-      "cost": 0.0112,
+      "cost": 0.2707,
       "durationSec": 36,
       "status": "completed",
-      "timestamp": "2026-02-16 13:56",
-      "date": "2026-02-16"
+      "timestamp": "2026-02-20 10:22",
+      "date": "2026-02-20"
     },
     {
-      "task": "ece55c9f-bdb",
+      "task": "ba127525-d33",
       "model": "Claude Opus 4.6",
-      "cost": 0.4682,
-      "durationSec": 144,
+      "cost": 2.1957,
+      "durationSec": 110,
       "status": "completed",
-      "timestamp": "2026-02-16 13:54",
-      "date": "2026-02-16"
+      "timestamp": "2026-02-20 10:22",
+      "date": "2026-02-20"
     },
     {
-      "task": "00a99562-fbb",
-      "model": "Grok 4 Fast",
-      "cost": 0.0077,
-      "durationSec": 36,
+      "task": "fe3d03a1-f77",
+      "model": "Grok 4",
+      "cost": 0.0039,
+      "durationSec": 6,
       "status": "completed",
-      "timestamp": "2026-02-16 11:00",
-      "date": "2026-02-16"
+      "timestamp": "2026-02-20 10:21",
+      "date": "2026-02-20"
     },
     {
-      "task": "92ede4bf-ba6",
-      "model": "Grok 4 Fast",
-      "cost": 1.0298,
-      "durationSec": 86164,
-      "status": "completed",
-      "timestamp": "2026-02-16 03:58",
-      "date": "2026-02-16"
-    },
-    {
-      "task": "32e976d0-888",
+      "task": "636762b6-e96",
       "model": "Claude Opus 4.6",
-      "cost": 27.0951,
-      "durationSec": 52439,
+      "cost": 0.0906,
+      "durationSec": 0,
       "status": "completed",
-      "timestamp": "2026-02-16 02:27",
-      "date": "2026-02-16"
+      "timestamp": "2026-02-20 10:21",
+      "date": "2026-02-20"
     },
     {
-      "task": "5b736168-aa3",
-      "model": "Claude Opus 4.6",
-      "cost": 0.8003,
-      "durationSec": 269,
+      "task": "f96a05cb-bf4",
+      "model": "Grok 4",
+      "cost": 0.0023,
+      "durationSec": 0,
       "status": "completed",
-      "timestamp": "2026-02-16 01:59",
-      "date": "2026-02-16"
+      "timestamp": "2026-02-20 10:20",
+      "date": "2026-02-20"
     },
     {
-      "task": "7ca3058b-7ee",
-      "model": "MiniMax M2.5",
-      "cost": 0.2315,
-      "durationSec": 218,
-      "status": "completed",
-      "timestamp": "2026-02-16 01:30",
-      "date": "2026-02-16"
-    },
-    {
-      "task": "6d84d591-329",
-      "model": "Claude Opus 4.6",
-      "cost": 0.2571,
-      "durationSec": 67,
-      "status": "completed",
-      "timestamp": "2026-02-16 01:27",
-      "date": "2026-02-16"
-    },
-    {
-      "task": "2fec376c-5e8",
-      "model": "Claude Opus 4.6",
-      "cost": 1.1307,
-      "durationSec": 226,
-      "status": "completed",
-      "timestamp": "2026-02-16 01:23",
-      "date": "2026-02-16"
-    },
-    {
-      "task": "4a9ddb27-2d7",
-      "model": "Claude Opus 4.6",
-      "cost": 0.2272,
+      "task": "8f383ecf-a1a",
+      "model": "Gemini 2.5 Pro",
+      "cost": 0.1078,
       "durationSec": 76,
       "status": "completed",
-      "timestamp": "2026-02-16 01:08",
-      "date": "2026-02-16"
+      "timestamp": "2026-02-20 09:56",
+      "date": "2026-02-20"
     },
     {
-      "task": "67a0baef-6c4",
+      "task": "c7d99a70-06e",
       "model": "Claude Opus 4.6",
-      "cost": 1.1676,
-      "durationSec": 321,
+      "cost": 0.5502,
+      "durationSec": 138,
       "status": "completed",
-      "timestamp": "2026-02-16 00:02",
-      "date": "2026-02-16"
+      "timestamp": "2026-02-20 09:55",
+      "date": "2026-02-20"
     },
     {
-      "task": "e79afacb-fcf",
+      "task": "5bc894ee-1ca",
       "model": "Claude Opus 4.6",
-      "cost": 1.8443,
-      "durationSec": 412,
+      "cost": 0.2118,
+      "durationSec": 58,
       "status": "completed",
-      "timestamp": "2026-02-15 23:58",
-      "date": "2026-02-15"
+      "timestamp": "2026-02-20 09:54",
+      "date": "2026-02-20"
     },
     {
-      "task": "be18cdc2-822",
-      "model": "Claude Opus 4.6",
-      "cost": 1.9338,
-      "durationSec": 382,
+      "task": "33630c11-a00",
+      "model": "GPT-5.3 Codex",
+      "cost": 0.0932,
+      "durationSec": 31,
       "status": "completed",
-      "timestamp": "2026-02-15 23:57",
-      "date": "2026-02-15"
+      "timestamp": "2026-02-20 09:54",
+      "date": "2026-02-20"
     },
     {
-      "task": "81a97b1e-090",
-      "model": "Claude Opus 4.6",
-      "cost": 1.1704,
-      "durationSec": 341,
+      "task": "da5859ba-1d7",
+      "model": "MiniMax M2.5",
+      "cost": 0.0035,
+      "durationSec": 66,
       "status": "completed",
-      "timestamp": "2026-02-15 23:57",
-      "date": "2026-02-15"
+      "timestamp": "2026-02-20 09:54",
+      "date": "2026-02-20"
     },
     {
-      "task": "22ea12f7-3c0",
-      "model": "Claude Opus 4.6",
-      "cost": 1.761,
-      "durationSec": 309,
+      "task": "46a9cae9-2c2",
+      "model": "Claude Sonnet",
+      "cost": 1.119,
+      "durationSec": 301,
       "status": "completed",
-      "timestamp": "2026-02-15 23:56",
-      "date": "2026-02-15"
+      "timestamp": "2026-02-20 09:52",
+      "date": "2026-02-20"
     },
     {
-      "task": "b279f2b1-616",
+      "task": "77105896-0ad",
       "model": "Claude Opus 4.6",
-      "cost": 1.2605,
-      "durationSec": 295,
+      "cost": 0.3803,
+      "durationSec": 87,
       "status": "completed",
-      "timestamp": "2026-02-15 23:56",
-      "date": "2026-02-15"
+      "timestamp": "2026-02-20 09:51",
+      "date": "2026-02-20"
+    },
+    {
+      "task": "92738aed-513",
+      "model": "Claude Sonnet",
+      "cost": 0.5912,
+      "durationSec": 171,
+      "status": "completed",
+      "timestamp": "2026-02-20 09:11",
+      "date": "2026-02-20"
+    },
+    {
+      "task": "f11193fa-3b2",
+      "model": "GPT-5.3 Codex",
+      "cost": 0.055,
+      "durationSec": 195,
+      "status": "completed",
+      "timestamp": "2026-02-20 09:09",
+      "date": "2026-02-20"
+    },
+    {
+      "task": "8dc81133-8a1",
+      "model": "GPT-5.3 Codex",
+      "cost": 0.0465,
+      "durationSec": 202,
+      "status": "completed",
+      "timestamp": "2026-02-20 09:09",
+      "date": "2026-02-20"
+    },
+    {
+      "task": "2b576dfd-4c8",
+      "model": "GPT-5.3 Codex",
+      "cost": 0.0156,
+      "durationSec": 151,
+      "status": "completed",
+      "timestamp": "2026-02-20 09:08",
+      "date": "2026-02-20"
+    },
+    {
+      "task": "4c740b37-b62",
+      "model": "GPT-5.3 Codex",
+      "cost": 0.0249,
+      "durationSec": 151,
+      "status": "completed",
+      "timestamp": "2026-02-20 09:08",
+      "date": "2026-02-20"
+    },
+    {
+      "task": "7466d544-02e",
+      "model": "GPT-5.3 Codex",
+      "cost": 0.0269,
+      "durationSec": 15,
+      "status": "completed",
+      "timestamp": "2026-02-20 09:06",
+      "date": "2026-02-20"
+    },
+    {
+      "task": "6d0c0b2b-604",
+      "model": "GPT-5.3 Codex",
+      "cost": 0.0369,
+      "durationSec": 4,
+      "status": "completed",
+      "timestamp": "2026-02-20 09:05",
+      "date": "2026-02-20"
+    },
+    {
+      "task": "975fe38b-e19",
+      "model": "GPT-5.3 Codex",
+      "cost": 0.0258,
+      "durationSec": 3,
+      "status": "completed",
+      "timestamp": "2026-02-20 08:58",
+      "date": "2026-02-20"
+    },
+    {
+      "task": "1da91433-b33",
+      "model": "GPT-5.3 Codex",
+      "cost": 0.0123,
+      "durationSec": 0,
+      "status": "completed",
+      "timestamp": "2026-02-20 08:58",
+      "date": "2026-02-20"
+    },
+    {
+      "task": "d7ca5307-5b1",
+      "model": "GPT-5.3 Codex",
+      "cost": 0.0294,
+      "durationSec": 2,
+      "status": "completed",
+      "timestamp": "2026-02-20 08:58",
+      "date": "2026-02-20"
+    },
+    {
+      "task": "3d42b562-579",
+      "model": "GPT-5.3 Codex",
+      "cost": 0.0128,
+      "durationSec": 0,
+      "status": "completed",
+      "timestamp": "2026-02-20 08:58",
+      "date": "2026-02-20"
+    },
+    {
+      "task": "a2c21855-a71",
+      "model": "GPT-5.3 Codex",
+      "cost": 0.0373,
+      "durationSec": 3,
+      "status": "completed",
+      "timestamp": "2026-02-20 08:58",
+      "date": "2026-02-20"
+    },
+    {
+      "task": "55ff6820-48b",
+      "model": "GPT-5.3 Codex",
+      "cost": 0.0101,
+      "durationSec": 0,
+      "status": "completed",
+      "timestamp": "2026-02-20 08:58",
+      "date": "2026-02-20"
+    },
+    {
+      "task": "a820a108-753",
+      "model": "Claude Sonnet",
+      "cost": 0.9659,
+      "durationSec": 261,
+      "status": "completed",
+      "timestamp": "2026-02-20 08:57",
+      "date": "2026-02-20"
+    },
+    {
+      "task": "306037a1-177",
+      "model": "GPT-5.3 Codex",
+      "cost": 0.0442,
+      "durationSec": 11,
+      "status": "completed",
+      "timestamp": "2026-02-20 08:49",
+      "date": "2026-02-20"
+    },
+    {
+      "task": "fe241459-1ff",
+      "model": "GPT-5.3 Codex",
+      "cost": 0.0131,
+      "durationSec": 0,
+      "status": "completed",
+      "timestamp": "2026-02-20 08:49",
+      "date": "2026-02-20"
+    },
+    {
+      "task": "8a35c70e-b3d",
+      "model": "Claude Sonnet",
+      "cost": 1.2302,
+      "durationSec": 429,
+      "status": "completed",
+      "timestamp": "2026-02-20 08:19",
+      "date": "2026-02-20"
+    },
+    {
+      "task": "12fa303d-5c5",
+      "model": "Claude Opus 4.6",
+      "cost": 0.194,
+      "durationSec": 41,
+      "status": "completed",
+      "timestamp": "2026-02-20 08:01",
+      "date": "2026-02-20"
+    },
+    {
+      "task": "21dbcbe6-65f",
+      "model": "Claude Opus 4.6",
+      "cost": 0.107,
+      "durationSec": 0,
+      "status": "completed",
+      "timestamp": "2026-02-20 06:38",
+      "date": "2026-02-20"
+    },
+    {
+      "task": "fb3b7a0b-d5b",
+      "model": "Claude Opus 4.6",
+      "cost": 0.2987,
+      "durationSec": 56,
+      "status": "completed",
+      "timestamp": "2026-02-20 00:54",
+      "date": "2026-02-20"
+    },
+    {
+      "task": "30fca384-d7e",
+      "model": "GPT-5.3 Codex",
+      "cost": 0.2973,
+      "durationSec": 39836,
+      "status": "completed",
+      "timestamp": "2026-02-20 00:39",
+      "date": "2026-02-20"
+    },
+    {
+      "task": "8a595ef9-a06",
+      "model": "GPT-5.3 Codex",
+      "cost": 0.442,
+      "durationSec": 170,
+      "status": "completed",
+      "timestamp": "2026-02-20 00:31",
+      "date": "2026-02-20"
+    },
+    {
+      "task": "04c582cd-00c",
+      "model": "Claude Opus 4.6",
+      "cost": 0.175,
+      "durationSec": 29,
+      "status": "completed",
+      "timestamp": "2026-02-20 00:31",
+      "date": "2026-02-20"
+    },
+    {
+      "task": "eeedb31e-2ae",
+      "model": "Claude Opus 4.6",
+      "cost": 0.8561,
+      "durationSec": 36443,
+      "status": "completed",
+      "timestamp": "2026-02-19 23:02",
+      "date": "2026-02-19"
+    },
+    {
+      "task": "3d81d915-2e8",
+      "model": "Claude Opus 4.6",
+      "cost": 0.1717,
+      "durationSec": 35,
+      "status": "completed",
+      "timestamp": "2026-02-19 21:24",
+      "date": "2026-02-19"
+    },
+    {
+      "task": "ab416a52-99d",
+      "model": "GPT-5.3 Codex",
+      "cost": 0.2432,
+      "durationSec": 124,
+      "status": "completed",
+      "timestamp": "2026-02-19 21:20",
+      "date": "2026-02-19"
+    },
+    {
+      "task": "bea8e7b6-f89",
+      "model": "Claude Opus 4.6",
+      "cost": 0.0887,
+      "durationSec": 0,
+      "status": "completed",
+      "timestamp": "2026-02-19 21:13",
+      "date": "2026-02-19"
+    },
+    {
+      "task": "69e2c017-63b",
+      "model": "GPT-5.3 Codex",
+      "cost": 0.0364,
+      "durationSec": 0,
+      "status": "completed",
+      "timestamp": "2026-02-19 21:13",
+      "date": "2026-02-19"
+    },
+    {
+      "task": "cd23f97a-ef2",
+      "model": "Claude Opus 4.6",
+      "cost": 0.2816,
+      "durationSec": 61,
+      "status": "completed",
+      "timestamp": "2026-02-19 20:45",
+      "date": "2026-02-19"
+    },
+    {
+      "task": "34cb6cc8-499",
+      "model": "GPT-5.3 Codex",
+      "cost": 0.2824,
+      "durationSec": 144,
+      "status": "completed",
+      "timestamp": "2026-02-19 20:43",
+      "date": "2026-02-19"
+    },
+    {
+      "task": "6c32df12-65b",
+      "model": "Gemini 2.5 Pro",
+      "cost": 0.0405,
+      "durationSec": 0,
+      "status": "completed",
+      "timestamp": "2026-02-19 20:39",
+      "date": "2026-02-19"
+    },
+    {
+      "task": "39dfac0c-ad9",
+      "model": "Claude Opus 4.6",
+      "cost": 0.0887,
+      "durationSec": 0,
+      "status": "completed",
+      "timestamp": "2026-02-19 20:39",
+      "date": "2026-02-19"
+    },
+    {
+      "task": "b806e751-810",
+      "model": "Claude Opus 4.6",
+      "cost": 0.1594,
+      "durationSec": 21,
+      "status": "completed",
+      "timestamp": "2026-02-19 20:11",
+      "date": "2026-02-19"
+    },
+    {
+      "task": "bf19f15d-699",
+      "model": "GPT-5.3 Codex",
+      "cost": 0.2542,
+      "durationSec": 93,
+      "status": "completed",
+      "timestamp": "2026-02-19 20:10",
+      "date": "2026-02-19"
+    },
+    {
+      "task": "b09eb91e-ef1",
+      "model": "Claude Sonnet",
+      "cost": 0.4353,
+      "durationSec": 253,
+      "status": "completed",
+      "timestamp": "2026-02-19 20:06",
+      "date": "2026-02-19"
+    },
+    {
+      "task": "88f9d07a-e09",
+      "model": "GPT-5.3 Codex",
+      "cost": 0.4161,
+      "durationSec": 141,
+      "status": "completed",
+      "timestamp": "2026-02-19 20:01",
+      "date": "2026-02-19"
+    },
+    {
+      "task": "56f56cad-3f2",
+      "model": "GPT-5.3 Codex",
+      "cost": 0.1001,
+      "durationSec": 65,
+      "status": "completed",
+      "timestamp": "2026-02-19 19:52",
+      "date": "2026-02-19"
+    },
+    {
+      "task": "5ee58468-4e2",
+      "model": "Claude Opus 4.6",
+      "cost": 0.2395,
+      "durationSec": 64,
+      "status": "completed",
+      "timestamp": "2026-02-19 19:52",
+      "date": "2026-02-19"
+    },
+    {
+      "task": "7aa57530-3ed",
+      "model": "MiniMax M2.5",
+      "cost": 0.0072,
+      "durationSec": 79,
+      "status": "completed",
+      "timestamp": "2026-02-19 19:46",
+      "date": "2026-02-19"
+    },
+    {
+      "task": "53376a62-35a",
+      "model": "Claude Opus 4.6",
+      "cost": 0.2059,
+      "durationSec": 59,
+      "status": "completed",
+      "timestamp": "2026-02-19 19:46",
+      "date": "2026-02-19"
+    },
+    {
+      "task": "a0c5e02a-0cf",
+      "model": "GPT-5.3 Codex",
+      "cost": 0.0658,
+      "durationSec": 41,
+      "status": "completed",
+      "timestamp": "2026-02-19 19:46",
+      "date": "2026-02-19"
+    },
+    {
+      "task": "60a7f12e-703",
+      "model": "Gemini 2.5 Pro",
+      "cost": 0.0751,
+      "durationSec": 20,
+      "status": "completed",
+      "timestamp": "2026-02-19 19:45",
+      "date": "2026-02-19"
+    },
+    {
+      "task": "86570e46-fcd",
+      "model": "Claude Opus 4.6",
+      "cost": 0.2302,
+      "durationSec": 23,
+      "status": "completed",
+      "timestamp": "2026-02-19 18:56",
+      "date": "2026-02-19"
+    },
+    {
+      "task": "6764d67b-249",
+      "model": "Claude Opus 4.6",
+      "cost": 1.1779,
+      "durationSec": 330,
+      "status": "completed",
+      "timestamp": "2026-02-19 18:56",
+      "date": "2026-02-19"
+    },
+    {
+      "task": "b9749aab-fc4",
+      "model": "Claude Opus 4.6",
+      "cost": 0.8167,
+      "durationSec": 328,
+      "status": "completed",
+      "timestamp": "2026-02-19 18:28",
+      "date": "2026-02-19"
+    },
+    {
+      "task": "601a3683-a46",
+      "model": "GPT-5.3 Codex",
+      "cost": 0.0841,
+      "durationSec": 23,
+      "status": "completed",
+      "timestamp": "2026-02-19 18:28",
+      "date": "2026-02-19"
+    },
+    {
+      "task": "1e668a4d-7e0",
+      "model": "Claude Opus 4.6",
+      "cost": 0.2703,
+      "durationSec": 68,
+      "status": "completed",
+      "timestamp": "2026-02-19 17:32",
+      "date": "2026-02-19"
+    },
+    {
+      "task": "19b6073c-546",
+      "model": "GPT-5.3 Codex",
+      "cost": 0.1579,
+      "durationSec": 90,
+      "status": "completed",
+      "timestamp": "2026-02-19 16:14",
+      "date": "2026-02-19"
+    },
+    {
+      "task": "c03bca38-abe",
+      "model": "Claude Opus 4.6",
+      "cost": 1.0614,
+      "durationSec": 324,
+      "status": "completed",
+      "timestamp": "2026-02-19 16:12",
+      "date": "2026-02-19"
+    },
+    {
+      "task": "791ebeed-471",
+      "model": "Claude Opus 4.6",
+      "cost": 0.1838,
+      "durationSec": 69,
+      "status": "completed",
+      "timestamp": "2026-02-19 16:04",
+      "date": "2026-02-19"
+    },
+    {
+      "task": "5ba78203-4a0",
+      "model": "GPT-5.3 Codex",
+      "cost": 0.2058,
+      "durationSec": 147,
+      "status": "completed",
+      "timestamp": "2026-02-19 16:02",
+      "date": "2026-02-19"
+    },
+    {
+      "task": "76b0cf54-d67",
+      "model": "Claude Opus 4.6",
+      "cost": 0.6263,
+      "durationSec": 484,
+      "status": "completed",
+      "timestamp": "2026-02-19 15:59",
+      "date": "2026-02-19"
+    },
+    {
+      "task": "70080044-5b9",
+      "model": "Claude Opus 4.6",
+      "cost": 0.8979,
+      "durationSec": 232,
+      "status": "completed",
+      "timestamp": "2026-02-19 15:41",
+      "date": "2026-02-19"
+    },
+    {
+      "task": "ac288b2d-359",
+      "model": "GPT-5.3 Codex",
+      "cost": 0.298,
+      "durationSec": 104,
+      "status": "completed",
+      "timestamp": "2026-02-19 15:39",
+      "date": "2026-02-19"
+    },
+    {
+      "task": "08e46d3c-20c",
+      "model": "Claude Opus 4.6",
+      "cost": 0.5289,
+      "durationSec": 150,
+      "status": "completed",
+      "timestamp": "2026-02-19 15:33",
+      "date": "2026-02-19"
+    },
+    {
+      "task": "e0a798e5-681",
+      "model": "GPT-5.3 Codex",
+      "cost": 0.5807,
+      "durationSec": 590,
+      "status": "completed",
+      "timestamp": "2026-02-19 14:38",
+      "date": "2026-02-19"
+    },
+    {
+      "task": "9dd2c2ab-a6c",
+      "model": "Grok 4",
+      "cost": 0.0095,
+      "durationSec": 8220,
+      "status": "completed",
+      "timestamp": "2026-02-19 13:17",
+      "date": "2026-02-19"
+    },
+    {
+      "task": "6f1b9b44-b79",
+      "model": "Grok 4",
+      "cost": 0.0015,
+      "durationSec": 3,
+      "status": "completed",
+      "timestamp": "2026-02-19 12:54",
+      "date": "2026-02-19"
+    },
+    {
+      "task": "e813c830-157",
+      "model": "Claude Opus 4.6",
+      "cost": 0.3462,
+      "durationSec": 92,
+      "status": "completed",
+      "timestamp": "2026-02-19 05:19",
+      "date": "2026-02-19"
+    },
+    {
+      "task": "8b024b05-dbb",
+      "model": "GPT-5.3 Codex",
+      "cost": 0.1154,
+      "durationSec": 55,
+      "status": "completed",
+      "timestamp": "2026-02-19 04:58",
+      "date": "2026-02-19"
+    },
+    {
+      "task": "42d56c07-62e",
+      "model": "Claude Opus 4.6",
+      "cost": 0.1552,
+      "durationSec": 50,
+      "status": "completed",
+      "timestamp": "2026-02-19 04:56",
+      "date": "2026-02-19"
+    },
+    {
+      "task": "eb3627b2-2a0",
+      "model": "GPT-5.3 Codex",
+      "cost": 0.2281,
+      "durationSec": 119,
+      "status": "completed",
+      "timestamp": "2026-02-19 04:55",
+      "date": "2026-02-19"
+    },
+    {
+      "task": "e948d7e7-cf8",
+      "model": "GPT-5.3 Codex",
+      "cost": 0.1505,
+      "durationSec": 40,
+      "status": "completed",
+      "timestamp": "2026-02-19 04:54",
+      "date": "2026-02-19"
+    },
+    {
+      "task": "d98511bd-579",
+      "model": "Claude Opus 4.6",
+      "cost": 0.3414,
+      "durationSec": 73,
+      "status": "completed",
+      "timestamp": "2026-02-19 04:53",
+      "date": "2026-02-19"
+    },
+    {
+      "task": "17b7391d-bc3",
+      "model": "GPT-5.3 Codex",
+      "cost": 0.0893,
+      "durationSec": 27,
+      "status": "completed",
+      "timestamp": "2026-02-19 04:51",
+      "date": "2026-02-19"
+    },
+    {
+      "task": "50e3b694-aa6",
+      "model": "Claude Opus 4.6",
+      "cost": 0.0975,
+      "durationSec": 25,
+      "status": "completed",
+      "timestamp": "2026-02-19 04:49",
+      "date": "2026-02-19"
+    },
+    {
+      "task": "e80cf851-ba5",
+      "model": "GPT-5.3 Codex",
+      "cost": 0.0763,
+      "durationSec": 24,
+      "status": "completed",
+      "timestamp": "2026-02-19 04:49",
+      "date": "2026-02-19"
+    },
+    {
+      "task": "78e93eae-09f",
+      "model": "Claude Opus 4.6",
+      "cost": 0.0584,
+      "durationSec": 3,
+      "status": "completed",
+      "timestamp": "2026-02-19 04:47",
+      "date": "2026-02-19"
+    },
+    {
+      "task": "de1af67f-a9b",
+      "model": "GPT-5.3 Codex",
+      "cost": 0.1643,
+      "durationSec": 47,
+      "status": "completed",
+      "timestamp": "2026-02-19 04:46",
+      "date": "2026-02-19"
     }
   ],
-  "subagentCostAllTime": 1137.18,
-  "subagentCostToday": 63.07,
-  "subagentCost7d": 433.37,
-  "subagentCost30d": 1137.18,
+  "subagentCostAllTime": 1763.03,
+  "subagentCostToday": 6.41,
+  "subagentCost7d": 776.69,
+  "subagentCost30d": 1763.03,
   "tokenUsage": [
     {
       "model": "Claude Opus 4.6",
-      "calls": 7818,
-      "input": "11.2K",
-      "output": "1.9M",
-      "cacheRead": "635.5M",
-      "totalTokens": "712.6M",
-      "cost": 806.97,
-      "inputRaw": 11232,
-      "outputRaw": 1927545,
-      "cacheReadRaw": 635465315,
-      "totalTokensRaw": 712593634
+      "calls": 8754,
+      "input": "12.5K",
+      "output": "2.2M",
+      "cacheRead": "685.7M",
+      "totalTokens": "779.8M",
+      "cost": 1011.85,
+      "inputRaw": 12538,
+      "outputRaw": 2182114,
+      "cacheReadRaw": 685659184,
+      "totalTokensRaw": 779780056
     },
     {
       "model": "Claude Opus 4.5",
@@ -2279,29 +2123,29 @@
     },
     {
       "model": "Claude Sonnet",
-      "calls": 467,
-      "input": "679",
-      "output": "155.0K",
-      "cacheRead": "43.1M",
-      "totalTokens": "61.0M",
-      "cost": 81.72,
-      "inputRaw": 679,
-      "outputRaw": 155037,
-      "cacheReadRaw": 43092281,
-      "totalTokensRaw": 60973235
+      "calls": 1872,
+      "input": "3.5K",
+      "output": "692.6K",
+      "cacheRead": "150.0M",
+      "totalTokens": "219.2M",
+      "cost": 312.2,
+      "inputRaw": 3504,
+      "outputRaw": 692630,
+      "cacheReadRaw": 150015800,
+      "totalTokensRaw": 219191655
     },
     {
       "model": "GPT-5.3 Codex",
-      "calls": 796,
-      "input": "9.6M",
-      "output": "180.6K",
-      "cacheRead": "32.6M",
-      "totalTokens": "42.4M",
-      "cost": 25.04,
-      "inputRaw": 9604331,
-      "outputRaw": 180631,
-      "cacheReadRaw": 32607616,
-      "totalTokensRaw": 42392578
+      "calls": 1716,
+      "input": "37.5M",
+      "output": "407.4K",
+      "cacheRead": "80.6M",
+      "totalTokens": "118.5M",
+      "cost": 85.43,
+      "inputRaw": 37497979,
+      "outputRaw": 407358,
+      "cacheReadRaw": 80619648,
+      "totalTokensRaw": 118524985
     },
     {
       "model": "Grok 4 Fast",
@@ -2331,42 +2175,42 @@
     },
     {
       "model": "Gemini 2.5 Pro",
-      "calls": 52,
-      "input": "1.1M",
-      "output": "64.7K",
-      "cacheRead": "428.5K",
-      "totalTokens": "1.1M",
-      "cost": 2.13,
-      "inputRaw": 1077245,
-      "outputRaw": 64749,
-      "cacheReadRaw": 428514,
-      "totalTokensRaw": 1141994
-    },
-    {
-      "model": "MiniMax M2.5",
-      "calls": 344,
-      "input": "8.4M",
-      "output": "72.7K",
-      "cacheRead": "3.1M",
-      "totalTokens": "11.8M",
-      "cost": 1.79,
-      "inputRaw": 8425691,
-      "outputRaw": 72719,
-      "cacheReadRaw": 3090650,
-      "totalTokensRaw": 11834553
+      "calls": 58,
+      "input": "1.2M",
+      "output": "74.8K",
+      "cacheRead": "469.6K",
+      "totalTokens": "1.3M",
+      "cost": 2.4,
+      "inputRaw": 1205269,
+      "outputRaw": 74843,
+      "cacheReadRaw": 469610,
+      "totalTokensRaw": 1280112
     },
     {
       "model": "Grok 4",
-      "calls": 54,
-      "input": "362.3K",
-      "output": "38.7K",
-      "cacheRead": "656.5K",
-      "totalTokens": "1.1M",
-      "cost": 1.69,
-      "inputRaw": 362332,
-      "outputRaw": 38673,
-      "cacheReadRaw": 656544,
-      "totalTokensRaw": 1057549
+      "calls": 160,
+      "input": "1.7M",
+      "output": "96.8K",
+      "cacheRead": "2.5M",
+      "totalTokens": "4.3M",
+      "cost": 2.09,
+      "inputRaw": 1725494,
+      "outputRaw": 96817,
+      "cacheReadRaw": 2522094,
+      "totalTokensRaw": 4344405
+    },
+    {
+      "model": "MiniMax M2.5",
+      "calls": 357,
+      "input": "8.5M",
+      "output": "84.7K",
+      "cacheRead": "3.2M",
+      "totalTokens": "12.1M",
+      "cost": 1.83,
+      "inputRaw": 8542065,
+      "outputRaw": 84677,
+      "cacheReadRaw": 3195481,
+      "totalTokensRaw": 12117283
     },
     {
       "model": "Gemini 2.5 Flash",
@@ -2422,295 +2266,217 @@
     },
     {
       "model": "Kimi K2.5",
-      "calls": 705,
-      "input": "36.3M",
-      "output": "313.2K",
-      "cacheRead": "15.2M",
-      "totalTokens": "51.9M",
+      "calls": 1110,
+      "input": "38.2M",
+      "output": "454.0K",
+      "cacheRead": "25.2M",
+      "totalTokens": "63.9M",
       "cost": 0.0,
-      "inputRaw": 36338391,
-      "outputRaw": 313157,
-      "cacheReadRaw": 15202048,
-      "totalTokensRaw": 51853596
+      "inputRaw": 38241477,
+      "outputRaw": 453966,
+      "cacheReadRaw": 25181394,
+      "totalTokensRaw": 63876837
     },
     {
       "model": "GLM-5",
-      "calls": 25,
-      "input": "164.7K",
-      "output": "7.8K",
-      "cacheRead": "500.5K",
-      "totalTokens": "673.0K",
+      "calls": 58,
+      "input": "631.3K",
+      "output": "24.2K",
+      "cacheRead": "1.3M",
+      "totalTokens": "1.9M",
       "cost": 0.0,
-      "inputRaw": 164729,
-      "outputRaw": 7776,
-      "cacheReadRaw": 500480,
-      "totalTokensRaw": 672985
+      "inputRaw": 631324,
+      "outputRaw": 24201,
+      "cacheReadRaw": 1250176,
+      "totalTokensRaw": 1905701
     }
   ],
   "tokenUsageToday": [
     {
-      "model": "Claude Sonnet",
-      "calls": 467,
-      "input": "679",
-      "output": "155.0K",
-      "cacheRead": "43.1M",
-      "totalTokens": "61.0M",
-      "cost": 81.72,
-      "inputRaw": 679,
-      "outputRaw": 155037,
-      "cacheReadRaw": 43092281,
-      "totalTokensRaw": 60973235
-    },
-    {
       "model": "Claude Opus 4.6",
-      "calls": 198,
-      "input": "294",
-      "output": "42.1K",
-      "cacheRead": "7.3M",
-      "totalTokens": "10.3M",
-      "cost": 23.21,
-      "inputRaw": 294,
-      "outputRaw": 42079,
-      "cacheReadRaw": 7339776,
-      "totalTokensRaw": 10340470
-    },
-    {
-      "model": "GPT-5.3 Codex",
-      "calls": 363,
-      "input": "8.0M",
-      "output": "81.3K",
-      "cacheRead": "16.1M",
-      "totalTokens": "24.2M",
-      "cost": 17.92,
-      "inputRaw": 7978078,
-      "outputRaw": 81305,
-      "cacheReadRaw": 16112384,
-      "totalTokensRaw": 24171767
-    },
-    {
-      "model": "Gemini 2.5 Pro",
-      "calls": 7,
-      "input": "155.7K",
-      "output": "6.4K",
-      "cacheRead": "108.3K",
-      "totalTokens": "162.1K",
-      "cost": 0.29,
-      "inputRaw": 155741,
-      "outputRaw": 6404,
-      "cacheReadRaw": 108285,
-      "totalTokensRaw": 162145
-    },
-    {
-      "model": "Grok 4 Fast",
-      "calls": 21,
-      "input": "276.1K",
-      "output": "13.2K",
-      "cacheRead": "225.4K",
-      "totalTokens": "514.8K",
-      "cost": 0.07,
-      "inputRaw": 276134,
-      "outputRaw": 13228,
-      "cacheReadRaw": 225444,
-      "totalTokensRaw": 514806
+      "calls": 269,
+      "input": "383",
+      "output": "57.1K",
+      "cacheRead": "27.4M",
+      "totalTokens": "30.5M",
+      "cost": 103.2,
+      "inputRaw": 383,
+      "outputRaw": 57080,
+      "cacheReadRaw": 27384151,
+      "totalTokensRaw": 30526271
     },
     {
       "model": "Grok 4",
-      "calls": 6,
-      "input": "123.2K",
-      "output": "2.3K",
-      "cacheRead": "123.0K",
-      "totalTokens": "248.6K",
-      "cost": 0.03,
-      "inputRaw": 123250,
-      "outputRaw": 2338,
-      "cacheReadRaw": 123015,
-      "totalTokensRaw": 248603
-    },
-    {
-      "model": "MiniMax M2.5",
-      "calls": 3,
-      "input": "20.9K",
-      "output": "1.7K",
-      "cacheRead": "20.0K",
-      "totalTokens": "53.1K",
-      "cost": 0.01,
-      "inputRaw": 20927,
-      "outputRaw": 1686,
-      "cacheReadRaw": 19976,
-      "totalTokensRaw": 53115
+      "calls": 19,
+      "input": "74.4K",
+      "output": "11.4K",
+      "cacheRead": "468.3K",
+      "totalTokens": "554.1K",
+      "cost": 0.04,
+      "inputRaw": 74357,
+      "outputRaw": 11442,
+      "cacheReadRaw": 468300,
+      "totalTokensRaw": 554099
     },
     {
       "model": "Kimi K2.5",
-      "calls": 16,
-      "input": "846.5K",
-      "output": "5.0K",
-      "cacheRead": "566.3K",
-      "totalTokens": "1.4M",
+      "calls": 138,
+      "input": "1.0M",
+      "output": "67.4K",
+      "cacheRead": "3.7M",
+      "totalTokens": "4.8M",
       "cost": 0.0,
-      "inputRaw": 846504,
-      "outputRaw": 5003,
-      "cacheReadRaw": 566272,
-      "totalTokensRaw": 1417779
+      "inputRaw": 1030943,
+      "outputRaw": 67406,
+      "cacheReadRaw": 3683026,
+      "totalTokensRaw": 4781375
     }
   ],
   "tokenUsage7d": [
     {
       "model": "Claude Opus 4.6",
-      "calls": 5026,
-      "input": "7.1K",
-      "output": "1.2M",
-      "cacheRead": "396.5M",
-      "totalTokens": "451.3M",
-      "cost": 563.52,
-      "inputRaw": 7072,
-      "outputRaw": 1221780,
-      "cacheReadRaw": 396486789,
-      "totalTokensRaw": 451267811
+      "calls": 2896,
+      "input": "4.2K",
+      "output": "773.3K",
+      "cacheRead": "181.5M",
+      "totalTokens": "230.7M",
+      "cost": 481.18,
+      "inputRaw": 4178,
+      "outputRaw": 773345,
+      "cacheReadRaw": 181525571,
+      "totalTokensRaw": 230664673
     },
     {
       "model": "Claude Sonnet",
-      "calls": 467,
-      "input": "679",
-      "output": "155.0K",
-      "cacheRead": "43.1M",
-      "totalTokens": "61.0M",
-      "cost": 81.72,
-      "inputRaw": 679,
-      "outputRaw": 155037,
-      "cacheReadRaw": 43092281,
-      "totalTokensRaw": 60973235
+      "calls": 1872,
+      "input": "3.5K",
+      "output": "692.6K",
+      "cacheRead": "150.0M",
+      "totalTokens": "219.2M",
+      "cost": 312.2,
+      "inputRaw": 3504,
+      "outputRaw": 692630,
+      "cacheReadRaw": 150015800,
+      "totalTokensRaw": 219191655
     },
     {
       "model": "GPT-5.3 Codex",
-      "calls": 626,
-      "input": "9.1M",
-      "output": "144.2K",
-      "cacheRead": "28.0M",
-      "totalTokens": "37.2M",
-      "cost": 22.75,
-      "inputRaw": 9050983,
-      "outputRaw": 144233,
-      "cacheReadRaw": 27961216,
-      "totalTokensRaw": 37156432
-    },
-    {
-      "model": "Grok 4 Fast",
-      "calls": 435,
-      "input": "9.4M",
-      "output": "187.2K",
-      "cacheRead": "5.1M",
-      "totalTokens": "14.7M",
-      "cost": 2.23,
-      "inputRaw": 9417571,
-      "outputRaw": 187204,
-      "cacheReadRaw": 5058288,
-      "totalTokensRaw": 14663063
+      "calls": 1422,
+      "input": "36.5M",
+      "output": "341.3K",
+      "cacheRead": "72.5M",
+      "totalTokens": "109.3M",
+      "cost": 81.36,
+      "inputRaw": 36514282,
+      "outputRaw": 341269,
+      "cacheReadRaw": 72479616,
+      "totalTokensRaw": 109335167
     },
     {
       "model": "MiniMax M2.5",
-      "calls": 344,
-      "input": "8.4M",
-      "output": "72.7K",
-      "cacheRead": "3.1M",
-      "totalTokens": "11.8M",
-      "cost": 1.79,
-      "inputRaw": 8425691,
-      "outputRaw": 72719,
-      "cacheReadRaw": 3090650,
-      "totalTokensRaw": 11834553
+      "calls": 150,
+      "input": "4.1M",
+      "output": "39.3K",
+      "cacheRead": "1.4M",
+      "totalTokens": "5.6M",
+      "cost": 0.9,
+      "inputRaw": 4076143,
+      "outputRaw": 39259,
+      "cacheReadRaw": 1380050,
+      "totalTokensRaw": 5625189
     },
     {
       "model": "Gemini 2.5 Pro",
-      "calls": 15,
-      "input": "274.9K",
-      "output": "8.2K",
-      "cacheRead": "153.4K",
-      "totalTokens": "283.1K",
-      "cost": 0.47,
-      "inputRaw": 274904,
-      "outputRaw": 8246,
-      "cacheReadRaw": 153357,
-      "totalTokensRaw": 283150
+      "calls": 13,
+      "input": "283.8K",
+      "output": "16.5K",
+      "cacheRead": "149.4K",
+      "totalTokens": "300.3K",
+      "cost": 0.57,
+      "inputRaw": 283765,
+      "outputRaw": 16498,
+      "cacheReadRaw": 149381,
+      "totalTokensRaw": 300263
     },
     {
-      "model": "Gemini 3 Flash",
-      "calls": 11,
-      "input": "216.3K",
-      "output": "1.2K",
-      "cacheRead": "137.7K",
-      "totalTokens": "217.6K",
-      "cost": 0.12,
-      "inputRaw": 216350,
-      "outputRaw": 1239,
-      "cacheReadRaw": 137737,
-      "totalTokensRaw": 217589
+      "model": "Grok 4 Fast",
+      "calls": 135,
+      "input": "2.2M",
+      "output": "60.1K",
+      "cacheRead": "963.5K",
+      "totalTokens": "3.2M",
+      "cost": 0.52,
+      "inputRaw": 2198503,
+      "outputRaw": 60132,
+      "cacheReadRaw": 963510,
+      "totalTokensRaw": 3222145
     },
     {
       "model": "Grok 4",
-      "calls": 7,
-      "input": "130.6K",
-      "output": "2.8K",
-      "cacheRead": "124.2K",
-      "totalTokens": "257.7K",
-      "cost": 0.06,
-      "inputRaw": 130626,
-      "outputRaw": 2805,
-      "cacheReadRaw": 124241,
-      "totalTokensRaw": 257672
+      "calls": 112,
+      "input": "1.5M",
+      "output": "60.5K",
+      "cacheRead": "2.0M",
+      "totalTokens": "3.5M",
+      "cost": 0.43,
+      "inputRaw": 1486412,
+      "outputRaw": 60482,
+      "cacheReadRaw": 1988565,
+      "totalTokensRaw": 3535459
     },
     {
-      "model": "deepseek-chat",
-      "calls": 16,
-      "input": "45.2K",
-      "output": "3.2K",
-      "cacheRead": "320.2K",
-      "totalTokens": "368.6K",
-      "cost": 0.04,
-      "inputRaw": 45159,
-      "outputRaw": 3212,
-      "cacheReadRaw": 320192,
-      "totalTokensRaw": 368563
+      "model": "Gemini 3 Flash",
+      "calls": 8,
+      "input": "151.6K",
+      "output": "280",
+      "cacheRead": "113.3K",
+      "totalTokens": "151.8K",
+      "cost": 0.08,
+      "inputRaw": 151564,
+      "outputRaw": 280,
+      "cacheReadRaw": 113302,
+      "totalTokensRaw": 151844
     },
     {
       "model": "Kimi K2.5",
-      "calls": 274,
-      "input": "1.8M",
-      "output": "83.2K",
-      "cacheRead": "15.2M",
-      "totalTokens": "17.1M",
+      "calls": 436,
+      "input": "2.8M",
+      "output": "155.7K",
+      "cacheRead": "10.7M",
+      "totalTokens": "13.7M",
       "cost": 0.0,
-      "inputRaw": 1775826,
-      "outputRaw": 83198,
-      "cacheReadRaw": 15202048,
-      "totalTokensRaw": 17061072
+      "inputRaw": 2792990,
+      "outputRaw": 155732,
+      "cacheReadRaw": 10734034,
+      "totalTokensRaw": 13682756
     },
     {
       "model": "GLM-5",
-      "calls": 25,
-      "input": "164.7K",
-      "output": "7.8K",
-      "cacheRead": "500.5K",
-      "totalTokens": "673.0K",
+      "calls": 33,
+      "input": "466.6K",
+      "output": "16.4K",
+      "cacheRead": "749.7K",
+      "totalTokens": "1.2M",
       "cost": 0.0,
-      "inputRaw": 164729,
-      "outputRaw": 7776,
-      "cacheReadRaw": 500480,
-      "totalTokensRaw": 672985
+      "inputRaw": 466595,
+      "outputRaw": 16425,
+      "cacheReadRaw": 749696,
+      "totalTokensRaw": 1232716
     }
   ],
   "tokenUsage30d": [
     {
       "model": "Claude Opus 4.6",
-      "calls": 7818,
-      "input": "11.2K",
-      "output": "1.9M",
-      "cacheRead": "635.5M",
-      "totalTokens": "712.6M",
-      "cost": 806.97,
-      "inputRaw": 11232,
-      "outputRaw": 1927545,
-      "cacheReadRaw": 635465315,
-      "totalTokensRaw": 712593634
+      "calls": 8754,
+      "input": "12.5K",
+      "output": "2.2M",
+      "cacheRead": "685.7M",
+      "totalTokens": "779.8M",
+      "cost": 1011.85,
+      "inputRaw": 12538,
+      "outputRaw": 2182114,
+      "cacheReadRaw": 685659184,
+      "totalTokensRaw": 779780056
     },
     {
       "model": "Claude Opus 4.5",
@@ -2727,29 +2493,29 @@
     },
     {
       "model": "Claude Sonnet",
-      "calls": 467,
-      "input": "679",
-      "output": "155.0K",
-      "cacheRead": "43.1M",
-      "totalTokens": "61.0M",
-      "cost": 81.72,
-      "inputRaw": 679,
-      "outputRaw": 155037,
-      "cacheReadRaw": 43092281,
-      "totalTokensRaw": 60973235
+      "calls": 1872,
+      "input": "3.5K",
+      "output": "692.6K",
+      "cacheRead": "150.0M",
+      "totalTokens": "219.2M",
+      "cost": 312.2,
+      "inputRaw": 3504,
+      "outputRaw": 692630,
+      "cacheReadRaw": 150015800,
+      "totalTokensRaw": 219191655
     },
     {
       "model": "GPT-5.3 Codex",
-      "calls": 796,
-      "input": "9.6M",
-      "output": "180.6K",
-      "cacheRead": "32.6M",
-      "totalTokens": "42.4M",
-      "cost": 25.04,
-      "inputRaw": 9604331,
-      "outputRaw": 180631,
-      "cacheReadRaw": 32607616,
-      "totalTokensRaw": 42392578
+      "calls": 1716,
+      "input": "37.5M",
+      "output": "407.4K",
+      "cacheRead": "80.6M",
+      "totalTokens": "118.5M",
+      "cost": 85.43,
+      "inputRaw": 37497979,
+      "outputRaw": 407358,
+      "cacheReadRaw": 80619648,
+      "totalTokensRaw": 118524985
     },
     {
       "model": "Grok 4 Fast",
@@ -2779,42 +2545,42 @@
     },
     {
       "model": "Gemini 2.5 Pro",
-      "calls": 52,
-      "input": "1.1M",
-      "output": "64.7K",
-      "cacheRead": "428.5K",
-      "totalTokens": "1.1M",
-      "cost": 2.13,
-      "inputRaw": 1077245,
-      "outputRaw": 64749,
-      "cacheReadRaw": 428514,
-      "totalTokensRaw": 1141994
-    },
-    {
-      "model": "MiniMax M2.5",
-      "calls": 344,
-      "input": "8.4M",
-      "output": "72.7K",
-      "cacheRead": "3.1M",
-      "totalTokens": "11.8M",
-      "cost": 1.79,
-      "inputRaw": 8425691,
-      "outputRaw": 72719,
-      "cacheReadRaw": 3090650,
-      "totalTokensRaw": 11834553
+      "calls": 58,
+      "input": "1.2M",
+      "output": "74.8K",
+      "cacheRead": "469.6K",
+      "totalTokens": "1.3M",
+      "cost": 2.4,
+      "inputRaw": 1205269,
+      "outputRaw": 74843,
+      "cacheReadRaw": 469610,
+      "totalTokensRaw": 1280112
     },
     {
       "model": "Grok 4",
-      "calls": 54,
-      "input": "362.3K",
-      "output": "38.7K",
-      "cacheRead": "656.5K",
-      "totalTokens": "1.1M",
-      "cost": 1.69,
-      "inputRaw": 362332,
-      "outputRaw": 38673,
-      "cacheReadRaw": 656544,
-      "totalTokensRaw": 1057549
+      "calls": 160,
+      "input": "1.7M",
+      "output": "96.8K",
+      "cacheRead": "2.5M",
+      "totalTokens": "4.3M",
+      "cost": 2.09,
+      "inputRaw": 1725494,
+      "outputRaw": 96817,
+      "cacheReadRaw": 2522094,
+      "totalTokensRaw": 4344405
+    },
+    {
+      "model": "MiniMax M2.5",
+      "calls": 357,
+      "input": "8.5M",
+      "output": "84.7K",
+      "cacheRead": "3.2M",
+      "totalTokens": "12.1M",
+      "cost": 1.83,
+      "inputRaw": 8542065,
+      "outputRaw": 84677,
+      "cacheReadRaw": 3195481,
+      "totalTokensRaw": 12117283
     },
     {
       "model": "Gemini 2.5 Flash",
@@ -2870,44 +2636,44 @@
     },
     {
       "model": "Kimi K2.5",
-      "calls": 705,
-      "input": "36.3M",
-      "output": "313.2K",
-      "cacheRead": "15.2M",
-      "totalTokens": "51.9M",
+      "calls": 1110,
+      "input": "38.2M",
+      "output": "454.0K",
+      "cacheRead": "25.2M",
+      "totalTokens": "63.9M",
       "cost": 0.0,
-      "inputRaw": 36338391,
-      "outputRaw": 313157,
-      "cacheReadRaw": 15202048,
-      "totalTokensRaw": 51853596
+      "inputRaw": 38241477,
+      "outputRaw": 453966,
+      "cacheReadRaw": 25181394,
+      "totalTokensRaw": 63876837
     },
     {
       "model": "GLM-5",
-      "calls": 25,
-      "input": "164.7K",
-      "output": "7.8K",
-      "cacheRead": "500.5K",
-      "totalTokens": "673.0K",
+      "calls": 58,
+      "input": "631.3K",
+      "output": "24.2K",
+      "cacheRead": "1.3M",
+      "totalTokens": "1.9M",
       "cost": 0.0,
-      "inputRaw": 164729,
-      "outputRaw": 7776,
-      "cacheReadRaw": 500480,
-      "totalTokensRaw": 672985
+      "inputRaw": 631324,
+      "outputRaw": 24201,
+      "cacheReadRaw": 1250176,
+      "totalTokensRaw": 1905701
     }
   ],
   "subagentUsage": [
     {
       "model": "Claude Opus 4.6",
-      "calls": 6068,
-      "input": "8.5K",
-      "output": "1.6M",
-      "cacheRead": "488.9M",
-      "totalTokens": "543.3M",
-      "cost": 585.47,
-      "inputRaw": 8480,
-      "outputRaw": 1608870,
-      "cacheReadRaw": 488933428,
-      "totalTokensRaw": 543298809
+      "calls": 8195,
+      "input": "11.6K",
+      "output": "2.1M",
+      "cacheRead": "639.1M",
+      "totalTokens": "725.9M",
+      "cost": 876.72,
+      "inputRaw": 11603,
+      "outputRaw": 2074811,
+      "cacheReadRaw": 639051164,
+      "totalTokensRaw": 725926443
     },
     {
       "model": "Claude Opus 4.5",
@@ -2924,42 +2690,42 @@
     },
     {
       "model": "Claude Sonnet",
-      "calls": 176,
-      "input": "238",
-      "output": "53.5K",
-      "cacheRead": "20.0M",
-      "totalTokens": "29.2M",
-      "cost": 40.84,
-      "inputRaw": 238,
-      "outputRaw": 53511,
-      "cacheReadRaw": 20029532,
-      "totalTokensRaw": 29158013
+      "calls": 1872,
+      "input": "3.5K",
+      "output": "692.6K",
+      "cacheRead": "150.0M",
+      "totalTokens": "219.2M",
+      "cost": 312.2,
+      "inputRaw": 3504,
+      "outputRaw": 692630,
+      "cacheReadRaw": 150015800,
+      "totalTokensRaw": 219191655
     },
     {
       "model": "GPT-5.3 Codex",
-      "calls": 770,
-      "input": "8.6M",
-      "output": "175.6K",
-      "cacheRead": "30.7M",
-      "totalTokens": "39.5M",
-      "cost": 22.85,
-      "inputRaw": 8580712,
-      "outputRaw": 175638,
-      "cacheReadRaw": 30697728,
-      "totalTokensRaw": 39454078
+      "calls": 1714,
+      "input": "37.4M",
+      "output": "407.3K",
+      "cacheRead": "80.6M",
+      "totalTokens": "118.5M",
+      "cost": 85.31,
+      "inputRaw": 37426742,
+      "outputRaw": 407254,
+      "cacheReadRaw": 80616576,
+      "totalTokensRaw": 118450572
     },
     {
       "model": "Grok 4 Fast",
-      "calls": 899,
-      "input": "19.8M",
-      "output": "353.5K",
-      "cacheRead": "9.5M",
-      "totalTokens": "29.7M",
-      "cost": 4.61,
-      "inputRaw": 19778186,
-      "outputRaw": 353508,
-      "cacheReadRaw": 9527334,
-      "totalTokensRaw": 29659028
+      "calls": 922,
+      "input": "20.1M",
+      "output": "368.1K",
+      "cacheRead": "9.8M",
+      "totalTokens": "30.2M",
+      "cost": 4.69,
+      "inputRaw": 20106898,
+      "outputRaw": 368131,
+      "cacheReadRaw": 9770031,
+      "totalTokensRaw": 30245060
     },
     {
       "model": "Gemini 3 Flash",
@@ -2976,42 +2742,42 @@
     },
     {
       "model": "Gemini 2.5 Pro",
-      "calls": 52,
-      "input": "1.1M",
-      "output": "64.7K",
-      "cacheRead": "428.5K",
-      "totalTokens": "1.1M",
-      "cost": 2.13,
-      "inputRaw": 1077245,
-      "outputRaw": 64749,
-      "cacheReadRaw": 428514,
-      "totalTokensRaw": 1141994
-    },
-    {
-      "model": "MiniMax M2.5",
-      "calls": 323,
-      "input": "8.2M",
-      "output": "70.2K",
-      "cacheRead": "2.7M",
-      "totalTokens": "11.2M",
-      "cost": 1.79,
-      "inputRaw": 8190232,
-      "outputRaw": 70202,
-      "cacheReadRaw": 2727456,
-      "totalTokensRaw": 11184014
+      "calls": 58,
+      "input": "1.2M",
+      "output": "74.8K",
+      "cacheRead": "469.6K",
+      "totalTokens": "1.3M",
+      "cost": 2.4,
+      "inputRaw": 1205269,
+      "outputRaw": 74843,
+      "cacheReadRaw": 469610,
+      "totalTokensRaw": 1280112
     },
     {
       "model": "Grok 4",
-      "calls": 48,
-      "input": "239.1K",
-      "output": "36.3K",
-      "cacheRead": "533.5K",
-      "totalTokens": "808.9K",
-      "cost": 1.66,
-      "inputRaw": 239082,
-      "outputRaw": 36335,
-      "cacheReadRaw": 533529,
-      "totalTokensRaw": 808946
+      "calls": 141,
+      "input": "1.7M",
+      "output": "85.4K",
+      "cacheRead": "2.1M",
+      "totalTokens": "3.8M",
+      "cost": 2.05,
+      "inputRaw": 1651137,
+      "outputRaw": 85375,
+      "cacheReadRaw": 2053794,
+      "totalTokensRaw": 3790306
+    },
+    {
+      "model": "MiniMax M2.5",
+      "calls": 357,
+      "input": "8.5M",
+      "output": "84.7K",
+      "cacheRead": "3.2M",
+      "totalTokens": "12.1M",
+      "cost": 1.83,
+      "inputRaw": 8542065,
+      "outputRaw": 84677,
+      "cacheReadRaw": 3195481,
+      "totalTokensRaw": 12117283
     },
     {
       "model": "Gemini 2.5 Flash",
@@ -3067,269 +2833,204 @@
     },
     {
       "model": "Kimi K2.5",
-      "calls": 649,
-      "input": "34.2M",
-      "output": "302.6K",
-      "cacheRead": "13.3M",
-      "totalTokens": "47.9M",
+      "calls": 957,
+      "input": "36.0M",
+      "output": "419.3K",
+      "cacheRead": "22.4M",
+      "totalTokens": "58.9M",
       "cost": 0.0,
-      "inputRaw": 34242708,
-      "outputRaw": 302643,
-      "cacheReadRaw": 13325056,
-      "totalTokensRaw": 47870407
+      "inputRaw": 36038887,
+      "outputRaw": 419314,
+      "cacheReadRaw": 22407936,
+      "totalTokensRaw": 58866137
     },
     {
       "model": "GLM-5",
-      "calls": 25,
-      "input": "164.7K",
-      "output": "7.8K",
-      "cacheRead": "500.5K",
-      "totalTokens": "673.0K",
+      "calls": 58,
+      "input": "631.3K",
+      "output": "24.2K",
+      "cacheRead": "1.3M",
+      "totalTokens": "1.9M",
       "cost": 0.0,
-      "inputRaw": 164729,
-      "outputRaw": 7776,
-      "cacheReadRaw": 500480,
-      "totalTokensRaw": 672985
+      "inputRaw": 631324,
+      "outputRaw": 24201,
+      "cacheReadRaw": 1250176,
+      "totalTokensRaw": 1905701
     }
   ],
   "subagentUsageToday": [
     {
-      "model": "Claude Sonnet",
-      "calls": 176,
-      "input": "238",
-      "output": "53.5K",
-      "cacheRead": "20.0M",
-      "totalTokens": "29.2M",
-      "cost": 40.84,
-      "inputRaw": 238,
-      "outputRaw": 53511,
-      "cacheReadRaw": 20029532,
-      "totalTokensRaw": 29158013
-    },
-    {
-      "model": "GPT-5.3 Codex",
-      "calls": 337,
-      "input": "7.0M",
-      "output": "76.3K",
-      "cacheRead": "14.2M",
-      "totalTokens": "21.2M",
-      "cost": 15.72,
-      "inputRaw": 6954459,
-      "outputRaw": 76312,
-      "cacheReadRaw": 14202496,
-      "totalTokensRaw": 21233267
-    },
-    {
       "model": "Claude Opus 4.6",
-      "calls": 138,
-      "input": "182",
-      "output": "32.8K",
-      "cacheRead": "3.8M",
-      "totalTokens": "4.4M",
-      "cost": 6.21,
-      "inputRaw": 182,
-      "outputRaw": 32756,
-      "cacheReadRaw": 3824988,
-      "totalTokensRaw": 4413669
-    },
-    {
-      "model": "Gemini 2.5 Pro",
-      "calls": 7,
-      "input": "155.7K",
-      "output": "6.4K",
-      "cacheRead": "108.3K",
-      "totalTokens": "162.1K",
-      "cost": 0.29,
-      "inputRaw": 155741,
-      "outputRaw": 6404,
-      "cacheReadRaw": 108285,
-      "totalTokensRaw": 162145
-    },
-    {
-      "model": "MiniMax M2.5",
-      "calls": 3,
-      "input": "20.9K",
-      "output": "1.7K",
-      "cacheRead": "20.0K",
-      "totalTokens": "53.1K",
-      "cost": 0.01,
-      "inputRaw": 20927,
-      "outputRaw": 1686,
-      "cacheReadRaw": 19976,
-      "totalTokensRaw": 53115
+      "calls": 33,
+      "input": "55",
+      "output": "7.2K",
+      "cacheRead": "2.7M",
+      "totalTokens": "2.8M",
+      "cost": 6.41,
+      "inputRaw": 55,
+      "outputRaw": 7211,
+      "cacheReadRaw": 2723571,
+      "totalTokensRaw": 2825943
     },
     {
       "model": "Kimi K2.5",
-      "calls": 5,
-      "input": "112.4K",
-      "output": "2.6K",
-      "cacheRead": "212.2K",
-      "totalTokens": "327.3K",
+      "calls": 58,
+      "input": "365.4K",
+      "output": "48.1K",
+      "cacheRead": "2.4M",
+      "totalTokens": "2.8M",
       "cost": 0.0,
-      "inputRaw": 112432,
-      "outputRaw": 2629,
-      "cacheReadRaw": 212224,
-      "totalTokensRaw": 327285
+      "inputRaw": 365420,
+      "outputRaw": 48072,
+      "cacheReadRaw": 2430976,
+      "totalTokensRaw": 2844468
     }
   ],
   "subagentUsage7d": [
     {
       "model": "Claude Opus 4.6",
-      "calls": 3540,
-      "input": "4.8K",
-      "output": "953.3K",
-      "cacheRead": "269.4M",
-      "totalTokens": "303.8M",
-      "cost": 367.37,
-      "inputRaw": 4800,
-      "outputRaw": 953275,
-      "cacheReadRaw": 269425051,
-      "totalTokensRaw": 303791958
+      "calls": 2633,
+      "input": "3.8K",
+      "output": "719.8K",
+      "cacheRead": "156.3M",
+      "totalTokens": "201.9M",
+      "cost": 380.81,
+      "inputRaw": 3783,
+      "outputRaw": 719794,
+      "cacheReadRaw": 156346275,
+      "totalTokensRaw": 201925172
     },
     {
       "model": "Claude Sonnet",
-      "calls": 176,
-      "input": "238",
-      "output": "53.5K",
-      "cacheRead": "20.0M",
-      "totalTokens": "29.2M",
-      "cost": 40.84,
-      "inputRaw": 238,
-      "outputRaw": 53511,
-      "cacheReadRaw": 20029532,
-      "totalTokensRaw": 29158013
+      "calls": 1872,
+      "input": "3.5K",
+      "output": "692.6K",
+      "cacheRead": "150.0M",
+      "totalTokens": "219.2M",
+      "cost": 312.2,
+      "inputRaw": 3504,
+      "outputRaw": 692630,
+      "cacheReadRaw": 150015800,
+      "totalTokensRaw": 219191655
     },
     {
       "model": "GPT-5.3 Codex",
-      "calls": 600,
-      "input": "8.0M",
-      "output": "139.2K",
-      "cacheRead": "26.1M",
-      "totalTokens": "34.2M",
-      "cost": 20.56,
-      "inputRaw": 8027364,
-      "outputRaw": 139240,
-      "cacheReadRaw": 26051328,
-      "totalTokensRaw": 34217932
-    },
-    {
-      "model": "Grok 4 Fast",
-      "calls": 412,
-      "input": "9.1M",
-      "output": "172.6K",
-      "cacheRead": "4.8M",
-      "totalTokens": "14.1M",
-      "cost": 2.14,
-      "inputRaw": 9088859,
-      "outputRaw": 172581,
-      "cacheReadRaw": 4815591,
-      "totalTokensRaw": 14077031
+      "calls": 1420,
+      "input": "36.4M",
+      "output": "341.2K",
+      "cacheRead": "72.5M",
+      "totalTokens": "109.3M",
+      "cost": 81.24,
+      "inputRaw": 36443045,
+      "outputRaw": 341165,
+      "cacheReadRaw": 72476544,
+      "totalTokensRaw": 109260754
     },
     {
       "model": "MiniMax M2.5",
-      "calls": 323,
-      "input": "8.2M",
-      "output": "70.2K",
-      "cacheRead": "2.7M",
-      "totalTokens": "11.2M",
-      "cost": 1.79,
-      "inputRaw": 8190232,
-      "outputRaw": 70202,
-      "cacheReadRaw": 2727456,
-      "totalTokensRaw": 11184014
+      "calls": 150,
+      "input": "4.1M",
+      "output": "39.3K",
+      "cacheRead": "1.4M",
+      "totalTokens": "5.6M",
+      "cost": 0.9,
+      "inputRaw": 4076143,
+      "outputRaw": 39259,
+      "cacheReadRaw": 1380050,
+      "totalTokensRaw": 5625189
     },
     {
       "model": "Gemini 2.5 Pro",
-      "calls": 15,
-      "input": "274.9K",
-      "output": "8.2K",
-      "cacheRead": "153.4K",
-      "totalTokens": "283.1K",
-      "cost": 0.47,
-      "inputRaw": 274904,
-      "outputRaw": 8246,
-      "cacheReadRaw": 153357,
-      "totalTokensRaw": 283150
+      "calls": 13,
+      "input": "283.8K",
+      "output": "16.5K",
+      "cacheRead": "149.4K",
+      "totalTokens": "300.3K",
+      "cost": 0.57,
+      "inputRaw": 283765,
+      "outputRaw": 16498,
+      "cacheReadRaw": 149381,
+      "totalTokensRaw": 300263
     },
     {
-      "model": "Gemini 3 Flash",
-      "calls": 11,
-      "input": "216.3K",
-      "output": "1.2K",
-      "cacheRead": "137.7K",
-      "totalTokens": "217.6K",
-      "cost": 0.12,
-      "inputRaw": 216350,
-      "outputRaw": 1239,
-      "cacheReadRaw": 137737,
-      "totalTokensRaw": 217589
-    },
-    {
-      "model": "deepseek-chat",
-      "calls": 16,
-      "input": "45.2K",
-      "output": "3.2K",
-      "cacheRead": "320.2K",
-      "totalTokens": "368.6K",
-      "cost": 0.04,
-      "inputRaw": 45159,
-      "outputRaw": 3212,
-      "cacheReadRaw": 320192,
-      "totalTokensRaw": 368563
+      "model": "Grok 4 Fast",
+      "calls": 135,
+      "input": "2.2M",
+      "output": "60.1K",
+      "cacheRead": "963.5K",
+      "totalTokens": "3.2M",
+      "cost": 0.52,
+      "inputRaw": 2198503,
+      "outputRaw": 60132,
+      "cacheReadRaw": 963510,
+      "totalTokensRaw": 3222145
     },
     {
       "model": "Grok 4",
-      "calls": 1,
-      "input": "7.4K",
-      "output": "467",
-      "cacheRead": "1.2K",
-      "totalTokens": "9.1K",
-      "cost": 0.03,
-      "inputRaw": 7376,
-      "outputRaw": 467,
-      "cacheReadRaw": 1226,
-      "totalTokensRaw": 9069
+      "calls": 93,
+      "input": "1.4M",
+      "output": "49.0K",
+      "cacheRead": "1.5M",
+      "totalTokens": "3.0M",
+      "cost": 0.38,
+      "inputRaw": 1412055,
+      "outputRaw": 49040,
+      "cacheReadRaw": 1520265,
+      "totalTokensRaw": 2981360
+    },
+    {
+      "model": "Gemini 3 Flash",
+      "calls": 8,
+      "input": "151.6K",
+      "output": "280",
+      "cacheRead": "113.3K",
+      "totalTokens": "151.8K",
+      "cost": 0.08,
+      "inputRaw": 151564,
+      "outputRaw": 280,
+      "cacheReadRaw": 113302,
+      "totalTokensRaw": 151844
     },
     {
       "model": "Kimi K2.5",
-      "calls": 241,
-      "input": "907.1K",
-      "output": "74.9K",
-      "cacheRead": "13.3M",
-      "totalTokens": "14.3M",
+      "calls": 304,
+      "input": "1.8M",
+      "output": "122.9K",
+      "cacheRead": "8.0M",
+      "totalTokens": "9.9M",
       "cost": 0.0,
-      "inputRaw": 907112,
-      "outputRaw": 74928,
-      "cacheReadRaw": 13325056,
-      "totalTokensRaw": 14307096
+      "inputRaw": 1786610,
+      "outputRaw": 122926,
+      "cacheReadRaw": 7960576,
+      "totalTokensRaw": 9870112
     },
     {
       "model": "GLM-5",
-      "calls": 25,
-      "input": "164.7K",
-      "output": "7.8K",
-      "cacheRead": "500.5K",
-      "totalTokens": "673.0K",
+      "calls": 33,
+      "input": "466.6K",
+      "output": "16.4K",
+      "cacheRead": "749.7K",
+      "totalTokens": "1.2M",
       "cost": 0.0,
-      "inputRaw": 164729,
-      "outputRaw": 7776,
-      "cacheReadRaw": 500480,
-      "totalTokensRaw": 672985
+      "inputRaw": 466595,
+      "outputRaw": 16425,
+      "cacheReadRaw": 749696,
+      "totalTokensRaw": 1232716
     }
   ],
   "subagentUsage30d": [
     {
       "model": "Claude Opus 4.6",
-      "calls": 6068,
-      "input": "8.5K",
-      "output": "1.6M",
-      "cacheRead": "488.9M",
-      "totalTokens": "543.3M",
-      "cost": 585.47,
-      "inputRaw": 8480,
-      "outputRaw": 1608870,
-      "cacheReadRaw": 488933428,
-      "totalTokensRaw": 543298809
+      "calls": 8195,
+      "input": "11.6K",
+      "output": "2.1M",
+      "cacheRead": "639.1M",
+      "totalTokens": "725.9M",
+      "cost": 876.72,
+      "inputRaw": 11603,
+      "outputRaw": 2074811,
+      "cacheReadRaw": 639051164,
+      "totalTokensRaw": 725926443
     },
     {
       "model": "Claude Opus 4.5",
@@ -3346,42 +3047,42 @@
     },
     {
       "model": "Claude Sonnet",
-      "calls": 176,
-      "input": "238",
-      "output": "53.5K",
-      "cacheRead": "20.0M",
-      "totalTokens": "29.2M",
-      "cost": 40.84,
-      "inputRaw": 238,
-      "outputRaw": 53511,
-      "cacheReadRaw": 20029532,
-      "totalTokensRaw": 29158013
+      "calls": 1872,
+      "input": "3.5K",
+      "output": "692.6K",
+      "cacheRead": "150.0M",
+      "totalTokens": "219.2M",
+      "cost": 312.2,
+      "inputRaw": 3504,
+      "outputRaw": 692630,
+      "cacheReadRaw": 150015800,
+      "totalTokensRaw": 219191655
     },
     {
       "model": "GPT-5.3 Codex",
-      "calls": 770,
-      "input": "8.6M",
-      "output": "175.6K",
-      "cacheRead": "30.7M",
-      "totalTokens": "39.5M",
-      "cost": 22.85,
-      "inputRaw": 8580712,
-      "outputRaw": 175638,
-      "cacheReadRaw": 30697728,
-      "totalTokensRaw": 39454078
+      "calls": 1714,
+      "input": "37.4M",
+      "output": "407.3K",
+      "cacheRead": "80.6M",
+      "totalTokens": "118.5M",
+      "cost": 85.31,
+      "inputRaw": 37426742,
+      "outputRaw": 407254,
+      "cacheReadRaw": 80616576,
+      "totalTokensRaw": 118450572
     },
     {
       "model": "Grok 4 Fast",
-      "calls": 899,
-      "input": "19.8M",
-      "output": "353.5K",
-      "cacheRead": "9.5M",
-      "totalTokens": "29.7M",
-      "cost": 4.61,
-      "inputRaw": 19778186,
-      "outputRaw": 353508,
-      "cacheReadRaw": 9527334,
-      "totalTokensRaw": 29659028
+      "calls": 922,
+      "input": "20.1M",
+      "output": "368.1K",
+      "cacheRead": "9.8M",
+      "totalTokens": "30.2M",
+      "cost": 4.69,
+      "inputRaw": 20106898,
+      "outputRaw": 368131,
+      "cacheReadRaw": 9770031,
+      "totalTokensRaw": 30245060
     },
     {
       "model": "Gemini 3 Flash",
@@ -3398,42 +3099,42 @@
     },
     {
       "model": "Gemini 2.5 Pro",
-      "calls": 52,
-      "input": "1.1M",
-      "output": "64.7K",
-      "cacheRead": "428.5K",
-      "totalTokens": "1.1M",
-      "cost": 2.13,
-      "inputRaw": 1077245,
-      "outputRaw": 64749,
-      "cacheReadRaw": 428514,
-      "totalTokensRaw": 1141994
-    },
-    {
-      "model": "MiniMax M2.5",
-      "calls": 323,
-      "input": "8.2M",
-      "output": "70.2K",
-      "cacheRead": "2.7M",
-      "totalTokens": "11.2M",
-      "cost": 1.79,
-      "inputRaw": 8190232,
-      "outputRaw": 70202,
-      "cacheReadRaw": 2727456,
-      "totalTokensRaw": 11184014
+      "calls": 58,
+      "input": "1.2M",
+      "output": "74.8K",
+      "cacheRead": "469.6K",
+      "totalTokens": "1.3M",
+      "cost": 2.4,
+      "inputRaw": 1205269,
+      "outputRaw": 74843,
+      "cacheReadRaw": 469610,
+      "totalTokensRaw": 1280112
     },
     {
       "model": "Grok 4",
-      "calls": 48,
-      "input": "239.1K",
-      "output": "36.3K",
-      "cacheRead": "533.5K",
-      "totalTokens": "808.9K",
-      "cost": 1.66,
-      "inputRaw": 239082,
-      "outputRaw": 36335,
-      "cacheReadRaw": 533529,
-      "totalTokensRaw": 808946
+      "calls": 141,
+      "input": "1.7M",
+      "output": "85.4K",
+      "cacheRead": "2.1M",
+      "totalTokens": "3.8M",
+      "cost": 2.05,
+      "inputRaw": 1651137,
+      "outputRaw": 85375,
+      "cacheReadRaw": 2053794,
+      "totalTokensRaw": 3790306
+    },
+    {
+      "model": "MiniMax M2.5",
+      "calls": 357,
+      "input": "8.5M",
+      "output": "84.7K",
+      "cacheRead": "3.2M",
+      "totalTokens": "12.1M",
+      "cost": 1.83,
+      "inputRaw": 8542065,
+      "outputRaw": 84677,
+      "cacheReadRaw": 3195481,
+      "totalTokensRaw": 12117283
     },
     {
       "model": "Gemini 2.5 Flash",
@@ -3489,117 +3190,32 @@
     },
     {
       "model": "Kimi K2.5",
-      "calls": 649,
-      "input": "34.2M",
-      "output": "302.6K",
-      "cacheRead": "13.3M",
-      "totalTokens": "47.9M",
+      "calls": 957,
+      "input": "36.0M",
+      "output": "419.3K",
+      "cacheRead": "22.4M",
+      "totalTokens": "58.9M",
       "cost": 0.0,
-      "inputRaw": 34242708,
-      "outputRaw": 302643,
-      "cacheReadRaw": 13325056,
-      "totalTokensRaw": 47870407
+      "inputRaw": 36038887,
+      "outputRaw": 419314,
+      "cacheReadRaw": 22407936,
+      "totalTokensRaw": 58866137
     },
     {
       "model": "GLM-5",
-      "calls": 25,
-      "input": "164.7K",
-      "output": "7.8K",
-      "cacheRead": "500.5K",
-      "totalTokens": "673.0K",
+      "calls": 58,
+      "input": "631.3K",
+      "output": "24.2K",
+      "cacheRead": "1.3M",
+      "totalTokens": "1.9M",
       "cost": 0.0,
-      "inputRaw": 164729,
-      "outputRaw": 7776,
-      "cacheReadRaw": 500480,
-      "totalTokensRaw": 672985
+      "inputRaw": 631324,
+      "outputRaw": 24201,
+      "cacheReadRaw": 1250176,
+      "totalTokensRaw": 1905701
     }
   ],
   "dailyChart": [
-    {
-      "date": "2026-01-20",
-      "label": "01-20",
-      "total": 0,
-      "tokens": 0,
-      "calls": 0,
-      "subagentCost": 0,
-      "subagentRuns": 0,
-      "models": {
-        "Claude Opus 4.6": 0,
-        "Claude Opus 4.5": 0,
-        "Claude Sonnet": 0,
-        "GPT-5.3 Codex": 0,
-        "Grok 4 Fast": 0,
-        "Gemini 3 Flash": 0
-      }
-    },
-    {
-      "date": "2026-01-21",
-      "label": "01-21",
-      "total": 0,
-      "tokens": 0,
-      "calls": 0,
-      "subagentCost": 0,
-      "subagentRuns": 0,
-      "models": {
-        "Claude Opus 4.6": 0,
-        "Claude Opus 4.5": 0,
-        "Claude Sonnet": 0,
-        "GPT-5.3 Codex": 0,
-        "Grok 4 Fast": 0,
-        "Gemini 3 Flash": 0
-      }
-    },
-    {
-      "date": "2026-01-22",
-      "label": "01-22",
-      "total": 0,
-      "tokens": 0,
-      "calls": 0,
-      "subagentCost": 0,
-      "subagentRuns": 0,
-      "models": {
-        "Claude Opus 4.6": 0,
-        "Claude Opus 4.5": 0,
-        "Claude Sonnet": 0,
-        "GPT-5.3 Codex": 0,
-        "Grok 4 Fast": 0,
-        "Gemini 3 Flash": 0
-      }
-    },
-    {
-      "date": "2026-01-23",
-      "label": "01-23",
-      "total": 0,
-      "tokens": 0,
-      "calls": 0,
-      "subagentCost": 0,
-      "subagentRuns": 0,
-      "models": {
-        "Claude Opus 4.6": 0,
-        "Claude Opus 4.5": 0,
-        "Claude Sonnet": 0,
-        "GPT-5.3 Codex": 0,
-        "Grok 4 Fast": 0,
-        "Gemini 3 Flash": 0
-      }
-    },
-    {
-      "date": "2026-01-24",
-      "label": "01-24",
-      "total": 0,
-      "tokens": 0,
-      "calls": 0,
-      "subagentCost": 0,
-      "subagentRuns": 0,
-      "models": {
-        "Claude Opus 4.6": 0,
-        "Claude Opus 4.5": 0,
-        "Claude Sonnet": 0,
-        "GPT-5.3 Codex": 0,
-        "Grok 4 Fast": 0,
-        "Gemini 3 Flash": 0
-      }
-    },
     {
       "date": "2026-01-25",
       "label": "01-25",
@@ -3919,7 +3535,7 @@
       "total": 24.96,
       "tokens": 18214931,
       "calls": 315,
-      "subagentCost": 9.1,
+      "subagentCost": 24.96,
       "subagentRuns": 6,
       "models": {
         "Claude Opus 4.6": 24.5659,
@@ -3937,8 +3553,8 @@
       "total": 147.65,
       "tokens": 171685846,
       "calls": 1919,
-      "subagentCost": 73.1,
-      "subagentRuns": 31,
+      "subagentCost": 138.25,
+      "subagentRuns": 32,
       "models": {
         "Claude Opus 4.6": 144.8955,
         "Claude Opus 4.5": 0,
@@ -3955,7 +3571,7 @@
       "total": 37.47,
       "tokens": 40776526,
       "calls": 480,
-      "subagentCost": 18.77,
+      "subagentCost": 37.47,
       "subagentRuns": 18,
       "models": {
         "Claude Opus 4.6": 37.066,
@@ -3973,7 +3589,7 @@
       "total": 70.96,
       "tokens": 84428850,
       "calls": 1140,
-      "subagentCost": 40.72,
+      "subagentCost": 70.96,
       "subagentRuns": 28,
       "models": {
         "Claude Opus 4.6": 70.1167,
@@ -3991,8 +3607,8 @@
       "total": 88.92,
       "tokens": 68532149,
       "calls": 902,
-      "subagentCost": 55.71,
-      "subagentRuns": 37,
+      "subagentCost": 88.92,
+      "subagentRuns": 38,
       "models": {
         "Claude Opus 4.6": 88.4152,
         "Claude Opus 4.5": 0,
@@ -4009,8 +3625,8 @@
       "total": 168.6,
       "tokens": 102026888,
       "calls": 1270,
-      "subagentCost": 162.01,
-      "subagentRuns": 22,
+      "subagentCost": 168.6,
+      "subagentRuns": 23,
       "models": {
         "Claude Opus 4.6": 164.6772,
         "Claude Opus 4.5": 0,
@@ -4024,34 +3640,118 @@
     {
       "date": "2026-02-18",
       "label": "02-18",
-      "total": 123.26,
-      "tokens": 97881920,
-      "calls": 1081,
-      "subagentCost": 63.07,
-      "subagentRuns": 36,
+      "total": 165.39,
+      "tokens": 121756636,
+      "calls": 1248,
+      "subagentCost": 165.39,
+      "subagentRuns": 40,
       "models": {
-        "Claude Opus 4.6": 23.2128,
+        "Claude Opus 4.6": 23.4175,
         "Claude Opus 4.5": 0,
-        "Claude Sonnet": 81.7249,
-        "GPT-5.3 Codex": 17.9196,
+        "Claude Sonnet": 123.5659,
+        "GPT-5.3 Codex": 17.9492,
         "Grok 4 Fast": 0.0731,
         "Gemini 3 Flash": 0,
-        "Other": 0.3307
+        "Other": 0.3887
+      }
+    },
+    {
+      "date": "2026-02-19",
+      "label": "02-19",
+      "total": 201.96,
+      "tokens": 147157546,
+      "calls": 1787,
+      "subagentCost": 198.38,
+      "subagentRuns": 61,
+      "models": {
+        "Claude Opus 4.6": 14.9207,
+        "Claude Opus 4.5": 0,
+        "Claude Sonnet": 180.3422,
+        "GPT-5.3 Codex": 6.4603,
+        "Grok 4 Fast": 0,
+        "Gemini 3 Flash": 0,
+        "Other": 0.2407
+      }
+    },
+    {
+      "date": "2026-02-20",
+      "label": "02-20",
+      "total": 128.98,
+      "tokens": 83321997,
+      "calls": 1036,
+      "subagentCost": 128.85,
+      "subagentRuns": 47,
+      "models": {
+        "Claude Opus 4.6": 86.5464,
+        "Claude Opus 4.5": 0,
+        "Claude Sonnet": 8.2956,
+        "GPT-5.3 Codex": 33.9276,
+        "Grok 4 Fast": 0,
+        "Gemini 3 Flash": 0,
+        "Other": 0.2104
+      }
+    },
+    {
+      "date": "2026-02-21",
+      "label": "02-21",
+      "total": 19.0,
+      "tokens": 20295791,
+      "calls": 179,
+      "subagentCost": 19.0,
+      "subagentRuns": 3,
+      "models": {
+        "Claude Opus 4.6": 0,
+        "Claude Opus 4.5": 0,
+        "Claude Sonnet": 0,
+        "GPT-5.3 Codex": 18.9186,
+        "Grok 4 Fast": 0,
+        "Gemini 3 Flash": 0,
+        "Other": 0.079
+      }
+    },
+    {
+      "date": "2026-02-22",
+      "label": "02-22",
+      "total": 1.13,
+      "tokens": 7989115,
+      "calls": 229,
+      "subagentCost": 1.13,
+      "subagentRuns": 3,
+      "models": {
+        "Claude Opus 4.6": 0,
+        "Claude Opus 4.5": 0,
+        "Claude Sonnet": 0,
+        "GPT-5.3 Codex": 1.0539,
+        "Grok 4 Fast": 0,
+        "Gemini 3 Flash": 0,
+        "Other": 0.075
+      }
+    },
+    {
+      "date": "2026-02-23",
+      "label": "02-23",
+      "total": 103.24,
+      "tokens": 35861745,
+      "calls": 426,
+      "subagentCost": 6.41,
+      "subagentRuns": 1,
+      "models": {
+        "Claude Opus 4.6": 103.2003,
+        "Claude Opus 4.5": 0,
+        "Claude Sonnet": 0,
+        "GPT-5.3 Codex": 0,
+        "Grok 4 Fast": 0,
+        "Gemini 3 Flash": 0,
+        "Other": 0.044
       }
     }
   ],
   "availableModels": [
     {
-      "provider": "Anthropic",
-      "name": "Opus 4.6",
-      "id": "anthropic/claude-opus-4-6",
-      "status": "active"
-    },
-    {
       "provider": "Kimi-Coding",
       "name": "Kimi K2.5",
       "id": "kimi-coding/k2p5",
-      "status": "available"
+      "status": "active"
     },
     {
       "provider": "Google",
@@ -4072,12 +3772,6 @@
       "status": "available"
     },
     {
-      "provider": "Openai-Codex",
-      "name": "GPT 5.3 Codex",
-      "id": "openai-codex/gpt-5.3-codex",
-      "status": "available"
-    },
-    {
       "provider": "Openai",
       "name": "GPT-5.2",
       "id": "openai/gpt-5.2",
@@ -4087,6 +3781,12 @@
       "provider": "Zai",
       "name": "GLM-5",
       "id": "zai/glm-5",
+      "status": "available"
+    },
+    {
+      "provider": "Zai",
+      "name": "GLM-4.7",
+      "id": "zai/glm-4.7",
       "status": "available"
     },
     {
@@ -4114,26 +3814,24 @@
       "status": "available"
     },
     {
-      "provider": "Anthropic",
-      "name": "Sonnet 4.6",
-      "id": "anthropic/claude-sonnet-4-6",
-      "status": "available"
-    },
-    {
       "provider": "Xai",
       "name": "Grok 4.1 Fast",
       "id": "xai/grok-4-1-fast",
       "status": "available"
+    },
+    {
+      "provider": "Anthropic",
+      "name": "Claude Opus 4.6",
+      "id": "anthropic/claude-opus-4-6",
+      "status": "available"
     }
   ],
   "agentConfig": {
-    "primaryModel": "Opus 4.6",
-    "primaryModelId": "anthropic/claude-opus-4-6",
+    "primaryModel": "Kimi K2.5",
+    "primaryModelId": "kimi-coding/k2p5",
     "imageModel": "Gemini 3 Flash",
     "imageModelId": "google/gemini-3-flash-preview",
     "fallbacks": [
-      "Sonnet 4.6",
-      "Kimi K2.5",
       "Gemini 3 Flash"
     ],
     "streamMode": "partial",
@@ -4141,8 +3839,40 @@
     "telegramGroups": 3,
     "channels": [
       "whatsapp",
-      "telegram"
+      "telegram",
+      "discord",
+      "slack"
     ],
+    "channelStatus": {
+      "whatsapp": {
+        "enabled": true,
+        "configured": true,
+        "connected": null,
+        "health": null,
+        "error": null
+      },
+      "telegram": {
+        "enabled": true,
+        "configured": true,
+        "connected": true,
+        "health": "active",
+        "error": null
+      },
+      "discord": {
+        "enabled": true,
+        "configured": true,
+        "connected": null,
+        "health": null,
+        "error": null
+      },
+      "slack": {
+        "enabled": true,
+        "configured": true,
+        "connected": null,
+        "health": null,
+        "error": null
+      }
+    },
     "compaction": {
       "mode": "safeguard",
       "reserveTokensFloor": 24000,
@@ -4183,7 +3913,10 @@
       "telegram",
       "whatsapp",
       "open-prose",
-      "minimax-portal-auth"
+      "minimax-portal-auth",
+      "llm-task",
+      "slack",
+      "discord"
     ],
     "skills": [
       {
@@ -4251,52 +3984,41 @@
       {
         "id": "main",
         "role": "Default",
-        "model": "Opus 4.6",
-        "modelId": "anthropic/claude-opus-4-6",
+        "model": "Kimi K2.5",
+        "modelId": "kimi-coding/k2p5",
         "workspace": "~/.openclaw/workspace",
         "isDefault": true,
-        "context1m": false,
+        "context1m": null,
         "fallbacks": [
-          "Sonnet 4.6",
-          "Kimi K2.5",
           "Gemini 3 Flash"
         ]
       },
       {
         "id": "group",
         "role": "Group",
-        "model": "GPT 5.3 Codex",
-        "modelId": "openai-codex/gpt-5.3-codex",
+        "model": "Kimi K2.5",
+        "modelId": "kimi-coding/k2p5",
         "workspace": "/Users/mudrii/.openclaw/workspace",
         "isDefault": false,
         "context1m": null,
         "fallbacks": [
-          "Sonnet 4.6",
-          "Kimi K2.5",
           "Gemini 3 Flash"
         ]
       },
       {
         "id": "work",
         "role": "Work",
-        "model": "Sonnet 4.6",
-        "modelId": "anthropic/claude-sonnet-4-6",
+        "model": "Kimi K2.5",
+        "modelId": "kimi-coding/k2p5",
         "workspace": "/Users/mudrii/.openclaw/workspace-work",
         "isDefault": false,
-        "context1m": false,
+        "context1m": null,
         "fallbacks": [
-          "Sonnet 4.6",
-          "Kimi K2.5",
           "Gemini 3 Flash"
         ]
       }
     ],
     "availableModels": [
-      {
-        "id": "anthropic/claude-opus-4-6",
-        "alias": "Opus 4.6",
-        "provider": "anthropic"
-      },
       {
         "id": "kimi-coding/k2p5",
         "alias": "Kimi K2.5",
@@ -4318,11 +4040,6 @@
         "provider": "xai"
       },
       {
-        "id": "openai-codex/gpt-5.3-codex",
-        "alias": "GPT 5.3 Codex",
-        "provider": "openai-codex"
-      },
-      {
         "id": "openai/gpt-5.2",
         "alias": "GPT-5.2",
         "provider": "openai"
@@ -4330,6 +4047,11 @@
       {
         "id": "zai/glm-5",
         "alias": "GLM-5",
+        "provider": "zai"
+      },
+      {
+        "id": "zai/glm-4.7",
+        "alias": "GLM-4.7",
         "provider": "zai"
       },
       {
@@ -4353,20 +4075,20 @@
         "provider": "deepseek"
       },
       {
-        "id": "anthropic/claude-sonnet-4-6",
-        "alias": "Sonnet 4.6",
-        "provider": "anthropic"
-      },
-      {
         "id": "xai/grok-4-1-fast",
         "alias": "Grok 4.1 Fast",
         "provider": "xai"
+      },
+      {
+        "id": "anthropic/claude-opus-4-6",
+        "alias": "Claude Opus 4.6",
+        "provider": "anthropic"
       }
     ],
     "subagentConfig": {
       "maxConcurrent": 12,
       "maxSpawnDepth": 2,
-      "maxChildrenPerAgent": 5
+      "maxChildrenPerAgent": 7
     }
   },
   "skills": [
@@ -4408,43 +4130,43 @@
   ],
   "gitLog": [
     {
-      "hash": "f60fc0c",
-      "message": "work: dashboard v2.6.0 pre-release fixes",
-      "ago": "5 minutes ago"
+      "hash": "1e50d22",
+      "message": "memory(cron): Feb 23 idle day inner thoughts",
+      "ago": "40 minutes ago"
     },
     {
-      "hash": "250918d",
-      "message": "work: dashboard runtime config channel rows compact",
-      "ago": "31 minutes ago"
+      "hash": "514286c",
+      "message": "evening(heartbeat): dashboard data update + config timestamp",
+      "ago": "2 hours ago"
     },
     {
-      "hash": "72c220c",
-      "message": "config: replace grok-4-fast with grok-4-1-fast everywhere (crons + alias)",
-      "ago": "35 minutes ago"
+      "hash": "92fd88d",
+      "message": "heartbeat(afternoon): security perms fix + dashboard data + work notes; v2026.2.17\u2192latest pending",
+      "ago": "7 hours ago"
     },
     {
-      "hash": "80e42ac",
-      "message": "work: dashboard main agent in sub-agent routing",
-      "ago": "38 minutes ago"
+      "hash": "378ba85",
+      "message": "feat(config): switch zai to coding plan endpoint, add GLM-4.7",
+      "ago": "21 hours ago"
     },
     {
-      "hash": "9f0fdc7",
-      "message": "work: dashboard sub-agent routing section",
-      "ago": "42 minutes ago"
+      "hash": "4a0c228",
+      "message": "feat(config): add anthropic provider with Claude Opus 4.6",
+      "ago": "22 hours ago"
     }
   ],
   "alerts": [
     {
       "type": "warning",
       "icon": "\ud83d\udcb0",
-      "message": "High daily cost: $123.26",
+      "message": "High daily cost: $103.24",
       "severity": "high"
     },
     {
-      "type": "warning",
-      "icon": "\u26a0\ufe0f",
-      "message": "High context: OpenClaw Dev & Admin (81.3%)",
-      "severity": "medium"
+      "type": "error",
+      "icon": "\u274c",
+      "message": "Cron failed: Daily Memory Curation",
+      "severity": "high"
     }
   ]
 }
