@@ -314,7 +314,7 @@ rm -rf ~/.openclaw/dashboard
 - **New**: `ai` config section — `enabled`, `gatewayPort`, `model`, `maxHistory`, `dotenvPath`
 - **Improved**: Stateless gateway calls — no agent memory or tool bleed between sessions
 - **Fixed**: 60s gateway timeout (up from 30s) to accommodate reasoning model latency
-- **Tests**: 14 new chat tests added (AC-CHAT-1 through AC-CHAT-8)
+- **Tests**: 75/75 passing — 14 new chat tests + pytest dependency removed from all test files
 - **Version**: `2.3.0` → `2.4.0`
 
 ### v2026.2.21
