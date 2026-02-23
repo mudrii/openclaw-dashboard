@@ -1,6 +1,6 @@
 # Changelog
 
-## v2.4.0 — 2026-02-23
+## v2026.2.23 (v2.4.0) — 2026-02-23
 
 ### Added
 - **AI Chat panel** (`💬`) — floating action button opens a chat panel backed by your OpenClaw gateway
@@ -16,6 +16,7 @@
 - **`call_gateway()`** — stateless HTTP call to the OpenClaw gateway with 60s timeout
 - New `ai` section in `config.json`: `enabled`, `gatewayPort`, `model`, `maxHistory`, `dotenvPath`
 - 14 new tests in `tests/test_chat.py` covering config validation, dotenv parsing, prompt building, gateway error handling, and HTTP endpoint behaviour (AC-CHAT-1 through AC-CHAT-8)
+- Converted `test_critical.py` and `test_hierarchy_recent.py` from pytest to stdlib `unittest` — no external test dependencies required
 
 ### Changed
 - Version bumped from `2.3.0` → `2.4.0`
@@ -23,7 +24,7 @@
 
 ---
 
-## v2.3.0 — 2026-02-21
+## v2026.2.21 (v2.3.0) — 2026-02-21
 
 ### Fixed
 - Handle dict-style model config for agents in refresh script
@@ -33,7 +34,7 @@
 
 ---
 
-## v2.2.0 — 2026-02-20
+## v2026.2.20 (v2.2.0) — 2026-02-20
 
 ### Added
 - 6 built-in themes (Midnight, Nord, Catppuccin Mocha, GitHub Light, Solarized Light, Catppuccin Latte)
