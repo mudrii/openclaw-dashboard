@@ -164,6 +164,8 @@ def call_gateway(system, history, question, port, token, model):
         return {"error": f"Gateway HTTP {e.code}: {body[:200]}"}
     except urllib.error.URLError as e:
         return {"error": f"Gateway unreachable: {e.reason}"}
+    except socket.timeout:
+        return {"error": "Gateway timed out — model took too long to respond"}
     except Exception as e:
         return {"error": f"Unexpected error: {e}"}
 
