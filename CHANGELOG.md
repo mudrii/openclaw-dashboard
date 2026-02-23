@@ -18,6 +18,15 @@
 - 14 new tests in `tests/test_chat.py` covering config validation, dotenv parsing, prompt building, gateway error handling, and HTTP endpoint behaviour (AC-CHAT-1 through AC-CHAT-8)
 - Converted `test_critical.py` and `test_hierarchy_recent.py` from pytest to stdlib `unittest` — no external test dependencies required
 
+### Prerequisites (one-time setup in `~/.openclaw/openclaw.json`)
+The gateway's `chatCompletions` endpoint is disabled by default. Enable it once:
+```json
+"gateway": {
+  "http": { "endpoints": { "chatCompletions": { "enabled": true } } }
+}
+```
+The gateway hot-reloads this change — no restart needed.
+
 ### Changed
 - Version bumped from `2.3.0` → `2.4.0`
 - Architecture diagram updated to show `/api/chat` endpoint

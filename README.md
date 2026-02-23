@@ -172,7 +172,7 @@ Edit `config.json`:
   "ai": {
     "enabled": true,
     "gatewayPort": 18789,
-    "model": "",
+    "model": "your-model-id",
     "maxHistory": 6,
     "dotenvPath": "~/.openclaw/.env"
   }
@@ -197,7 +197,7 @@ Edit `config.json`:
 | `openclawPath` | `"~/.openclaw"` | Legacy key; runtime path is currently controlled by `OPENCLAW_HOME` env var |
 | `ai.enabled` | `true` | Enable/disable the AI chat panel and `/api/chat` endpoint |
 | `ai.gatewayPort` | `18789` | Port of your OpenClaw gateway |
-| `ai.model` | `""` | Model to use for chat (any model registered in your gateway) |
+| `ai.model` | `""` | Model to use for chat — any model ID registered in your OpenClaw gateway |
 | `ai.maxHistory` | `6` | Number of previous messages to include for context |
 | `ai.dotenvPath` | `"~/.openclaw/.env"` | Path to `.env` file containing `OPENCLAW_GATEWAY_TOKEN` |
 
