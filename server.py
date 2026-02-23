@@ -124,7 +124,7 @@ def build_dashboard_prompt(data):
     return "\n".join(lines)
 
 
-def call_gateway(system, history, question, port, token, model, agent_id):
+def call_gateway(system, history, question, port, token, model):
     """Call the OpenClaw gateway's OpenAI-compatible chat completions endpoint.
 
     Returns {"answer": "..."} on success, {"error": "..."} on failure.
@@ -146,7 +146,6 @@ def call_gateway(system, history, question, port, token, model, agent_id):
         headers={
             "Content-Type": "application/json",
             "Authorization": f"Bearer {token}",
-            "x-openclaw-agent-id": agent_id,
         },
         method="POST",
     )
@@ -250,7 +249,6 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
             port=int(_ai_cfg.get("gatewayPort", 18789)),
             token=_gateway_token,
             model=_ai_cfg.get("model", "kimi-coding/k2p5"),
-            agent_id=_ai_cfg.get("agentId", "main"),
         )
         self._send_json(200, result)
 

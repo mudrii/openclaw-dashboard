@@ -28,7 +28,6 @@
     "enabled": true,
     "gatewayPort": 18789,
     "model": "kimi-coding/k2p5",
-    "agentId": "main",
     "maxHistory": 6,
     "dotenvPath": "~/.openclaw/.env"
   }

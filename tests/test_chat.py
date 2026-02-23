@@ -35,7 +35,6 @@ class TestAiConfig(unittest.TestCase):
         self.assertIsInstance(ai, dict)
         self.assertIn("gatewayPort", ai)
         self.assertIn("model", ai)
-        self.assertIn("agentId", ai)
         self.assertIn("maxHistory", ai)
         self.assertIsInstance(ai["gatewayPort"], int)
         self.assertIsInstance(ai["maxHistory"], int)
@@ -142,7 +141,7 @@ class TestCallGateway(unittest.TestCase):
     def test_ac_chat_4a_unreachable_returns_error(self):
         result = self.call(
             system="You are a helper.", history=[], question="hi",
-            port=19999, token="fake", model="test", agent_id="main",
+            port=19999, token="fake", model="test",
         )
         self.assertIn("error", result)
         self.assertIsInstance(result["error"], str)
@@ -150,7 +149,7 @@ class TestCallGateway(unittest.TestCase):
     def test_ac_chat_4b_always_returns_dict(self):
         result = self.call(
             system="You are a helper.", history=[], question="hi",
-            port=19999, token="fake", model="test", agent_id="main",
+            port=19999, token="fake", model="test",
         )
         self.assertIsInstance(result, dict)
         self.assertTrue("answer" in result or "error" in result)
