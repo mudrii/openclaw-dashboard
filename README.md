@@ -315,7 +315,7 @@ rm -rf ~/.openclaw/dashboard
 - **Improved**: Stateless gateway calls — no agent memory or tool bleed between sessions
 - **Fixed**: 60s gateway timeout (up from 30s) to accommodate reasoning model latency
 - **Tests**: 75/75 passing — 14 new chat tests + pytest dependency removed from all test files
-- **Version**: `2.3.0` → `2.4.0`
+- **Tests**: 75/75 passing
 
 ### v2026.2.21
 

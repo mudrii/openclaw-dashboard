@@ -1,6 +1,6 @@
 # Changelog
 
-## v2026.2.23 (v2.4.0) — 2026-02-23
+## v2026.2.23 — 2026-02-23
 
 ### Added
 - **AI Chat panel** (`💬`) — floating action button opens a chat panel backed by your OpenClaw gateway
@@ -28,12 +28,11 @@ The gateway's `chatCompletions` endpoint is disabled by default. Enable it once:
 The gateway hot-reloads this change — no restart needed.
 
 ### Changed
-- Version bumped from `2.3.0` → `2.4.0`
 - Architecture diagram updated to show `/api/chat` endpoint
 
 ---
 
-## v2026.2.21 (v2.3.0) — 2026-02-21
+## v2026.2.21 — 2026-02-21
 
 ### Fixed
 - Handle dict-style model config for agents in refresh script
@@ -43,7 +42,7 @@ The gateway hot-reloads this change — no restart needed.
 
 ---
 
-## v2026.2.20 (v2.2.0) — 2026-02-20
+## v2026.2.20 — 2026-02-20
 
 ### Added
 - 6 built-in themes (Midnight, Nord, Catppuccin Mocha, GitHub Light, Solarized Light, Catppuccin Latte)
