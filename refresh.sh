@@ -362,10 +362,18 @@ for store_file in glob.glob(os.path.join(base, '*/sessions/sessions.json')):
                 display_name = _trim(raw_label) or _trim(subject) or _trim(origin_label) or key_short
                 # Trigger: what context spawned/drives this session
                 trigger = subject or origin_label or raw_label or ''
-                # Resolve model from JSONL file (model_change event)
-                resolved_model = val.get('model', '') or get_session_model(key, agent_name, sid)
+                # Resolve model: prefer providerOverride/modelOverride (sub-agents),
+                # then 'model' field, then JSONL model_change event, then agent default
+                _prov_override = val.get('providerOverride', '')
+                _model_override = val.get('modelOverride', '')
+                if _prov_override and _model_override:
+                    resolved_model = f'{_prov_override}/{_model_override}'
+                else:
+                    resolved_model = val.get('model', '') or get_session_model(key, agent_name, sid)
                 if resolved_model == 'unknown' or not resolved_model:
                     resolved_model = get_session_model(key, agent_name, sid)
+                # Apply alias if available
+                resolved_model = model_aliases.get(resolved_model, resolved_model)
 
                 sessions_list.append({
                     'name': display_name[:50],
