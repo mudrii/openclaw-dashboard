@@ -61,8 +61,11 @@ if _zoneinfo is not None:
     try:
         local_tz = _zoneinfo.ZoneInfo(_tz_name)
     except Exception:
-        import sys as _sys; print(f"[dashboard warn] Unknown timezone '{_tz_name}', using Asia/Shanghai", file=_sys.stderr)
-        local_tz = _zoneinfo.ZoneInfo('Asia/Shanghai')
+        print(f"[dashboard warn] Unknown timezone '{_tz_name}', using Asia/Shanghai", file=sys.stderr)
+        try:
+            local_tz = _zoneinfo.ZoneInfo('Asia/Shanghai')
+        except Exception:
+            local_tz = timezone(timedelta(hours=8))
 else:
     local_tz = timezone(timedelta(hours=8))  # fallback for Python < 3.9
 now = datetime.now(local_tz)
@@ -821,7 +824,7 @@ else:
 output = {
     'botName': bot_name,
     'botEmoji': bot_emoji,
-    'lastRefresh': now.strftime('%Y-%m-%d %H:%M:%S GMT+8'),
+    'lastRefresh': now.strftime('%Y-%m-%d %H:%M:%S ') + _tz_name,
     'lastRefreshMs': int(now.timestamp() * 1000),
 
     # Gateway health
