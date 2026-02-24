@@ -311,6 +311,32 @@ def get_session_model(session_key, agent_name, session_id):
             pass
     return AGENT_DEFAULT_MODELS.get(agent_name, 'unknown')
 
+# ── Gateway API query for live session model info ──
+gateway_model_map = {}
+try:
+    result = subprocess.run(
+        ['openclaw', 'sessions', '--json'],
+        capture_output=True, text=True, timeout=10
+    )
+    if result.returncode == 0 and result.stdout.strip():
+        gateway_sessions = json.loads(result.stdout)
+        if isinstance(gateway_sessions, list):
+            for gs in gateway_sessions:
+                key = gs.get('key', '')
+                model = gs.get('model', '')
+                if key and model:
+                    gateway_model_map[key] = model
+        elif isinstance(gateway_sessions, dict):
+            # Handle {sessions: [...]} wrapper format
+            for gs in gateway_sessions.get('sessions', []):
+                key = gs.get('key', '')
+                model = gs.get('model', '')
+                if key and model:
+                    gateway_model_map[key] = model
+except Exception as _e:
+    import sys; print(f"[dashboard info] Gateway session query unavailable: {_e}", file=sys.stderr)
+    gateway_model_map = {}
+
 # ── Sessions ──
 known_sids = {}
 sessions_list = []
@@ -362,11 +388,18 @@ for store_file in glob.glob(os.path.join(base, '*/sessions/sessions.json')):
                 display_name = _trim(raw_label) or _trim(subject) or _trim(origin_label) or key_short
                 # Trigger: what context spawned/drives this session
                 trigger = subject or origin_label or raw_label or ''
-                # Resolve model: prefer providerOverride/modelOverride (sub-agents),
-                # then 'model' field, then JSONL model_change event, then agent default
+                # Resolve model priority chain:
+                # 1) Gateway live data (most accurate, includes runtime model)
+                # 2) providerOverride/modelOverride (sub-agent spawn params)
+                # 3) session store 'model' field
+                # 4) JSONL model_change event
+                # 5) agent default
+                _gateway_model = gateway_model_map.get(key, '')
                 _prov_override = val.get('providerOverride', '')
                 _model_override = val.get('modelOverride', '')
-                if _prov_override and _model_override:
+                if _gateway_model:
+                    resolved_model = _gateway_model
+                elif _prov_override and _model_override:
                     resolved_model = f'{_prov_override}/{_model_override}'
                 else:
                     resolved_model = val.get('model', '') or get_session_model(key, agent_name, sid)
