@@ -503,9 +503,6 @@ body{font-family:-apple-system,BlinkMacSystemFont,'SF Pro','Helvetica Neue',sans
 </div>
 
 <script>
-// === MODULE: Utilities ===
-// Pure helpers with no side-effects — used across all modules.
-
 // === MODULE: Theme ===
 // Owns theme state and all theme-related DOM updates.
 let THEMES={},currentTheme='midnight';
@@ -577,8 +574,6 @@ document.addEventListener('click',e=>{
   if(picker&&!picker.contains(e.target)){$('themeMenu').classList.remove('open')}
 });
 
-loadThemes();
-
 // === MODULE: State ===
 // Single source of truth — dashboard data and UI tab/chart state.
 let D={},prevD=null,prevChartDays=null,prevUTab=null,prevSrTab=null,prevStTab=null,uTab='today',srTab='today',stTab='today',timer=60,_reqId=0;
@@ -607,8 +602,6 @@ function stableSnapshot(arr, fields) {
   }));
 }
 
-// === MODULE: DataLayer ===
-// Fetch logic with in-flight request tracking (_reqId).
 function relTime(ts){
   if(!ts)return'—';
   let d;
@@ -621,12 +614,16 @@ function relTime(ts){
   return Math.floor(diff/86400)+'d ago';
 }
 
+// === MODULE: DataLayer ===
+// Fetch logic with in-flight request tracking (_reqId).
 async function loadData(){
   const myId=++_reqId;
   try{
     const r=await fetch('/api/refresh?t='+Date.now());
     if(myId!==_reqId)return;
-    D=await r.json();
+    const json=await r.json();
+    if(myId!==_reqId)return;
+    D=json;
     requestAnimationFrame(() => render());
     $('lastUpdate').textContent='Updated: '+new Date().toLocaleTimeString();
     timer=60;

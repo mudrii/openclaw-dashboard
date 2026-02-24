@@ -292,10 +292,12 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
         try:
             with open(index_path, "r", encoding="utf-8") as f:
                 html = f.read()
+            import html as _html_mod
             preset = load_config().get("theme", {}).get("preset", "midnight")
+            safe_preset = _html_mod.escape(preset, quote=True)
             html = html.replace(
                 "<head>",
-                f'<head>\n<meta name="oc-theme" content="{preset}">',
+                f'<head>\n<meta name="oc-theme" content="{safe_preset}">',
                 1,
             )
             body = html.encode("utf-8")
