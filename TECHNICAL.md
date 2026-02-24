@@ -151,7 +151,7 @@ Sessions with `:run:` in the key are skipped (duplicate cron run sessions).
 For each `.jsonl` file, the script reads every line, filters for `assistant` role messages with non-zero `usage.totalTokens`, and aggregates into eight `defaultdict` buckets:
 
 - **`models_all`** — all-time per-model totals
-- **`models_today`** — today-only per-model totals (compared against `today_str` in GMT+8)
+- **`models_today`** — today-only per-model totals (compared against `today_str` in the configured timezone)
 - **`models_7d`** — last 7 days per-model totals
 - **`models_30d`** — last 30 days per-model totals
 - **`subagent_all`** — all-time subagent-only totals
@@ -377,7 +377,7 @@ Each setting resolves through a priority chain (highest wins):
 |-----|------|-------------|
 | `botName` | `string` | Display name from config (`"OpenClaw Dashboard"`) |
 | `botEmoji` | `string` | Emoji from config (`"🦞"`) |
-| `lastRefresh` | `string` | Human-readable timestamp (`"2026-02-16 13:45:00 GMT+8"`) |
+| `lastRefresh` | `string` | Human-readable timestamp (`"2026-02-16 13:45:00 Asia/Shanghai"`) |
 | `lastRefreshMs` | `number` | Unix epoch milliseconds |
 
 ### Gateway
@@ -598,11 +598,11 @@ systemctl --user status openclaw-dashboard
 
 ## 12. Known Limitations
 
-- **Hardcoded timezone:** GMT+8 (`timezone(timedelta(hours=8))`) in `refresh.sh` — affects "today" calculations and all timestamps
+- **Timezone** — configurable via `config.json` `timezone` key (IANA names, default `Asia/Shanghai`); requires Python 3.9+ for `zoneinfo`, older Python falls back to fixed GMT+8
 - **No authentication** — relies on network-level access control
 - **Polling only** — no WebSocket; frontend polls every 60s, server debounces at 30s
 - **Limited historical data** — `dailyChart` provides 30 days of daily aggregates; no finer granularity
-- **Some config keys are compatibility no-op** — `refresh.autoRefresh`, `openclawPath`, and `panels.kanban` are currently not used by runtime code
+- **Some legacy config keys are ignored** — `openclawPath` is not read (use `OPENCLAW_HOME` env var); panel visibility is not configurable
 - **Chat history cap is split client/server** — frontend keeps a local 6-message history window; backend also enforces `ai.maxHistory`
 - **Simplistic cost projection** — `today × 30`, not based on historical average
 - **Context % calculation** — `totalTokens / contextTokens × 100` (may exceed 100% in edge cases, capped in display)

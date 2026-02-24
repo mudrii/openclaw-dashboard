@@ -187,7 +187,7 @@ Edit `config.json`:
 | `bot.name` | `"OpenClaw Dashboard"` | Dashboard title |
 | `bot.emoji` | `"🦞"` | Avatar emoji |
 | `theme.preset` | `"midnight"` | Default theme (`midnight`, `nord`, `catppuccin-mocha`, `github-light`, `solarized-light`, `catppuccin-latte`) |
-| `panels.*` | `true` | Show/hide individual panels (`panels.kanban` is legacy/no-op) |
+| `timezone` | `"Asia/Shanghai"` | IANA timezone for all time calculations (requires Python 3.9+) |
 | `refresh.intervalSeconds` | `30` | Debounce interval for refresh |
 | `alerts.dailyCostHigh` | `50` | Daily cost threshold for high alert ($) |
 | `alerts.dailyCostWarn` | `20` | Daily cost threshold for warning alert ($) |
@@ -195,7 +195,6 @@ Edit `config.json`:
 | `alerts.memoryMb` | `640` | Gateway memory threshold (MB) for alerts |
 | `server.port` | `8080` | Server port (also `--port` / `-p` flag or `DASHBOARD_PORT` env) |
 | `server.host` | `"127.0.0.1"` | Server bind address (also `--bind` / `-b` flag or `DASHBOARD_BIND` env) |
-| `openclawPath` | `"~/.openclaw"` | Legacy key; runtime path is currently controlled by `OPENCLAW_HOME` env var |
 | `ai.enabled` | `true` | Enable/disable the AI chat panel and `/api/chat` endpoint |
 | `ai.gatewayPort` | `18789` | Port of your OpenClaw gateway |
 | `ai.model` | `""` | Model to use for chat — any model ID registered in your OpenClaw gateway |
