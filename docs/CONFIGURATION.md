@@ -4,8 +4,6 @@
 
 The dashboard is configured via `config.json` in the dashboard directory.
 
-Note: some legacy compatibility keys still appear in examples (`refresh.autoRefresh`, `openclawPath`, `panels.kanban`) but are currently not read by runtime code.
-
 ### Full Example
 
 ```json
@@ -15,28 +13,22 @@ Note: some legacy compatibility keys still appear in examples (`refresh.autoRefr
     "emoji": "🤖"
   },
   "theme": {
-    "preset": "midnight",
-    "accent": "#6366f1",
-    "accentSecondary": "#9333ea"
+    "preset": "midnight"
   },
-  "panels": {
-    "kanban": true,
-    "sessions": true,
-    "crons": true,
-    "skills": true,
-    "tokenUsage": true,
-    "subagentUsage": true,
-    "models": true
-  },
+  "timezone": "Asia/Shanghai",
   "refresh": {
-    "intervalSeconds": 30,
-    "autoRefresh": true
+    "intervalSeconds": 30
   },
   "server": {
     "port": 8080,
     "host": "127.0.0.1"
   },
-  "openclawPath": "~/.openclaw",
+  "alerts": {
+    "dailyCostHigh": 50,
+    "dailyCostWarn": 20,
+    "contextPct": 80,
+    "memoryMb": 640
+  },
   "ai": {
     "enabled": true,
     "gatewayPort": 18789,
@@ -58,9 +50,9 @@ Note: some legacy compatibility keys still appear in examples (`refresh.autoRefr
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
-| `theme.preset` | string | `"midnight"` | Default theme preset. Options: `midnight`, `nord`, `catppuccin-mocha`, `github-light`, `solarized-light`, `catppuccin-latte` |
+| `theme.preset` | string | `"midnight"` | Default theme. Options: `midnight`, `nord`, `catppuccin-mocha`, `github-light`, `solarized-light`, `catppuccin-latte` |
 
-Theme choice persists across page reloads via `localStorage` (key: `ocDashTheme`). The `theme.preset` in config.json only sets the initial default — once a user picks a theme via the 🎨 header button, their choice overrides the config.
+Theme choice persists via `localStorage` (key: `ocDashTheme`). The `theme.preset` sets the initial default — once a user picks a theme via the 🎨 header button, their choice overrides the config.
 
 #### Built-in Themes
 
@@ -108,41 +100,45 @@ Add custom themes by editing `themes.json` in the dashboard directory. Each them
 }
 ```
 
-All 19 color variables must be provided. The theme will appear automatically in the theme picker menu, grouped by `type`.
+All 19 color variables must be provided. The theme appears automatically in the theme picker menu, grouped by `type`.
+
+### Timezone
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `timezone` | string | `"Asia/Shanghai"` | IANA timezone name for all time calculations and displayed timestamps |
+
+Accepts any IANA timezone name, e.g. `"UTC"`, `"America/New_York"`, `"Europe/London"`. All "today" cost windows, cron timestamps, and chart bucket boundaries use this timezone. Requires Python 3.9+ (`zoneinfo` stdlib); older Python falls back to GMT+8.
 
 ### Panels
 
-Toggle individual panels on/off. All default to `true`.
-
-| Key | Description |
-|-----|-------------|
-| `panels.kanban` | Legacy key (kanban UI removed; currently no-op) |
-| `panels.sessions` | Active sessions table |
-| `panels.crons` | Cron jobs table |
-| `panels.skills` | Skills grid |
-| `panels.tokenUsage` | Token usage & cost table |
-| `panels.subagentUsage` | Sub-agent activity tables |
-| `panels.models` | Available models grid |
+Panel visibility is not configurable — all panels are always displayed.
 
 ### Refresh
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
 | `refresh.intervalSeconds` | number | `30` | Minimum seconds between data refreshes (debounce) |
-| `refresh.autoRefresh` | boolean | `true` | Legacy key (frontend currently always auto-refreshes every 60s) |
 
 ### Server
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
 | `server.port` | number | `8080` | HTTP server port |
-| `server.host` | string | `"127.0.0.1"` | Bind address (`0.0.0.0` for network access) |
+| `server.host` | string | `"127.0.0.1"` | Bind address (`0.0.0.0` for LAN access) |
 
-### OpenClaw Path
+### Alerts
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
-| `openclawPath` | string | `"~/.openclaw"` | Legacy key (current runtime uses `OPENCLAW_HOME` env var instead). |
+| `alerts.dailyCostHigh` | number | `50` | USD threshold for a high-cost alert |
+| `alerts.dailyCostWarn` | number | `20` | USD threshold for a warning alert |
+| `alerts.contextPct` | number | `80` | Context usage % above which an alert is shown |
+| `alerts.memoryMb` | number | `640` | Gateway RSS memory (MB) above which an alert is shown |
+
+### OpenClaw Path
+
+To change the OpenClaw data directory, set the `OPENCLAW_HOME` environment variable — that is the runtime source of truth for both `refresh.sh` and the installer. The `openclawPath` key in `config.json` is not read by the current runtime.
 
 ### AI Chat
 
@@ -175,7 +171,7 @@ Toggle individual panels on/off. All default to `true`.
 
 | Variable | Description |
 |----------|-------------|
-| `OPENCLAW_HOME` | Set OpenClaw installation path for `refresh.sh` and installer (runtime source of truth) |
+| `OPENCLAW_HOME` | OpenClaw installation path (source of truth for `refresh.sh` and installer) |
 | `OPENCLAW_GATEWAY_TOKEN` | Gateway bearer token consumed by `server.py` via `ai.dotenvPath` |
 
 ## Data Flow

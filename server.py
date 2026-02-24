@@ -281,8 +281,32 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
     def do_GET(self):
         if self.path == "/api/refresh" or self.path.startswith("/api/refresh?"):
             self.handle_refresh()
+        elif self.path in ("/", "/index.html"):
+            self.handle_index()
         else:
             super().do_GET()
+
+    def handle_index(self):
+        """Serve index.html with theme.preset injected as a <meta> tag."""
+        index_path = os.path.join(DIR, "index.html")
+        try:
+            with open(index_path, "r", encoding="utf-8") as f:
+                html = f.read()
+            preset = load_config().get("theme", {}).get("preset", "midnight")
+            html = html.replace(
+                "<head>",
+                f'<head>\n<meta name="oc-theme" content="{preset}">',
+                1,
+            )
+            body = html.encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+        except FileNotFoundError:
+            self.send_response(404)
+            self.end_headers()
 
     def do_POST(self):
         if self.path == "/api/chat":

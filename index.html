@@ -237,10 +237,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,'SF Pro','Helvetica Neue',sans
     <span class="countdown" id="countdown">60s</span>
     <span class="last-update" id="lastUpdate"></span>
     <div class="theme-picker">
-      <button class="theme-btn" id="themeBtn" onclick="toggleThemeMenu()" title="Change theme">🎨</button>
+      <button class="theme-btn" id="themeBtn" onclick="OCUI.toggleThemeMenu()" title="Change theme">🎨</button>
       <div class="theme-menu" id="themeMenu"></div>
     </div>
-    <button class="refresh-btn" onclick="loadData()">↻ Refresh</button>
+    <button class="refresh-btn" onclick="OCUI.loadData()">↻ Refresh</button>
   </div>
 </div>
 
@@ -290,8 +290,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'SF Pro','Helvetica Neue',sans
     <span class="section-title">📈 Charts & Trends</span>
     <div style="display:flex;align-items:center;gap:8px">
       <div class="tab-group" id="chartTabGroup">
-        <button class="tab-btn active" id="cTab7" onclick="chartDays=7;renderCharts()">7 Days</button>
-        <button class="tab-btn" id="cTab30" onclick="chartDays=30;renderCharts()">30 Days</button>
+        <button class="tab-btn active" id="cTab7" onclick="OCUI.setChartDays(7)">7 Days</button>
+        <button class="tab-btn" id="cTab30" onclick="OCUI.setChartDays(30)">30 Days</button>
       </div>
       <!-- toggle removed -->
     </div>
@@ -337,10 +337,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,'SF Pro','Helvetica Neue',sans
   <div class="section-header">
     <span class="section-title">📊 Token Usage & Cost</span>
     <div class="tab-group">
-      <button class="tab-btn active" id="uTabT" onclick="uTab='today';render()">Today</button>
-      <button class="tab-btn" id="uTab7" onclick="uTab='7d';render()">7 Days</button>
-      <button class="tab-btn" id="uTab30" onclick="uTab='30d';render()">30 Days</button>
-      <button class="tab-btn" id="uTabA" onclick="uTab='all';render()">All Time</button>
+      <button class="tab-btn active" id="uTabT" onclick="OCUI.setUsageTab('today')">Today</button>
+      <button class="tab-btn" id="uTab7" onclick="OCUI.setUsageTab('7d')">7 Days</button>
+      <button class="tab-btn" id="uTab30" onclick="OCUI.setUsageTab('30d')">30 Days</button>
+      <button class="tab-btn" id="uTabA" onclick="OCUI.setUsageTab('all')">All Time</button>
     </div>
   </div>
   <div class="glass panel" style="overflow-x:auto">
@@ -358,10 +358,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,'SF Pro','Helvetica Neue',sans
     <div style="display:flex;align-items:center;gap:12px">
       <span id="subCostLbl" style="font-size:12px;color:var(--muted);font-weight:500"></span>
       <div class="tab-group">
-        <button class="tab-btn active-purple" id="srTabT" onclick="srTab='today';render()">Today</button>
-        <button class="tab-btn" id="srTab7" onclick="srTab='7d';render()">7 Days</button>
-        <button class="tab-btn" id="srTab30" onclick="srTab='30d';render()">30 Days</button>
-        <button class="tab-btn" id="srTabA" onclick="srTab='all';render()">All Time</button>
+        <button class="tab-btn active-purple" id="srTabT" onclick="OCUI.setSubRunsTab('today')">Today</button>
+        <button class="tab-btn" id="srTab7" onclick="OCUI.setSubRunsTab('7d')">7 Days</button>
+        <button class="tab-btn" id="srTab30" onclick="OCUI.setSubRunsTab('30d')">30 Days</button>
+        <button class="tab-btn" id="srTabA" onclick="OCUI.setSubRunsTab('all')">All Time</button>
       </div>
     </div>
   </div>
@@ -377,10 +377,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,'SF Pro','Helvetica Neue',sans
     <div class="section-header">
       <span class="section-title" style="color:var(--purple)">Sub-Agent Token Breakdown</span>
       <div class="tab-group">
-        <button class="tab-btn active-purple" id="stTabT" onclick="stTab='today';render()">Today</button>
-        <button class="tab-btn" id="stTab7" onclick="stTab='7d';render()">7 Days</button>
-        <button class="tab-btn" id="stTab30" onclick="stTab='30d';render()">30 Days</button>
-        <button class="tab-btn" id="stTabA" onclick="stTab='all';render()">All Time</button>
+        <button class="tab-btn active-purple" id="stTabT" onclick="OCUI.setSubTokensTab('today')">Today</button>
+        <button class="tab-btn" id="stTab7" onclick="OCUI.setSubTokensTab('7d')">7 Days</button>
+        <button class="tab-btn" id="stTab30" onclick="OCUI.setSubTokensTab('30d')">30 Days</button>
+        <button class="tab-btn" id="stTabA" onclick="OCUI.setSubTokensTab('all')">All Time</button>
       </div>
     </div>
     <div class="glass panel" style="overflow-x:auto">
@@ -503,7 +503,11 @@ body{font-family:-apple-system,BlinkMacSystemFont,'SF Pro','Helvetica Neue',sans
 </div>
 
 <script>
-// ── Theme Engine ──
+// === MODULE: Utilities ===
+// Pure helpers with no side-effects — used across all modules.
+
+// === MODULE: Theme ===
+// Owns theme state and all theme-related DOM updates.
 let THEMES={},currentTheme='midnight';
 
 async function loadThemes(){
@@ -512,7 +516,9 @@ async function loadThemes(){
     THEMES=await r.json();
   }catch(e){console.warn('themes.json not found, using defaults');return}
   const saved=localStorage.getItem('ocDashTheme');
+  const metaPreset=document.querySelector('meta[name="oc-theme"]')?.content;
   if(saved&&THEMES[saved])currentTheme=saved;
+  else if(metaPreset&&THEMES[metaPreset])currentTheme=metaPreset;
   applyTheme(currentTheme);
   renderThemeMenu();
 }
@@ -552,12 +558,12 @@ function renderThemeMenu(){
   let html='<div class="theme-menu-label">Dark Themes</div>';
   darkThemes.forEach(([id,t])=>{
     const accent = safeColor(t.colors && t.colors.accent ? t.colors.accent : '#888888');
-    html+=`<button class="theme-opt${id===currentTheme?' active':''}" onclick="applyTheme('${esc(id)}');event.stopPropagation()"><span class="theme-opt-icon">${esc(t.icon)}</span><span>${esc(t.name)}</span><span class="theme-opt-swatch" style="background:${accent};margin-left:auto"></span></button>`;
+    html+=`<button class="theme-opt${id===currentTheme?' active':''}" onclick="OCUI.applyTheme('${esc(id)}');event.stopPropagation()"><span class="theme-opt-icon">${esc(t.icon)}</span><span>${esc(t.name)}</span><span class="theme-opt-swatch" style="background:${accent};margin-left:auto"></span></button>`;
   });
   html+='<div class="theme-menu-label" style="margin-top:4px">Light Themes</div>';
   lightThemes.forEach(([id,t])=>{
     const accent = safeColor(t.colors && t.colors.accent ? t.colors.accent : '#888888');
-    html+=`<button class="theme-opt${id===currentTheme?' active':''}" onclick="applyTheme('${esc(id)}');event.stopPropagation()"><span class="theme-opt-icon">${esc(t.icon)}</span><span>${esc(t.name)}</span><span class="theme-opt-swatch" style="background:${accent};margin-left:auto"></span></button>`;
+    html+=`<button class="theme-opt${id===currentTheme?' active':''}" onclick="OCUI.applyTheme('${esc(id)}');event.stopPropagation()"><span class="theme-opt-icon">${esc(t.icon)}</span><span>${esc(t.name)}</span><span class="theme-opt-swatch" style="background:${accent};margin-left:auto"></span></button>`;
   });
   menu.innerHTML=html;
 }
@@ -573,8 +579,11 @@ document.addEventListener('click',e=>{
 
 loadThemes();
 
-// ── Dashboard ──
-let D={},prevD=null,prevChartDays=null,prevUTab=null,prevSrTab=null,prevStTab=null,uTab='today',srTab='today',stTab='today',timer=60;
+// === MODULE: State ===
+// Single source of truth — dashboard data and UI tab/chart state.
+let D={},prevD=null,prevChartDays=null,prevUTab=null,prevSrTab=null,prevStTab=null,uTab='today',srTab='today',stTab='today',timer=60,_reqId=0;
+
+// === MODULE: Utilities ===
 const COLORS=['#6366f1','#9333ea','#ec4899','#f59e0b','#10b981','#06b6d4','#f87171','#84cc16'];
 const $=id=>document.getElementById(id);
 const esc = s => String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
@@ -582,13 +591,13 @@ function safeColor(v){
   return /^#[0-9a-fA-F]{3,8}$/.test(v||'') ? v : '#888888';
 }
 
+// === MODULE: DirtyChecker ===
+// Pure comparison functions — determines which sections need re-rendering.
 function sectionChanged(keys) {
   if (!prevD) return true;
   return keys.some(k => JSON.stringify(D[k]) !== JSON.stringify(prevD[k]));
 }
 
-// Returns a stable serialization of an array, excluding volatile timestamp fields
-// Used for dirty-checking sections that contain timestamps that change every refresh
 function stableSnapshot(arr, fields) {
   if (!arr) return '';
   return JSON.stringify(arr.map(item => {
@@ -598,6 +607,8 @@ function stableSnapshot(arr, fields) {
   }));
 }
 
+// === MODULE: DataLayer ===
+// Fetch logic with in-flight request tracking (_reqId).
 function relTime(ts){
   if(!ts)return'—';
   let d;
@@ -611,17 +622,22 @@ function relTime(ts){
 }
 
 async function loadData(){
+  const myId=++_reqId;
   try{
     const r=await fetch('/api/refresh?t='+Date.now());
+    if(myId!==_reqId)return;
     D=await r.json();
     requestAnimationFrame(() => render());
     $('lastUpdate').textContent='Updated: '+new Date().toLocaleTimeString();
     timer=60;
   }catch(e){
+    if(myId!==_reqId)return;
     $('alertsSection').innerHTML='<div class="alert-item alert-critical"><span class="alert-icon">⚠️</span><span class="alert-msg">Failed to load data.json</span></div>';
   }
 }
 
+// === MODULE: Renderer ===
+// All DOM update functions — dispatches to per-section renderers.
 function render(){
   const gw=D.gateway||{};
   const on=gw.status==='online';
@@ -1197,10 +1213,19 @@ function renderSubagentChart(id,data){
   $(id).innerHTML=`<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:350px">${yL}${yR}${xLabels}${bars}<path d="${line}" fill="none" stroke="var(--accent)" stroke-width="2"/>${dots}</svg><div class="chart-legend"><span class="chart-legend-item"><span class="chart-legend-dot" style="background:var(--purple)"></span>Runs</span><span class="chart-legend-item"><span class="chart-legend-dot" style="background:var(--accent)"></span>Cost</span></div>`;
 }
 
-setInterval(()=>{timer--;if(timer<=0){loadData();timer=60}$('countdown').textContent=timer+'s'},1000);
-loadData();
+// === MODULE: App ===
+// Initialization and timer wiring.
+const App = {
+  init() {
+    loadThemes();
+    setInterval(()=>{timer--;if(timer<=0){loadData();timer=60}$('countdown').textContent=timer+'s'},1000);
+    loadData();
+  }
+};
+App.init();
 
-// ── AI Chat ──
+// === MODULE: Chat ===
+// AI chat panel — history management and gateway integration.
 let chatHistory=[];
 const CHAT_MAX_HISTORY=6;
 
@@ -1252,27 +1277,42 @@ async function sendChat(prefill){
     input.focus();
   }
 }
+
+// === MODULE: OCUI ===
+// Exported namespace for all inline onclick= handlers in the HTML.
+// Keeps global scope clean and makes bindings traceable.
+window.OCUI = {
+  loadData,
+  toggleThemeMenu,
+  applyTheme,
+  setChartDays: n => { chartDays=n; renderCharts(); },
+  setUsageTab:  v => { uTab=v; render(); },
+  setSubRunsTab:  v => { srTab=v; render(); },
+  setSubTokensTab: v => { stTab=v; render(); },
+  toggleChat,
+  sendChat,
+};
 </script>
 
 <!-- AI Chat Panel -->
-<button class="chat-fab" id="chatBtn" onclick="toggleChat()" title="Ask AI about your dashboard">💬</button>
+<button class="chat-fab" id="chatBtn" onclick="OCUI.toggleChat()" title="Ask AI about your dashboard">💬</button>
 <div class="chat-panel" id="chatPanel">
   <div class="chat-header">
     <span class="chat-header-title">🤖 Dashboard AI</span>
-    <button class="chat-close" onclick="toggleChat()">✕</button>
+    <button class="chat-close" onclick="OCUI.toggleChat()">✕</button>
   </div>
   <div class="chat-messages" id="chatMessages">
     <div class="chat-bubble assistant">Hi! Ask me anything about your dashboard — costs, sessions, crons, or configuration.</div>
   </div>
   <div class="chat-quick" id="chatQuick">
-    <button class="chat-chip" onclick="sendChat('Summarize today\'s costs')">Today's costs</button>
-    <button class="chat-chip" onclick="sendChat('Are there any alerts or issues?')">Alerts</button>
-    <button class="chat-chip" onclick="sendChat('Which model is costing the most?')">Top model</button>
-    <button class="chat-chip" onclick="sendChat('What is the gateway status and uptime?')">Gateway</button>
+    <button class="chat-chip" onclick="OCUI.sendChat('Summarize today\'s costs')">Today's costs</button>
+    <button class="chat-chip" onclick="OCUI.sendChat('Are there any alerts or issues?')">Alerts</button>
+    <button class="chat-chip" onclick="OCUI.sendChat('Which model is costing the most?')">Top model</button>
+    <button class="chat-chip" onclick="OCUI.sendChat('What is the gateway status and uptime?')">Gateway</button>
   </div>
   <div class="chat-input-row">
-    <textarea class="chat-input" id="chatInput" rows="1" placeholder="Ask about metrics, costs, crons…" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendChat()}"></textarea>
-    <button class="chat-send" id="chatSend" onclick="sendChat()">↑</button>
+    <textarea class="chat-input" id="chatInput" rows="1" placeholder="Ask about metrics, costs, crons…" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();OCUI.sendChat()}"></textarea>
+    <button class="chat-send" id="chatSend" onclick="OCUI.sendChat()">↑</button>
   </div>
 </div>
 </body>

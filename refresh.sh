@@ -27,13 +27,13 @@ import json, glob, os, sys, subprocess, time
 import re as _re
 from collections import defaultdict
 from datetime import datetime, timezone, timedelta
+try:
+    import zoneinfo as _zoneinfo
+except ImportError:
+    _zoneinfo = None
 
 dashboard_dir = sys.argv[1]
 openclaw_path = sys.argv[2]
-
-local_tz = timezone(timedelta(hours=8))  # GMT+8
-now = datetime.now(local_tz)
-today_str = now.strftime('%Y-%m-%d')
 
 base = os.path.join(openclaw_path, "agents")
 config_path = os.path.join(openclaw_path, "openclaw.json")
@@ -54,6 +54,19 @@ if os.path.exists(dc_path):
         dc = {}
 else:
     dc = {}
+
+# ── Timezone (configurable via config.json "timezone" key) ──
+_tz_name = dc.get('timezone', 'Asia/Shanghai')
+if _zoneinfo is not None:
+    try:
+        local_tz = _zoneinfo.ZoneInfo(_tz_name)
+    except Exception:
+        import sys as _sys; print(f"[dashboard warn] Unknown timezone '{_tz_name}', using Asia/Shanghai", file=_sys.stderr)
+        local_tz = _zoneinfo.ZoneInfo('Asia/Shanghai')
+else:
+    local_tz = timezone(timedelta(hours=8))  # fallback for Python < 3.9
+now = datetime.now(local_tz)
+today_str = now.strftime('%Y-%m-%d')
 
 # ── Alert thresholds (configurable via config.json) ──
 alert_cfg = dc.get('alerts', {})
