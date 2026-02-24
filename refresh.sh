@@ -660,6 +660,25 @@ for d in chart_dates:
         entry['models']['Other'] = round(other, 4)
     daily_chart.append(entry)
 
+# ── Merge frozen historical data (for days where JSONL files were deleted) ──
+frozen_path = os.path.join(dashboard_dir, 'frozen-daily.json')
+if os.path.exists(frozen_path):
+    try:
+        with open(frozen_path) as ff:
+            frozen = json.load(ff)
+        for i, entry in enumerate(daily_chart):
+            d = entry['date']
+            if d in frozen:
+                f = frozen[d]
+                # Only override if frozen data has higher total (JSONL data was lost)
+                if f['total'] > entry['total']:
+                    daily_chart[i]['total'] = round(f['total'], 2)
+                    daily_chart[i]['tokens'] = f.get('tokens', entry['tokens'])
+                    daily_chart[i]['subagentRuns'] = f.get('subagentRuns', entry.get('subagentRuns', 0))
+                    daily_chart[i]['subagentCost'] = round(f.get('subagentCost', 0), 2)
+                    daily_chart[i]['models'] = {k: round(v, 4) for k, v in f.get('models', {}).items()}
+    except Exception as _e:
+        import sys; print(f"[dashboard warn] frozen-daily: {_e}", file=sys.stderr)
 
 def fmt(n):
     if n >= 1_000_000: return f'{n/1_000_000:.1f}M'

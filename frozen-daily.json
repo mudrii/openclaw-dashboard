@@ -1,0 +1,16 @@
+{
+  "2026-02-21": {
+    "total": 19.00,
+    "tokens": 20295791,
+    "models": {"Claude Opus 4.6": 0, "GPT-5.3 Codex": 18.9186, "Claude Sonnet": 0, "Gemini 2.5 Pro": 0, "Grok 4": 0.0676, "MiniMax M2.5": 0, "Other": 0.079},
+    "subagentRuns": 3,
+    "subagentCost": 19.00
+  },
+  "2026-02-22": {
+    "total": 1.13,
+    "tokens": 7989115,
+    "models": {"Claude Opus 4.6": 0, "GPT-5.3 Codex": 1.0539, "Claude Sonnet": 0, "Gemini 2.5 Pro": 0, "Grok 4": 0.0693, "MiniMax M2.5": 0, "Other": 0.075},
+    "subagentRuns": 3,
+    "subagentCost": 1.13
+  }
+}
