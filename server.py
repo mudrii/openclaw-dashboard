@@ -30,14 +30,29 @@ _ai_cfg = {}
 _gateway_token = ""
 
 
-# Agent default models (from openclaw.json config)
-AGENT_DEFAULT_MODELS = {
-    "main": "kimi-coding/k2p5",
-    "work": "kimi-coding/k2p5",
-    "group": "kimi-coding/k2p5",
-}
-
 OPENCLAW_PATH = os.path.expanduser("~/.openclaw")
+
+
+def _load_agent_default_models():
+    """Read agent default models from openclaw.json dynamically."""
+    try:
+        with open(os.path.join(OPENCLAW_PATH, "openclaw.json")) as f:
+            cfg = json.load(f)
+        primary = cfg.get("agents", {}).get("defaults", {}).get("model", {}).get("primary", "unknown")
+        defaults = {}
+        agents = cfg.get("agents", {})
+        for name, val in agents.items():
+            if name == "defaults" or not isinstance(val, dict):
+                continue
+            agent_primary = val.get("model", {}).get("primary", primary)
+            defaults[name] = agent_primary
+        # Ensure common agents have entries
+        for a in ("main", "work", "group"):
+            if a not in defaults:
+                defaults[a] = primary
+        return defaults
+    except Exception:
+        return {"main": "unknown", "work": "unknown", "group": "unknown"}
 
 
 def _ttl_hash(ttl_seconds=300):
@@ -107,7 +122,7 @@ def get_session_model(session_key, session_file=None):
     # Fallback to agent defaults
     parts = (session_key or "").split(":")
     agent_name = parts[1] if len(parts) >= 2 else "main"
-    return AGENT_DEFAULT_MODELS.get(agent_name, "unknown")
+    return _load_agent_default_models().get(agent_name, "unknown")
 
 
 def load_config():

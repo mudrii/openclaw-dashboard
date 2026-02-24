@@ -273,7 +273,22 @@ if os.path.exists(config_path):
         import sys; print(f"[dashboard warn] {_e}", file=sys.stderr)
 
 # ── Session model resolution from JSONL ──
-AGENT_DEFAULT_MODELS = {"main": "kimi-coding/k2p5", "work": "kimi-coding/k2p5", "group": "kimi-coding/k2p5"}
+def _load_agent_default_models():
+    try:
+        with open(os.path.join(base, '..', 'openclaw.json')) as _cf:
+            _cfg = json.load(_cf)
+        _primary = _cfg.get('agents', {}).get('defaults', {}).get('model', {}).get('primary', 'unknown')
+        _defaults = {}
+        for _n, _v in _cfg.get('agents', {}).items():
+            if _n == 'defaults' or not isinstance(_v, dict): continue
+            _defaults[_n] = _v.get('model', {}).get('primary', _primary)
+        for _a in ('main', 'work', 'group'):
+            if _a not in _defaults: _defaults[_a] = _primary
+        return _defaults
+    except Exception:
+        return {'main': 'unknown', 'work': 'unknown', 'group': 'unknown'}
+
+AGENT_DEFAULT_MODELS = _load_agent_default_models()
 
 def get_session_model(session_key, agent_name, session_id):
     """Read first 10 lines of session JSONL to find model_change event."""
