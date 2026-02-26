@@ -477,10 +477,41 @@ examples:
     )
     args = parser.parse_args()
 
-    server = http.server.HTTPServer((args.bind, args.port), DashboardHandler)
-    server.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    class _ReuseAddrHTTPServer(http.server.HTTPServer):
+        def server_bind(self):
+            self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            super().server_bind()
+
+    port_explicit = any(a in sys.argv[1:] for a in ("-p", "--port"))
+    port = args.port
+    if port_explicit:
+        try:
+            server = _ReuseAddrHTTPServer((args.bind, port), DashboardHandler)
+        except OSError:
+            print(
+                f"[dashboard] ERROR: {args.bind}:{port} is already in use.\n"
+                f"Kill the other process or use -p <port> to pick a different port.",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+    else:
+        max_attempts = 10
+        for attempt in range(max_attempts):
+            try:
+                server = _ReuseAddrHTTPServer((args.bind, port), DashboardHandler)
+                break
+            except OSError:
+                if attempt < max_attempts - 1:
+                    print(f"[dashboard] Port {port} in use, trying {port + 1}…")
+                    port += 1
+                else:
+                    print(
+                        f"[dashboard] ERROR: ports {args.port}–{port} all in use.",
+                        file=sys.stderr,
+                    )
+                    sys.exit(1)
     print(f"[dashboard] v{VERSION}")
-    print(f"[dashboard] Serving on http://{args.bind}:{args.port}/")
+    print(f"[dashboard] Serving on http://{args.bind}:{port}/")
     print(f"[dashboard] Refresh endpoint: /api/refresh (debounce: {_debounce_sec}s)")
     if _ai_cfg.get("enabled", True):
         print(f"[dashboard] AI chat: /api/chat (gateway: localhost:{_ai_cfg.get('gatewayPort', 18789)}, model: {_ai_cfg.get('model', '?')})")
@@ -488,7 +519,7 @@ examples:
         try:
             hostname = socket.gethostname()
             local_ip = socket.gethostbyname(hostname)
-            print(f"[dashboard] LAN access: http://{local_ip}:{args.port}/")
+            print(f"[dashboard] LAN access: http://{local_ip}:{port}/")
         except Exception:
             pass
     try:

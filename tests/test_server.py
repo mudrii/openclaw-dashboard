@@ -192,5 +192,70 @@ class TestDebounce(ServerTestBase):
         json.loads(body2)
 
 
+class TestAddressInUse(unittest.TestCase):
+    """Port-conflict handling: error on explicit -p, auto-advance otherwise."""
+
+    def _occupy_port(self):
+        """Bind a random port and return (socket, port)."""
+        import socket as _socket
+        sock = _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM)
+        sock.setsockopt(_socket.SOL_SOCKET, _socket.SO_REUSEADDR, 1)
+        sock.bind(("127.0.0.1", 0))
+        sock.listen(1)
+        return sock, sock.getsockname()[1]
+
+    def test_explicit_port_exits_with_error(self):
+        """When -p is passed explicitly and port is taken, exit 1."""
+        sock, port = self._occupy_port()
+        try:
+            proc = subprocess.run(
+                [sys.executable, SERVER_PY, "-b", "127.0.0.1", "-p", str(port)],
+                cwd=REPO,
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            self.assertEqual(proc.returncode, 1)
+            self.assertIn("already in use", proc.stderr)
+        finally:
+            sock.close()
+
+    def test_default_port_auto_advances(self):
+        """When no -p given, server advances to next available port."""
+        sock, port = self._occupy_port()
+        try:
+            env = os.environ.copy()
+            env["DASHBOARD_PORT"] = str(port)
+            env["DASHBOARD_BIND"] = "127.0.0.1"
+            proc = subprocess.Popen(
+                [sys.executable, "-u", SERVER_PY],
+                cwd=REPO,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                env=env,
+            )
+            next_port = port + 1
+            for _ in range(30):
+                try:
+                    conn = http.client.HTTPConnection("127.0.0.1", next_port, timeout=1)
+                    conn.request("GET", "/")
+                    conn.getresponse()
+                    conn.close()
+                    break
+                except Exception:
+                    time.sleep(0.2)
+            else:
+                proc.terminate()
+                proc.wait(timeout=5)
+                self.fail("Server didn't start on next port")
+            proc.terminate()
+            proc.wait(timeout=5)
+            stdout = proc.stdout.read().decode()
+            self.assertIn(f"Port {port} in use", stdout)
+            self.assertIn(f":{next_port}/", stdout)
+        finally:
+            sock.close()
+
+
 if __name__ == "__main__":
     unittest.main()
