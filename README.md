@@ -150,6 +150,46 @@ When you open the dashboard, `index.html` calls `/api/refresh`. The server runs 
 
 The `/api/chat` endpoint accepts `{"question": "...", "history": [...]}` and forwards a stateless request to the OpenClaw gateway's OpenAI-compatible `/v1/chat/completions` endpoint, with a system prompt built from live `data.json`.
 
+### Frontend Module Structure
+
+The entire frontend lives in a single `<script>` tag inside `index.html` — zero dependencies, no build step. The JS is organized into 7 plain objects:
+
+```
+┌─────────────────────────────────────────────┐
+│                 App.init()                   │
+│       (wires everything, starts timer)       │
+└───────┬──────────────┬──────────────┬───────┘
+        │              │              │
+   ┌────▼────┐   ┌─────▼─────┐  ┌────▼─────┐
+   │  State  │◄──│ DataLayer │  │  Theme   │
+   │ (truth) │   │  (fetch)  │  │ (colors) │
+   └────┬────┘   └───────────┘  └──────────┘
+        │
+   ┌────▼────────────┐
+   │  DirtyChecker   │
+   │ (what changed?) │
+   └────┬────────────┘
+        │
+   ┌────▼────┐   ┌────────┐
+   │Renderer │   │  Chat  │
+   │  (DOM)  │   │  (AI)  │
+   └─────────┘   └────────┘
+```
+
+| Module | Responsibility |
+|--------|----------------|
+| **State** | Single source of truth — holds `data`, `prev`, `tabs`, `countdown`. Produces immutable deep-frozen snapshots for each render cycle. |
+| **DataLayer** | Stateless fetch with `_reqId` counter for out-of-order protection. Returns parsed JSON or `null`. |
+| **DirtyChecker** | Computes 13 boolean dirty flags by comparing current snapshot against `State.prev`. Uses `stableSnapshot()` to strip volatile timestamps from crons/sessions. |
+| **Renderer** | Pure DOM side-effects. Receives frozen snapshot + pre-computed flags, dispatches to 14 section renderers. Owns the agent hierarchy tree, recent-finished buffer, and all chart SVG rendering. |
+| **Theme** | Self-contained theme engine — loads `themes.json`, applies CSS variables, persists choice to `localStorage`. |
+| **Chat** | AI chat panel — manages history, sends stateless requests to `/api/chat`. |
+| **App** | Wiring layer — `init()` starts theme + timer + first fetch; `renderNow()` captures snapshot → computes flags → schedules render via `requestAnimationFrame`; `commitPrev(snap)` runs inside rAF to prevent fetch/paint races. |
+
+All inline `onclick` handlers route through `window.OCUI` — a thin namespace that calls `State.setTab()` / `App.renderNow()`. No bare globals remain outside the module objects and top-level utilities (`$`, `esc`, `safeColor`, `relTime`).
+
+See [ARCHITECTURE.md](ARCHITECTURE.md) for the full specification.
+
 ## Configuration
 
 Edit `config.json`:
@@ -304,6 +344,20 @@ rm -rf ~/.openclaw/dashboard
 - Modern web browser
 
 ## Changelog
+
+### v2026.2.27 — Architecture Refactor & Chat Hardening
+
+- **Refactored**: Entire frontend JS restructured into 7 clean modules — `State`, `DataLayer`, `DirtyChecker`, `Renderer`, `Theme`, `Chat`, `App` — all within a single `<script>` tag, zero dependencies, no build step
+- **Refactored**: 11 bare globals (`D`, `prevD`, `uTab`, `srTab`, `stTab`, `prevUTab`, `prevSrTab`, `prevStTab`, `chartDays`, `prevChartDays`, `timer`) consolidated into `State` object
+- **Refactored**: Dirty flag computation moved from `Renderer` to `DirtyChecker.diff(snap)` — returns 13 granular boolean flags. Bottom guard split into 4 independent flags: `models`, `skills`, `git`, `agentConfig`
+- **Refactored**: All inline `onclick` handlers routed through `window.OCUI` namespace — no global function calls remain
+- **Refactored**: Immutable snapshot per render cycle via `Object.freeze(JSON.parse(JSON.stringify(...)))` with `commitPrev(snap)` inside `requestAnimationFrame` to prevent fetch/paint race conditions
+- **Fixed**: `var(--blue)` CSS variable had no fallback — renders transparent in all themes. Added `var(--blue,#3b82f6)` on all 4 usages (PALETTE, streamMode badge, search provider badge, implicit binding badge)
+- **Fixed**: Models section never re-rendered after first paint — dirty check key was `'models'` but data key is `'availableModels'`. Changed to match actual data shape
+- **Fixed**: Chat endpoint hardened — 64KB body size limit, 2000-char question limit, history message validation (role whitelist, content length cap, type checks)
+- **Docs**: `ARCHITECTURE.md` updated to reflect implemented state — corrected `commitPrev` placement, method names, added Chat module, non-functional guarantees
+- **Docs**: README updated with full module architecture diagram and table
+- **Tests**: All 75 tests passing — `test_frontend.py`, `test_critical.py`, `test_hierarchy_recent.py` patterns updated for new module structure
 
 ### v2026.2.24 — Accurate Sub-Agent Model Display
 
