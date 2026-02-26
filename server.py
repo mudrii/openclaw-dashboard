@@ -344,12 +344,20 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(json.dumps({"error": str(e)}).encode())
 
+    _MAX_BODY = 64 * 1024        # 64 KB request body limit
+    _MAX_QUESTION = 2000          # max question length in chars
+    _MAX_HISTORY_CONTENT = 4000   # max chars per history message
+    _ALLOWED_ROLES = ("user", "assistant")
+
     def handle_chat(self):
         if not _ai_cfg.get("enabled", True):
             self._send_json(503, {"error": "AI chat is disabled in config.json"})
             return
 
         length = int(self.headers.get("Content-Length", 0))
+        if length > self._MAX_BODY:
+            self._send_json(413, {"error": f"Request body too large (max {self._MAX_BODY} bytes)"})
+            return
         try:
             body = json.loads(self.rfile.read(length))
         except (json.JSONDecodeError, ValueError):
@@ -360,12 +368,28 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
         if not question:
             self._send_json(400, {"error": "question is required and must be non-empty"})
             return
+        if len(question) > self._MAX_QUESTION:
+            self._send_json(400, {"error": f"Question too long (max {self._MAX_QUESTION} chars)"})
+            return
 
         history = body.get("history", [])
         if not isinstance(history, list):
             history = []
         max_hist = int(_ai_cfg.get("maxHistory", 6))
-        history = history[-max_hist:]
+        # Validate and sanitise history items
+        safe_history = []
+        for item in history[-max_hist:]:
+            if not isinstance(item, dict):
+                continue
+            role = item.get("role")
+            content = item.get("content")
+            if role not in self._ALLOWED_ROLES or not isinstance(content, str):
+                continue
+            safe_history.append({
+                "role": role,
+                "content": content[:self._MAX_HISTORY_CONTENT],
+            })
+        history = safe_history
 
         try:
             with open(DATA_FILE, "r") as f:
