@@ -28,14 +28,16 @@ def _extract_script(html):
 
 
 def _extract_render_body(js):
-    m = re.search(r"function\s+render\s*\(\)\s*\{([\s\S]*?)\n\}", js)
-    assert m, "render() function not found"
+    m = re.search(r"render\s*\(\s*snap\s*,\s*flags\s*\)\s*\{([\s\S]*?)\n  \},", js)
+    if not m:
+        m = re.search(r"render\s*\(\s*snap\s*,\s*flags\s*\)\s*\{([\s\S]*?)\n\}", js)
+    assert m, "Renderer.render(snap, flags) not found"
     return m.group(1)
 
 
-def _extract_load_data_body(js):
-    m = re.search(r"async\s+function\s+loadData\s*\(\)\s*\{([\s\S]*?)\n\}", js)
-    assert m, "loadData() function not found"
+def _extract_render_now_body(js):
+    m = re.search(r"renderNow\s*\(\)\s*\{([\s\S]*?)\n\s*\}", js)
+    assert m, "App.renderNow() not found"
     return m.group(1)
 
 
@@ -78,32 +80,35 @@ class TestDirtyCheck(unittest.TestCase):
             self.assertGreater(len(keys), 0,
                 f"Found empty guarded key list: sectionChanged([{arr.strip()}])")
 
-    def test_tc2_prevd_is_deep_cloned_not_referenced(self):
-        self.assertIn("prevD = JSON.parse(JSON.stringify(D));", self.js)
-        self.assertNotIn("prevD = D;", self.js)
+    def test_tc2_state_snapshot_deep_clones(self):
+        self.assertIn("JSON.parse(JSON.stringify(", self.js)
+        # commitPrev sets prev from frozen snapshot, not a live reference
+        self.assertIn("this.prev = snap.data", self.js)
+        self.assertNotIn("this.prev = this.data;", self.js)
 
     def test_tc3_stable_snapshot_exists_for_volatile_sections(self):
-        if "function stableSnapshot" not in self.js:
-            self.skipTest("stableSnapshot pending architecture refactor")
-        self.assertRegex(self.js, r"stableSnapshot\(D\.crons,\s*\[",
+        self.assertIn("stableSnapshot", self.js)
+        self.assertRegex(self.js, r"stableSnapshot\(D\.crons,",
             "crons stableSnapshot guard missing")
-        self.assertRegex(self.js, r"stableSnapshot\(D\.sessions,\s*\[",
+        self.assertRegex(self.js, r"stableSnapshot\(D\.sessions,",
             "sessions stableSnapshot guard missing")
 
-    def test_tc4_prev_tabs_saved_before_prevd_snapshot_in_render_end(self):
-        render_body = _extract_render_body(self.js)
-        i_tabs = render_body.find("prevUTab=uTab; prevSrTab=srTab; prevStTab=stTab;")
-        i_prev = render_body.find("prevD = JSON.parse(JSON.stringify(D));")
-        self.assertNotEqual(i_tabs, -1, "prev* tab persistence line not found")
-        self.assertNotEqual(i_prev, -1, "prevD snapshot line not found")
-        self.assertLess(i_tabs, i_prev,
-            "prev* tab variables must be saved before prevD snapshot")
+    def test_tc4_commit_prev_called_after_render_inside_raf(self):
+        render_now = _extract_render_now_body(self.js)
+        i_render = render_now.find("Renderer.render(snap")
+        i_commit = render_now.find("State.commitPrev(snap)")
+        self.assertNotEqual(i_render, -1, "Renderer.render not found in renderNow")
+        self.assertNotEqual(i_commit, -1, "State.commitPrev not found in renderNow")
+        self.assertLess(i_render, i_commit,
+            "commitPrev must be called after Renderer.render inside rAF")
+        self.assertIn("requestAnimationFrame", render_now,
+            "renderNow must use requestAnimationFrame")
 
-    def test_tc5_load_data_uses_request_animation_frame_for_render(self):
-        load_data = _extract_load_data_body(self.js)
-        self.assertIn("requestAnimationFrame(() => render());", load_data)
-        self.assertIsNone(re.search(r"(?<!=>\s)\brender\(\);", load_data),
-            "loadData() calls render() directly")
+    def test_tc5_render_now_uses_request_animation_frame(self):
+        render_now = _extract_render_now_body(self.js)
+        self.assertIn("requestAnimationFrame(", render_now)
+        self.assertIn("Renderer.render(snap", render_now)
+        self.assertIn("State.commitPrev(snap)", render_now)
 
 
 # ----------------------------

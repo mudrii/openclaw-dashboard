@@ -240,7 +240,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'SF Pro','Helvetica Neue',sans
       <button class="theme-btn" id="themeBtn" onclick="OCUI.toggleThemeMenu()" title="Change theme">🎨</button>
       <div class="theme-menu" id="themeMenu"></div>
     </div>
-    <button class="refresh-btn" onclick="OCUI.loadData()">↻ Refresh</button>
+    <button class="refresh-btn" onclick="OCUI.refresh()">↻ Refresh</button>
   </div>
 </div>
 
@@ -503,105 +503,13 @@ body{font-family:-apple-system,BlinkMacSystemFont,'SF Pro','Helvetica Neue',sans
 </div>
 
 <script>
-// === MODULE: Theme ===
-// Owns theme state and all theme-related DOM updates.
-let THEMES={},currentTheme='midnight';
-
-async function loadThemes(){
-  try{
-    const r=await fetch('/themes.json?t='+Date.now());
-    THEMES=await r.json();
-  }catch(e){console.warn('themes.json not found, using defaults');return}
-  const saved=localStorage.getItem('ocDashTheme');
-  const metaPreset=document.querySelector('meta[name="oc-theme"]')?.content;
-  if(saved&&THEMES[saved])currentTheme=saved;
-  else if(metaPreset&&THEMES[metaPreset])currentTheme=metaPreset;
-  applyTheme(currentTheme);
-  renderThemeMenu();
-}
-
-function applyTheme(id){
-  const t=THEMES[id];if(!t)return;
-  currentTheme=id;
-  const root=document.documentElement;
-  const c=t.colors;
-  root.style.setProperty('--bg',c.bg);
-  root.style.setProperty('--surface',c.surface);
-  root.style.setProperty('--surfaceHover',c.surfaceHover);
-  root.style.setProperty('--border',c.border);
-  root.style.setProperty('--accent',c.accent);
-  root.style.setProperty('--accent2',c.accent2);
-  root.style.setProperty('--green',c.green);
-  root.style.setProperty('--yellow',c.yellow);
-  root.style.setProperty('--red',c.red);
-  root.style.setProperty('--orange',c.orange);
-  root.style.setProperty('--purple',c.purple);
-  root.style.setProperty('--text',c.text);
-  root.style.setProperty('--textStrong',c.textStrong);
-  root.style.setProperty('--muted',c.muted);
-  root.style.setProperty('--dim',c.dim);
-  root.style.setProperty('--darker',c.darker);
-  root.style.setProperty('--tableBg',c.tableBg);
-  root.style.setProperty('--tableHover',c.tableHover);
-  root.style.setProperty('--scrollThumb',c.scrollThumb);
-  localStorage.setItem('ocDashTheme',id);
-  renderThemeMenu();
-}
-
-function renderThemeMenu(){
-  const menu=$('themeMenu');if(!menu)return;
-  const darkThemes=Object.entries(THEMES).filter(([,t])=>t.type==='dark');
-  const lightThemes=Object.entries(THEMES).filter(([,t])=>t.type==='light');
-  let html='<div class="theme-menu-label">Dark Themes</div>';
-  darkThemes.forEach(([id,t])=>{
-    const accent = safeColor(t.colors && t.colors.accent ? t.colors.accent : '#888888');
-    html+=`<button class="theme-opt${id===currentTheme?' active':''}" onclick="OCUI.applyTheme('${esc(id)}');event.stopPropagation()"><span class="theme-opt-icon">${esc(t.icon)}</span><span>${esc(t.name)}</span><span class="theme-opt-swatch" style="background:${accent};margin-left:auto"></span></button>`;
-  });
-  html+='<div class="theme-menu-label" style="margin-top:4px">Light Themes</div>';
-  lightThemes.forEach(([id,t])=>{
-    const accent = safeColor(t.colors && t.colors.accent ? t.colors.accent : '#888888');
-    html+=`<button class="theme-opt${id===currentTheme?' active':''}" onclick="OCUI.applyTheme('${esc(id)}');event.stopPropagation()"><span class="theme-opt-icon">${esc(t.icon)}</span><span>${esc(t.name)}</span><span class="theme-opt-swatch" style="background:${accent};margin-left:auto"></span></button>`;
-  });
-  menu.innerHTML=html;
-}
-
-function toggleThemeMenu(){
-  const menu=$('themeMenu');
-  menu.classList.toggle('open');
-}
-document.addEventListener('click',e=>{
-  const picker=document.querySelector('.theme-picker');
-  if(picker&&!picker.contains(e.target)){$('themeMenu').classList.remove('open')}
-});
-
-// === MODULE: State ===
-// Single source of truth — dashboard data and UI tab/chart state.
-let D={},prevD=null,prevChartDays=null,prevUTab=null,prevSrTab=null,prevStTab=null,uTab='today',srTab='today',stTab='today',timer=60,_reqId=0;
-
-// === MODULE: Utilities ===
+// === Utilities ===
 const COLORS=['#6366f1','#9333ea','#ec4899','#f59e0b','#10b981','#06b6d4','#f87171','#84cc16'];
 const $=id=>document.getElementById(id);
 const esc = s => String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 function safeColor(v){
   return /^#[0-9a-fA-F]{3,8}$/.test(v||'') ? v : '#888888';
 }
-
-// === MODULE: DirtyChecker ===
-// Pure comparison functions — determines which sections need re-rendering.
-function sectionChanged(keys) {
-  if (!prevD) return true;
-  return keys.some(k => JSON.stringify(D[k]) !== JSON.stringify(prevD[k]));
-}
-
-function stableSnapshot(arr, fields) {
-  if (!arr) return '';
-  return JSON.stringify(arr.map(item => {
-    const out = {};
-    fields.forEach(f => { if (f in item) out[f] = item[f]; });
-    return out;
-  }));
-}
-
 function relTime(ts){
   if(!ts)return'—';
   let d;
@@ -614,32 +522,168 @@ function relTime(ts){
   return Math.floor(diff/86400)+'d ago';
 }
 
-// === MODULE: DataLayer ===
-// Fetch logic with in-flight request tracking (_reqId).
-async function loadData(){
-  const myId=++_reqId;
-  try{
-    const r=await fetch('/api/refresh?t='+Date.now());
-    if(myId!==_reqId)return;
-    const json=await r.json();
-    if(myId!==_reqId)return;
-    D=json;
-    requestAnimationFrame(() => render());
-    $('lastUpdate').textContent='Updated: '+new Date().toLocaleTimeString();
-    timer=60;
-  }catch(e){
-    if(myId!==_reqId)return;
-    $('alertsSection').innerHTML='<div class="alert-item alert-critical"><span class="alert-icon">⚠️</span><span class="alert-msg">Failed to load data.json</span></div>';
+// === Theme ===
+const Theme = {
+  themes: {},
+  current: 'midnight',
+  async load(){
+    try{
+      const r=await fetch('/themes.json?t='+Date.now());
+      this.themes=await r.json();
+    }catch(e){console.warn('themes.json not found, using defaults');return}
+    const saved=localStorage.getItem('ocDashTheme');
+    const metaPreset=document.querySelector('meta[name="oc-theme"]')?.content;
+    if(saved&&this.themes[saved])this.current=saved;
+    else if(metaPreset&&this.themes[metaPreset])this.current=metaPreset;
+    this.apply(this.current);
+    this.renderMenu();
+  },
+  apply(id){
+    const t=this.themes[id];if(!t)return;
+    this.current=id;
+    const root=document.documentElement;
+    const c=t.colors;
+    root.style.setProperty('--bg',c.bg);
+    root.style.setProperty('--surface',c.surface);
+    root.style.setProperty('--surfaceHover',c.surfaceHover);
+    root.style.setProperty('--border',c.border);
+    root.style.setProperty('--accent',c.accent);
+    root.style.setProperty('--accent2',c.accent2);
+    root.style.setProperty('--green',c.green);
+    root.style.setProperty('--yellow',c.yellow);
+    root.style.setProperty('--red',c.red);
+    root.style.setProperty('--orange',c.orange);
+    root.style.setProperty('--purple',c.purple);
+    root.style.setProperty('--text',c.text);
+    root.style.setProperty('--textStrong',c.textStrong);
+    root.style.setProperty('--muted',c.muted);
+    root.style.setProperty('--dim',c.dim);
+    root.style.setProperty('--darker',c.darker);
+    root.style.setProperty('--tableBg',c.tableBg);
+    root.style.setProperty('--tableHover',c.tableHover);
+    root.style.setProperty('--scrollThumb',c.scrollThumb);
+    localStorage.setItem('ocDashTheme',id);
+    this.renderMenu();
+  },
+  renderMenu(){
+    const menu=$('themeMenu');if(!menu)return;
+    const darkThemes=Object.entries(this.themes).filter(([,t])=>t.type==='dark');
+    const lightThemes=Object.entries(this.themes).filter(([,t])=>t.type==='light');
+    let html='<div class="theme-menu-label">Dark Themes</div>';
+    darkThemes.forEach(([id,t])=>{
+      const accent = safeColor(t.colors && t.colors.accent ? t.colors.accent : '#888888');
+      html+=`<button class="theme-opt${id===this.current?' active':''}" onclick="OCUI.applyTheme('${esc(id)}');event.stopPropagation()"><span class="theme-opt-icon">${esc(t.icon)}</span><span>${esc(t.name)}</span><span class="theme-opt-swatch" style="background:${accent};margin-left:auto"></span></button>`;
+    });
+    html+='<div class="theme-menu-label" style="margin-top:4px">Light Themes</div>';
+    lightThemes.forEach(([id,t])=>{
+      const accent = safeColor(t.colors && t.colors.accent ? t.colors.accent : '#888888');
+      html+=`<button class="theme-opt${id===this.current?' active':''}" onclick="OCUI.applyTheme('${esc(id)}');event.stopPropagation()"><span class="theme-opt-icon">${esc(t.icon)}</span><span>${esc(t.name)}</span><span class="theme-opt-swatch" style="background:${accent};margin-left:auto"></span></button>`;
+    });
+    menu.innerHTML=html;
+  },
+  toggle(){
+    const menu=$('themeMenu');
+    menu.classList.toggle('open');
   }
-}
+};
+document.addEventListener('click',e=>{
+  const picker=document.querySelector('.theme-picker');
+  if(picker&&!picker.contains(e.target)){$('themeMenu').classList.remove('open')}
+});
 
-// === MODULE: Renderer ===
-// All DOM update functions — dispatches to per-section renderers.
-function render(){
+// === State ===
+const State = {
+  data: {},
+  prev: null,
+  tabs: { usage: 'today', subRuns: 'today', subTokens: 'today' },
+  prevTabs: { usage: null, subRuns: null, subTokens: null },
+  chartDays: 7,
+  prevChartDays: null,
+  countdown: 60,
+  update(newData) { this.data = newData; },
+  setTab(group, value) { this.tabs[group] = value; },
+  setChartDays(n) { this.chartDays = n; },
+  snapshot() {
+    return Object.freeze(JSON.parse(JSON.stringify({
+      data: this.data,
+      tabs: { usage: this.tabs.usage, subRuns: this.tabs.subRuns, subTokens: this.tabs.subTokens },
+      chartDays: this.chartDays
+    })));
+  },
+  commitPrev(snap) {
+    this.prev = snap.data;
+    this.prevTabs = { usage: snap.tabs.usage, subRuns: snap.tabs.subRuns, subTokens: snap.tabs.subTokens };
+    this.prevChartDays = snap.chartDays;
+  },
+  tick() { this.countdown--; return this.countdown <= 0; },
+  resetCountdown() { this.countdown = 60; }
+};
+
+// === DataLayer ===
+const DataLayer = {
+  _reqId: 0,
+  async fetch(){
+    const myId=++this._reqId;
+    try{
+      const r=await fetch('/api/refresh?t='+Date.now());
+      if(myId!==this._reqId)return null;
+      const json=await r.json();
+      if(myId!==this._reqId)return null;
+      return json;
+    }catch(e){
+      if(myId!==this._reqId)return null;
+      throw e;
+    }
+  }
+};
+
+// === DirtyChecker ===
+const DirtyChecker = {
+  sectionChanged(keys) {
+    if (!State.prev) return true;
+    return keys.some(k => JSON.stringify(State.data[k]) !== JSON.stringify(State.prev[k]));
+  },
+  stableSnapshot(arr, fields) {
+    if (!arr) return '';
+    return JSON.stringify(arr.map(item => {
+      const out = {};
+      fields.forEach(f => { if (f in item) out[f] = item[f]; });
+      return out;
+    }));
+  },
+  diff(snap) {
+    const D = snap.data;
+    const prevD = State.prev;
+    return {
+      alerts: this.sectionChanged(['alerts']),
+      health: true,
+      cost: this.sectionChanged(['totalCostToday','totalCostAllTime','projectedMonthly','subagentCostToday','subagentCostAllTime','costBreakdown']),
+      crons: !prevD || this.stableSnapshot(D.crons, ['lastStatus','name','schedule','lastDurationMs','lastError','model']) !== this.stableSnapshot(prevD.crons, ['lastStatus','name','schedule','lastDurationMs','lastError','model']),
+      sessions: !prevD || this.stableSnapshot(D.sessions, ['key','name','model','type','contextPct','totalTokens','active','spawnedBy','label','subject']) !== this.stableSnapshot(prevD.sessions, ['key','name','model','type','contextPct','totalTokens','active','spawnedBy','label','subject']),
+      usage: this.sectionChanged(['tokenUsage','tokenUsageToday','tokenUsage7d','tokenUsage30d','subagentUsage','subagentUsageToday','subagentUsage7d','subagentUsage30d']) || snap.tabs.usage !== State.prevTabs.usage,
+      subRuns: (!prevD || ['subagentRuns','subagentRuns7d','subagentRuns30d','subagentRunsToday'].some(k => this.stableSnapshot(D[k], ['task','model','cost','durationSec','status']) !== this.stableSnapshot((prevD||{})[k], ['task','model','cost','durationSec','status']))) || snap.tabs.subRuns !== State.prevTabs.subRuns,
+      subTokens: this.sectionChanged(['tokenUsage','tokenUsageToday','tokenUsage7d','tokenUsage30d','subagentUsage','subagentUsageToday','subagentUsage7d','subagentUsage30d']) || snap.tabs.subTokens !== State.prevTabs.subTokens,
+      charts: this.sectionChanged(['dailyChart']) || snap.chartDays !== State.prevChartDays,
+      models: this.sectionChanged(['availableModels']),
+      skills: this.sectionChanged(['skills']),
+      git: this.sectionChanged(['gitLog']),
+      agentConfig: this.sectionChanged(['agentConfig','subagentConfig']),
+    };
+  }
+};
+
+// === Renderer ===
+const Renderer = {
+  _recentFinished: {},
+  _prevActiveKeys: new Set(),
+  RECENT_WINDOW_MS: 5 * 60 * 1000,
+
+  render(snap, flags) {
+  const D=snap.data;
   const gw=D.gateway||{};
   const on=gw.status==='online';
 
-  // Header
+  // Header (always)
   $('botName').textContent=D.botName||'OpenClaw Dashboard';
   $('botEmoji').textContent=D.botEmoji||'⚡';
   document.title=D.botName||'OpenClaw Dashboard';
@@ -648,12 +692,12 @@ function render(){
   $('statusText').style.color=on?'var(--green)':'var(--red)';
 
   // Alerts
-  if (sectionChanged(['alerts'])) {
+  if (flags.alerts) {
     const alerts=D.alerts||[];
     $('alertsSection').innerHTML=alerts.length?alerts.map(a=>`<div class="alert-item alert-${esc(a.severity)||'low'}"><span class="alert-icon">${esc(a.icon)||'ℹ️'}</span><span class="alert-msg">${esc(a.message)}</span></div>`).join(''):'';
   }
 
-  // Health (always update for volatile fields like uptime/status)
+  // Health (always)
   $('hGw').innerHTML=on?'<span style="color:var(--green)">●</span> Online':'<span style="color:var(--red)">●</span> Offline';
   $('hGw').style.color='var(--textStrong)';
   $('hPid').textContent=gw.pid||'—';
@@ -663,7 +707,7 @@ function render(){
   $('hSess').textContent=D.sessionCount||0;
 
   // Cost
-  if (sectionChanged(['totalCostToday','totalCostAllTime','projectedMonthly','subagentCostToday','subagentCostAllTime','costBreakdown'])) {
+  if (flags.cost) {
     $('cToday').textContent='$'+(D.totalCostToday||0).toFixed(2);
     $('cTodaySub').textContent='Sub-agents: $'+(D.subagentCostToday||0).toFixed(2);
     $('cAll').textContent='$'+(D.totalCostAllTime||0).toFixed(2);
@@ -686,7 +730,8 @@ function render(){
     $('donutLegend').innerHTML=legend;
   }
 
-  if (!prevD || stableSnapshot(D.crons, ['lastStatus','name','schedule','lastDurationMs','lastError','model']) !== stableSnapshot(prevD.crons, ['lastStatus','name','schedule','lastDurationMs','lastError','model'])) {
+  // Crons
+  if (flags.crons) {
     const crons=D.crons||[];
     $('cronCount').textContent=crons.length+' jobs';
     const cronContainer = $('cronBody').closest('[style*="overflow"]') || $('cronBody').parentElement;
@@ -702,7 +747,7 @@ function render(){
   }
 
   // Sessions
-  if (!prevD || stableSnapshot(D.sessions, ['key','name','model','type','contextPct','totalTokens','active','spawnedBy','label','subject']) !== stableSnapshot(prevD.sessions, ['key','name','model','type','contextPct','totalTokens','active','spawnedBy','label','subject'])) {
+  if (flags.sessions) {
     const sess=(D.sessions||[]).slice(0,20);
     $('sessCount').textContent=(D.sessionCount||sess.length)+' total, '+sess.length+' shown';
     const sessContainer = $('sessBody').closest('[style*="overflow"]') || $('sessBody').parentElement;
@@ -714,19 +759,20 @@ function render(){
       return `<tr class="dr"><td class="w" style="max-width:250px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(s.name)}</td><td>${esc(s.model)}</td><td><span class="type-badge ${typeCls}">${esc(s.type)||'—'}</span></td><td><div class="ctx-bar"><div class="ctx-fill" style="width:${pct}%;background:${color}"></div></div> <span style="font-size:11px;color:${color}">${pct}%</span></td><td>${relTime(s.updatedAt)}</td><td class="r">${(s.totalTokens||0).toLocaleString()}</td></tr>`;
     }).join('');
     if (sessContainer) sessContainer.scrollTop = sessScrollTop;
-    renderAgentTree();
+    Renderer.renderAgentTree(D);
   }
 
   // Token usage
-  setTabCls4('uTab',uTab,'active');
-  if (sectionChanged(['tokenUsage','tokenUsageToday','tokenUsage7d','tokenUsage30d','subagentUsage','subagentUsageToday','subagentUsage7d','subagentUsage30d']) || uTab !== prevUTab) {
-    const uData=uTab==='today'?D.tokenUsageToday:uTab==='7d'?D.tokenUsage7d:uTab==='30d'?D.tokenUsage30d:D.tokenUsage;
-    renderTokenTbl('uBody',uData,'var(--accent)');
+  Renderer.setTabCls4('uTab',snap.tabs.usage,'active');
+  if (flags.usage) {
+    const uData=snap.tabs.usage==='today'?D.tokenUsageToday:snap.tabs.usage==='7d'?D.tokenUsage7d:snap.tabs.usage==='30d'?D.tokenUsage30d:D.tokenUsage;
+    Renderer.renderTokenTbl('uBody',uData,'var(--accent)');
   }
 
   // Sub runs
-  setTabCls4('srTab',srTab,'active-purple');
-  if ((!prevD || ['subagentRuns','subagentRuns7d','subagentRuns30d','subagentRunsToday'].some(k => stableSnapshot(D[k], ['task','model','cost','durationSec','status']) !== stableSnapshot(prevD[k], ['task','model','cost','durationSec','status']))) || srTab !== prevSrTab) {
+  Renderer.setTabCls4('srTab',snap.tabs.subRuns,'active-purple');
+  if (flags.subRuns) {
+    const srTab=snap.tabs.subRuns;
     const runs=srTab==='today'?(D.subagentRunsToday||[]):srTab==='7d'?(D.subagentRuns7d||[]):srTab==='30d'?(D.subagentRuns30d||[]):(D.subagentRuns||[]);
     const srCost=srTab==='today'?(D.subagentCostToday||0):srTab==='7d'?(D.subagentCost7d||0):srTab==='30d'?(D.subagentCost30d||0):(D.subagentCostAllTime||0);
     $('subCostLbl').textContent='Total: $'+srCost.toFixed(2);
@@ -737,26 +783,27 @@ function render(){
     }).join('');
   }
 
-  // Sub token
-  setTabCls4('stTab',stTab,'active-purple');
-  if (sectionChanged(['tokenUsage','tokenUsageToday','tokenUsage7d','tokenUsage30d','subagentUsage','subagentUsageToday','subagentUsage7d','subagentUsage30d']) || stTab !== prevStTab) {
-    const stData=stTab==='today'?D.subagentUsageToday:stTab==='7d'?D.subagentUsage7d:stTab==='30d'?D.subagentUsage30d:D.subagentUsage;
-    renderTokenTbl('stBody',stData,'var(--purple)');
+  // Sub tokens
+  Renderer.setTabCls4('stTab',snap.tabs.subTokens,'active-purple');
+  if (flags.subTokens) {
+    const stData=snap.tabs.subTokens==='today'?D.subagentUsageToday:snap.tabs.subTokens==='7d'?D.subagentUsage7d:snap.tabs.subTokens==='30d'?D.subagentUsage30d:D.subagentUsage;
+    Renderer.renderTokenTbl('stBody',stData,'var(--purple)');
   }
 
   // Charts
-  if (sectionChanged(['dailyChart']) || chartDays!==prevChartDays) {
-    renderCharts();
+  if (flags.charts) {
+    Renderer.renderCharts(D,snap.chartDays);
   }
 
-  if (sectionChanged(['models','skills','gitLog','agentConfig','subagentConfig'])) {
-    // Models
+  // Models
+  if (flags.models) {
     $('modelsGrid').innerHTML=(D.availableModels||[]).map(m=>`<div class="glass model-card"><span class="badge badge-${esc(m.status)}">${esc(m.status)}</span><div class="model-name">${esc(m.name)}</div><div class="model-id">${esc(m.provider)}</div></div>`).join('');
+  }
 
-    // Agent Configuration — fully generic, works with any number of agents/models
+  // Agent Configuration
+  if (flags.agentConfig) {
     const AC = D.agentConfig||{};
-    // Cycle through a palette of colors for any number of agents
-    const PALETTE = ['var(--green)','var(--blue)','var(--purple)','var(--yellow)','var(--cyan,#22d3ee)','var(--orange,#fb923c)'];
+    const PALETTE = ['var(--green)','var(--blue,#3b82f6)','var(--purple)','var(--yellow)','var(--cyan,#22d3ee)','var(--orange,#fb923c)'];
     const EMOJIS  = ['🤖','⚙️','👥','🔧','🧠','🦾','🛠️'];
 
     // Agent count badge
@@ -790,7 +837,7 @@ function render(){
     ];
     const extraRows = [
       AC.imageModel ? {k:'🖼️ Image Model', v:AC.imageModel, c:'var(--purple)'} : null,
-      AC.streamMode ? {k:'📡 Stream Mode', v:AC.streamMode, c:'var(--blue)'} : null,
+      AC.streamMode ? {k:'📡 Stream Mode', v:AC.streamMode, c:'var(--blue,#3b82f6)'} : null,
     ].filter(Boolean);
     // Sub-agent routing — all agents including main
     const subAgentRoutes = agentList.map((a,i)=>{
@@ -905,7 +952,7 @@ function render(){
     // Search Panel
     const SR = AC.search||{};
     $('searchPanelInner').innerHTML = SR.provider ? [
-      kv('Provider', SR.provider, 'var(--blue)'),
+      kv('Provider', SR.provider, 'var(--blue,#3b82f6)'),
       kv('Max Results', SR.maxResults),
       kv('Cache TTL', (SR.cacheTtlMinutes||'—')+' min'),
     ].join('') : '<span style="color:var(--dim);font-size:12px">Not configured</span>';
@@ -967,7 +1014,7 @@ function render(){
               <span style="font-size:12px">${icon}</span>
               <span style="font-size:12px;font-weight:700;color:${col}">${esc(b.agentId)}</span>
               ${isDefault?'<span style="font-size:9px;background:rgba(74,222,128,.12);color:var(--green);border:1px solid rgba(74,222,128,.25);border-radius:3px;padding:1px 4px">DEFAULT</span>':''}
-              ${isImplicit?'<span style="font-size:9px;background:rgba(59,130,246,.12);color:var(--blue);border:1px solid rgba(59,130,246,.25);border-radius:3px;padding:1px 4px">IMPLICIT</span>':''}
+              ${isImplicit?'<span style="font-size:9px;background:rgba(59,130,246,.12);color:var(--blue,#3b82f6);border:1px solid rgba(59,130,246,.25);border-radius:3px;padding:1px 4px">IMPLICIT</span>':''}
             </div>
             <div style="font-size:13px;font-weight:600;color:var(--textStrong)">${esc(displayName)}</div>
             ${!isDefault?`<div style="font-size:10px;color:var(--dim);margin-top:2px;font-family:monospace">${esc(b.channel)} · ${esc(b.kind)} · ${esc(b.id||'—')}</div>`:'<div style="font-size:10px;color:var(--dim);margin-top:2px">catch-all fallback</div>'}
@@ -1000,28 +1047,23 @@ function render(){
       </tr>`;
     }).join('')||'<tr><td colspan="7" style="padding:8px;color:var(--dim)">No agents configured</td></tr>';
 
-    // Skills
+  }
+
+  // Skills
+  if (flags.skills) {
     $('skillsGrid').innerHTML=(D.skills||[]).map(s=>{
       const c=s.active?'color:var(--green);border-color:rgba(74,222,128,.2);background:rgba(74,222,128,.05)':'color:var(--dim);border-color:var(--border)';
       return `<span class="skill-tag" style="${c}">${esc(s.name)}</span>`;
     }).join('');
-
-    // Git
-    $('gitPanel').innerHTML=(D.gitLog||[]).slice(0,5).map(g=>`<div class="git-item"><span class="git-hash">${esc(g.hash)}</span><span class="git-msg" title="${esc(g.message)}">${esc(g.message)}</span><span class="git-ago">${esc(g.ago)}</span></div>`).join('')||'<div class="empty">No git history</div>';
   }
 
-  prevChartDays=chartDays;
-  prevUTab=uTab; prevSrTab=srTab; prevStTab=stTab;
-  prevD = JSON.parse(JSON.stringify(D));
-}
+  // Git
+  if (flags.git) {
+    $('gitPanel').innerHTML=(D.gitLog||[]).slice(0,5).map(g=>`<div class="git-item"><span class="git-hash">${esc(g.hash)}</span><span class="git-msg" title="${esc(g.message)}">${esc(g.message)}</span><span class="git-ago">${esc(g.ago)}</span></div>`).join('')||'<div class="empty">No git history</div>';
+  }
+  },
 
-// Recent-finished buffer: tracks sessions that were active recently.
-// Key: session key → {session, finishedAt (ms timestamp)}
-const RECENT_WINDOW_MS = 5 * 60 * 1000; // 5 minutes
-let _recentFinished = {};
-let _prevActiveKeys = new Set();
-
-function renderAgentTree(){
+  renderAgentTree(D){
   const el=document.getElementById('agentTree');
   if(!el)return;
   const now = Date.now();
@@ -1030,22 +1072,21 @@ function renderAgentTree(){
   const activeKeys = new Set(activeSessions.map(s=>s.key));
 
   // Find sessions that just finished (were active last render, not active now)
-  _prevActiveKeys.forEach(k=>{
+  Renderer._prevActiveKeys.forEach(k=>{
     if(!activeKeys.has(k)){
-      // Find the session object from previous set via allSessions or recentFinished cache
-      const s = allSessions.find(x=>x.key===k) || (_recentFinished[k] && _recentFinished[k].session);
-      if(s) _recentFinished[k] = {session: s, finishedAt: now};
+      const s = allSessions.find(x=>x.key===k) || (Renderer._recentFinished[k] && Renderer._recentFinished[k].session);
+      if(s) Renderer._recentFinished[k] = {session: s, finishedAt: now};
     }
   });
-  _prevActiveKeys = new Set(activeKeys);
+  Renderer._prevActiveKeys = new Set(activeKeys);
 
   // Prune entries older than window
-  Object.keys(_recentFinished).forEach(k=>{
-    if(now - _recentFinished[k].finishedAt > RECENT_WINDOW_MS) delete _recentFinished[k];
+  Object.keys(Renderer._recentFinished).forEach(k=>{
+    if(now - Renderer._recentFinished[k].finishedAt > Renderer.RECENT_WINDOW_MS) delete Renderer._recentFinished[k];
   });
 
   // Merge active + recent-finished (active takes priority)
-  const recentSessions = Object.values(_recentFinished)
+  const recentSessions = Object.values(Renderer._recentFinished)
     .filter(e=>!activeKeys.has(e.session.key))
     .map(e=>({...e.session, _recent:true}));
   const sessions = [...activeSessions, ...recentSessions];
@@ -1102,36 +1143,35 @@ function renderAgentTree(){
   });
   html+='</div>';
   el.innerHTML=html;
-}
-function renderTokenTbl(bodyId,data,accentColor){
+  },
+
+  renderTokenTbl(bodyId,data,accentColor){
   data=data||[];
   const max=Math.max(...data.map(u=>u.cost))||1;
   $(bodyId).innerHTML=data.map(u=>{
     const pct=Math.round(u.cost/max*100);
     return `<tr class="dr"><td class="w">${esc(u.model)}</td><td class="r">${u.calls.toLocaleString()}</td><td class="r">${u.input}</td><td class="r">${u.output}</td><td class="r">${u.cacheRead}</td><td class="r" style="color:var(--textStrong);font-weight:500">${u.totalTokens}</td><td class="r cost">$${u.cost.toFixed(2)}</td><td><div class="usage-bar"><div class="usage-fill" style="width:${pct}%;background:${accentColor}"></div></div></td></tr>`;
   }).join('')+(data.length?`<tr class="total-row"><td class="w">TOTAL</td><td class="r">${data.reduce((a,u)=>a+u.calls,0).toLocaleString()}</td><td colspan="4"></td><td class="r cost">$${data.reduce((a,u)=>a+u.cost,0).toFixed(2)}</td><td></td></tr>`:'');
-}
+  },
 
-function setTabCls4(prefix,tab,cls){
-  $(prefix+'T').className='tab-btn'+(tab==='today'?' '+cls:'');
-  $(prefix+'7').className='tab-btn'+(tab==='7d'?' '+cls:'');
-  $(prefix+'30').className='tab-btn'+(tab==='30d'?' '+cls:'');
-  $(prefix+'A').className='tab-btn'+(tab==='all'?' '+cls:'');
-}
+  setTabCls4(prefix,tab,cls){
+    $(prefix+'T').className='tab-btn'+(tab==='today'?' '+cls:'');
+    $(prefix+'7').className='tab-btn'+(tab==='7d'?' '+cls:'');
+    $(prefix+'30').className='tab-btn'+(tab==='30d'?' '+cls:'');
+    $(prefix+'A').className='tab-btn'+(tab==='all'?' '+cls:'');
+  },
 
-let chartDays=7;
+  renderCharts(D,chartDays){
+    $('cTab7').className='tab-btn'+(chartDays===7?' active':'');
+    $('cTab30').className='tab-btn'+(chartDays===30?' active':'');
+    const data=(D.dailyChart||[]).slice(-chartDays);
+    if(!data.length)return;
+    Renderer.renderCostChart('costChart',data);
+    Renderer.renderModelChart('modelChart',data);
+    Renderer.renderSubagentChart('subagentChart',data);
+  },
 
-function renderCharts(){
-  $('cTab7').className='tab-btn'+(chartDays===7?' active':'');
-  $('cTab30').className='tab-btn'+(chartDays===30?' active':'');
-  const data=(D.dailyChart||[]).slice(-chartDays);
-  if(!data.length)return;
-  renderCostChart('costChart',data);
-  renderModelChart('modelChart',data);
-  renderSubagentChart('subagentChart',data);
-}
-
-function renderCostChart(id,data){
+  renderCostChart(id,data){
   const W=400,H=300,P={t:20,r:20,b:40,l:50};
   const cw=W-P.l-P.r,ch=H-P.t-P.b;
   const maxY=Math.max(...data.map(d=>d.total))||1;
@@ -1163,9 +1203,9 @@ function renderCostChart(id,data){
   const nth=Math.ceil(data.length/7);
   const xLabels=data.map((d,i)=>i%nth===0?`<text x="${P.l+i*stepX}" y="${H-P.b+16}" text-anchor="middle" fill="var(--dim)" font-size="9">${esc(d.label)}</text>`:'').join('');
   $(id).innerHTML=`<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:350px">${yLabels}${xLabels}<path d="${area}" fill="var(--accent)" opacity="0.15"/><path d="${line}" fill="none" stroke="var(--accent)" stroke-width="2"/>${dots}</svg>`;
-}
+  },
 
-function renderModelChart(id,data){
+  renderModelChart(id,data){
   const W=400,H=300,P={t:20,r:20,b:55,l:50};
   const cw=W-P.l-P.r,ch=H-P.t-P.b;
   const models=new Set();data.forEach(d=>{if(d.models)Object.keys(d.models).forEach(m=>models.add(m))});
@@ -1186,9 +1226,9 @@ function renderModelChart(id,data){
   const xLabels=data.map((d,i)=>i%nth===0?`<text x="${P.l+i*(barW+gap)+gap/2+barW/2}" y="${H-P.b+16}" text-anchor="middle" fill="var(--dim)" font-size="9">${esc(d.label)}</text>`:'').join('');
   const legend=mList.map((m,i)=>`<span class="chart-legend-item"><span class="chart-legend-dot" style="background:${COLORS[i%COLORS.length]}"></span>${esc(m)}</span>`).join('');
   $(id).innerHTML=`<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:310px">${yLabels}${xLabels}${bars}</svg><div class="chart-legend">${legend}</div>`;
-}
+  },
 
-function renderSubagentChart(id,data){
+  renderSubagentChart(id,data){
   const W=400,H=300,P={t:20,r:50,b:40,l:50};
   const cw=W-P.l-P.r,ch=H-P.t-P.b;
   const maxRuns=Math.max(...data.map(d=>d.subagentRuns||0))||1;
@@ -1208,86 +1248,109 @@ function renderSubagentChart(id,data){
   const nth=Math.ceil(data.length/7);
   const xLabels=data.map((d,i)=>i%nth===0?`<text x="${P.l+i*(barW+gap)+gap/2+barW/2}" y="${H-P.b+16}" text-anchor="middle" fill="var(--dim)" font-size="9">${esc(d.label)}</text>`:'').join('');
   $(id).innerHTML=`<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:350px">${yL}${yR}${xLabels}${bars}<path d="${line}" fill="none" stroke="var(--accent)" stroke-width="2"/>${dots}</svg><div class="chart-legend"><span class="chart-legend-item"><span class="chart-legend-dot" style="background:var(--purple)"></span>Runs</span><span class="chart-legend-item"><span class="chart-legend-dot" style="background:var(--accent)"></span>Cost</span></div>`;
-}
+  }
+};
 
-// === MODULE: App ===
-// Initialization and timer wiring.
+// === Chat ===
+const Chat = {
+  history: [],
+  MAX_HISTORY: 6,
+  toggle(){
+    const panel=$('chatPanel');
+    panel.classList.toggle('open');
+    if(panel.classList.contains('open'))$('chatInput').focus();
+  },
+  appendMessage(role,text){
+    const msgs=$('chatMessages');
+    const div=document.createElement('div');
+    div.className='chat-bubble '+role;
+    div.textContent=text;
+    msgs.appendChild(div);
+    msgs.scrollTop=msgs.scrollHeight;
+    return div;
+  },
+  async send(prefill){
+    const input=$('chatInput');
+    const question=(prefill!==undefined?prefill:input.value).trim();
+    if(!question)return;
+    input.value='';
+    $('chatSend').disabled=true;
+    Chat.appendMessage('user',question);
+    const thinking=Chat.appendMessage('thinking','…');
+    try{
+      const res=await fetch('/api/chat',{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({question,history:Chat.history.slice(-Chat.MAX_HISTORY)}),
+      });
+      const data=await res.json();
+      thinking.remove();
+      if(data.answer){
+        Chat.appendMessage('assistant',data.answer);
+        Chat.history.push({role:'user',content:question});
+        Chat.history.push({role:'assistant',content:data.answer});
+        if(Chat.history.length>Chat.MAX_HISTORY*2)Chat.history=Chat.history.slice(-Chat.MAX_HISTORY*2);
+      }else{
+        Chat.appendMessage('error','Error: '+(data.error||'Unknown error'));
+      }
+    }catch(e){
+      thinking.remove();
+      Chat.appendMessage('error','Network error: '+e.message);
+    }finally{
+      $('chatSend').disabled=false;
+      input.focus();
+    }
+  }
+};
+
+// === App ===
 const App = {
   init() {
-    loadThemes();
-    setInterval(()=>{timer--;if(timer<=0){loadData();timer=60}$('countdown').textContent=timer+'s'},1000);
-    loadData();
+    Theme.load();
+    setInterval(()=>App.onTick(),1000);
+    App.refresh();
+  },
+  async refresh() {
+    try{
+      const json=await DataLayer.fetch();
+      if(json===null)return;
+      State.update(json);
+      App.renderNow();
+      $('lastUpdate').textContent='Updated: '+new Date().toLocaleTimeString();
+      State.resetCountdown();
+    }catch(e){
+      $('alertsSection').innerHTML='<div class="alert-item alert-critical"><span class="alert-icon">⚠️</span><span class="alert-msg">Failed to load data.json</span></div>';
+    }
+  },
+  renderNow() {
+    const snap=State.snapshot();
+    const flags=DirtyChecker.diff(snap);
+    requestAnimationFrame(()=>{
+      Renderer.render(snap,flags);
+      State.commitPrev(snap);
+    });
+  },
+  onTick() {
+    if(State.tick()){
+      App.refresh();
+      State.resetCountdown();
+    }
+    $('countdown').textContent=State.countdown+'s';
   }
 };
 App.init();
 
-// === MODULE: Chat ===
-// AI chat panel — history management and gateway integration.
-let chatHistory=[];
-const CHAT_MAX_HISTORY=6;
-
-function toggleChat(){
-  const panel=$('chatPanel');
-  panel.classList.toggle('open');
-  if(panel.classList.contains('open'))$('chatInput').focus();
-}
-
-function appendMessage(role,text){
-  const msgs=$('chatMessages');
-  const div=document.createElement('div');
-  div.className='chat-bubble '+role;
-  div.textContent=text;
-  msgs.appendChild(div);
-  msgs.scrollTop=msgs.scrollHeight;
-  return div;
-}
-
-async function sendChat(prefill){
-  const input=$('chatInput');
-  const question=(prefill!==undefined?prefill:input.value).trim();
-  if(!question)return;
-  input.value='';
-  $('chatSend').disabled=true;
-  appendMessage('user',question);
-  const thinking=appendMessage('thinking','…');
-  try{
-    const res=await fetch('/api/chat',{
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({question,history:chatHistory.slice(-CHAT_MAX_HISTORY)}),
-    });
-    const data=await res.json();
-    thinking.remove();
-    if(data.answer){
-      appendMessage('assistant',data.answer);
-      chatHistory.push({role:'user',content:question});
-      chatHistory.push({role:'assistant',content:data.answer});
-      if(chatHistory.length>CHAT_MAX_HISTORY*2)chatHistory=chatHistory.slice(-CHAT_MAX_HISTORY*2);
-    }else{
-      appendMessage('error','Error: '+(data.error||'Unknown error'));
-    }
-  }catch(e){
-    thinking.remove();
-    appendMessage('error','Network error: '+e.message);
-  }finally{
-    $('chatSend').disabled=false;
-    input.focus();
-  }
-}
-
-// === MODULE: OCUI ===
-// Exported namespace for all inline onclick= handlers in the HTML.
-// Keeps global scope clean and makes bindings traceable.
+// === OCUI ===
 window.OCUI = {
-  loadData,
-  toggleThemeMenu,
-  applyTheme,
-  setChartDays: n => { chartDays=n; renderCharts(); },
-  setUsageTab:  v => { uTab=v; render(); },
-  setSubRunsTab:  v => { srTab=v; render(); },
-  setSubTokensTab: v => { stTab=v; render(); },
-  toggleChat,
-  sendChat,
+  refresh:        ()=>App.refresh(),
+  toggleThemeMenu:()=>Theme.toggle(),
+  applyTheme:     id=>Theme.apply(id),
+  setChartDays:   n=>{State.setChartDays(n);App.renderNow()},
+  setUsageTab:    v=>{State.setTab('usage',v);App.renderNow()},
+  setSubRunsTab:  v=>{State.setTab('subRuns',v);App.renderNow()},
+  setSubTokensTab:v=>{State.setTab('subTokens',v);App.renderNow()},
+  toggleChat:     ()=>Chat.toggle(),
+  sendChat:       prefill=>Chat.send(prefill),
 };
 </script>
 

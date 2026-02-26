@@ -1,23 +1,21 @@
 # OpenClaw Dashboard — Architecture Refactor Plan
 
-> Status (as of 2026-02-23): this is a target-state refactor plan, not the current implementation.
+> Status (as of 2026-02-27): **implemented**. All modules live in a single `<script>` tag.
 >
-> Current code still uses global state and a monolithic `render()` flow in `index.html`.
->
-> Constraints remain: single-file frontend, zero dependencies, no build step.
+> Constraints: single-file frontend, zero dependencies, no build step.
 
 ## Current State (~750 lines JS)
 
-**Problems:**
-- 11 loose globals (`D`, `prevD`, `chartDays`, `uTab`, `srTab`, `stTab`, `prevUTab`, `prevSrTab`, `prevStTab`, `prevChartDays`, `timer`)
-- `render()` is a 200+ line monolith mixing dirty-checking, DOM updates, and data transformation
-- No separation between fetch, state, comparison, and rendering
-- Inline `onclick` handlers reference globals directly
-- Theme engine is separate but also uses loose globals (`THEMES`, `currentTheme`)
+**Previous problems (now resolved):**
+- 11 loose globals → consolidated into `State` object
+- Monolithic `render()` → `Renderer.render(snap, flags)` dispatches by dirty flags
+- No separation → State / DataLayer / DirtyChecker / Renderer / Theme / Chat / App
+- Inline handlers → `window.OCUI` namespace
+- Theme globals → `Theme` object
 
 ## Proposed Module Structure
 
-Five plain JS objects inside a single `<script>` tag. No classes, no frameworks.
+Seven plain JS objects inside a single `<script>` tag. No classes, no frameworks.
 
 ```
 ┌─────────────────────────────────────────────────┐
@@ -47,10 +45,13 @@ Five plain JS objects inside a single `<script>` tag. No classes, no frameworks.
 Timer tick / manual refresh
   → DataLayer.fetch()
   → State.update(newData)
-  → State.snapshot() → snap
-  → DirtyChecker.computeDirtyFlags(snap)
-  → Renderer.render(snap, dirtyFlags)
-  → State.commitPrev()
+  → App.renderNow():
+      snap = State.snapshot()         // deep-frozen clone
+      flags = DirtyChecker.diff(snap) // 13 boolean dirty flags
+      requestAnimationFrame(() => {
+        Renderer.render(snap, flags)  // pure DOM effects
+        State.commitPrev(snap)        // prev = snap (inside rAF)
+      })
 ```
 
 ---
@@ -74,7 +75,7 @@ Timer tick / manual refresh
 | `update(newData)` | Sets `data`, called after fetch |
 | `setTab(group, value)` | Sets `tabs[group]` — e.g., `State.setTab('usage', '7d')` |
 | `setChartDays(n)` | Sets `chartDays` |
-| `commitPrev()` | Copies `data` → `prev`, `tabs` → `prevTabs`, `chartDays` → `prevChartDays` |
+| `commitPrev(snap)` | Sets `prev = snap.data`, `prevTabs = snap.tabs`, `prevChartDays = snap.chartDays` — called inside rAF after Renderer.render() |
 | `resetCountdown()` | Sets `countdown = 60` |
 | `snapshot()` | Returns deep-frozen copy of current state for render cycle use |
 | `tick()` | Decrements `countdown`, returns `true` if hit 0 |
@@ -103,11 +104,11 @@ Timer tick / manual refresh
 | `stableChanged(arrKey, fields)` | Like `sectionChanged` but uses `stableSnapshot()` — strips volatile timestamps |
 | `tabChanged(group)` | `State.tabs[group] !== State.prevTabs[group]` |
 | `chartDaysChanged()` | `State.chartDays !== State.prevChartDays` |
-| `computeDirtyFlags(snap)` | Returns `{ alerts, health, cost, crons, sessions, usage, subRuns, subTokens, charts, models, skills, git, agentConfig }` — each boolean. Accepts frozen snapshot. |
+| `diff(snap)` | Returns `{ alerts, health, cost, crons, sessions, usage, subRuns, subTokens, charts, models, skills, git, agentConfig }` — 13 boolean flags. Accepts frozen snapshot, reads `State.prev` / `State.prevTabs` for comparison. |
 
 **Depends on:** `State` (reads `.data`, `.prev`, `.tabs`, `.prevTabs`).
 
-**Migration note:** Move `sectionChanged()`, `stableSnapshot()`, and all the `if (!prevD || ...)` conditionals here. `App` calls `DirtyChecker.computeDirtyFlags(snap)` and passes the result into `Renderer.render(snap, dirtyFlags)` — the Renderer never computes dirty flags itself.
+**Migration note:** `sectionChanged()`, `stableSnapshot()`, and all the `if (!prevD || ...)` conditionals live here. `App.renderNow()` calls `DirtyChecker.diff(snap)` and passes the result into `Renderer.render(snap, flags)` — the Renderer never computes dirty flags itself.
 
 ### 4. `Renderer` — All DOM Updates (~500 lines)
 
@@ -174,7 +175,22 @@ Timer tick / manual refresh
 
 **Depends on:** Nothing. Self-contained.
 
-### 6. `App` — Initialization & Wiring (~40 lines)
+### 6. `Chat` — AI Chat Panel (~50 lines)
+
+**Owns:**
+- `history` — chat message history
+- `MAX_HISTORY` — max history length
+
+**Methods:**
+| Method | Description |
+|--------|-------------|
+| `toggle()` | Open/close chat panel |
+| `appendMessage(role, text)` | Add a chat bubble |
+| `send(prefill)` | Send message to `/api/chat` |
+
+**Depends on:** Nothing.
+
+### 7. `App` — Initialization & Wiring (~40 lines)
 
 **Owns:** The `setInterval` timer reference.
 
@@ -190,9 +206,11 @@ Timer tick / manual refresh
 ```js
 renderNow() {
   const snap = State.snapshot();
-  const flags = DirtyChecker.computeDirtyFlags(snap);
-  requestAnimationFrame(() => Renderer.render(snap, flags));
-  State.commitPrev();
+  const flags = DirtyChecker.diff(snap);
+  requestAnimationFrame(() => {
+    Renderer.render(snap, flags);
+    State.commitPrev(snap);  // INSIDE rAF — prevents race with next fetch
+  });
 }
 ```
 

@@ -31,9 +31,9 @@ class TestHierarchyRecent(unittest.TestCase):
     def test_recent_window_constant_defined(self):
         self.assertIn("RECENT_WINDOW_MS", self.js,
             "RECENT_WINDOW_MS constant not found in JS")
-        literal_ok = bool(re.search(r"RECENT_WINDOW_MS\s*=\s*300000\b", self.js))
+        literal_ok = bool(re.search(r"RECENT_WINDOW_MS\s*[:=]\s*300000\b", self.js))
         expr_ok = bool(re.search(
-            r"RECENT_WINDOW_MS\s*=\s*5\s*\*\s*60\s*\*\s*1000", self.js))
+            r"RECENT_WINDOW_MS\s*[:=]\s*5\s*\*\s*60\s*\*\s*1000", self.js))
         self.assertTrue(literal_ok or expr_ok,
             "RECENT_WINDOW_MS must equal 300000 ms (5 min) — "
             "expected either '300000' or '5 * 60 * 1000'")
@@ -51,12 +51,12 @@ class TestHierarchyRecent(unittest.TestCase):
     def test_prune_uses_window_constant(self):
         self.assertIsNotNone(re.search(r"RECENT_WINDOW_MS", self.js),
             "RECENT_WINDOW_MS not referenced")
-        self.assertIsNotNone(re.search(r"delete\s+_recentFinished\[", self.js),
+        self.assertIsNotNone(re.search(r"delete\s+(Renderer\.)?\s*_recentFinished\[", self.js),
             "Pruning delete statement not found")
 
     def test_prune_removes_stale_entries(self):
-        pattern = (r"now\s*-\s*_recentFinished\[.*?\]\s*\.finishedAt"
-                   r"\s*>\s*RECENT_WINDOW_MS")
+        pattern = (r"now\s*-\s*(Renderer\.)?_recentFinished\[.*?\]\s*\.finishedAt"
+                   r"\s*>\s*(Renderer\.)?RECENT_WINDOW_MS")
         self.assertIsNotNone(re.search(pattern, self.js),
             "Expected 'now - _recentFinished[k].finishedAt > RECENT_WINDOW_MS' "
             "comparison not found")

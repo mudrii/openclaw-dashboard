@@ -43,27 +43,28 @@ class TestFrontendJS(unittest.TestCase):
             "safeColor missing hex regex"
         )
 
-    def test_ac17_section_changed_uses_prevD(self):
-        """AC17: sectionChanged() is defined and uses prevD."""
-        self.assertIn("function sectionChanged", self.html)
-        # Find the function body
-        match = re.search(r'function sectionChanged\b.*?\{.*?prevD', self.html, re.DOTALL)
-        self.assertIsNotNone(match, "sectionChanged doesn't reference prevD")
+    def test_ac17_section_changed_uses_state_prev(self):
+        """AC17: sectionChanged() is defined in DirtyChecker and uses State.prev."""
+        self.assertIn("sectionChanged(keys)", self.html)
+        match = re.search(r'sectionChanged\(keys\).*?\{.*?State\.prev', self.html, re.DOTALL)
+        self.assertIsNotNone(match, "sectionChanged doesn't reference State.prev")
 
-    def test_ac18_prev_tab_variables(self):
-        """AC18: All 3 prev-tab variables exist."""
-        for var in ("prevUTab", "prevSrTab", "prevStTab"):
-            self.assertIn(var, self.html, f"Missing variable: {var}")
+    def test_ac18_prev_tab_state(self):
+        """AC18: State.prevTabs tracks previous tab values."""
+        self.assertIn("prevTabs", self.html, "Missing State.prevTabs")
+        for tab in ("usage", "subRuns", "subTokens"):
+            self.assertIn(f"prevTabs.{tab}", self.html, f"Missing prevTabs.{tab}")
 
-    def test_ac19_request_animation_frame_in_load_data(self):
-        """AC19: requestAnimationFrame is used in loadData()."""
-        # Find loadData function region
-        match = re.search(r'(function\s+loadData|loadData\s*=)[^}]*requestAnimationFrame', self.html, re.DOTALL)
-        self.assertIsNotNone(match, "requestAnimationFrame not found in loadData()")
+    def test_ac19_request_animation_frame_in_render_now(self):
+        """AC19: requestAnimationFrame is used in App.renderNow()."""
+        match = re.search(r'renderNow\s*\(\)[^}]*requestAnimationFrame', self.html, re.DOTALL)
+        self.assertIsNotNone(match, "requestAnimationFrame not found in renderNow()")
 
-    def test_ac20_prevD_snapshot_in_render(self):
-        """AC20: prevD = JSON.parse(JSON.stringify(D)) snapshot exists."""
-        self.assertIn("prevD = JSON.parse(JSON.stringify(D))", self.html)
+    def test_ac20_snapshot_deep_clones_state(self):
+        """AC20: State.snapshot() uses JSON.parse(JSON.stringify(...)) for deep clone."""
+        self.assertIn("JSON.parse(JSON.stringify(", self.html)
+        # commitPrev receives frozen snapshot — prev is never a live reference
+        self.assertIn("commitPrev(snap)", self.html)
 
     def test_channels_dynamic_render_from_payload_keys(self):
         """Channel cards render dynamically from channelStatus keys + channels array."""
