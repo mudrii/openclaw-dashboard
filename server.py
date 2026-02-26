@@ -14,10 +14,32 @@ import sys
 import urllib.request
 import urllib.error
 
-VERSION = "2026.2.27"
 PORT = 8080
 BIND = "127.0.0.1"
 DIR = os.path.dirname(os.path.abspath(__file__))
+
+
+def _detect_version():
+    """Derive version from git tag. Falls back to VERSION file, then 'dev'."""
+    try:
+        result = subprocess.run(
+            ["git", "describe", "--tags", "--abbrev=0"],
+            cwd=DIR, capture_output=True, text=True, timeout=5,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            return result.stdout.strip().lstrip("v")
+    except Exception:
+        pass
+    version_file = os.path.join(DIR, "VERSION")
+    try:
+        with open(version_file, "r") as f:
+            return f.read().strip()
+    except FileNotFoundError:
+        pass
+    return "dev"
+
+
+VERSION = _detect_version()
 CONFIG_FILE = os.path.join(DIR, "config.json")
 REFRESH_SCRIPT = os.path.join(DIR, "refresh.sh")
 DATA_FILE = os.path.join(DIR, "data.json")
@@ -287,7 +309,7 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
             super().do_GET()
 
     def handle_index(self):
-        """Serve index.html with theme.preset injected as a <meta> tag."""
+        """Serve index.html with theme preset and version injected."""
         index_path = os.path.join(DIR, "index.html")
         try:
             with open(index_path, "r", encoding="utf-8") as f:
@@ -300,6 +322,7 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
                 f'<head>\n<meta name="oc-theme" content="{safe_preset}">',
                 1,
             )
+            html = html.replace("__VERSION__", _html_mod.escape(VERSION, quote=True))
             body = html.encode("utf-8")
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
