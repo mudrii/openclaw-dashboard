@@ -14,7 +14,7 @@ import sys
 import urllib.request
 import urllib.error
 
-VERSION = "2.4.0"
+VERSION = "2026.2.27"
 PORT = 8080
 BIND = "127.0.0.1"
 DIR = os.path.dirname(os.path.abspath(__file__))
