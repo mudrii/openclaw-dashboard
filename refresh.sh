@@ -31,7 +31,7 @@ from datetime import datetime, timezone, timedelta
 dashboard_dir = sys.argv[1]
 openclaw_path = sys.argv[2]
 
-local_tz = timezone(timedelta(hours=8))  # GMT+8
+local_tz = datetime.now().astimezone().tzinfo
 now = datetime.now(local_tz)
 today_str = now.strftime('%Y-%m-%d')
 
