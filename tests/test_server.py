@@ -6,6 +6,7 @@ These tests start their own server instance on a random port.
 import http.client
 import json
 import os
+import socket
 import subprocess
 import sys
 import threading
@@ -197,9 +198,8 @@ class TestAddressInUse(unittest.TestCase):
 
     def _occupy_port(self):
         """Bind a random port and return (socket, port)."""
-        import socket as _socket
-        sock = _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM)
-        sock.setsockopt(_socket.SOL_SOCKET, _socket.SO_REUSEADDR, 1)
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         sock.bind(("127.0.0.1", 0))
         sock.listen(1)
         return sock, sock.getsockname()[1]
@@ -235,7 +235,9 @@ class TestAddressInUse(unittest.TestCase):
                 env=env,
             )
             next_port = port + 1
-            for _ in range(30):
+            delay = 0.1
+            deadline = time.monotonic() + 10
+            while time.monotonic() < deadline:
                 try:
                     conn = http.client.HTTPConnection("127.0.0.1", next_port, timeout=1)
                     conn.request("GET", "/")
@@ -243,7 +245,8 @@ class TestAddressInUse(unittest.TestCase):
                     conn.close()
                     break
                 except Exception:
-                    time.sleep(0.2)
+                    time.sleep(delay)
+                    delay = min(delay * 2, 1.0)
             else:
                 proc.terminate()
                 proc.wait(timeout=5)

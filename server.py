@@ -495,13 +495,13 @@ examples:
             )
             sys.exit(1)
     else:
-        max_attempts = 10
-        for attempt in range(max_attempts):
+        MAX_PORT_ATTEMPTS = 10
+        for attempt in range(MAX_PORT_ATTEMPTS):
             try:
                 server = _ReuseAddrHTTPServer((args.bind, port), DashboardHandler)
                 break
             except OSError:
-                if attempt < max_attempts - 1:
+                if attempt < MAX_PORT_ATTEMPTS - 1:
                     print(f"[dashboard] Port {port} in use, trying {port + 1}…")
                     port += 1
                 else:
