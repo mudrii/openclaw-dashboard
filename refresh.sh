@@ -808,7 +808,7 @@ else:
 output = {
     'botName': bot_name,
     'botEmoji': bot_emoji,
-    'lastRefresh': now.strftime('%Y-%m-%d %H:%M:%S GMT+8'),
+    'lastRefresh': now.strftime('%Y-%m-%d %H:%M:%S %Z'),
     'lastRefreshMs': int(now.timestamp() * 1000),
 
     # Gateway health
