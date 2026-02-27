@@ -80,6 +80,18 @@ class TestFrontendJS(unittest.TestCase):
         self.assertIn("esc(errorText)", self.html)
 
 
+    def test_ac25_reconcile_rows_defined(self):
+        """AC25: Renderer.reconcileRows() is defined for keyed DOM updates."""
+        self.assertIn("reconcileRows(", self.html)
+        self.assertIn("dataset.key", self.html)
+        self.assertIn("createDocumentFragment", self.html)
+
+    def test_ac26_svg_cache_skip(self):
+        """AC26: Renderer caches SVG content to skip identical re-renders."""
+        self.assertIn("_svgCache", self.html)
+        self.assertIn("patchSvg(", self.html)
+
+
 class TestRefreshShSafety(unittest.TestCase):
     """AC21-AC22, AC24: refresh.sh safety checks."""
 

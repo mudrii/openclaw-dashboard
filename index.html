@@ -676,7 +676,51 @@ const DirtyChecker = {
 const Renderer = {
   _recentFinished: {},
   _prevActiveKeys: new Set(),
+  _svgCache: {},
   RECENT_WINDOW_MS: 5 * 60 * 1000,
+
+  reconcileRows(tbodyId, rows, keyFn, rowHtmlFn) {
+    const tbody = $(tbodyId);
+    if (rows.length <= 100) {
+      tbody.innerHTML = rows.map(rowHtmlFn).join('');
+      return;
+    }
+    const existing = new Map();
+    for (const tr of Array.from(tbody.rows)) existing.set(tr.dataset.key, tr);
+    const frag = document.createDocumentFragment();
+    const seen = new Set();
+    for (const row of rows) {
+      const key = String(keyFn(row));
+      seen.add(key);
+      const html = rowHtmlFn(row);
+      if (existing.has(key)) {
+        const tr = existing.get(key);
+        if (tr.dataset.html !== html) {
+          const tmp = document.createElement('tbody');
+          tmp.innerHTML = html;
+          const el = tmp.firstChild;
+          el.dataset.key = key;
+          el.dataset.html = html;
+          tr.replaceWith(el);
+        }
+      } else {
+        const tmp = document.createElement('tbody');
+        tmp.innerHTML = html;
+        const el = tmp.firstChild;
+        el.dataset.key = key;
+        el.dataset.html = html;
+        frag.appendChild(el);
+      }
+    }
+    for (const [k, tr] of existing) { if (!seen.has(k)) tr.remove(); }
+    tbody.appendChild(frag);
+  },
+
+  patchSvg(id, html) {
+    if (this._svgCache[id] === html) return;
+    this._svgCache[id] = html;
+    $(id).innerHTML = html;
+  },
 
   render(snap, flags) {
   const D=snap.data;
@@ -736,13 +780,13 @@ const Renderer = {
     $('cronCount').textContent=crons.length+' jobs';
     const cronContainer = $('cronBody').closest('[style*="overflow"]') || $('cronBody').parentElement;
     const cronScrollTop = cronContainer ? cronContainer.scrollTop : 0;
-    $('cronBody').innerHTML=crons.map(c=>{
+    Renderer.reconcileRows('cronBody', crons, c => c.name, c => {
       const st=c.lastStatus;
       const dotCls=st==='ok'?'sd-ok':st==='error'?'sd-error':st==='none'?'sd-none':'sd-pending';
       const tip=c.lastError?` data-tip="${esc(c.lastError)}"`:'';
       const dur=c.lastDurationMs?((c.lastDurationMs/1000).toFixed(1)+'s'):'—';
       return `<tr class="dr"><td><span class="sd ${dotCls}"${tip}></span>${esc(st)||'—'}</td><td class="w">${esc(c.name)}</td><td>${esc(c.schedule)}</td><td>${esc(c.lastRun||'—')}</td><td>${esc(c.nextRun||'—')}</td><td class="r">${dur}</td><td>${esc(c.model||'—')}</td></tr>`;
-    }).join('');
+    });
     if (cronContainer) cronContainer.scrollTop = cronScrollTop;
   }
 
@@ -752,12 +796,12 @@ const Renderer = {
     $('sessCount').textContent=(D.sessionCount||sess.length)+' total, '+sess.length+' shown';
     const sessContainer = $('sessBody').closest('[style*="overflow"]') || $('sessBody').parentElement;
     const sessScrollTop = sessContainer ? sessContainer.scrollTop : 0;
-    $('sessBody').innerHTML=sess.map(s=>{
+    Renderer.reconcileRows('sessBody', sess, s => s.key||s.name, s => {
       const pct=s.contextPct||0;
       const color=pct>80?'var(--red)':pct>50?'var(--yellow)':'var(--green)';
       const typeCls='type-'+(esc(s.type)||'main');
       return `<tr class="dr"><td class="w" style="max-width:250px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(s.name)}</td><td>${esc(s.model)}</td><td><span class="type-badge ${typeCls}">${esc(s.type)||'—'}</span></td><td><div class="ctx-bar"><div class="ctx-fill" style="width:${pct}%;background:${color}"></div></div> <span style="font-size:11px;color:${color}">${pct}%</span></td><td>${relTime(s.updatedAt)}</td><td class="r">${(s.totalTokens||0).toLocaleString()}</td></tr>`;
-    }).join('');
+    });
     if (sessContainer) sessContainer.scrollTop = sessScrollTop;
     Renderer.renderAgentTree(D);
   }
@@ -777,10 +821,10 @@ const Renderer = {
     const srCost=srTab==='today'?(D.subagentCostToday||0):srTab==='7d'?(D.subagentCost7d||0):srTab==='30d'?(D.subagentCost30d||0):(D.subagentCostAllTime||0);
     $('subCostLbl').textContent='Total: $'+srCost.toFixed(2);
     $('srEmpty').style.display=runs.length?'none':'block';
-    $('srBody').innerHTML=runs.slice(0,20).map(r=>{
+    Renderer.reconcileRows('srBody', runs.slice(0,20), r => r.task+'-'+r.timestamp, r => {
       const dur=r.durationSec>=3600?(r.durationSec/3600).toFixed(1)+'h':r.durationSec>=60?Math.round(r.durationSec/60)+'m':r.durationSec+'s';
       return `<tr class="dr"><td class="w" style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(r.task)}</td><td>${esc(r.model)}</td><td class="r cost">$${r.cost.toFixed(4)}</td><td class="r">${dur}</td><td><span class="badge badge-ok">${esc(r.status)}</span></td><td>${esc(r.timestamp)}</td></tr>`;
-    }).join('');
+    });
   }
 
   // Sub tokens
@@ -1202,7 +1246,7 @@ const Renderer = {
   const yLabels=Array.from({length:5},(_, i)=>{const v=maxY*i/4;const y=P.t+ch-ch*i/4;return `<text x="${P.l-6}" y="${y+3}" text-anchor="end" fill="var(--dim)" font-size="9">$${v.toFixed(0)}</text><line x1="${P.l}" y1="${y}" x2="${W-P.r}" y2="${y}" stroke="var(--border)" stroke-dasharray="2"/>`}).join('');
   const nth=Math.ceil(data.length/7);
   const xLabels=data.map((d,i)=>i%nth===0?`<text x="${P.l+i*stepX}" y="${H-P.b+16}" text-anchor="middle" fill="var(--dim)" font-size="9">${esc(d.label)}</text>`:'').join('');
-  $(id).innerHTML=`<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:350px">${yLabels}${xLabels}<path d="${area}" fill="var(--accent)" opacity="0.15"/><path d="${line}" fill="none" stroke="var(--accent)" stroke-width="2"/>${dots}</svg>`;
+  Renderer.patchSvg(id,`<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:350px">${yLabels}${xLabels}<path d="${area}" fill="var(--accent)" opacity="0.15"/><path d="${line}" fill="none" stroke="var(--accent)" stroke-width="2"/>${dots}</svg>`);
   },
 
   renderModelChart(id,data){
@@ -1225,7 +1269,7 @@ const Renderer = {
   const nth=Math.ceil(data.length/7);
   const xLabels=data.map((d,i)=>i%nth===0?`<text x="${P.l+i*(barW+gap)+gap/2+barW/2}" y="${H-P.b+16}" text-anchor="middle" fill="var(--dim)" font-size="9">${esc(d.label)}</text>`:'').join('');
   const legend=mList.map((m,i)=>`<span class="chart-legend-item"><span class="chart-legend-dot" style="background:${COLORS[i%COLORS.length]}"></span>${esc(m)}</span>`).join('');
-  $(id).innerHTML=`<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:310px">${yLabels}${xLabels}${bars}</svg><div class="chart-legend">${legend}</div>`;
+  Renderer.patchSvg(id,`<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:310px">${yLabels}${xLabels}${bars}</svg><div class="chart-legend">${legend}</div>`);
   },
 
   renderSubagentChart(id,data){
@@ -1247,7 +1291,7 @@ const Renderer = {
   const yR=Array.from({length:5},(_,i)=>{const v=maxCost*i/4;const y=P.t+ch-ch*i/4;return `<text x="${W-P.r+6}" y="${y+3}" text-anchor="start" fill="var(--accent)" font-size="9">$${v.toFixed(0)}</text>`}).join('');
   const nth=Math.ceil(data.length/7);
   const xLabels=data.map((d,i)=>i%nth===0?`<text x="${P.l+i*(barW+gap)+gap/2+barW/2}" y="${H-P.b+16}" text-anchor="middle" fill="var(--dim)" font-size="9">${esc(d.label)}</text>`:'').join('');
-  $(id).innerHTML=`<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:350px">${yL}${yR}${xLabels}${bars}<path d="${line}" fill="none" stroke="var(--accent)" stroke-width="2"/>${dots}</svg><div class="chart-legend"><span class="chart-legend-item"><span class="chart-legend-dot" style="background:var(--purple)"></span>Runs</span><span class="chart-legend-item"><span class="chart-legend-dot" style="background:var(--accent)"></span>Cost</span></div>`;
+  Renderer.patchSvg(id,`<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:350px">${yL}${yR}${xLabels}${bars}<path d="${line}" fill="none" stroke="var(--accent)" stroke-width="2"/>${dots}</svg><div class="chart-legend"><span class="chart-legend-item"><span class="chart-legend-dot" style="background:var(--purple)"></span>Runs</span><span class="chart-legend-item"><span class="chart-legend-dot" style="background:var(--accent)"></span>Cost</span></div>`);
   }
 };
 

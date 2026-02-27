@@ -25,17 +25,17 @@ See `ARCHITECTURE.md` for full spec.
 ## ⚡ Performance
 
 - [x] Volatile timestamp fix — `stableSnapshot()` for sessions/crons/subagentRuns dirty-checks (excluding `lastRun`, `nextRun`, `timestamp`, `updatedAt`)
-- [ ] DOM/SVG incremental updates — Option B keyed row reconciliation + Option C SVG attr updates (only if refresh < 10s or tables > 100 rows)
+- [x] DOM/SVG incremental updates — `reconcileRows()` keyed reconciliation (>100 rows threshold) + `patchSvg()` content-hash cache (AC25, AC26)
 
 ## 🐳 Deployment
 
-- [ ] **Dockerfile** — containerized dashboard: Python slim image, copy `index.html` + `server.py` + `refresh.sh` + `themes.json`, expose port 8080, mount openclaw config as volume
-- [ ] **Nix flake** — `flake.nix` with `devShell` (python3 + bash deps) and `packages.default` for reproducible installs on NixOS / nix-darwin
+- [x] **Dockerfile** — Python 3.12-slim, non-root user, port 8080, volume mount, healthcheck (AC27)
+- [x] **Nix flake** — `flake.nix` with `devShell`, `packages.default`, `apps.default` via flake-utils (AC28)
 
 ## 🧪 Tests
 
 - [x] Update static tests AC17–AC20 after architecture refactor (done in refactor PR)
-- [ ] Add Playwright E2E tests for tab switching, chart toggle, auto-refresh cycle (optional, needs `playwright` dep in venv)
+- [x] Playwright E2E tests — 16 tests covering tabs, charts, countdown, chat panel, theme menu (needs `playwright` in venv)
 
 ## 📦 Release Plan
 
@@ -45,6 +45,6 @@ See `ARCHITECTURE.md` for full spec.
 
 ## 🔖 Notes
 
-- 75 tracked tests collected (`test_frontend.py` + `test_data_schema.py` + `test_server.py` + `test_critical.py` + `test_hierarchy_recent.py` + `test_chat.py`)
+- 104 tracked tests collected (`test_frontend.py` + `test_data_schema.py` + `test_server.py` + `test_critical.py` + `test_hierarchy_recent.py` + `test_chat.py` + `test_dockerfile.py` + `test_nix_flake.py` + `test_e2e.py`)
 - Architecture doc: `ARCHITECTURE.md`
 - Test runner: `python3 -m pytest tests/ -v`
