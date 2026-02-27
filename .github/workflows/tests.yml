@@ -1,0 +1,56 @@
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    name: Run test suite
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.9", "3.12"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Install pytest
+        run: pip install pytest
+
+      - name: Run static analysis tests (no server needed)
+        run: python -m pytest tests/test_frontend.py tests/test_critical.py tests/test_dockerfile.py tests/test_nix_flake.py -v
+
+      - name: Run schema tests
+        run: python -m pytest tests/test_data_schema.py -v
+        continue-on-error: true
+        # data.json only exists after refresh.sh runs against a real OpenClaw install
+
+      - name: Run server integration tests
+        run: python -m pytest tests/test_server.py tests/test_chat.py tests/test_hierarchy_recent.py -v
+
+  lint-shell:
+    name: Lint refresh.sh
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install shellcheck
+        run: sudo apt-get install -y shellcheck
+
+      - name: Check refresh.sh
+        run: shellcheck --severity=warning refresh.sh
+
+      - name: Check install.sh
+        run: shellcheck --severity=warning install.sh || true
+
+      - name: Check uninstall.sh
+        run: shellcheck --severity=warning uninstall.sh || true

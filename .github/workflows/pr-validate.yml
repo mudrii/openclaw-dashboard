@@ -1,0 +1,63 @@
+name: PR Validation
+
+on:
+  pull_request:
+    types: [opened, edited, reopened, synchronize]
+
+jobs:
+  validate-pr-body:
+    name: Check PR template is filled out
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate PR description
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const body = context.payload.pull_request.body || '';
+            const errors = [];
+
+            // Must not be empty
+            if (body.trim().length === 0) {
+              errors.push('PR description is empty. Fill out the pull request template.');
+            }
+
+            // Must have a Type ticked
+            if (!/- \[x\]/i.test(body)) {
+              errors.push('No PR type selected. Tick exactly one box under "## Type".');
+            }
+
+            // Summary must be substantial
+            const summaryMatch = body.match(/## Summary\s*([\s\S]*?)(?=##|$)/);
+            if (!summaryMatch || summaryMatch[1].trim().length < 20) {
+              errors.push('"## Summary" is missing or too short. Describe what this PR does and why.');
+            }
+
+            // What Changed must have at least one real row
+            const changedMatch = body.match(/## What Changed\s*([\s\S]*?)(?=##|$)/);
+            if (!changedMatch || !/\|\s*`/.test(changedMatch[1])) {
+              errors.push('"## What Changed" table has no entries. List files touched and what changed.');
+            }
+
+            // Checklist must be fully ticked
+            const checklistSection = body.match(/## Checklist([\s\S]*?)(?=## |$)/);
+            if (checklistSection) {
+              const unticked = (checklistSection[1].match(/- \[ \]/g) || []).length;
+              if (unticked > 0) {
+                errors.push(`PR checklist has ${unticked} unchecked item(s). Complete all items before requesting review.`);
+              }
+            }
+
+            if (errors.length > 0) {
+              const lines = [
+                '## PR Template Validation Failed',
+                '',
+                'Fix the following before this PR can be reviewed:',
+                '',
+                ...errors.map(e => `- ${e}`),
+                '',
+                'See [CONTRIBUTING.md](../blob/main/CONTRIBUTING.md) for guidance.',
+              ];
+              core.setFailed(lines.join('\n'));
+            } else {
+              console.log('PR description looks good');
+            }
