@@ -120,6 +120,11 @@ class TestRefreshShSafety(unittest.TestCase):
         if bare_opens:
             self.fail(f"Found {len(bare_opens)} bare json.load(open(...)) without context manager")
 
+    def test_ac30_negative_costs_are_clamped_in_refresh(self):
+        """AC30: refresh.sh clamps negative usage.cost.total to 0.0."""
+        self.assertIn("cost_total = max(0.0, raw_cost_total)", self.sh)
+
+
 
 class TestServerSafety(unittest.TestCase):
     """AC23: server.py safety checks."""
