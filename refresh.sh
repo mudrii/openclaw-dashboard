@@ -611,7 +611,13 @@ for f in glob.glob(os.path.join(base, '*/sessions/*.jsonl')) + glob.glob(os.path
                     if 'delivery-mirror' in model: continue
 
                     name = model_name(model)
-                    cost_total = usage.get('cost',{}).get('total',0) if isinstance(usage.get('cost'),dict) else 0
+                    raw_cost_total = usage.get('cost',{}).get('total',0) if isinstance(usage.get('cost'),dict) else 0
+                    try:
+                        raw_cost_total = float(raw_cost_total)
+                    except (TypeError, ValueError):
+                        raw_cost_total = 0.0
+                    # Guard against negative provider adjustments/credits appearing as spend.
+                    cost_total = max(0.0, raw_cost_total)
                     inp = usage.get('input',0)
                     out = usage.get('output',0)
                     cr = usage.get('cacheRead',0)
