@@ -12,10 +12,15 @@
 
 | Metric | Go | Python |
 |---|---|---|
-| Deployable size | **6.2 MB** (single binary) | ~11 GB framework |
-| Runtime deps | **none** | Python 3.9 |
+| Deployable size | **6.2 MB** (single binary) | ~81 MB (interpreter + stdlib) |
+| Modules used | 0 (embedded) | 509 KB of stdlib imports |
+| Runtime deps | **none** | Python 3.x (51KB bin + 67MB stdlib + libpython) |
 | Startup time | **63ms** | 110ms |
 | Files needed | **1** | 3+ (server.py, refresh.sh, index.html) |
+
+> Note: Python's 81MB is the minimum framework (interpreter + stdlib + C extensions).
+> The `server.py` only imports ~509KB of stdlib modules, but the full framework must
+> be installed. Go embeds everything into a single 6.2MB binary — 13× smaller.
 
 ---
 
