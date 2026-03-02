@@ -6,12 +6,15 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 )
 
 // buildSystemPrompt ports build_dashboard_prompt() from server.py exactly.
+// Optimised: direct WriteString calls instead of fmt.Sprintf to avoid heap allocs.
 func buildSystemPrompt(data map[string]any) string {
 	var b strings.Builder
+	b.Grow(2048) // typical prompt ~1-2KB; avoids ~4 internal re-allocations
 
 	str := func(m map[string]any, key string) string {
 		v, _ := m[key].(string)
@@ -26,26 +29,68 @@ func buildSystemPrompt(data map[string]any) string {
 		}
 		return 0
 	}
+	fmtCost2 := func(v float64) string {
+		return strconv.FormatFloat(v, 'f', 2, 64)
+	}
+	fmtCost4 := func(v float64) string {
+		return strconv.FormatFloat(v, 'f', 4, 64)
+	}
+	fmtCost0 := func(v float64) string {
+		return strconv.FormatFloat(v, 'f', 0, 64)
+	}
+	fmtPct := func(v float64) string {
+		return strconv.FormatFloat(v, 'f', 1, 64)
+	}
+	fmtAny := func(v any) string {
+		if v == nil {
+			return "<nil>"
+		}
+		switch t := v.(type) {
+		case string:
+			return t
+		case float64:
+			return strconv.FormatFloat(t, 'f', -1, 64)
+		case int:
+			return strconv.Itoa(t)
+		default:
+			return fmt.Sprint(v)
+		}
+	}
 
 	lastRefresh, _ := data["lastRefresh"].(string)
 
 	b.WriteString("You are an AI assistant embedded in the OpenClaw Dashboard.\n")
 	b.WriteString("Answer questions concisely. Use plain text, no markdown.\n")
-	b.WriteString(fmt.Sprintf("Data as of: %s\n", lastRefresh))
+	b.WriteString("Data as of: ")
+	b.WriteString(lastRefresh)
+	b.WriteByte('\n')
 	b.WriteString("\n=== GATEWAY ===\n")
 
 	gw, _ := data["gateway"].(map[string]any)
 	if gw == nil {
 		gw = map[string]any{}
 	}
-	b.WriteString(fmt.Sprintf("Status: %s | PID: %v | Uptime: %s | Memory: %s\n",
-		str(gw, "status"), gw["pid"], str(gw, "uptime"), str(gw, "memory")))
+	b.WriteString("Status: ")
+	b.WriteString(str(gw, "status"))
+	b.WriteString(" | PID: ")
+	b.WriteString(fmtAny(gw["pid"]))
+	b.WriteString(" | Uptime: ")
+	b.WriteString(str(gw, "uptime"))
+	b.WriteString(" | Memory: ")
+	b.WriteString(str(gw, "memory"))
+	b.WriteByte('\n')
 
 	b.WriteString("\n=== COSTS ===\n")
-	b.WriteString(fmt.Sprintf("Today: $%.4f (sub-agents: $%.4f)\n",
-		flt(data, "totalCostToday"), flt(data, "subagentCostToday")))
-	b.WriteString(fmt.Sprintf("All-time: $%.2f | Projected monthly: $%.0f\n",
-		flt(data, "totalCostAllTime"), flt(data, "projectedMonthly")))
+	b.WriteString("Today: $")
+	b.WriteString(fmtCost4(flt(data, "totalCostToday")))
+	b.WriteString(" (sub-agents: $")
+	b.WriteString(fmtCost4(flt(data, "subagentCostToday")))
+	b.WriteString(")\n")
+	b.WriteString("All-time: $")
+	b.WriteString(fmtCost2(flt(data, "totalCostAllTime")))
+	b.WriteString(" | Projected monthly: $")
+	b.WriteString(fmtCost0(flt(data, "projectedMonthly")))
+	b.WriteByte('\n')
 
 	if bd, ok := data["costBreakdown"].([]any); ok && len(bd) > 0 {
 		b.WriteString("By model (all-time): ")
@@ -62,10 +107,11 @@ func buildSystemPrompt(data map[string]any) string {
 				b.WriteString(", ")
 			}
 			model, _ := m["model"].(string)
-			cost := flt(m, "cost")
-			b.WriteString(fmt.Sprintf("%s $%.2f", model, cost))
+			b.WriteString(model)
+			b.WriteString(" $")
+			b.WriteString(fmtCost2(flt(m, "cost")))
 		}
-		b.WriteString("\n")
+		b.WriteByte('\n')
 	}
 
 	sessions, _ := data["sessions"].([]any)
@@ -73,7 +119,9 @@ func buildSystemPrompt(data map[string]any) string {
 	if sessionCount == 0 {
 		sessionCount = float64(len(sessions))
 	}
-	b.WriteString(fmt.Sprintf("\n=== SESSIONS (%.0f total, showing top 3) ===\n", sessionCount))
+	b.WriteString("\n=== SESSIONS (")
+	b.WriteString(fmtCost0(sessionCount))
+	b.WriteString(" total, showing top 3) ===\n")
 	top := 3
 	if len(sessions) < top {
 		top = len(sessions)
@@ -83,9 +131,15 @@ func buildSystemPrompt(data map[string]any) string {
 		if s == nil {
 			continue
 		}
-		ctxPct := flt(s, "contextPct")
-		b.WriteString(fmt.Sprintf("  %s | %s | %s | context: %.1f%%\n",
-			str(s, "name"), str(s, "model"), str(s, "type"), ctxPct))
+		b.WriteString("  ")
+		b.WriteString(str(s, "name"))
+		b.WriteString(" | ")
+		b.WriteString(str(s, "model"))
+		b.WriteString(" | ")
+		b.WriteString(str(s, "type"))
+		b.WriteString(" | context: ")
+		b.WriteString(fmtPct(flt(s, "contextPct")))
+		b.WriteString("%\n")
 	}
 
 	crons, _ := data["crons"].([]any)
@@ -96,7 +150,11 @@ func buildSystemPrompt(data map[string]any) string {
 			failed++
 		}
 	}
-	b.WriteString(fmt.Sprintf("\n=== CRON JOBS (%d total, %d failed) ===\n", len(crons), failed))
+	b.WriteString("\n=== CRON JOBS (")
+	b.WriteString(strconv.Itoa(len(crons)))
+	b.WriteString(" total, ")
+	b.WriteString(strconv.Itoa(failed))
+	b.WriteString(" failed) ===\n")
 	cronTop := 5
 	if len(crons) < cronTop {
 		cronTop = len(crons)
@@ -107,12 +165,17 @@ func buildSystemPrompt(data map[string]any) string {
 			continue
 		}
 		status := str(c, "lastStatus")
-		errSuffix := ""
+		b.WriteString("  ")
+		b.WriteString(str(c, "name"))
+		b.WriteString(" | ")
+		b.WriteString(str(c, "schedule"))
+		b.WriteString(" | ")
+		b.WriteString(status)
 		if status == "error" {
-			errSuffix = fmt.Sprintf(" ERROR: %s", str(c, "lastError"))
+			b.WriteString(" ERROR: ")
+			b.WriteString(str(c, "lastError"))
 		}
-		b.WriteString(fmt.Sprintf("  %s | %s | %s%s\n",
-			str(c, "name"), str(c, "schedule"), status, errSuffix))
+		b.WriteByte('\n')
 	}
 
 	b.WriteString("\n=== ALERTS ===\n")
@@ -125,8 +188,11 @@ func buildSystemPrompt(data map[string]any) string {
 			if a == nil {
 				continue
 			}
-			sev := strings.ToUpper(str(a, "severity"))
-			b.WriteString(fmt.Sprintf("  [%s] %s\n", sev, str(a, "message")))
+			b.WriteString("  [")
+			b.WriteString(strings.ToUpper(str(a, "severity")))
+			b.WriteString("] ")
+			b.WriteString(str(a, "message"))
+			b.WriteByte('\n')
 		}
 	}
 
@@ -135,8 +201,9 @@ func buildSystemPrompt(data map[string]any) string {
 	if ac == nil {
 		ac = map[string]any{}
 	}
-	primary := str(ac, "primaryModel")
-	b.WriteString(fmt.Sprintf("Primary model: %s\n", primary))
+	b.WriteString("Primary model: ")
+	b.WriteString(str(ac, "primaryModel"))
+	b.WriteByte('\n')
 	fallbacks := ""
 	if fb, ok := ac["fallbacks"].([]any); ok {
 		parts := make([]string, 0, len(fb))
@@ -151,7 +218,9 @@ func buildSystemPrompt(data map[string]any) string {
 	if fallbacks == "" {
 		fallbacks = "none"
 	}
-	b.WriteString(fmt.Sprintf("Fallbacks: %s\n", fallbacks))
+	b.WriteString("Fallbacks: ")
+	b.WriteString(fallbacks)
+	b.WriteByte('\n')
 
 	return b.String()
 }
@@ -174,7 +243,9 @@ type completionPayload struct {
 }
 
 func callGateway(system string, history []chatMessage, question string, port int, token, model string, client *http.Client) (string, error) {
-	messages := []chatMessage{{Role: "system", Content: system}}
+	// Pre-allocate messages slice: system + history + user question
+	messages := make([]chatMessage, 0, 2+len(history))
+	messages = append(messages, chatMessage{Role: "system", Content: system})
 	messages = append(messages, history...)
 	messages = append(messages, chatMessage{Role: "user", Content: question})
 
@@ -189,7 +260,7 @@ func callGateway(system string, history []chatMessage, question string, port int
 		return "", fmt.Errorf("marshal error: %w", err)
 	}
 
-	url := fmt.Sprintf("http://localhost:%d/v1/chat/completions", port)
+	url := "http://localhost:" + strconv.Itoa(port) + "/v1/chat/completions"
 	req, err := http.NewRequest("POST", url, bytes.NewReader(body))
 	if err != nil {
 		return "", fmt.Errorf("request error: %w", err)

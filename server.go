@@ -1,8 +1,8 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
-	"fmt"
 	"html"
 	"io"
 	"log"
@@ -23,33 +23,54 @@ const (
 	refreshTimeout = 15 * time.Second
 )
 
+// Pre-defined error JSON responses — avoid map alloc + marshal on hot paths
+var (
+	errChatDisabled = []byte(`{"error":"AI chat is disabled in config.json"}`)
+	errBadBody      = []byte(`{"error":"failed to read body"}`)
+	errBadJSON      = []byte(`{"error":"Invalid JSON body"}`)
+	errEmptyQ       = []byte(`{"error":"question is required and must be non-empty"}`)
+	errBodyTooLarge = []byte(`{"error":"Request body too large (max 65536 bytes)"}`)
+	errQTooLong     = []byte(`{"error":"Question too long (max 2000 chars)"}`)
+	errDataMissing  = []byte(`{"error":"data.json not found — refresh in progress, try again shortly"}`)
+)
+
 type Server struct {
 	dir          string
 	version      string
 	cfg          Config
 	gatewayToken string
 
-	indexHTMLRendered []byte
-	httpClient        *http.Client
+	indexHTMLRendered  []byte
+	indexContentLength string // pre-computed strconv.Itoa(len(indexHTMLRendered))
+	corsDefault        string // pre-computed "http://localhost:<port>"
+	httpClient         *http.Client
 
 	mu             sync.Mutex
 	lastRefresh    time.Time
-	refreshRunning bool // prevents overlapping refresh.sh executions
+	refreshRunning bool
+
+	// Cached data.json for /api/chat prompt building
+	dataMu          sync.RWMutex
+	cachedData      map[string]any
+	cachedDataMtime time.Time
 }
 
 func NewServer(dir, version string, cfg Config, gatewayToken string, indexHTML []byte) *Server {
 	content := string(indexHTML)
 	preset := html.EscapeString(cfg.Theme.Preset)
-	meta := fmt.Sprintf("<head>\n<meta name=\"oc-theme\" content=\"%s\">", preset)
+	meta := "<head>\n<meta name=\"oc-theme\" content=\"" + preset + "\">"
 	content = strings.Replace(content, "<head>", meta, 1)
 	content = strings.ReplaceAll(content, "__VERSION__", html.EscapeString(version))
+	rendered := []byte(content)
 	return &Server{
-		dir:               dir,
-		version:           version,
-		cfg:               cfg,
-		gatewayToken:      gatewayToken,
-		indexHTMLRendered: []byte(content),
-		httpClient:        &http.Client{Timeout: 60 * time.Second},
+		dir:                dir,
+		version:            version,
+		cfg:                cfg,
+		gatewayToken:       gatewayToken,
+		indexHTMLRendered:  rendered,
+		indexContentLength: strconv.Itoa(len(rendered)),
+		corsDefault:        "http://localhost:" + strconv.Itoa(cfg.Server.Port),
+		httpClient:         &http.Client{Timeout: 60 * time.Second},
 	}
 }
 
@@ -83,7 +104,7 @@ func (s *Server) setCORSHeaders(w http.ResponseWriter, r *http.Request) {
 	if strings.HasPrefix(origin, "http://localhost:") || strings.HasPrefix(origin, "http://127.0.0.1:") {
 		w.Header().Set("Access-Control-Allow-Origin", origin)
 	} else {
-		w.Header().Set("Access-Control-Allow-Origin", fmt.Sprintf("http://localhost:%d", s.cfg.Server.Port))
+		w.Header().Set("Access-Control-Allow-Origin", s.corsDefault)
 	}
 }
 
@@ -92,19 +113,18 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
 	w.Header().Set("Pragma", "no-cache")
 	w.Header().Set("Expires", "0")
-	w.Header().Set("Content-Length", strconv.Itoa(len(s.indexHTMLRendered)))
+	w.Header().Set("Content-Length", s.indexContentLength)
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(s.indexHTMLRendered)
 }
 
-// runRefresh executes refresh.sh once, preventing overlapping runs.
-// Updates lastRefresh only on success; resets on timeout/failure so next
-// request can retry (parity with server.py behaviour).
+// runRefresh executes refresh.sh once using exec.CommandContext.
+// Prevents overlapping runs. Updates lastRefresh only on success.
 func (s *Server) runRefresh() {
 	s.mu.Lock()
 	if s.refreshRunning {
 		s.mu.Unlock()
-		return // another goroutine is already running refresh
+		return
 	}
 	s.refreshRunning = true
 	s.mu.Unlock()
@@ -115,34 +135,29 @@ func (s *Server) runRefresh() {
 		s.mu.Unlock()
 	}()
 
+	ctx, cancel := context.WithTimeout(context.Background(), refreshTimeout)
+	defer cancel()
+
 	script := filepath.Join(s.dir, "refresh.sh")
-	cmd := exec.Command("bash", script)
+	cmd := exec.CommandContext(ctx, "bash", script)
 	cmd.Dir = s.dir
 
-	done := make(chan error, 1)
-	go func() { done <- cmd.Run() }()
-
-	select {
-	case err := <-done:
-		if err != nil {
+	if err := cmd.Run(); err != nil {
+		if ctx.Err() == context.DeadlineExceeded {
+			log.Printf("[dashboard] refresh.sh timed out after %s", refreshTimeout)
+		} else {
 			log.Printf("[dashboard] refresh.sh failed: %v", err)
-			// Do NOT update lastRefresh — allow retry on next request
-			return
 		}
-		// Success: update timestamp so debounce works correctly
-		s.mu.Lock()
-		s.lastRefresh = time.Now()
-		s.mu.Unlock()
-	case <-time.After(refreshTimeout):
-		_ = cmd.Process.Kill()
-		log.Printf("[dashboard] refresh.sh timed out after %s", refreshTimeout)
-		// Do NOT update lastRefresh — allow retry on next request
+		return // do NOT update lastRefresh — allow retry
 	}
+
+	s.mu.Lock()
+	s.lastRefresh = time.Now()
+	s.mu.Unlock()
 }
 
 // handleRefresh implements stale-while-revalidate:
-// 1. Return existing data.json immediately (if it exists) — zero wait for user
-// 2. Trigger refresh.sh in background if debounce has expired
+// Returns existing data.json immediately, triggers refresh in background if stale.
 func (s *Server) handleRefresh(w http.ResponseWriter, r *http.Request) {
 	debounce := time.Duration(s.cfg.Refresh.IntervalSeconds) * time.Second
 
@@ -151,14 +166,14 @@ func (s *Server) handleRefresh(w http.ResponseWriter, r *http.Request) {
 	s.mu.Unlock()
 
 	if shouldRun {
-		go s.runRefresh() // non-blocking — response returns immediately
+		go s.runRefresh()
 	}
 
 	dataPath := filepath.Join(s.dir, "data.json")
 	data, err := os.ReadFile(dataPath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			s.sendJSON(w, r, http.StatusServiceUnavailable, map[string]string{"error": "data.json not found — refresh in progress, try again shortly"})
+			s.sendJSONRaw(w, r, http.StatusServiceUnavailable, errDataMissing)
 		} else {
 			s.sendJSON(w, r, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		}
@@ -173,45 +188,76 @@ func (s *Server) handleRefresh(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(data)
 }
 
+// getDataCached returns parsed data.json, cached by file mtime.
+// Avoids re-reading and re-parsing ~100KB JSON on every /api/chat.
+func (s *Server) getDataCached() map[string]any {
+	dataPath := filepath.Join(s.dir, "data.json")
+	stat, err := os.Stat(dataPath)
+	if err != nil {
+		return map[string]any{}
+	}
+	mtime := stat.ModTime()
+
+	s.dataMu.RLock()
+	if s.cachedData != nil && !mtime.After(s.cachedDataMtime) {
+		defer s.dataMu.RUnlock()
+		return s.cachedData
+	}
+	s.dataMu.RUnlock()
+
+	// Reload
+	raw, err := os.ReadFile(dataPath)
+	if err != nil {
+		return map[string]any{}
+	}
+	var parsed map[string]any
+	if err := json.Unmarshal(raw, &parsed); err != nil {
+		return map[string]any{}
+	}
+
+	s.dataMu.Lock()
+	s.cachedData = parsed
+	s.cachedDataMtime = mtime
+	s.dataMu.Unlock()
+
+	return parsed
+}
+
 // handleChat handles the AI chat endpoint.
 func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 	if !s.cfg.AI.Enabled {
-		s.sendJSON(w, r, http.StatusServiceUnavailable, map[string]string{"error": "AI chat is disabled in config.json"})
+		s.sendJSONRaw(w, r, http.StatusServiceUnavailable, errChatDisabled)
 		return
 	}
 
 	lr := io.LimitReader(r.Body, int64(maxBodyBytes)+1)
 	bodyBytes, err := io.ReadAll(lr)
 	if err != nil {
-		s.sendJSON(w, r, http.StatusBadRequest, map[string]string{"error": "failed to read body"})
+		s.sendJSONRaw(w, r, http.StatusBadRequest, errBadBody)
 		return
 	}
 	if len(bodyBytes) > maxBodyBytes {
-		s.sendJSON(w, r, http.StatusRequestEntityTooLarge, map[string]string{
-			"error": fmt.Sprintf("Request body too large (max %d bytes)", maxBodyBytes),
-		})
+		s.sendJSONRaw(w, r, http.StatusRequestEntityTooLarge, errBodyTooLarge)
 		return
 	}
 
 	var req chatRequest
 	if err := json.Unmarshal(bodyBytes, &req); err != nil {
-		s.sendJSON(w, r, http.StatusBadRequest, map[string]string{"error": "Invalid JSON body"})
+		s.sendJSONRaw(w, r, http.StatusBadRequest, errBadJSON)
 		return
 	}
 
 	q := strings.TrimSpace(req.Question)
 	if q == "" {
-		s.sendJSON(w, r, http.StatusBadRequest, map[string]string{"error": "question is required and must be non-empty"})
+		s.sendJSONRaw(w, r, http.StatusBadRequest, errEmptyQ)
 		return
 	}
 	if len(q) > maxQuestionLen {
-		s.sendJSON(w, r, http.StatusBadRequest, map[string]string{
-			"error": fmt.Sprintf("Question too long (max %d chars)", maxQuestionLen),
-		})
+		s.sendJSONRaw(w, r, http.StatusBadRequest, errQTooLong)
 		return
 	}
 
-	// Validate + sanitise history — inline role switch avoids per-request map alloc
+	// Validate + sanitise history — inline switch avoids per-request map alloc
 	maxHist := s.cfg.AI.MaxHistory
 	history := make([]chatMessage, 0, maxHist)
 	start := len(req.History) - maxHist
@@ -231,15 +277,8 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		history = append(history, chatMessage{Role: msg.Role, Content: content})
 	}
 
-	// Load data.json for system prompt
-	var dashData map[string]any
-	dataPath := filepath.Join(s.dir, "data.json")
-	if raw, err := os.ReadFile(dataPath); err == nil {
-		_ = json.Unmarshal(raw, &dashData)
-	}
-	if dashData == nil {
-		dashData = map[string]any{}
-	}
+	// Use cached data.json — avoids re-reading + parsing ~100KB per request
+	dashData := s.getDataCached()
 
 	systemPrompt := buildSystemPrompt(dashData)
 	answer, err := callGateway(
@@ -259,9 +298,14 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 	s.sendJSON(w, r, http.StatusOK, map[string]string{"answer": answer})
 }
 
-// sendJSON sends a JSON response with CORS headers.
+// sendJSON sends a JSON response with CORS headers (for dynamic payloads).
 func (s *Server) sendJSON(w http.ResponseWriter, r *http.Request, status int, v any) {
 	body, _ := json.Marshal(v)
+	s.sendJSONRaw(w, r, status, body)
+}
+
+// sendJSONRaw sends pre-encoded JSON with CORS headers (zero-alloc for known responses).
+func (s *Server) sendJSONRaw(w http.ResponseWriter, r *http.Request, status int, body []byte) {
 	s.setCORSHeaders(w, r)
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "no-cache")
