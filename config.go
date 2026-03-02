@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"encoding/json"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -83,7 +84,9 @@ func loadConfig(dir string) Config {
 		return cfg
 	}
 	defer f.Close()
-	_ = json.NewDecoder(f).Decode(&cfg)
+	if err := json.NewDecoder(f).Decode(&cfg); err != nil {
+		log.Printf("[dashboard] WARNING: invalid config.json, using defaults for missing/invalid fields: %v", err)
+	}
 	// Clamp/default all AI fields — guard against zero, negative, or missing values
 	if cfg.AI.MaxHistory <= 0 {
 		cfg.AI.MaxHistory = 6

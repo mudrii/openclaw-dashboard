@@ -52,6 +52,7 @@ type Server struct {
 	// Cached data.json for /api/chat prompt building
 	dataMu          sync.RWMutex
 	cachedData      map[string]any
+	cachedDataRaw   []byte
 	cachedDataMtime time.Time
 }
 
@@ -196,6 +197,37 @@ func (s *Server) runRefresh() {
 	s.mu.Unlock()
 }
 
+// getDataRawCached returns cached data.json bytes when unchanged.
+func (s *Server) getDataRawCached() ([]byte, error) {
+	dataPath := filepath.Join(s.dir, "data.json")
+	stat, err := os.Stat(dataPath)
+	if err != nil {
+		return nil, err
+	}
+	mtime := stat.ModTime()
+
+	s.dataMu.RLock()
+	if s.cachedDataRaw != nil && !mtime.After(s.cachedDataMtime) {
+		raw := s.cachedDataRaw
+		s.dataMu.RUnlock()
+		return raw, nil
+	}
+	s.dataMu.RUnlock()
+
+	raw, err := os.ReadFile(dataPath)
+	if err != nil {
+		return nil, err
+	}
+
+	s.dataMu.Lock()
+	if s.cachedDataRaw == nil || mtime.After(s.cachedDataMtime) {
+		s.cachedDataRaw = raw
+		s.cachedDataMtime = mtime
+	}
+	s.dataMu.Unlock()
+	return raw, nil
+}
+
 // handleRefresh implements stale-while-revalidate:
 // Returns existing data.json immediately, triggers refresh in background if stale.
 func (s *Server) handleRefresh(w http.ResponseWriter, r *http.Request) {
@@ -209,8 +241,7 @@ func (s *Server) handleRefresh(w http.ResponseWriter, r *http.Request) {
 		go s.runRefresh()
 	}
 
-	dataPath := filepath.Join(s.dir, "data.json")
-	data, err := os.ReadFile(dataPath)
+	data, err := s.getDataRawCached()
 	if err != nil {
 		if os.IsNotExist(err) {
 			s.sendJSONRaw(w, r, http.StatusServiceUnavailable, errDataMissing)
@@ -245,7 +276,6 @@ func (s *Server) getDataCached() map[string]any {
 	}
 	s.dataMu.RUnlock()
 
-	// Reload
 	raw, err := os.ReadFile(dataPath)
 	if err != nil {
 		return map[string]any{}
@@ -258,8 +288,8 @@ func (s *Server) getDataCached() map[string]any {
 	s.dataMu.Lock()
 	s.cachedData = parsed
 	s.cachedDataMtime = mtime
+	s.cachedDataRaw = raw
 	s.dataMu.Unlock()
-
 	return parsed
 }
 
@@ -270,6 +300,7 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	defer r.Body.Close()
 	lr := io.LimitReader(r.Body, int64(maxBodyBytes)+1)
 	bodyBytes, err := io.ReadAll(lr)
 	if err != nil {
@@ -330,7 +361,7 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 	)
 	if err != nil {
 		log.Printf("[dashboard] POST /api/chat error: %v", err)
-		s.sendJSON(w, r, http.StatusOK, map[string]string{"error": err.Error()})
+		s.sendJSON(w, r, http.StatusBadGateway, map[string]string{"error": err.Error()})
 		return
 	}
 
