@@ -26,19 +26,18 @@ It's not trying to replace the OpenClaw CLI or Telegram interface. It's the at-a
 
 ### 12 Dashboard Panels
 
-1. **📊 Top Metrics Bar** — Live CPU, RAM, swap, disk usage + OpenClaw version + gateway status — always visible, colour-coded by configurable thresholds
+1. **📊 Top Metrics Bar** — Live CPU, RAM, swap, disk + OpenClaw version + gateway — always on, colour-coded by configurable thresholds (see [Top Metrics Bar](#top-metrics-bar))
 2. **🔔 Header Bar** — Bot name, online/offline status, auto-refresh countdown, theme picker
 3. **⚠️ Alerts Banner** — Smart alerts for high costs, failed crons, high context usage, gateway offline
 4. **💚 System Health** — Gateway status, PID, uptime, memory, compaction mode, active session count
-4. **💰 Cost Cards** — Today's cost, all-time cost, projected monthly, cost breakdown donut chart
-5. **⏰ Cron Jobs** — All scheduled jobs with status, schedule, last/next run, duration, model
-6. **📡 Active Sessions** — Recent sessions with model, type badges (DM/group/cron/subagent), context %, tokens
-7. **📊 Token Usage & Cost** — Per-model breakdown with 7d/30d/all-time tabs, usage bars, totals
-8. **🤖 Sub-Agent Activity** — Sub-agent runs with cost, duration, status + token breakdown (7d/30d tabs)
-9. **📈 Charts & Trends** — Cost trend line, model cost breakdown bars, sub-agent activity — all pure SVG, 7d/30d toggle
-10. **🧩 Bottom Row** — Available models grid, skills list, git log
-11. **💬 AI Chat** — Ask questions about your dashboard in natural language, powered by your OpenClaw gateway
-12. **📊 Top Metrics Bar** — Real-time host metrics always visible at the top (see [Top Metrics Bar](#top-metrics-bar))
+5. **💰 Cost Cards** — Today's cost, all-time cost, projected monthly, cost breakdown donut chart
+6. **⏰ Cron Jobs** — All scheduled jobs with status, schedule, last/next run, duration, model
+7. **📡 Active Sessions** — Recent sessions with model, type badges (DM/group/cron/subagent), context %, tokens
+8. **📊 Token Usage & Cost** — Per-model breakdown with 7d/30d/all-time tabs, usage bars, totals
+9. **🤖 Sub-Agent Activity** — Sub-agent runs with cost, duration, status + token breakdown (7d/30d tabs)
+10. **📈 Charts & Trends** — Cost trend line, model cost breakdown bars, sub-agent activity — all pure SVG, 7d/30d toggle
+11. **🧩 Bottom Row** — Available models grid, skills list, git log
+12. **💬 AI Chat** — Ask questions about your dashboard in natural language, powered by your OpenClaw gateway
 
 ### Key Features
 
@@ -50,7 +49,7 @@ It's not trying to replace the OpenClaw CLI or Telegram interface. It's the at-a
 - 🔒 **Local Only** — Runs on localhost, no external dependencies
 - 🐧 **Cross-Platform** — macOS and Linux
 - ⚡ **Zero Dependencies** — Pure HTML/CSS/JS frontend, Python stdlib backend, or single Go binary
-- 📊 **Top Metrics Bar** — Always-on CPU/RAM/swap/disk + gateway status bar with per-metric configurable thresholds
+- 📊 **Top Metrics Bar** — Always-on CPU/RAM/swap/disk + gateway status, per-metric thresholds, macOS + Linux
 - 💬 **AI Chat** — Natural language queries about costs, sessions, crons, and config via OpenClaw gateway
 - 🎯 **Accurate Model Display** — 5-level resolution chain ensures every session/sub-agent shows its real model, not the default
 
@@ -237,11 +236,12 @@ server.py / openclaw-dashboard (Go)   ← HTTP server (choose one)
 | Serves `index.html` | From disk | Embedded in binary (`//go:embed`) |
 | `/api/refresh` | Blocking (waits for `refresh.sh`) | Stale-while-revalidate (instant response) |
 | `/api/chat` | Reads `data.json` per request | Mtime-cached `data.json` (dual raw+parsed cache) |
+| `/api/system` | `system_metrics.py` — TTL cache, stale-serving | `SystemService` — parallel collectors, RWMutex cache |
 | Static files | Serves everything (⚠️ including `.git/`) | Allowlisted only (`themes.json`) |
 | Pre-warm | None | Runs `refresh.sh` at startup |
 | Shutdown | Immediate kill | Graceful (drains requests, 5s timeout) |
 | Gateway limit | Unbounded | 1MB response cap |
-| Tests | `pytest` (14 tests) | `go test -race` (39 tests) |
+| Tests | `pytest` (123 tests) | `go test -race` (57 tests) |
 
 When you open the dashboard, `index.html` calls `/api/refresh`. The server runs `refresh.sh` (with 30s debounce) to collect fresh data from your OpenClaw installation, then returns the JSON. No cron jobs needed.
 
@@ -313,6 +313,15 @@ Edit `config.json`:
     "model": "your-model-id",
     "maxHistory": 6,
     "dotenvPath": "~/.openclaw/.env"
+  },
+  "system": {
+    "enabled": true,
+    "pollSeconds": 10,
+    "diskPath": "/",
+    "cpu":  { "warn": 80, "critical": 95 },
+    "ram":  { "warn": 75, "critical": 90 },
+    "swap": { "warn": 80, "critical": 95 },
+    "disk": { "warn": 85, "critical": 95 }
   }
 }
 ```
