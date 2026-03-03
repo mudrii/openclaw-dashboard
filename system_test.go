@@ -203,11 +203,11 @@ func TestSystemConfig_Defaults(t *testing.T) {
 	if !cfg.System.Enabled {
 		t.Error("expected system.enabled=true by default")
 	}
-	if cfg.System.PollSeconds != 5 {
-		t.Errorf("expected PollSeconds=5, got %d", cfg.System.PollSeconds)
+	if cfg.System.PollSeconds != 10 {
+		t.Errorf("expected PollSeconds=10, got %d", cfg.System.PollSeconds)
 	}
-	if cfg.System.MetricsTTLSeconds != 5 {
-		t.Errorf("expected MetricsTTLSeconds=5, got %d", cfg.System.MetricsTTLSeconds)
+	if cfg.System.MetricsTTLSeconds != 10 {
+		t.Errorf("expected MetricsTTLSeconds=10, got %d", cfg.System.MetricsTTLSeconds)
 	}
 	if cfg.System.VersionsTTLSeconds != 300 {
 		t.Errorf("expected VersionsTTLSeconds=300, got %d", cfg.System.VersionsTTLSeconds)

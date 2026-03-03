@@ -99,8 +99,8 @@ func defaultConfig() Config {
 		},
 		System: SystemConfig{
 			Enabled:            true,
-			PollSeconds:        5,
-			MetricsTTLSeconds:  5,
+			PollSeconds:        10,
+			MetricsTTLSeconds:  10,
 			VersionsTTLSeconds: 300,
 			GatewayTimeoutMs:   1500,
 			DiskPath:           "/",
@@ -143,10 +143,10 @@ func loadConfig(dir string) Config {
 	}
 	// Clamp system config
 	if cfg.System.PollSeconds < 2 || cfg.System.PollSeconds > 60 {
-		cfg.System.PollSeconds = 5
+		cfg.System.PollSeconds = 10
 	}
 	if cfg.System.MetricsTTLSeconds < 2 || cfg.System.MetricsTTLSeconds > 60 {
-		cfg.System.MetricsTTLSeconds = 5
+		cfg.System.MetricsTTLSeconds = 10
 	}
 	if cfg.System.VersionsTTLSeconds < 30 || cfg.System.VersionsTTLSeconds > 3600 {
 		cfg.System.VersionsTTLSeconds = 300

@@ -195,7 +195,9 @@ func collectVersions(ctx context.Context, dashVer string, timeoutMs int) SystemV
 	v := SystemVersions{Dashboard: dashVer}
 
 	// OpenClaw version
-	out, err := runWithTimeout(ctx, timeoutMs, "openclaw", "--version")
+	// Use full path — asdf shims may not be in the server's PATH
+	oclawBin := resolveOpenclawBin()
+	out, err := runWithTimeout(ctx, timeoutMs, oclawBin, "--version")
 	if err != nil {
 		v.Openclaw = "unknown"
 	} else {
@@ -204,7 +206,7 @@ func collectVersions(ctx context.Context, dashVer string, timeoutMs int) SystemV
 
 	// Gateway status — use --json flag for reliable parsing
 	gw := SystemGateway{Status: "unknown"}
-	gwOut, err := runWithTimeout(ctx, timeoutMs, "openclaw", "gateway", "status", "--json")
+	gwOut, err := runWithTimeout(ctx, timeoutMs, oclawBin, "gateway", "status", "--json")
 	if err != nil {
 		// Fallback: check if gateway process is reachable via HTTP
 		gw = detectGatewayFallback(ctx)
@@ -267,6 +269,27 @@ func runWithTimeout(ctx context.Context, timeoutMs int, name string, args ...str
 	defer cancel()
 	out, err := exec.CommandContext(tctx, name, args...).Output()
 	return strings.TrimSpace(string(out)), err
+}
+
+// resolveOpenclawBin finds the openclaw binary, checking PATH then known asdf locations.
+// asdf shims may not be on the server's PATH when launched as a background process.
+func resolveOpenclawBin() string {
+	if p, err := exec.LookPath("openclaw"); err == nil {
+		return p
+	}
+	// asdf node installs — check all installed node versions
+	candidates := []string{
+		"/Users/mudrii/.asdf/installs/nodejs/22.22.0/bin/openclaw",
+		"/Users/mudrii/.asdf/shims/openclaw",
+		"/usr/local/bin/openclaw",
+		"/opt/homebrew/bin/openclaw",
+	}
+	for _, c := range candidates {
+		if _, err := exec.LookPath(c); err == nil {
+			return c
+		}
+	}
+	return "openclaw" // last resort — may fail but gives a clear error
 }
 
 
