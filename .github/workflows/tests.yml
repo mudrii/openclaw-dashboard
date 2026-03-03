@@ -23,11 +23,11 @@ jobs:
           python-version: ${{ matrix.python-version }}
           cache: pip
 
-      - name: Install pytest
-        run: pip install pytest
+      - name: Install dependencies
+        run: pip install -r requirements.txt
 
       - name: Run static analysis tests (no server needed)
-        run: python -m pytest tests/test_frontend.py tests/test_critical.py tests/test_dockerfile.py tests/test_nix_flake.py -v
+        run: python -m pytest tests/test_frontend.py tests/test_critical.py tests/test_dockerfile.py tests/test_nix_flake.py tests/test_system_metrics.py -v
 
       - name: Run schema tests
         run: python -m pytest tests/test_data_schema.py -v
