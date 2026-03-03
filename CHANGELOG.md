@@ -1,5 +1,16 @@
 # Changelog
 
+## v2026.3.5 — 2026-03-04
+
+### Fixed
+- **README panel numbering** — Removed duplicate panel entries; panels now correctly numbered 1–12 with no repeats
+- **README test counts** — Updated Architecture comparison table: Python 123 tests (was 14), Go 57 tests (was 39)
+- **README config example** — Added `system` block with per-metric thresholds to the `config.json` example
+- **README Architecture table** — Added `/api/system` row showing both Python and Go implementations
+- **Release assets** — All 4 platform binaries now properly built from source and attached to GitHub release (darwin-arm64, darwin-amd64, linux-amd64, linux-arm64) with SHA256 checksums
+
+---
+
 ## v2026.3.4 — 2026-03-04
 
 ### Added
