@@ -144,8 +144,16 @@ func loadConfig(dir string) Config {
 	if cfg.System.WarnPercent <= 0 || cfg.System.WarnPercent >= 100 {
 		cfg.System.WarnPercent = 70
 	}
+	// Ensure critical > warn and <= 100; clamp relative to warn
 	if cfg.System.CriticalPercent <= cfg.System.WarnPercent || cfg.System.CriticalPercent > 100 {
-		cfg.System.CriticalPercent = 85
+		if cfg.System.WarnPercent < 95 {
+			cfg.System.CriticalPercent = cfg.System.WarnPercent + 15
+			if cfg.System.CriticalPercent > 100 {
+				cfg.System.CriticalPercent = 100
+			}
+		} else {
+			cfg.System.CriticalPercent = 100
+		}
 	}
 	return cfg
 }

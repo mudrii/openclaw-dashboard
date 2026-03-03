@@ -2,17 +2,19 @@ package main
 
 // SystemResponse is the JSON body returned by GET /api/system.
 type SystemResponse struct {
-	OK          bool           `json:"ok"`
-	Degraded    bool           `json:"degraded"`
-	Stale       bool           `json:"stale"`
-	CollectedAt string         `json:"collectedAt"`
-	PollSeconds int            `json:"pollSeconds"`
-	CPU         SystemCPU      `json:"cpu"`
-	RAM         SystemRAM      `json:"ram"`
-	Swap        SystemSwap     `json:"swap"`
-	Disk        SystemDisk     `json:"disk"`
-	Versions    SystemVersions `json:"versions"`
-	Errors      []string       `json:"errors,omitempty"`
+	OK              bool           `json:"ok"`
+	Degraded        bool           `json:"degraded"`
+	Stale           bool           `json:"stale"`
+	CollectedAt     string         `json:"collectedAt"`
+	PollSeconds     int            `json:"pollSeconds"`
+	WarnPercent     float64        `json:"warnPercent"`
+	CriticalPercent float64        `json:"criticalPercent"`
+	CPU             SystemCPU      `json:"cpu"`
+	RAM             SystemRAM      `json:"ram"`
+	Swap            SystemSwap     `json:"swap"`
+	Disk            SystemDisk     `json:"disk"`
+	Versions        SystemVersions `json:"versions"`
+	Errors          []string       `json:"errors,omitempty"`
 }
 
 type SystemCPU struct {

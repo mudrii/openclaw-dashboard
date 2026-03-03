@@ -192,5 +192,52 @@ class TestDebounce(ServerTestBase):
         json.loads(body2)
 
 
+class TestSystemEndpoint(ServerTestBase):
+    """Tests for GET /api/system endpoint."""
+
+    def test_system_get_returns_200_with_schema(self):
+        resp, body = self._get("/api/system")
+        self.assertEqual(resp.status, 200)
+        data = json.loads(body)
+        # Required top-level keys
+        for key in ("ok", "degraded", "stale", "collectedAt", "pollSeconds",
+                    "cpu", "ram", "swap", "disk", "versions"):
+            self.assertIn(key, data, f"missing key: {key}")
+        self.assertIsInstance(data["pollSeconds"], int)
+        self.assertGreater(data["pollSeconds"], 0)
+        self.assertIsNotNone(data["collectedAt"])
+
+    def test_system_head_no_body(self):
+        conn = self._conn()
+        conn.request("HEAD", "/api/system")
+        resp = conn.getresponse()
+        body = resp.read()
+        self.assertEqual(resp.status, 200)
+        self.assertEqual(len(body), 0, "HEAD should return empty body")
+
+    def test_system_cors_header_set(self):
+        conn = self._conn()
+        conn.request("GET", "/api/system", headers={"Origin": "http://localhost:9090"})
+        resp = conn.getresponse()
+        resp.read()
+        cors = resp.getheader("Access-Control-Allow-Origin")
+        self.assertIsNotNone(cors, "CORS header missing")
+        self.assertNotEqual(cors, "*", "CORS should not be wildcard")
+
+    def test_system_content_type_json(self):
+        resp, body = self._get("/api/system")
+        self.assertEqual(resp.status, 200)
+        ct = resp.getheader("Content-Type", "")
+        self.assertIn("application/json", ct)
+
+    def test_system_degraded_returns_200(self):
+        """Partial collector failure should still return 200 with degraded=true."""
+        resp, body = self._get("/api/system")
+        self.assertEqual(resp.status, 200)
+        data = json.loads(body)
+        # Regardless of degraded state, must be 200
+        self.assertIn("ok", data)
+
+
 if __name__ == "__main__":
     unittest.main()

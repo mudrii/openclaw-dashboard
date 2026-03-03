@@ -13,6 +13,7 @@ import time
 import sys
 import urllib.request
 import urllib.error
+import system_metrics
 
 PORT = 8080
 BIND = "127.0.0.1"
@@ -301,12 +302,36 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
         super().end_headers()
 
     def do_GET(self):
-        if self.path == "/api/refresh" or self.path.startswith("/api/refresh?"):
+        if self.path in ("/api/system", "/api/system/"):
+            self.handle_system()
+        elif self.path == "/api/refresh" or self.path.startswith("/api/refresh?"):
             self.handle_refresh()
         elif self.path in ("/", "/index.html"):
             self.handle_index()
         else:
             super().do_GET()
+
+    def do_HEAD(self):
+        if self.path in ("/api/system", "/api/system/"):
+            self.handle_system(head_only=True)
+        else:
+            super().do_HEAD()
+
+    def handle_system(self, head_only: bool = False):
+        """GET /api/system — host metrics + versions with TTL cache."""
+        status, body = system_metrics.get_payload()
+        origin = self.headers.get("Origin", "")
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Cache-Control", "no-cache")
+        self.send_header("Content-Length", str(len(body)))
+        if origin.startswith("http://localhost:") or origin.startswith("http://127.0.0.1:"):
+            self.send_header("Access-Control-Allow-Origin", origin)
+        else:
+            self.send_header("Access-Control-Allow-Origin", "http://localhost:8080")
+        self.end_headers()
+        if not head_only:
+            self.wfile.write(body)
 
     def handle_index(self):
         """Serve index.html with theme preset and version injected."""
@@ -512,6 +537,12 @@ def main():
 
     # Load AI config and gateway token
     _ai_cfg = cfg.get("ai", {})
+
+    # Configure system metrics service
+    sys_cfg = cfg.get("system", {})
+    system_metrics.configure(sys_cfg)
+    system_metrics.set_version(VERSION)
+
     dotenv_path = _ai_cfg.get("dotenvPath", "~/.openclaw/.env")
     env_vars = read_dotenv(dotenv_path)
     _gateway_token = env_vars.get("OPENCLAW_GATEWAY_TOKEN", "")

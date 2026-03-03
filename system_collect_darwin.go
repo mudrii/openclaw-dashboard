@@ -13,7 +13,7 @@ import (
 )
 
 func collectCPU(ctx context.Context) SystemCPU {
-	out, err := runWithTimeout(ctx, 3000, "top", "-l", "1", "-n", "0", "-s", "0")
+	out, err := runWithTimeout(ctx, 3000, "/usr/bin/top", "-l", "1", "-n", "0", "-s", "0")
 	if err != nil {
 		e := fmt.Sprintf("top failed: %v", err)
 		return SystemCPU{Cores: runtime.NumCPU(), Error: &e}
@@ -27,8 +27,8 @@ func collectCPU(ctx context.Context) SystemCPU {
 }
 
 func collectRAM(ctx context.Context) SystemRAM {
-	// total bytes
-	totalOut, err := runWithTimeout(ctx, 2000, "sysctl", "-n", "hw.memsize")
+	// total bytes — use full path, sysctl lives in /usr/sbin on macOS
+	totalOut, err := runWithTimeout(ctx, 2000, "/usr/sbin/sysctl", "-n", "hw.memsize")
 	if err != nil {
 		e := fmt.Sprintf("sysctl hw.memsize failed: %v", err)
 		return SystemRAM{Error: &e}
@@ -40,7 +40,7 @@ func collectRAM(ctx context.Context) SystemRAM {
 	}
 
 	// page stats
-	vmOut, err := runWithTimeout(ctx, 2000, "vm_stat")
+	vmOut, err := runWithTimeout(ctx, 2000, "/usr/bin/vm_stat")
 	if err != nil {
 		e := fmt.Sprintf("vm_stat failed: %v", err)
 		return SystemRAM{TotalBytes: totalBytes, Error: &e}
@@ -58,7 +58,7 @@ func collectRAM(ctx context.Context) SystemRAM {
 }
 
 func collectSwap(ctx context.Context) SystemSwap {
-	out, err := runWithTimeout(ctx, 2000, "sysctl", "vm.swapusage")
+	out, err := runWithTimeout(ctx, 2000, "/usr/sbin/sysctl", "vm.swapusage")
 	if err != nil {
 		e := fmt.Sprintf("sysctl vm.swapusage failed: %v", err)
 		return SystemSwap{Error: &e}

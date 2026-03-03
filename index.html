@@ -1375,23 +1375,27 @@ const SystemBar = {
   render(d) {
     const bar=$('systemTopBar'); if(!d){bar.style.display='none';return;}
     bar.style.display='flex';
-    const w=70,c=85;
-    const sp=(id,lbl,p,extra)=>{const e=$(id);e.className='sys-pill '+this.cls(p,w,c);e.textContent=extra||(lbl+' '+(p!=null?p.toFixed(1)+'%':'N/A'));};
-    sp('sysCpu','CPU',d.cpu?.percent??null);
-    sp('sysRam','RAM',d.ram?.percent??null,d.ram?'RAM '+this.fmt(d.ram.usedBytes)+'/'+this.fmt(d.ram.totalBytes):null);
-    sp('sysSwap','Swap',d.swap?.percent??null);
-    sp('sysDisk','Disk',d.disk?.percent??null);
+    const w=d.warnPercent||70, c=d.criticalPercent||85;
+    const sp=(id,lbl,p,extra)=>{const e=$(id);e.className='sys-pill '+(p===null||p===undefined?'sys-err':this.cls(p,w,c));e.textContent=extra||(p!=null?lbl+' '+p.toFixed(1)+'%':lbl+' N/A');};
+    const ramErr=d.ram?.error||d.ram?.totalBytes===0;
+    const swapErr=d.swap?.error;
+    sp('sysCpu','CPU',d.cpu?.error?null:(d.cpu?.percent??null));
+    sp('sysRam','RAM',ramErr?null:(d.ram?.percent??null),!ramErr&&d.ram?'RAM '+this.fmt(d.ram.usedBytes)+'/'+this.fmt(d.ram.totalBytes):null);
+    sp('sysSwap','Swap',swapErr?null:(d.swap?.percent??null));
+    sp('sysDisk','Disk used',d.disk?.error?null:(d.disk?.percent??null));
     const oc=$('sysOclaw');oc.className='sys-pill sys-ok';oc.textContent='OpenClaw '+(d.versions?.openclaw||'?');
     const gw=$('sysGw');const gwok=['online','running'].includes(d.versions?.gateway?.status);
     gw.className='sys-pill '+(gwok?'sys-ok':'sys-err');gw.textContent='GW '+(d.versions?.gateway?.status||'?');
     $('sysStale').style.display=d.stale?'inline':'none';
+    if(d.pollSeconds&&d.pollSeconds>0&&d.pollSeconds*1000!==this._lastMs)this.start(d.pollSeconds*1000);
   },
   async fetch() {
     if(this._inflight)return; this._inflight=true;
     try{const r=await fetch('/api/system');if(r.ok)this.render(await r.json());}
     catch(e){}finally{this._inflight=false;}
   },
-  start(ms){if(this._timer)clearInterval(this._timer);this.fetch();this._timer=setInterval(()=>this.fetch(),ms||5000);}
+  start(ms){if(this._timer&&this._lastMs===ms)return;if(this._timer)clearInterval(this._timer);this._lastMs=ms;this.fetch();this._timer=setInterval(()=>this.fetch(),ms||5000);},
+  _lastMs:0
 };
 
 // === App ===

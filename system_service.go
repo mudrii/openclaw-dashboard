@@ -35,7 +35,12 @@ func NewSystemService(cfg SystemConfig, dashVer string) *SystemService {
 }
 
 // GetJSON returns (statusCode, jsonBody).
+// Respects system.enabled config — returns 503 when disabled.
 func (s *SystemService) GetJSON(ctx context.Context) (int, []byte) {
+	if !s.cfg.Enabled {
+		return http.StatusServiceUnavailable, []byte(`{"ok":false,"error":"system metrics disabled"}`)
+	}
+
 	ttl := time.Duration(s.cfg.MetricsTTLSeconds) * time.Second
 
 	s.metricsMu.RLock()
@@ -53,7 +58,7 @@ func (s *SystemService) GetJSON(ctx context.Context) (int, []byte) {
 		if !s.metricsRefresh {
 			s.metricsRefresh = true
 			go func() {
-				s.refresh(context.Background())
+				s.refresh(context.Background()) //nolint:errcheck
 				s.metricsMu.Lock()
 				s.metricsRefresh = false
 				s.metricsMu.Unlock()
@@ -74,53 +79,68 @@ func (s *SystemService) GetJSON(ctx context.Context) (int, []byte) {
 	}
 
 	// No cache — collect synchronously
-	data := s.refresh(ctx)
+	data, hardFail := s.refresh(ctx)
 	if data == nil {
 		return http.StatusServiceUnavailable, []byte(`{"ok":false,"degraded":true,"error":"system metrics unavailable"}`)
+	}
+	if hardFail {
+		return http.StatusServiceUnavailable, data
 	}
 	return http.StatusOK, data
 }
 
-func (s *SystemService) refresh(ctx context.Context) []byte {
+// refresh collects fresh metrics and returns (jsonBytes, isHardFail).
+// isHardFail=true when ALL core collectors failed (no useful data).
+func (s *SystemService) refresh(ctx context.Context) ([]byte, bool) {
 	ver := s.getVersionsCached(ctx)
 
+	cpu := collectCPU(ctx)
+	ram := collectRAM(ctx)
+	swap := collectSwap(ctx)
+	disk := collectDiskRoot(s.cfg.DiskPath)
+
+	// Hard fail = all four core collectors failed
+	allFailed := cpu.Error != nil && ram.Error != nil && swap.Error != nil && disk.Error != nil
+
 	resp := SystemResponse{
-		OK:          true,
-		CollectedAt: time.Now().UTC().Format(time.RFC3339),
-		PollSeconds: s.cfg.PollSeconds,
-		CPU:         collectCPU(ctx),
-		RAM:         collectRAM(ctx),
-		Swap:        collectSwap(ctx),
-		Disk:        collectDiskRoot(s.cfg.DiskPath),
-		Versions:    ver,
+		OK:              !allFailed,
+		CollectedAt:     time.Now().UTC().Format(time.RFC3339),
+		PollSeconds:     s.cfg.PollSeconds,
+		WarnPercent:     s.cfg.WarnPercent,
+		CriticalPercent: s.cfg.CriticalPercent,
+		CPU:             cpu,
+		RAM:             ram,
+		Swap:            swap,
+		Disk:            disk,
+		Versions:        ver,
 	}
 
-	if resp.CPU.Error != nil {
+	if cpu.Error != nil {
 		resp.Degraded = true
-		resp.Errors = append(resp.Errors, "cpu: "+*resp.CPU.Error)
+		resp.Errors = append(resp.Errors, "cpu: "+*cpu.Error)
 	}
-	if resp.RAM.Error != nil {
+	if ram.Error != nil {
 		resp.Degraded = true
-		resp.Errors = append(resp.Errors, "ram: "+*resp.RAM.Error)
+		resp.Errors = append(resp.Errors, "ram: "+*ram.Error)
 	}
-	if resp.Swap.Error != nil {
+	if swap.Error != nil {
 		resp.Degraded = true
-		resp.Errors = append(resp.Errors, "swap: "+*resp.Swap.Error)
+		resp.Errors = append(resp.Errors, "swap: "+*swap.Error)
 	}
-	if resp.Disk.Error != nil {
+	if disk.Error != nil {
 		resp.Degraded = true
-		resp.Errors = append(resp.Errors, "disk: "+*resp.Disk.Error)
+		resp.Errors = append(resp.Errors, "disk: "+*disk.Error)
 	}
 
 	b, err := json.Marshal(resp)
 	if err != nil {
-		return nil
+		return nil, true
 	}
 	s.metricsMu.Lock()
 	s.metricsPayload = b
 	s.metricsAt = time.Now()
 	s.metricsMu.Unlock()
-	return b
+	return b, allFailed
 }
 
 func (s *SystemService) getVersionsCached(ctx context.Context) SystemVersions {
@@ -171,35 +191,63 @@ func collectVersions(ctx context.Context, dashVer string, timeoutMs int) SystemV
 		v.Openclaw = strings.TrimPrefix(strings.TrimSpace(out), "openclaw ")
 	}
 
-	// Gateway status
-	gwOut, err := runWithTimeout(ctx, timeoutMs, "openclaw", "gateway", "status")
+	// Gateway status — use --json flag for reliable parsing
 	gw := SystemGateway{Status: "unknown"}
+	gwOut, err := runWithTimeout(ctx, timeoutMs, "openclaw", "gateway", "status", "--json")
 	if err != nil {
-		e := "unreachable"
-		gw.Status = "offline"
-		gw.Error = &e
+		// Fallback: check if gateway process is reachable via HTTP
+		gw = detectGatewayFallback(ctx)
 	} else {
-		lower := strings.ToLower(gwOut)
-		if strings.Contains(lower, "running") || strings.Contains(lower, "online") {
-			gw.Status = "online"
-		} else {
-			gw.Status = "offline"
-		}
-		// Try to extract version from output
-		for _, line := range strings.Split(gwOut, "\n") {
-			if strings.Contains(line, "version") || strings.Contains(line, "v20") {
-				for _, p := range strings.Fields(line) {
-					p = strings.Trim(p, "()v,")
-					if len(p) > 4 && (strings.HasPrefix(p, "20") || strings.HasPrefix(p, "0.")) {
-						gw.Version = p
-						break
-					}
-				}
-			}
-		}
+		gw = parseGatewayStatusJSON(gwOut)
 	}
 	v.Gateway = gw
 	return v
+}
+
+// parseGatewayStatusJSON parses `openclaw gateway status --json` output.
+// The JSON has shape: {"service":{"loaded":true,...},...}
+func parseGatewayStatusJSON(output string) SystemGateway {
+	var result struct {
+		Service struct {
+			Loaded bool `json:"loaded"`
+		} `json:"service"`
+		Version string `json:"version"`
+	}
+	// Find first JSON object in output (may have leading non-JSON lines)
+	start := strings.Index(output, "{")
+	if start >= 0 {
+		if err := json.Unmarshal([]byte(output[start:]), &result); err == nil {
+			status := "offline"
+			if result.Service.Loaded {
+				status = "online"
+			}
+			return SystemGateway{Version: result.Version, Status: status}
+		}
+	}
+	// Fallback: text parsing
+	lower := strings.ToLower(output)
+	if strings.Contains(lower, "loaded") || strings.Contains(lower, "running") {
+		return SystemGateway{Status: "online"}
+	}
+	return SystemGateway{Status: "offline"}
+}
+
+// detectGatewayFallback checks if the gateway HTTP port is responding.
+func detectGatewayFallback(ctx context.Context) SystemGateway {
+	tctx, cancel := context.WithTimeout(ctx, 1500*time.Millisecond)
+	defer cancel()
+	req, err := http.NewRequestWithContext(tctx, http.MethodHead, "http://127.0.0.1:18789/", nil)
+	if err != nil {
+		e := "probe failed"
+		return SystemGateway{Status: "offline", Error: &e}
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err == nil {
+		resp.Body.Close()
+		return SystemGateway{Status: "online"}
+	}
+	e := "unreachable"
+	return SystemGateway{Status: "offline", Error: &e}
 }
 
 // runWithTimeout runs an external command with a context deadline.

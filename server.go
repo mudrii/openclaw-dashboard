@@ -397,6 +397,17 @@ func (s *Server) sendJSONRaw(w http.ResponseWriter, r *http.Request, status int,
 }
 
 func (s *Server) handleSystem(w http.ResponseWriter, r *http.Request) {
+	if !s.cfg.System.Enabled {
+		body := []byte(`{"ok":false,"error":"system metrics disabled"}`)
+		s.setCORSHeaders(w, r)
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Content-Length", strconv.Itoa(len(body)))
+		w.WriteHeader(http.StatusServiceUnavailable)
+		if r.Method != http.MethodHead {
+			_, _ = w.Write(body)
+		}
+		return
+	}
 	ctx := r.Context()
 	status, body := s.systemSvc.GetJSON(ctx)
 	s.setCORSHeaders(w, r)
