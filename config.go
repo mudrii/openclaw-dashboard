@@ -54,6 +54,7 @@ type SystemConfig struct {
 	MetricsTTLSeconds  int             `json:"metricsTtlSeconds"`
 	VersionsTTLSeconds int             `json:"versionsTtlSeconds"`
 	GatewayTimeoutMs   int             `json:"gatewayTimeoutMs"`
+	GatewayPort        int             `json:"gatewayPort"` // mirrors ai.gatewayPort; used for HTTP liveness probe
 	DiskPath           string          `json:"diskPath"`
 	// Global fallback thresholds (used when per-metric thresholds are zero/unset)
 	WarnPercent        float64         `json:"warnPercent"`
@@ -103,6 +104,7 @@ func defaultConfig() Config {
 			MetricsTTLSeconds:  10,
 			VersionsTTLSeconds: 300,
 			GatewayTimeoutMs:   1500,
+			GatewayPort:        18789,
 			DiskPath:           "/",
 			WarnPercent:        70,
 			CriticalPercent:    85,
@@ -153,6 +155,10 @@ func loadConfig(dir string) Config {
 	}
 	if cfg.System.GatewayTimeoutMs < 200 || cfg.System.GatewayTimeoutMs > 10000 {
 		cfg.System.GatewayTimeoutMs = 1500
+	}
+	// Sync gateway port from AI config (system.gatewayPort overrides ai.gatewayPort if set)
+	if cfg.System.GatewayPort <= 0 {
+		cfg.System.GatewayPort = cfg.AI.GatewayPort
 	}
 	if cfg.System.DiskPath == "" {
 		cfg.System.DiskPath = "/"

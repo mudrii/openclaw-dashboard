@@ -540,6 +540,9 @@ def main():
 
     # Configure system metrics service
     sys_cfg = cfg.get("system", {})
+    # Mirror gateway port from ai config so system_metrics can probe the right port
+    if "gatewayPort" not in sys_cfg:
+        sys_cfg["gatewayPort"] = _ai_cfg.get("gatewayPort", 18789)
     system_metrics.configure(sys_cfg)
     system_metrics.set_version(VERSION)
 

@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"math"
 	"net/http"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync"
 	"syscall"
@@ -164,7 +166,7 @@ func (s *SystemService) getVersionsCached(ctx context.Context) SystemVersions {
 	}
 	s.verMu.RUnlock()
 
-	v := collectVersions(ctx, s.dashVer, s.cfg.GatewayTimeoutMs)
+	v := collectVersions(ctx, s.dashVer, s.cfg.GatewayTimeoutMs, s.cfg.GatewayPort)
 	s.verMu.Lock()
 	s.verCached = v
 	s.verAt = time.Now()
@@ -191,7 +193,7 @@ func collectDiskRoot(path string) SystemDisk {
 }
 
 // collectVersions probes openclaw + gateway CLIs.
-func collectVersions(ctx context.Context, dashVer string, timeoutMs int) SystemVersions {
+func collectVersions(ctx context.Context, dashVer string, timeoutMs int, gatewayPort int) SystemVersions {
 	v := SystemVersions{Dashboard: dashVer}
 
 	// OpenClaw version
@@ -209,7 +211,7 @@ func collectVersions(ctx context.Context, dashVer string, timeoutMs int) SystemV
 	gwOut, err := runWithTimeout(ctx, timeoutMs, oclawBin, "gateway", "status", "--json")
 	if err != nil {
 		// Fallback: check if gateway process is reachable via HTTP
-		gw = detectGatewayFallback(ctx)
+		gw = detectGatewayFallback(ctx, gatewayPort)
 	} else {
 		gw = parseGatewayStatusJSON(gwOut)
 	}
@@ -246,10 +248,13 @@ func parseGatewayStatusJSON(output string) SystemGateway {
 }
 
 // detectGatewayFallback checks if the gateway HTTP port is responding.
-func detectGatewayFallback(ctx context.Context) SystemGateway {
+func detectGatewayFallback(ctx context.Context, gatewayPort int) SystemGateway {
+	if gatewayPort <= 0 {
+		gatewayPort = 18789
+	}
 	tctx, cancel := context.WithTimeout(ctx, 1500*time.Millisecond)
 	defer cancel()
-	req, err := http.NewRequestWithContext(tctx, http.MethodHead, "http://127.0.0.1:18789/", nil)
+	req, err := http.NewRequestWithContext(tctx, http.MethodHead, fmt.Sprintf("http://127.0.0.1:%d/", gatewayPort), nil)
 	if err != nil {
 		e := "probe failed"
 		return SystemGateway{Status: "offline", Error: &e}
@@ -264,11 +269,19 @@ func detectGatewayFallback(ctx context.Context) SystemGateway {
 }
 
 // runWithTimeout runs an external command with a context deadline.
+// On failure, stderr is appended to the error message for better diagnostics.
 func runWithTimeout(ctx context.Context, timeoutMs int, name string, args ...string) (string, error) {
 	tctx, cancel := context.WithTimeout(ctx, time.Duration(timeoutMs)*time.Millisecond)
 	defer cancel()
-	out, err := exec.CommandContext(tctx, name, args...).Output()
-	return strings.TrimSpace(string(out)), err
+	cmd := exec.CommandContext(tctx, name, args...)
+	out, err := cmd.Output()
+	if err != nil {
+		if exitErr, ok := err.(*exec.ExitError); ok && len(exitErr.Stderr) > 0 {
+			return strings.TrimSpace(string(out)), fmt.Errorf("%w: %s", err, strings.TrimSpace(string(exitErr.Stderr)))
+		}
+		return strings.TrimSpace(string(out)), err
+	}
+	return strings.TrimSpace(string(out)), nil
 }
 
 // resolveOpenclawBin finds the openclaw binary, checking PATH then known asdf locations.
@@ -277,15 +290,26 @@ func resolveOpenclawBin() string {
 	if p, err := exec.LookPath("openclaw"); err == nil {
 		return p
 	}
-	// asdf node installs — check all installed node versions
+	home, _ := os.UserHomeDir()
 	candidates := []string{
-		"/Users/mudrii/.asdf/installs/nodejs/22.22.0/bin/openclaw",
-		"/Users/mudrii/.asdf/shims/openclaw",
+		filepath.Join(home, ".asdf", "shims", "openclaw"),
+	}
+	// Also probe asdf nodejs installs — glob common versions
+	if nodeDir := filepath.Join(home, ".asdf", "installs", "nodejs"); nodeDir != "" {
+		if entries, err := os.ReadDir(nodeDir); err == nil {
+			for _, e := range entries {
+				if e.IsDir() {
+					candidates = append(candidates, filepath.Join(nodeDir, e.Name(), "bin", "openclaw"))
+				}
+			}
+		}
+	}
+	candidates = append(candidates,
 		"/usr/local/bin/openclaw",
 		"/opt/homebrew/bin/openclaw",
-	}
+	)
 	for _, c := range candidates {
-		if _, err := exec.LookPath(c); err == nil {
+		if info, err := os.Stat(c); err == nil && !info.IsDir() {
 			return c
 		}
 	}

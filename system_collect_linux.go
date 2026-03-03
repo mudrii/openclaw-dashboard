@@ -63,8 +63,22 @@ func collectRAM(ctx context.Context) SystemRAM {
 		e := err.Error()
 		return SystemRAM{Error: &e}
 	}
+	return ramFromMeminfo(info)
+}
+
+func collectSwap(ctx context.Context) SystemSwap {
+	info, err := collectMeminfo()
+	if err != nil {
+		e := err.Error()
+		return SystemSwap{Error: &e}
+	}
+	return swapFromMeminfo(info)
+}
+
+// ramFromMeminfo builds SystemRAM from a pre-parsed /proc/meminfo map.
+func ramFromMeminfo(info map[string]uint64) SystemRAM {
 	totalKb := info["MemTotal"]
-	// P1-4: fallback to MemFree for kernels < 3.14 (no MemAvailable)
+	// Fallback to MemFree for kernels < 3.14 (no MemAvailable)
 	availKb, ok := info["MemAvailable"]
 	if !ok {
 		availKb = info["MemFree"]
@@ -79,12 +93,8 @@ func collectRAM(ctx context.Context) SystemRAM {
 	return SystemRAM{UsedBytes: usedBytes, TotalBytes: totalBytes, Percent: pct}
 }
 
-func collectSwap(ctx context.Context) SystemSwap {
-	info, err := collectMeminfo()
-	if err != nil {
-		e := err.Error()
-		return SystemSwap{Error: &e}
-	}
+// swapFromMeminfo builds SystemSwap from a pre-parsed /proc/meminfo map.
+func swapFromMeminfo(info map[string]uint64) SystemSwap {
 	totalKb := info["SwapTotal"]
 	freeKb := info["SwapFree"]
 	usedKb := totalKb - freeKb
@@ -98,15 +108,36 @@ func collectSwap(ctx context.Context) SystemSwap {
 }
 
 // collectCPURAMSwapParallel runs all three Linux collectors concurrently.
+// /proc/meminfo is read once and shared between RAM and Swap collectors.
 func collectCPURAMSwapParallel(ctx context.Context) (SystemCPU, SystemRAM, SystemSwap) {
+	// Read /proc/meminfo once — shared by RAM and Swap to avoid double I/O
+	// and ensure both metrics come from the same kernel snapshot.
+	info, meminfoErr := collectMeminfo()
+
 	var cpu SystemCPU
 	var ram SystemRAM
 	var swap SystemSwap
 	var wg sync.WaitGroup
 	wg.Add(3)
 	go func() { defer wg.Done(); cpu = collectCPU(ctx) }()
-	go func() { defer wg.Done(); ram = collectRAM(ctx) }()
-	go func() { defer wg.Done(); swap = collectSwap(ctx) }()
+	go func() {
+		defer wg.Done()
+		if meminfoErr != nil {
+			e := meminfoErr.Error()
+			ram = SystemRAM{Error: &e}
+			return
+		}
+		ram = ramFromMeminfo(info)
+	}()
+	go func() {
+		defer wg.Done()
+		if meminfoErr != nil {
+			e := meminfoErr.Error()
+			swap = SystemSwap{Error: &e}
+			return
+		}
+		swap = swapFromMeminfo(info)
+	}()
 	wg.Wait()
 	return cpu, ram, swap
 }
@@ -157,7 +188,12 @@ func parseProcStat(content string) (user, system, idle, total uint64, err error)
 		iowaitV := parse(fields[5])
 		irqV := parse(fields[6])
 		softirqV := parse(fields[7])
-		totalV := userV + niceV + systemV + idleV + iowaitV + irqV + softirqV
+		// field[8] = steal (VM CPU stolen by hypervisor) — include for accuracy on VMs
+		var stealV uint64
+		if len(fields) > 8 {
+			stealV = parse(fields[8])
+		}
+		totalV := userV + niceV + systemV + idleV + iowaitV + irqV + softirqV + stealV
 		return userV, systemV, idleV, totalV, nil
 	}
 	return 0, 0, 0, 0, fmt.Errorf("cpu line not found in /proc/stat")

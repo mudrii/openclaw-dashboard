@@ -349,12 +349,17 @@ def _resolve_openclaw_bin() -> str:
     import shutil
     if shutil.which("openclaw"):
         return "openclaw"
+    home = os.path.expanduser("~")
     candidates = [
-        "/Users/mudrii/.asdf/installs/nodejs/22.22.0/bin/openclaw",
-        "/Users/mudrii/.asdf/shims/openclaw",
+        os.path.join(home, ".asdf", "shims", "openclaw"),
         "/usr/local/bin/openclaw",
         "/opt/homebrew/bin/openclaw",
     ]
+    # Probe all asdf nodejs installs dynamically
+    node_dir = os.path.join(home, ".asdf", "installs", "nodejs")
+    if os.path.isdir(node_dir):
+        for ver in sorted(os.listdir(node_dir), reverse=True):
+            candidates.insert(0, os.path.join(node_dir, ver, "bin", "openclaw"))
     for c in candidates:
         if os.path.isfile(c) and os.access(c, os.X_OK):
             return c
@@ -414,21 +419,26 @@ def parse_top_cpu(output: str, cores: int = 1) -> dict:
     return {"percent": 0.0, "cores": cores, "error": "CPU usage line not found in top output"}
 
 
+_RE_VM_PAGE_SIZE = re.compile(r"page size of (\d+) bytes")
+_RE_VM_ACTIVE    = re.compile(r"^Pages active:\s+(\d+)", re.MULTILINE)
+_RE_VM_WIRED     = re.compile(r"^Pages wired down:\s+(\d+)", re.MULTILINE)
+_RE_VM_COMPRESS  = re.compile(r"^Pages occupied by compressor:\s+(\d+)", re.MULTILINE)
+
+
 def parse_vm_stat(output: str, total_bytes: int) -> dict:
-    """Parse macOS vm_stat output → ram dict."""
+    """Parse macOS vm_stat output → ram dict. Uses pre-compiled regexes."""
     page_size = 4096
-    m = re.search(r"page size of (\d+) bytes", output)
+    m = _RE_VM_PAGE_SIZE.search(output)
     if m:
         page_size = int(m.group(1))
 
-    def get_pages(label: str) -> int:
-        pat = re.compile(r"^" + re.escape(label) + r"\s+(\d+)", re.MULTILINE)
+    def get_pages(pat: re.Pattern) -> int:
         mm = pat.search(output)
         return int(mm.group(1)) if mm else 0
 
-    active = get_pages("Pages active:")
-    wired = get_pages("Pages wired down:")
-    compressed = get_pages("Pages occupied by compressor:")
+    active = get_pages(_RE_VM_ACTIVE)
+    wired = get_pages(_RE_VM_WIRED)
+    compressed = get_pages(_RE_VM_COMPRESS)
     used_bytes = (active + wired + compressed) * page_size
     pct = round(used_bytes / total_bytes * 100, 1) if total_bytes > 0 else 0.0
     err = None if (active + wired + compressed) > 0 else "could not parse vm_stat pages"

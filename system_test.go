@@ -143,6 +143,51 @@ func TestSystemConfig_ClampCriticalRelativeToWarn(t *testing.T) {
 	}
 }
 
+func TestSystemConfig_PerMetricThresholdClamping(t *testing.T) {
+	tests := []struct {
+		name     string
+		cfgJSON  string
+		metric   string
+		wantWarn float64
+		wantCrit float64
+	}{
+		{"valid cpu thresholds", `{"system":{"cpu":{"warn":75,"critical":90}}}`, "cpu", 75, 90},
+		{"cpu crit < warn → clamp", `{"system":{"cpu":{"warn":80,"critical":60}}}`, "cpu", 80, 95},
+		{"ram warn at edge", `{"system":{"ram":{"warn":90,"critical":95}}}`, "ram", 90, 95},
+		{"swap crit > 100 → 100", `{"system":{"swap":{"warn":85,"critical":105}}}`, "swap", 85, 100},
+		{"disk defaults when absent", `{"system":{}}`, "disk", 80, 95},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			if err := os.WriteFile(filepath.Join(dir, "config.json"), []byte(tt.cfgJSON), 0o644); err != nil {
+				t.Fatalf("write config: %v", err)
+			}
+			loaded := loadConfig(dir)
+			var w, c float64
+			switch tt.metric {
+			case "cpu":
+				w, c = loaded.System.CPU.Warn, loaded.System.CPU.Critical
+			case "ram":
+				w, c = loaded.System.RAM.Warn, loaded.System.RAM.Critical
+			case "swap":
+				w, c = loaded.System.Swap.Warn, loaded.System.Swap.Critical
+			case "disk":
+				w, c = loaded.System.Disk.Warn, loaded.System.Disk.Critical
+			}
+			if w != tt.wantWarn {
+				t.Errorf("warn: expected %.0f got %.0f", tt.wantWarn, w)
+			}
+			if c != tt.wantCrit {
+				t.Errorf("critical: expected %.0f got %.0f", tt.wantCrit, c)
+			}
+			if c <= w {
+				t.Errorf("invariant violated: critical(%.0f) <= warn(%.0f)", c, w)
+			}
+		})
+	}
+}
+
 func TestHandleSystem_CacheHit(t *testing.T) {
 	dir := t.TempDir()
 	srv := testServer(t, dir)
