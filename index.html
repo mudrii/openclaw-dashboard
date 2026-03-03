@@ -47,6 +47,14 @@ body{font-family:-apple-system,BlinkMacSystemFont,'SF Pro','Helvetica Neue',sans
 
 /* Alerts */
 .alerts-section{margin-bottom:16px}
+.system-topbar{display:flex;align-items:center;gap:8px;padding:6px 16px;margin-bottom:10px;flex-wrap:wrap}
+.sys-pill{padding:3px 10px;border-radius:12px;font-size:12px;font-weight:600;white-space:nowrap;background:var(--panel-bg);color:var(--dim);cursor:default;transition:background .2s}
+.sys-pill.sys-ok{background:rgba(72,199,142,.15);color:#48c78e}
+.sys-pill.sys-warn{background:rgba(255,193,7,.15);color:#ffc107}
+.sys-pill.sys-crit{background:rgba(241,70,104,.15);color:#f14668}
+.sys-pill.sys-err{background:rgba(128,128,128,.12);color:var(--dim)}
+.sys-divider{width:1px;height:16px;background:var(--border);flex-shrink:0}
+.sys-stale{font-size:10px;color:var(--dim);opacity:.55;font-style:italic}
 .alert-item{display:flex;align-items:center;gap:10px;padding:10px 14px;border-radius:8px;margin-bottom:6px}
 .alert-critical{background:rgba(248,113,113,.08);border:1px solid rgba(248,113,113,.2)}
 .alert-high{background:rgba(251,146,60,.06);border:1px solid rgba(251,146,60,.15)}
@@ -244,7 +252,19 @@ body{font-family:-apple-system,BlinkMacSystemFont,'SF Pro','Helvetica Neue',sans
   </div>
 </div>
 
-<!-- 2. Alerts Banner -->
+<!-- 2. System Metrics Top Bar -->
+<div class="system-topbar glass" id="systemTopBar" style="display:none">
+  <span class="sys-pill" id="sysCpu" title="CPU usage">CPU</span>
+  <span class="sys-pill" id="sysRam" title="RAM usage">RAM</span>
+  <span class="sys-pill" id="sysSwap" title="Swap usage">Swap</span>
+  <span class="sys-pill" id="sysDisk" title="Disk usage">Disk</span>
+  <span class="sys-divider"></span>
+  <span class="sys-pill" id="sysOclaw" title="OpenClaw version">OpenClaw</span>
+  <span class="sys-pill" id="sysGw" title="Gateway status">Gateway</span>
+  <span class="sys-stale" id="sysStale" style="display:none">stale</span>
+</div>
+
+<!-- 3. Alerts Banner -->
 <div class="alerts-section" id="alertsSection"></div>
 
 <!-- 3. System Health Row -->
@@ -1347,12 +1367,40 @@ const Chat = {
   }
 };
 
+// === System Metrics ===
+const SystemBar = {
+  _timer: null, _inflight: false,
+  cls(p, w, c) { return p==null?'sys-err':p>=c?'sys-crit':p>=w?'sys-warn':'sys-ok'; },
+  fmt(b) { if(!b)return'0B'; const g=b/1073741824; return g>=1?g.toFixed(1)+'GB':(b/1048576).toFixed(0)+'MB'; },
+  render(d) {
+    const bar=$('systemTopBar'); if(!d){bar.style.display='none';return;}
+    bar.style.display='flex';
+    const w=70,c=85;
+    const sp=(id,lbl,p,extra)=>{const e=$(id);e.className='sys-pill '+this.cls(p,w,c);e.textContent=extra||(lbl+' '+(p!=null?p.toFixed(1)+'%':'N/A'));};
+    sp('sysCpu','CPU',d.cpu?.percent??null);
+    sp('sysRam','RAM',d.ram?.percent??null,d.ram?'RAM '+this.fmt(d.ram.usedBytes)+'/'+this.fmt(d.ram.totalBytes):null);
+    sp('sysSwap','Swap',d.swap?.percent??null);
+    sp('sysDisk','Disk',d.disk?.percent??null);
+    const oc=$('sysOclaw');oc.className='sys-pill sys-ok';oc.textContent='OpenClaw '+(d.versions?.openclaw||'?');
+    const gw=$('sysGw');const gwok=['online','running'].includes(d.versions?.gateway?.status);
+    gw.className='sys-pill '+(gwok?'sys-ok':'sys-err');gw.textContent='GW '+(d.versions?.gateway?.status||'?');
+    $('sysStale').style.display=d.stale?'inline':'none';
+  },
+  async fetch() {
+    if(this._inflight)return; this._inflight=true;
+    try{const r=await fetch('/api/system');if(r.ok)this.render(await r.json());}
+    catch(e){}finally{this._inflight=false;}
+  },
+  start(ms){if(this._timer)clearInterval(this._timer);this.fetch();this._timer=setInterval(()=>this.fetch(),ms||5000);}
+};
+
 // === App ===
 const App = {
   init() {
     Theme.load();
     setInterval(()=>App.onTick(),1000);
     App.refresh();
+    SystemBar.start(5000);
   },
   async refresh() {
     try{

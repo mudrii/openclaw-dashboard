@@ -19,6 +19,12 @@ func testServer(t *testing.T, dir string) *Server {
 	return NewServer(dir, "test", cfg, "", []byte("<head><body>__VERSION__</body>"))
 }
 
+func testServerWithConfig(t *testing.T, dir string, cfg Config) *Server {
+	t.Helper()
+	cfg.AI.Enabled = false
+	return NewServer(dir, "test", cfg, "", []byte("<head><body>__VERSION__</body>"))
+}
+
 // --- Cache coherence ---
 
 func TestCacheCoherence_RawUpdateInvalidatesParsed(t *testing.T) {

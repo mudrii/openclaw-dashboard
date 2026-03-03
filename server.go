@@ -17,11 +17,11 @@ import (
 )
 
 const (
-	maxBodyBytes    = 64 * 1024
-	maxQuestionLen  = 2000
-	maxHistoryItem  = 4000
-	maxGatewayResp  = 1 << 20 // 1MB limit on gateway response
-	refreshTimeout  = 15 * time.Second
+	maxBodyBytes   = 64 * 1024
+	maxQuestionLen = 2000
+	maxHistoryItem = 4000
+	maxGatewayResp = 1 << 20 // 1MB limit on gateway response
+	refreshTimeout = 15 * time.Second
 )
 
 // Pre-defined error JSON responses — avoid map alloc + marshal on hot paths
@@ -55,6 +55,9 @@ type Server struct {
 	cachedData      map[string]any
 	cachedDataRaw   []byte
 	cachedDataMtime time.Time
+
+	// System metrics service
+	systemSvc *SystemService
 }
 
 func NewServer(dir, version string, cfg Config, gatewayToken string, indexHTML []byte) *Server {
@@ -73,6 +76,7 @@ func NewServer(dir, version string, cfg Config, gatewayToken string, indexHTML [
 		indexContentLength: strconv.Itoa(len(rendered)),
 		corsDefault:        "http://localhost:" + strconv.Itoa(cfg.Server.Port),
 		httpClient:         &http.Client{Timeout: 60 * time.Second},
+		systemSvc:          NewSystemService(cfg.System, version),
 	}
 }
 
@@ -100,6 +104,8 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case isRead && (r.URL.Path == "/" || r.URL.Path == "/index.html"):
 		s.handleIndex(w, r)
+	case isRead && r.URL.Path == "/api/system":
+		s.handleSystem(w, r)
 	case isRead && strings.HasPrefix(r.URL.Path, "/api/refresh"):
 		s.handleRefresh(w, r)
 	case r.Method == http.MethodPost && r.URL.Path == "/api/chat":
@@ -388,4 +394,17 @@ func (s *Server) sendJSONRaw(w http.ResponseWriter, r *http.Request, status int,
 	w.Header().Set("Content-Length", strconv.Itoa(len(body)))
 	w.WriteHeader(status)
 	_, _ = w.Write(body)
+}
+
+func (s *Server) handleSystem(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	status, body := s.systemSvc.GetJSON(ctx)
+	s.setCORSHeaders(w, r)
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Content-Length", strconv.Itoa(len(body)))
+	w.WriteHeader(status)
+	if r.Method != http.MethodHead {
+		_, _ = w.Write(body)
+	}
 }

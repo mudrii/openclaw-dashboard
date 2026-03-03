@@ -42,6 +42,17 @@ type AlertsConfig struct {
 	MemoryMb      float64 `json:"memoryMb"`
 }
 
+type SystemConfig struct {
+	Enabled            bool    `json:"enabled"`
+	PollSeconds        int     `json:"pollSeconds"`
+	MetricsTTLSeconds  int     `json:"metricsTtlSeconds"`
+	VersionsTTLSeconds int     `json:"versionsTtlSeconds"`
+	GatewayTimeoutMs   int     `json:"gatewayTimeoutMs"`
+	DiskPath           string  `json:"diskPath"`
+	WarnPercent        float64 `json:"warnPercent"`
+	CriticalPercent    float64 `json:"criticalPercent"`
+}
+
 type Config struct {
 	Bot      BotConfig     `json:"bot"`
 	Theme    ThemeConfig   `json:"theme"`
@@ -50,6 +61,7 @@ type Config struct {
 	Server   ServerConfig  `json:"server"`
 	AI       AIConfig      `json:"ai"`
 	Alerts   AlertsConfig  `json:"alerts"`
+	System   SystemConfig  `json:"system"`
 }
 
 // defaults
@@ -72,6 +84,16 @@ func defaultConfig() Config {
 			DailyCostWarn: 20,
 			ContextPct:    80,
 			MemoryMb:      640,
+		},
+		System: SystemConfig{
+			Enabled:            true,
+			PollSeconds:        5,
+			MetricsTTLSeconds:  5,
+			VersionsTTLSeconds: 300,
+			GatewayTimeoutMs:   1500,
+			DiskPath:           "/",
+			WarnPercent:        70,
+			CriticalPercent:    85,
 		},
 	}
 }
@@ -102,6 +124,28 @@ func loadConfig(dir string) Config {
 	}
 	if cfg.Server.Port <= 0 {
 		cfg.Server.Port = 8080
+	}
+	// Clamp system config
+	if cfg.System.PollSeconds < 2 || cfg.System.PollSeconds > 60 {
+		cfg.System.PollSeconds = 5
+	}
+	if cfg.System.MetricsTTLSeconds < 2 || cfg.System.MetricsTTLSeconds > 60 {
+		cfg.System.MetricsTTLSeconds = 5
+	}
+	if cfg.System.VersionsTTLSeconds < 30 || cfg.System.VersionsTTLSeconds > 3600 {
+		cfg.System.VersionsTTLSeconds = 300
+	}
+	if cfg.System.GatewayTimeoutMs < 200 || cfg.System.GatewayTimeoutMs > 10000 {
+		cfg.System.GatewayTimeoutMs = 1500
+	}
+	if cfg.System.DiskPath == "" {
+		cfg.System.DiskPath = "/"
+	}
+	if cfg.System.WarnPercent <= 0 || cfg.System.WarnPercent >= 100 {
+		cfg.System.WarnPercent = 70
+	}
+	if cfg.System.CriticalPercent <= cfg.System.WarnPercent || cfg.System.CriticalPercent > 100 {
+		cfg.System.CriticalPercent = 85
 	}
 	return cfg
 }
