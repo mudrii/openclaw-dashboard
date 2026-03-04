@@ -220,7 +220,37 @@ body{font-family:-apple-system,BlinkMacSystemFont,'SF Pro','Helvetica Neue',sans
 .chat-send{background:var(--accent);border:none;border-radius:8px;padding:7px 12px;color:#fff;font-size:13px;cursor:pointer;transition:background .15s;flex-shrink:0}
 .chat-send:hover{background:var(--accent2)}
 .chat-send:disabled{opacity:.5;cursor:not-allowed}
+
+/* Collapsible Sections */
+.oc-section{margin-bottom:24px}
+.oc-section-header{display:flex;align-items:center;justify-content:space-between;padding:0 4px;margin-bottom:10px;flex-wrap:wrap;gap:8px}
+.oc-section-toggle{background:none;border:none;cursor:pointer;display:flex;align-items:center;gap:6px;padding:4px 8px;border-radius:6px;color:var(--muted);font-size:10px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;transition:background .15s,color .15s}
+.oc-section-toggle:hover{background:var(--surfaceHover);color:var(--textStrong)}
+.oc-section-toggle:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:6px}
+.oc-chevron{display:inline-block;transition:transform .2s ease;font-size:10px}
+.oc-section.collapsed .oc-chevron{transform:rotate(-90deg)}
+.oc-section.collapsed .oc-section-body{display:none}
+.oc-global-controls{display:flex;gap:6px;margin-bottom:12px;justify-content:flex-end}
+.oc-global-btn{background:var(--surface);border:1px solid var(--border);padding:4px 10px;border-radius:6px;color:var(--dim);font-size:10px;cursor:pointer;transition:all .15s}
+.oc-global-btn:hover{background:var(--surfaceHover);color:var(--textStrong)}
+@media(prefers-reduced-motion:reduce){.oc-chevron{transition:none}}
 </style>
+<script>
+// FOUC bootstrap: read localStorage before body renders to prevent flash
+(function(){
+  var STORAGE_KEY='ocDash:collapse:v1';
+  var DEFAULTS={'alerts':false,'health':false,'cost':false,'charts':false,'crons':false,'sessions':false,'usage':false,'subagent':false,'agent-config':true};
+  var state=DEFAULTS;
+  try{
+    var raw=localStorage.getItem(STORAGE_KEY);
+    if(raw){var parsed=JSON.parse(raw);if(parsed&&typeof parsed==='object'){for(var k in DEFAULTS){if(k in parsed)state[k]=!!parsed[k];}};}
+  }catch(e){}
+  window.__ocCollapsedInit=state;
+  var css='';
+  for(var key in state){if(state[key])css+='[data-section="'+key+'"] .oc-section-body{display:none}';}
+  if(css){var s=document.createElement('style');s.id='oc-collapse-bootstrap';s.textContent=css;document.head.appendChild(s);}
+})();
+</script>
 </head>
 <body>
 <div class="container">
@@ -264,20 +294,54 @@ body{font-family:-apple-system,BlinkMacSystemFont,'SF Pro','Helvetica Neue',sans
   <span class="sys-stale" id="sysStale" style="display:none">stale</span>
 </div>
 
-<!-- 3. Alerts Banner -->
-<div class="alerts-section" id="alertsSection"></div>
-
-<!-- 3. System Health Row -->
-<div class="health-row" id="healthRow">
-  <div class="glass health-item"><div class="health-label">Gateway</div><div class="health-value" id="hGw">—</div></div>
-  <div class="glass health-item"><div class="health-label">PID</div><div class="health-value" id="hPid">—</div></div>
-  <div class="glass health-item"><div class="health-label">Uptime</div><div class="health-value" id="hUp">—</div></div>
-  <div class="glass health-item"><div class="health-label">Memory</div><div class="health-value" id="hMem">—</div></div>
-  <div class="glass health-item"><div class="health-label">Compaction</div><div class="health-value" id="hComp">—</div></div>
-  <div class="glass health-item"><div class="health-label">Active Sessions</div><div class="health-value" id="hSess">—</div></div>
+<!-- Global Expand/Collapse Controls -->
+<div class="oc-global-controls">
+  <button class="oc-global-btn" id="oc-expand-all" onclick="OCUI.expandAll()">▼ Expand All</button>
+  <button class="oc-global-btn" id="oc-collapse-all" onclick="OCUI.collapseAll()">▲ Collapse All</button>
 </div>
 
+<!-- 3. Alerts Banner -->
+<section class="oc-section" data-section="alerts">
+  <div class="oc-section-header">
+    <button class="oc-section-toggle" aria-expanded="true" aria-controls="oc-body-alerts" aria-label="Toggle Alerts" onclick="Sections.toggle('alerts')">
+      <span class="oc-chevron">▼</span>
+      <span class="section-title">⚠️ Alerts</span>
+    </button>
+  </div>
+  <div class="oc-section-body" id="oc-body-alerts">
+    <div class="alerts-section" id="alertsSection"></div>
+  </div>
+</section>
+
+<!-- 3. System Health Row -->
+<section class="oc-section" data-section="health">
+  <div class="oc-section-header">
+    <button class="oc-section-toggle" aria-expanded="true" aria-controls="oc-body-health" aria-label="Toggle Health" onclick="Sections.toggle('health')">
+      <span class="oc-chevron">▼</span>
+      <span class="section-title">💚 System Health</span>
+    </button>
+  </div>
+  <div class="oc-section-body" id="oc-body-health">
+    <div class="health-row" id="healthRow">
+      <div class="glass health-item"><div class="health-label">Gateway</div><div class="health-value" id="hGw">—</div></div>
+      <div class="glass health-item"><div class="health-label">PID</div><div class="health-value" id="hPid">—</div></div>
+      <div class="glass health-item"><div class="health-label">Uptime</div><div class="health-value" id="hUp">—</div></div>
+      <div class="glass health-item"><div class="health-label">Memory</div><div class="health-value" id="hMem">—</div></div>
+      <div class="glass health-item"><div class="health-label">Compaction</div><div class="health-value" id="hComp">—</div></div>
+      <div class="glass health-item"><div class="health-label">Active Sessions</div><div class="health-value" id="hSess">—</div></div>
+    </div>
+  </div>
+</section>
+
 <!-- 4. Cost Row -->
+<section class="oc-section" data-section="cost">
+  <div class="oc-section-header">
+    <button class="oc-section-toggle" aria-expanded="true" aria-controls="oc-body-cost" aria-label="Toggle Cost" onclick="Sections.toggle('cost')">
+      <span class="oc-chevron">▼</span>
+      <span class="section-title">💰 Cost Overview</span>
+    </button>
+  </div>
+  <div class="oc-section-body" id="oc-body-cost">
 <div class="cost-row">
   <div class="glass cost-card">
     <div class="cost-label">Today's Cost</div>
@@ -302,60 +366,84 @@ body{font-family:-apple-system,BlinkMacSystemFont,'SF Pro','Helvetica Neue',sans
     </div>
   </div>
 </div>
-
+  </div>
+</section>
 
 <!-- 5. Charts Section -->
-<div class="charts-section">
-  <div class="section-header">
-    <span class="section-title">📈 Charts & Trends</span>
+<section class="oc-section" data-section="charts">
+  <div class="oc-section-header">
+    <button class="oc-section-toggle" aria-expanded="true" aria-controls="oc-body-charts" aria-label="Toggle Charts" onclick="Sections.toggle('charts')">
+      <span class="oc-chevron">▼</span>
+      <span class="section-title">📈 Charts & Trends</span>
+    </button>
     <div style="display:flex;align-items:center;gap:8px">
       <div class="tab-group" id="chartTabGroup">
         <button class="tab-btn active" id="cTab7" onclick="OCUI.setChartDays(7)">7 Days</button>
         <button class="tab-btn" id="cTab30" onclick="OCUI.setChartDays(30)">30 Days</button>
       </div>
-      <!-- toggle removed -->
     </div>
   </div>
-  <div id="chartsContainer">
-    <div class="grid-3">
-      <div class="glass chart-container"><div class="chart-title">Daily Cost Trend</div><div id="costChart"></div></div>
-      <div class="glass chart-container"><div class="chart-title">Cost by Model</div><div id="modelChart"></div></div>
-      <div class="glass chart-container"><div class="chart-title">Sub-Agent Activity</div><div id="subagentChart"></div></div>
+  <div class="oc-section-body" id="oc-body-charts">
+    <div id="chartsContainer">
+      <div class="grid-3">
+        <div class="glass chart-container"><div class="chart-title">Daily Cost Trend</div><div id="costChart"></div></div>
+        <div class="glass chart-container"><div class="chart-title">Cost by Model</div><div id="modelChart"></div></div>
+        <div class="glass chart-container"><div class="chart-title">Sub-Agent Activity</div><div id="subagentChart"></div></div>
+      </div>
     </div>
   </div>
-</div>
+</section>
 
 <!-- 6. Cron Jobs Panel -->
-<div style="margin-bottom:24px">
-  <div class="section-header"><span class="section-title">⏰ Cron Jobs</span><span class="section-count" id="cronCount"></span></div>
-  <div class="glass panel" style="overflow-x:auto">
-    <table class="dtable" id="cronTable">
-      <thead><tr><th>Status</th><th>Name</th><th>Schedule</th><th>Last Run</th><th>Next Run</th><th class="r">Duration</th><th>Model</th></tr></thead>
-      <tbody id="cronBody"></tbody>
-    </table>
+<section class="oc-section" data-section="crons">
+  <div class="oc-section-header">
+    <button class="oc-section-toggle" aria-expanded="true" aria-controls="oc-body-crons" aria-label="Toggle Cron Jobs" onclick="Sections.toggle('crons')">
+      <span class="oc-chevron">▼</span>
+      <span class="section-title">⏰ Cron Jobs</span>
+    </button>
+    <span class="section-count" id="cronCount"></span>
   </div>
-</div>
+  <div class="oc-section-body" id="oc-body-crons">
+    <div class="glass panel" style="overflow-x:auto">
+      <table class="dtable" id="cronTable">
+        <thead><tr><th>Status</th><th>Name</th><th>Schedule</th><th>Last Run</th><th>Next Run</th><th class="r">Duration</th><th>Model</th></tr></thead>
+        <tbody id="cronBody"></tbody>
+      </table>
+    </div>
+  </div>
+</section>
 
 <!-- 7. Active Sessions Panel -->
-<div style="margin-bottom:24px">
-  <div class="section-header"><span class="section-title">📡 Active Sessions</span><span class="section-count" id="sessCount"></span></div>
-  <!-- Agent Hierarchy Tree -->
-  <div class="card" style="margin-bottom:16px">
-    <div style="font-size:11px;color:var(--dim);margin-bottom:12px;text-transform:uppercase;letter-spacing:.05em">Agent Hierarchy</div>
-    <div id="agentTree"></div>
+<section class="oc-section" data-section="sessions">
+  <div class="oc-section-header">
+    <button class="oc-section-toggle" aria-expanded="true" aria-controls="oc-body-sessions" aria-label="Toggle Sessions" onclick="Sections.toggle('sessions')">
+      <span class="oc-chevron">▼</span>
+      <span class="section-title">📡 Active Sessions</span>
+    </button>
+    <span class="section-count" id="sessCount"></span>
   </div>
-  <div class="glass panel" style="overflow-x:auto;max-height:400px;overflow-y:auto">
-    <table class="dtable">
-      <thead><tr><th>Name</th><th>Model</th><th>Type</th><th>Context %</th><th>Last Activity</th><th class="r">Tokens</th></tr></thead>
-      <tbody id="sessBody"></tbody>
-    </table>
+  <div class="oc-section-body" id="oc-body-sessions">
+    <!-- Agent Hierarchy Tree -->
+    <div class="card" style="margin-bottom:16px">
+      <div style="font-size:11px;color:var(--dim);margin-bottom:12px;text-transform:uppercase;letter-spacing:.05em">Agent Hierarchy</div>
+      <div id="agentTree"></div>
+    </div>
+    <div class="glass panel" style="overflow-x:auto;max-height:400px;overflow-y:auto">
+      <table class="dtable">
+        <thead><tr><th>Name</th><th>Model</th><th>Type</th><th>Context %</th><th>Last Activity</th><th class="r">Tokens</th></tr></thead>
+        <tbody id="sessBody"></tbody>
+      </table>
+    </div>
   </div>
-</div>
+</section>
 
 <!-- 8. Token Usage Table -->
-<div style="margin-bottom:24px">
-  <div class="section-header">
-    <span class="section-title">📊 Token Usage & Cost</span>
+<section class="oc-section" data-section="usage">
+  <div class="oc-section-header">
+    <button class="oc-section-toggle" aria-expanded="true" aria-controls="oc-body-usage" aria-label="Toggle Token Usage" onclick="Sections.toggle('usage')">
+      <span class="oc-chevron">▼</span>
+      <span class="section-title">📊 Token Usage & Cost</span>
+    </button>
     <div class="tab-group">
       <button class="tab-btn active" id="uTabT" onclick="OCUI.setUsageTab('today')">Today</button>
       <button class="tab-btn" id="uTab7" onclick="OCUI.setUsageTab('7d')">7 Days</button>
@@ -363,18 +451,23 @@ body{font-family:-apple-system,BlinkMacSystemFont,'SF Pro','Helvetica Neue',sans
       <button class="tab-btn" id="uTabA" onclick="OCUI.setUsageTab('all')">All Time</button>
     </div>
   </div>
-  <div class="glass panel" style="overflow-x:auto">
-    <table class="dtable">
-      <thead><tr><th>Model</th><th class="r">Calls</th><th class="r">Input</th><th class="r">Output</th><th class="r">Cache</th><th class="r">Total</th><th class="r">Cost</th><th style="min-width:100px">Usage</th></tr></thead>
-      <tbody id="uBody"></tbody>
-    </table>
+  <div class="oc-section-body" id="oc-body-usage">
+    <div class="glass panel" style="overflow-x:auto">
+      <table class="dtable">
+        <thead><tr><th>Model</th><th class="r">Calls</th><th class="r">Input</th><th class="r">Output</th><th class="r">Cache</th><th class="r">Total</th><th class="r">Cost</th><th style="min-width:100px">Usage</th></tr></thead>
+        <tbody id="uBody"></tbody>
+      </table>
+    </div>
   </div>
-</div>
+</section>
 
 <!-- 9. Sub-Agent Usage Table -->
-<div style="margin-bottom:24px">
-  <div class="section-header">
-    <span class="section-title" style="color:var(--purple)">🤖 Sub-Agent Activity</span>
+<section class="oc-section" data-section="subagent">
+  <div class="oc-section-header">
+    <button class="oc-section-toggle" aria-expanded="true" aria-controls="oc-body-subagent" aria-label="Toggle Sub-Agent Activity" onclick="Sections.toggle('subagent')">
+      <span class="oc-chevron">▼</span>
+      <span class="section-title" style="color:var(--purple)">🤖 Sub-Agent Activity</span>
+    </button>
     <div style="display:flex;align-items:center;gap:12px">
       <span id="subCostLbl" style="font-size:12px;color:var(--muted);font-weight:500"></span>
       <div class="tab-group">
@@ -385,32 +478,34 @@ body{font-family:-apple-system,BlinkMacSystemFont,'SF Pro','Helvetica Neue',sans
       </div>
     </div>
   </div>
-  <div class="glass panel" style="overflow-x:auto">
-    <table class="dtable">
-      <thead><tr><th>Task</th><th>Model</th><th class="r">Cost</th><th class="r">Duration</th><th>Status</th><th>Time</th></tr></thead>
-      <tbody id="srBody"></tbody>
-    </table>
-    <div class="empty" id="srEmpty" style="display:none">No sub-agent runs</div>
-  </div>
-  <!-- Sub-agent token breakdown -->
-  <div style="margin-top:12px">
-    <div class="section-header">
-      <span class="section-title" style="color:var(--purple)">Sub-Agent Token Breakdown</span>
-      <div class="tab-group">
-        <button class="tab-btn active-purple" id="stTabT" onclick="OCUI.setSubTokensTab('today')">Today</button>
-        <button class="tab-btn" id="stTab7" onclick="OCUI.setSubTokensTab('7d')">7 Days</button>
-        <button class="tab-btn" id="stTab30" onclick="OCUI.setSubTokensTab('30d')">30 Days</button>
-        <button class="tab-btn" id="stTabA" onclick="OCUI.setSubTokensTab('all')">All Time</button>
-      </div>
-    </div>
+  <div class="oc-section-body" id="oc-body-subagent">
     <div class="glass panel" style="overflow-x:auto">
       <table class="dtable">
-        <thead><tr><th>Model</th><th class="r">Calls</th><th class="r">Input</th><th class="r">Output</th><th class="r">Cache</th><th class="r">Total</th><th class="r">Cost</th><th style="min-width:100px">Usage</th></tr></thead>
-        <tbody id="stBody"></tbody>
+        <thead><tr><th>Task</th><th>Model</th><th class="r">Cost</th><th class="r">Duration</th><th>Status</th><th>Time</th></tr></thead>
+        <tbody id="srBody"></tbody>
       </table>
+      <div class="empty" id="srEmpty" style="display:none">No sub-agent runs</div>
+    </div>
+    <!-- Sub-agent token breakdown -->
+    <div style="margin-top:12px">
+      <div class="section-header">
+        <span class="section-title" style="color:var(--purple)">Sub-Agent Token Breakdown</span>
+        <div class="tab-group">
+          <button class="tab-btn active-purple" id="stTabT" onclick="OCUI.setSubTokensTab('today')">Today</button>
+          <button class="tab-btn" id="stTab7" onclick="OCUI.setSubTokensTab('7d')">7 Days</button>
+          <button class="tab-btn" id="stTab30" onclick="OCUI.setSubTokensTab('30d')">30 Days</button>
+          <button class="tab-btn" id="stTabA" onclick="OCUI.setSubTokensTab('all')">All Time</button>
+        </div>
+      </div>
+      <div class="glass panel" style="overflow-x:auto">
+        <table class="dtable">
+          <thead><tr><th>Model</th><th class="r">Calls</th><th class="r">Input</th><th class="r">Output</th><th class="r">Cache</th><th class="r">Total</th><th class="r">Cost</th><th style="min-width:100px">Usage</th></tr></thead>
+          <tbody id="stBody"></tbody>
+        </table>
+      </div>
     </div>
   </div>
-</div>
+</section>
 
 <!-- 10. Bottom Row -->
 <div class="grid-3">
@@ -429,11 +524,16 @@ body{font-family:-apple-system,BlinkMacSystemFont,'SF Pro','Helvetica Neue',sans
 </div>
 
 <!-- 11. Agent Configuration -->
-<div class="glass panel" style="margin-top:16px">
-  <div class="section-header">
-    <span class="section-title">⚙️ Agent &amp; Model Configuration</span>
+<section class="oc-section" data-section="agent-config" style="margin-top:16px">
+  <div class="oc-section-header">
+    <button class="oc-section-toggle" aria-expanded="true" aria-controls="oc-body-agent-config" aria-label="Toggle Agent Configuration" onclick="Sections.toggle('agent-config')">
+      <span class="oc-chevron">▼</span>
+      <span class="section-title">⚙️ Agent &amp; Model Configuration</span>
+    </button>
     <span class="section-count" id="agentCount"></span>
   </div>
+  <div class="oc-section-body" id="oc-body-agent-config">
+  <div class="glass panel">
 
   <!-- Agent Cards Row -->
   <div id="agentCards" style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:18px"></div>
@@ -517,7 +617,9 @@ body{font-family:-apple-system,BlinkMacSystemFont,'SF Pro','Helvetica Neue',sans
   </div>
 
   <!-- subagentConfigPanel moved to extraConfigRow grid -->
-</div>
+  </div>
+  </div>
+</section>
 
 <div style="text-align:center;padding:12px;font-size:10px;color:var(--darker)">OpenClaw Dashboard · Auto-refresh 60s</div>
 </div>
@@ -1403,10 +1505,75 @@ const SystemBar = {
   _lastMs:0
 };
 
+// === Collapsible Sections ===
+const SECTION_KEYS = ['alerts','health','cost','charts','crons','sessions','usage','subagent','agent-config'];
+const Sections = {
+  _state: {},
+  STORAGE_KEY: 'ocDash:collapse:v1',
+  DEFAULTS: {'alerts':false,'health':false,'cost':false,'charts':false,'crons':false,'sessions':false,'usage':false,'subagent':false,'agent-config':true},
+
+  loadState() {
+    var merged = Object.assign({}, this.DEFAULTS);
+    try {
+      var raw = localStorage.getItem(this.STORAGE_KEY);
+      if (raw) {
+        var parsed = JSON.parse(raw);
+        if (parsed && typeof parsed === 'object') {
+          for (var k of SECTION_KEYS) { if (k in parsed) merged[k] = !!parsed[k]; }
+        }
+      }
+    } catch(e) {}
+    return merged;
+  },
+
+  saveState() {
+    try { localStorage.setItem(this.STORAGE_KEY, JSON.stringify(this._state)); } catch(e) {}
+  },
+
+  _apply(key, collapsed) {
+    var section = document.querySelector('[data-section="'+key+'"]');
+    if (!section) return;
+    var btn = section.querySelector('.oc-section-toggle');
+    if (collapsed) {
+      section.classList.add('collapsed');
+      if (btn) btn.setAttribute('aria-expanded', 'false');
+    } else {
+      section.classList.remove('collapsed');
+      if (btn) btn.setAttribute('aria-expanded', 'true');
+    }
+  },
+
+  toggle(key) {
+    this._state[key] = !this._state[key];
+    this._apply(key, this._state[key]);
+    this.saveState();
+  },
+
+  setAll(collapsed) {
+    for (var key of SECTION_KEYS) {
+      this._state[key] = collapsed;
+      this._apply(key, collapsed);
+    }
+    this.saveState();
+  },
+
+  init() {
+    // Use bootstrap-set state if available, otherwise load from localStorage
+    this._state = window.__ocCollapsedInit || this.loadState();
+    for (var key of SECTION_KEYS) {
+      this._apply(key, !!this._state[key]);
+    }
+    // Remove bootstrap style tag (body is now rendered)
+    var bs = document.getElementById('oc-collapse-bootstrap');
+    if (bs) bs.remove();
+  }
+};
+
 // === App ===
 const App = {
   init() {
     Theme.load();
+    Sections.init();
     setInterval(()=>App.onTick(),1000);
     App.refresh();
     SystemBar.start(5000);
@@ -1452,6 +1619,9 @@ window.OCUI = {
   setSubTokensTab:v=>{State.setTab('subTokens',v);App.renderNow()},
   toggleChat:     ()=>Chat.toggle(),
   sendChat:       prefill=>Chat.send(prefill),
+  expandAll:      ()=>Sections.setAll(false),
+  collapseAll:    ()=>Sections.setAll(true),
+  toggleSection:  key=>Sections.toggle(key),
 };
 </script>
 
