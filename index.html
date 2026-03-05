@@ -224,10 +224,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,'SF Pro','Helvetica Neue',sans
 /* Collapsible Sections */
 .oc-section{margin-bottom:24px}
 .oc-section-header{display:flex;align-items:center;justify-content:space-between;padding:0 4px;margin-bottom:10px;flex-wrap:wrap;gap:8px}
-.oc-section-toggle{background:none;border:none;cursor:pointer;display:flex;align-items:center;gap:6px;padding:4px 8px;border-radius:6px;color:var(--muted);font-size:10px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;transition:background .15s,color .15s}
+.oc-section-toggle{background:none;border:none;cursor:pointer;display:flex;align-items:center;gap:6px;padding:4px 8px;border-radius:6px;color:var(--muted);font-size:10px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;transition:background .15s,color .15s;flex:1 1 auto}
 .oc-section-toggle:hover{background:var(--surfaceHover);color:var(--textStrong)}
 .oc-section-toggle:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:6px}
-.oc-chevron{display:inline-block;transition:transform .2s ease;font-size:10px}
+.oc-chevron{display:inline-block;transition:transform .2s ease;font-size:10px;margin-left:auto}
 .oc-section.collapsed .oc-chevron{transform:rotate(-90deg)}
 .oc-section.collapsed .oc-section-body{display:none}
 .oc-global-controls{display:flex;gap:6px;margin-bottom:12px;justify-content:flex-end}
@@ -304,8 +304,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'SF Pro','Helvetica Neue',sans
 <section class="oc-section" data-section="alerts">
   <div class="oc-section-header">
     <button class="oc-section-toggle" aria-expanded="true" aria-controls="oc-body-alerts" aria-label="Toggle Alerts" onclick="Sections.toggle('alerts')">
-      <span class="oc-chevron">▼</span>
       <span class="section-title">⚠️ Alerts</span>
+      <span class="oc-chevron">▼</span>
     </button>
   </div>
   <div class="oc-section-body" id="oc-body-alerts">
@@ -317,8 +317,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'SF Pro','Helvetica Neue',sans
 <section class="oc-section" data-section="health">
   <div class="oc-section-header">
     <button class="oc-section-toggle" aria-expanded="true" aria-controls="oc-body-health" aria-label="Toggle Health" onclick="Sections.toggle('health')">
-      <span class="oc-chevron">▼</span>
       <span class="section-title">💚 System Health</span>
+      <span class="oc-chevron">▼</span>
     </button>
   </div>
   <div class="oc-section-body" id="oc-body-health">
@@ -337,8 +337,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'SF Pro','Helvetica Neue',sans
 <section class="oc-section" data-section="cost">
   <div class="oc-section-header">
     <button class="oc-section-toggle" aria-expanded="true" aria-controls="oc-body-cost" aria-label="Toggle Cost" onclick="Sections.toggle('cost')">
-      <span class="oc-chevron">▼</span>
       <span class="section-title">💰 Cost Overview</span>
+      <span class="oc-chevron">▼</span>
     </button>
   </div>
   <div class="oc-section-body" id="oc-body-cost">
@@ -373,8 +373,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'SF Pro','Helvetica Neue',sans
 <section class="oc-section" data-section="charts">
   <div class="oc-section-header">
     <button class="oc-section-toggle" aria-expanded="true" aria-controls="oc-body-charts" aria-label="Toggle Charts" onclick="Sections.toggle('charts')">
-      <span class="oc-chevron">▼</span>
       <span class="section-title">📈 Charts & Trends</span>
+      <span class="oc-chevron">▼</span>
     </button>
     <div style="display:flex;align-items:center;gap:8px">
       <div class="tab-group" id="chartTabGroup">
@@ -398,8 +398,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'SF Pro','Helvetica Neue',sans
 <section class="oc-section" data-section="crons">
   <div class="oc-section-header">
     <button class="oc-section-toggle" aria-expanded="true" aria-controls="oc-body-crons" aria-label="Toggle Cron Jobs" onclick="Sections.toggle('crons')">
-      <span class="oc-chevron">▼</span>
       <span class="section-title">⏰ Cron Jobs</span>
+      <span class="oc-chevron">▼</span>
     </button>
     <span class="section-count" id="cronCount"></span>
   </div>
@@ -417,8 +417,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'SF Pro','Helvetica Neue',sans
 <section class="oc-section" data-section="sessions">
   <div class="oc-section-header">
     <button class="oc-section-toggle" aria-expanded="true" aria-controls="oc-body-sessions" aria-label="Toggle Sessions" onclick="Sections.toggle('sessions')">
-      <span class="oc-chevron">▼</span>
       <span class="section-title">📡 Active Sessions</span>
+      <span class="oc-chevron">▼</span>
     </button>
     <span class="section-count" id="sessCount"></span>
   </div>
@@ -441,8 +441,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'SF Pro','Helvetica Neue',sans
 <section class="oc-section" data-section="usage">
   <div class="oc-section-header">
     <button class="oc-section-toggle" aria-expanded="true" aria-controls="oc-body-usage" aria-label="Toggle Token Usage" onclick="Sections.toggle('usage')">
-      <span class="oc-chevron">▼</span>
       <span class="section-title">📊 Token Usage & Cost</span>
+      <span class="oc-chevron">▼</span>
     </button>
     <div class="tab-group">
       <button class="tab-btn active" id="uTabT" onclick="OCUI.setUsageTab('today')">Today</button>
@@ -465,8 +465,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'SF Pro','Helvetica Neue',sans
 <section class="oc-section" data-section="subagent">
   <div class="oc-section-header">
     <button class="oc-section-toggle" aria-expanded="true" aria-controls="oc-body-subagent" aria-label="Toggle Sub-Agent Activity" onclick="Sections.toggle('subagent')">
-      <span class="oc-chevron">▼</span>
       <span class="section-title" style="color:var(--purple)">🤖 Sub-Agent Activity</span>
+      <span class="oc-chevron">▼</span>
     </button>
     <div style="display:flex;align-items:center;gap:12px">
       <span id="subCostLbl" style="font-size:12px;color:var(--muted);font-weight:500"></span>
@@ -527,8 +527,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'SF Pro','Helvetica Neue',sans
 <section class="oc-section" data-section="agent-config" style="margin-top:16px">
   <div class="oc-section-header">
     <button class="oc-section-toggle" aria-expanded="true" aria-controls="oc-body-agent-config" aria-label="Toggle Agent Configuration" onclick="Sections.toggle('agent-config')">
-      <span class="oc-chevron">▼</span>
       <span class="section-title">⚙️ Agent &amp; Model Configuration</span>
+      <span class="oc-chevron">▼</span>
     </button>
     <span class="section-count" id="agentCount"></span>
   </div>
