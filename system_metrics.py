@@ -236,7 +236,7 @@ def _collect_cpu_darwin() -> dict:
 def _collect_cpu_linux() -> dict:
     cores = os.cpu_count() or 1
     s1 = _read_proc_stat()
-    time.sleep(0.2)
+    time.sleep(0.05)  # 50ms sample — short enough to avoid blocking request threads
     s2 = _read_proc_stat()
     if s1 is None or s2 is None:
         return {"percent": 0.0, "cores": cores, "error": "could not read /proc/stat"}

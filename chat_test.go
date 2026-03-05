@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -27,7 +28,7 @@ func TestCallGateway_Success(t *testing.T) {
 	fmt.Sscanf(port, "%d", &portInt)
 
 	client := &http.Client{}
-	answer, err := callGateway("system prompt", nil, "hi", portInt, "test-token", "test-model", client)
+	answer, err := callGateway(context.Background(), "system prompt", nil, "hi", portInt, "test-token", "test-model", client)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -44,7 +45,7 @@ func TestCallGateway_EmptyChoices(t *testing.T) {
 
 	port := extractPort(t, ts.URL)
 	client := &http.Client{}
-	answer, err := callGateway("sys", nil, "hi", port, "tok", "model", client)
+	answer, err := callGateway(context.Background(), "sys", nil, "hi", port, "tok", "model", client)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -61,7 +62,7 @@ func TestCallGateway_EmptyContent(t *testing.T) {
 
 	port := extractPort(t, ts.URL)
 	client := &http.Client{}
-	answer, err := callGateway("sys", nil, "hi", port, "tok", "model", client)
+	answer, err := callGateway(context.Background(), "sys", nil, "hi", port, "tok", "model", client)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -79,7 +80,7 @@ func TestCallGateway_HTTPError(t *testing.T) {
 
 	port := extractPort(t, ts.URL)
 	client := &http.Client{}
-	_, err := callGateway("sys", nil, "hi", port, "tok", "model", client)
+	_, err := callGateway(context.Background(), "sys", nil, "hi", port, "tok", "model", client)
 	if err == nil {
 		t.Fatal("expected error for 500 response")
 	}
@@ -102,7 +103,7 @@ func TestCallGateway_ResponseTooLarge(t *testing.T) {
 
 	port := extractPort(t, ts.URL)
 	client := &http.Client{}
-	_, err := callGateway("sys", nil, "hi", port, "tok", "model", client)
+	_, err := callGateway(context.Background(), "sys", nil, "hi", port, "tok", "model", client)
 	if err == nil {
 		t.Fatal("expected error for oversized gateway response")
 	}
@@ -121,7 +122,7 @@ func TestCallGateway_HistoryIncluded(t *testing.T) {
 		{Role: "user", Content: "first"},
 		{Role: "assistant", Content: "reply"},
 	}
-	answer, err := callGateway("sys", history, "second", port, "tok", "model", client)
+	answer, err := callGateway(context.Background(), "sys", history, "second", port, "tok", "model", client)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

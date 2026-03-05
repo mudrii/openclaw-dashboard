@@ -5,6 +5,7 @@ import argparse
 import functools
 import http.server
 import json
+import logging
 import os
 import socket
 import subprocess
@@ -14,6 +15,8 @@ import sys
 import urllib.request
 import urllib.error
 import system_metrics
+
+_log = logging.getLogger("dashboard")
 
 PORT = 8080
 BIND = "127.0.0.1"
@@ -169,7 +172,11 @@ def read_dotenv(path):
                     continue
                 if "=" in line:
                     key, _, value = line.partition("=")
-                    result[key.strip()] = value.strip()
+                    value = value.strip()
+                    # Strip surrounding quotes (parity with Go readDotenv)
+                    if len(value) >= 2 and value[0] == value[-1] and value[0] in ('"', "'"):
+                        value = value[1:-1]
+                    result[key.strip()] = value
     except (FileNotFoundError, PermissionError):
         pass
     return result
@@ -314,11 +321,11 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
             if ".." in clean:
                 self.send_error(403, "Forbidden")
                 return
+            # Strict allowlist — parity with Go server (no broad extension matching)
             ALLOWED_STATIC = {
                 "/themes.json", "/favicon.ico", "/favicon.png",
             }
-            ALLOWED_EXT = {".css", ".js", ".png", ".jpg", ".jpeg", ".gif", ".svg", ".ico", ".woff", ".woff2"}
-            if clean in ALLOWED_STATIC or any(clean.endswith(ext) for ext in ALLOWED_EXT):
+            if clean in ALLOWED_STATIC:
                 super().do_GET()
             else:
                 self.send_error(404, "Not Found")
@@ -338,8 +345,7 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
             ALLOWED_STATIC = {
                 "/themes.json", "/favicon.ico", "/favicon.png",
             }
-            ALLOWED_EXT = {".css", ".js", ".png", ".jpg", ".jpeg", ".gif", ".svg", ".ico", ".woff", ".woff2"}
-            if clean in ALLOWED_STATIC or any(clean.endswith(ext) for ext in ALLOWED_EXT):
+            if clean in ALLOWED_STATIC:
                 super().do_HEAD()
             else:
                 self.send_error(404, "Not Found")
@@ -456,6 +462,11 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
 
         length = int(self.headers.get("Content-Length", 0))
         if length > self._MAX_BODY:
+            # Drain body to prevent HTTP/1.1 framing corruption on keep-alive
+            try:
+                self.rfile.read(length)
+            except Exception:
+                pass
             self._send_json(413, {"error": f"Request body too large (max {self._MAX_BODY} bytes)"})
             return
         try:

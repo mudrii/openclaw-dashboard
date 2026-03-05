@@ -30,9 +30,10 @@ type SystemService struct {
 	metricsAt      time.Time
 	metricsRefresh bool
 
-	verMu     sync.RWMutex
-	verCached SystemVersions
-	verAt     time.Time
+	verMu      sync.RWMutex
+	verCached  SystemVersions
+	verAt      time.Time
+	verRefresh bool // true while a goroutine is collecting versions
 }
 
 func NewSystemService(cfg SystemConfig, dashVer string, serverCtx context.Context) *SystemService {
@@ -174,7 +175,7 @@ func (s *SystemService) getVersionsCached(ctx context.Context) SystemVersions {
 	}
 	s.verMu.RUnlock()
 
-	// Double-checked lock: reduces redundant collections (not strict singleflight)
+	// Double-checked lock with refresh flag to prevent thundering herd
 	s.verMu.Lock()
 	// Re-check after acquiring write lock (another goroutine may have refreshed)
 	if s.verAt != (time.Time{}) && time.Since(s.verAt) < ttl {
@@ -182,12 +183,20 @@ func (s *SystemService) getVersionsCached(ctx context.Context) SystemVersions {
 		s.verMu.Unlock()
 		return v
 	}
+	// If another goroutine is already refreshing, return stale
+	if s.verRefresh {
+		v := s.verCached
+		s.verMu.Unlock()
+		return v
+	}
+	s.verRefresh = true
 	s.verMu.Unlock()
 
 	v := collectVersions(ctx, s.dashVer, s.cfg.GatewayTimeoutMs, s.cfg.GatewayPort)
 	s.verMu.Lock()
 	s.verCached = v
 	s.verAt = time.Now()
+	s.verRefresh = false
 	s.verMu.Unlock()
 	return v
 }

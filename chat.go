@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -242,7 +243,7 @@ type completionPayload struct {
 	Stream    bool          `json:"stream"`
 }
 
-func callGateway(system string, history []chatMessage, question string, port int, token, model string, client *http.Client) (string, error) {
+func callGateway(ctx context.Context, system string, history []chatMessage, question string, port int, token, model string, client *http.Client) (string, error) {
 	// Pre-allocate messages slice: system + history + user question
 	messages := make([]chatMessage, 0, 2+len(history))
 	messages = append(messages, chatMessage{Role: "system", Content: system})
@@ -261,7 +262,7 @@ func callGateway(system string, history []chatMessage, question string, port int
 	}
 
 	url := "http://localhost:" + strconv.Itoa(port) + "/v1/chat/completions"
-	req, err := http.NewRequest("POST", url, bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(body))
 	if err != nil {
 		return "", fmt.Errorf("request error: %w", err)
 	}

@@ -384,7 +384,7 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 
 	systemPrompt := buildSystemPrompt(dashData)
 	answer, err := callGateway(
-		systemPrompt, history, q,
+		r.Context(), systemPrompt, history, q,
 		s.cfg.AI.GatewayPort,
 		s.gatewayToken,
 		s.cfg.AI.Model,
@@ -392,7 +392,7 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 	)
 	if err != nil {
 		log.Printf("[dashboard] POST /api/chat error: %v", err)
-		s.sendJSON(w, r, http.StatusBadGateway, map[string]string{"error": err.Error()})
+		s.sendJSON(w, r, http.StatusBadGateway, map[string]string{"error": "gateway request failed"})
 		return
 	}
 

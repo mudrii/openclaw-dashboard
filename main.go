@@ -76,8 +76,11 @@ func main() {
 
 	addr := fmt.Sprintf("%s:%d", *bind, *port)
 	httpSrv := &http.Server{
-		Addr:    addr,
-		Handler: srv,
+		Addr:         addr,
+		Handler:      srv,
+		ReadTimeout:  30 * time.Second,
+		WriteTimeout: 90 * time.Second, // chat streaming can be slow
+		IdleTimeout:  120 * time.Second,
 	}
 
 	fmt.Printf("[dashboard] v%s\n", version)
