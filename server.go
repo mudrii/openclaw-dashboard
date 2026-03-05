@@ -14,6 +14,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 )
 
 const (
@@ -108,6 +109,12 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		s.handleSystem(w, r)
 	case isRead && strings.HasPrefix(r.URL.Path, "/api/refresh"):
 		s.handleRefresh(w, r)
+	case r.Method == http.MethodOptions:
+		s.setCORSHeaders(w, r)
+		w.Header().Set("Access-Control-Allow-Methods", "GET, HEAD, POST, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+		w.Header().Set("Access-Control-Max-Age", "86400")
+		w.WriteHeader(http.StatusNoContent)
 	case r.Method == http.MethodPost && r.URL.Path == "/api/chat":
 		s.handleChat(w, r)
 	case isRead:
@@ -334,7 +341,7 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		s.sendJSONRaw(w, r, http.StatusBadRequest, errEmptyQ)
 		return
 	}
-	if len(q) > maxQuestionLen {
+	if utf8.RuneCountInString(q) > maxQuestionLen {
 		s.sendJSONRaw(w, r, http.StatusBadRequest, errQTooLong)
 		return
 	}
@@ -353,8 +360,16 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		content := msg.Content
-		if len(content) > maxHistoryItem {
-			content = content[:maxHistoryItem]
+		if utf8.RuneCountInString(content) > maxHistoryItem {
+			// Truncate on rune boundary
+			i := 0
+			for j := range content {
+				if i >= maxHistoryItem {
+					content = content[:j]
+					break
+				}
+				i++
+			}
 		}
 		history = append(history, chatMessage{Role: msg.Role, Content: content})
 	}
@@ -387,13 +402,16 @@ func (s *Server) sendJSON(w http.ResponseWriter, r *http.Request, status int, v 
 }
 
 // sendJSONRaw sends pre-encoded JSON with CORS headers (zero-alloc for known responses).
+// Respects HEAD method: sends headers but no body.
 func (s *Server) sendJSONRaw(w http.ResponseWriter, r *http.Request, status int, body []byte) {
 	s.setCORSHeaders(w, r)
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Content-Length", strconv.Itoa(len(body)))
 	w.WriteHeader(status)
-	_, _ = w.Write(body)
+	if r.Method != http.MethodHead {
+		_, _ = w.Write(body)
+	}
 }
 
 func (s *Server) handleSystem(w http.ResponseWriter, r *http.Request) {

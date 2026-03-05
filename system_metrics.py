@@ -9,9 +9,11 @@ import json
 import os
 import platform
 import re
+import shutil
 import subprocess
 import threading
 import time
+import urllib.request
 from typing import Optional
 
 # ── version (set by server.py before use) ──────────────────────────────────
@@ -346,20 +348,21 @@ def _get_versions_cached() -> dict:
 
 def _resolve_openclaw_bin() -> str:
     """Find openclaw binary — asdf shims may not be in server's PATH."""
-    import shutil
     if shutil.which("openclaw"):
         return "openclaw"
     home = os.path.expanduser("~")
-    candidates = [
+    # Build version-specific candidates newest-first, before shims fallback
+    ver_candidates: list[str] = []
+    node_dir = os.path.join(home, ".asdf", "installs", "nodejs")
+    if os.path.isdir(node_dir):
+        # Sort descending so newest version is tried first
+        for ver in sorted(os.listdir(node_dir), reverse=True):
+            ver_candidates.append(os.path.join(node_dir, ver, "bin", "openclaw"))
+    candidates = ver_candidates + [
         os.path.join(home, ".asdf", "shims", "openclaw"),
         "/usr/local/bin/openclaw",
         "/opt/homebrew/bin/openclaw",
     ]
-    # Probe all asdf nodejs installs dynamically
-    node_dir = os.path.join(home, ".asdf", "installs", "nodejs")
-    if os.path.isdir(node_dir):
-        for ver in sorted(os.listdir(node_dir), reverse=True):
-            candidates.insert(0, os.path.join(node_dir, ver, "bin", "openclaw"))
     for c in candidates:
         if os.path.isfile(c) and os.access(c, os.X_OK):
             return c
@@ -385,9 +388,8 @@ def _collect_versions() -> dict:
     gw = {"version": "", "status": "unknown", "error": None}
     try:
         gw_port = _cfg.get("gatewayPort", 18789)
-        import urllib.request as _ur
-        req = _ur.Request(f"http://127.0.0.1:{gw_port}/", method="HEAD")
-        with _ur.urlopen(req, timeout=timeout_s) as resp:
+        req = urllib.request.Request(f"http://127.0.0.1:{gw_port}/", method="HEAD")
+        with urllib.request.urlopen(req, timeout=timeout_s) as resp:
             gw["status"] = "online" if resp.status < 500 else "offline"
     except Exception as e:
         gw["status"] = "offline"

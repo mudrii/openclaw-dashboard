@@ -33,21 +33,21 @@ type SystemResponse struct {
 type SystemCPU struct {
 	Percent float64 `json:"percent"`
 	Cores   int     `json:"cores"`
-	Error   *string `json:"error"`
+	Error   *string `json:"error,omitempty"`
 }
 
 type SystemRAM struct {
 	UsedBytes  int64   `json:"usedBytes"`
 	TotalBytes int64   `json:"totalBytes"`
 	Percent    float64 `json:"percent"`
-	Error      *string `json:"error"`
+	Error      *string `json:"error,omitempty"`
 }
 
 type SystemSwap struct {
 	UsedBytes  int64   `json:"usedBytes"`
 	TotalBytes int64   `json:"totalBytes"`
 	Percent    float64 `json:"percent"`
-	Error      *string `json:"error"`
+	Error      *string `json:"error,omitempty"`
 }
 
 type SystemDisk struct {
@@ -55,13 +55,16 @@ type SystemDisk struct {
 	UsedBytes  int64   `json:"usedBytes"`
 	TotalBytes int64   `json:"totalBytes"`
 	Percent    float64 `json:"percent"`
-	Error      *string `json:"error"`
+	Error      *string `json:"error,omitempty"`
 }
 
 type SystemGateway struct {
 	Version string  `json:"version"`
 	Status  string  `json:"status"`
-	Error   *string `json:"error"`
+	PID     int     `json:"pid,omitempty"`
+	Uptime  string  `json:"uptime,omitempty"`
+	Memory  string  `json:"memory,omitempty"`
+	Error   *string `json:"error,omitempty"`
 }
 
 type SystemVersions struct {

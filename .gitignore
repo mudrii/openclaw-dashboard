@@ -33,3 +33,4 @@ openclaw-dashboard-*
 # Build artifacts
 dist/
 promo-*.png
+dashboard-server

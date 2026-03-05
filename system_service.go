@@ -4,11 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"math"
 	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -58,7 +61,10 @@ func (s *SystemService) GetJSON(ctx context.Context) (int, []byte) {
 		if !s.metricsRefresh {
 			s.metricsRefresh = true
 			go func() {
-				s.refresh(context.Background()) //nolint:errcheck
+				data, hardFail := s.refresh(context.Background())
+				if data == nil || hardFail {
+					log.Printf("[system] background refresh failed: data=%v hardFail=%v", data == nil, hardFail)
+				}
 				s.metricsMu.Lock()
 				s.metricsRefresh = false
 				s.metricsMu.Unlock()
@@ -166,6 +172,16 @@ func (s *SystemService) getVersionsCached(ctx context.Context) SystemVersions {
 	}
 	s.verMu.RUnlock()
 
+	// Singleflight: only one goroutine collects versions at a time
+	s.verMu.Lock()
+	// Re-check after acquiring write lock (another goroutine may have refreshed)
+	if s.verAt != (time.Time{}) && time.Since(s.verAt) < ttl {
+		v := s.verCached
+		s.verMu.Unlock()
+		return v
+	}
+	s.verMu.Unlock()
+
 	v := collectVersions(ctx, s.dashVer, s.cfg.GatewayTimeoutMs, s.cfg.GatewayPort)
 	s.verMu.Lock()
 	s.verCached = v
@@ -211,20 +227,24 @@ func collectVersions(ctx context.Context, dashVer string, timeoutMs int, gateway
 	gwOut, err := runWithTimeout(ctx, timeoutMs, oclawBin, "gateway", "status", "--json")
 	if err != nil {
 		// Fallback: check if gateway process is reachable via HTTP
-		gw = detectGatewayFallback(ctx, gatewayPort)
+		gw = detectGatewayFallback(ctx, gatewayPort, timeoutMs)
 	} else {
-		gw = parseGatewayStatusJSON(gwOut)
+		gw = parseGatewayStatusJSON(ctx, gwOut)
 	}
 	v.Gateway = gw
 	return v
 }
 
 // parseGatewayStatusJSON parses `openclaw gateway status --json` output.
-// The JSON has shape: {"service":{"loaded":true,...},...}
-func parseGatewayStatusJSON(output string) SystemGateway {
+// The JSON has shape: {"service":{"loaded":true,"runtime":{...}},...}
+func parseGatewayStatusJSON(ctx context.Context, output string) SystemGateway {
 	var result struct {
 		Service struct {
-			Loaded bool `json:"loaded"`
+			Loaded  bool `json:"loaded"`
+			Runtime struct {
+				Status string `json:"status"`
+				PID    int    `json:"pid"`
+			} `json:"runtime"`
 		} `json:"service"`
 		Version string `json:"version"`
 	}
@@ -232,11 +252,17 @@ func parseGatewayStatusJSON(output string) SystemGateway {
 	start := strings.Index(output, "{")
 	if start >= 0 {
 		if err := json.Unmarshal([]byte(output[start:]), &result); err == nil {
+			// Prefer runtime.Status == "running" over just Loaded
 			status := "offline"
-			if result.Service.Loaded {
+			if result.Service.Runtime.Status == "running" || result.Service.Loaded {
 				status = "online"
 			}
-			return SystemGateway{Version: result.Version, Status: status}
+			gw := SystemGateway{Version: result.Version, Status: status, PID: result.Service.Runtime.PID}
+			// Get uptime + memory from /proc or ps if we have a PID
+			if gw.PID > 0 {
+				gw.Uptime, gw.Memory = getProcessInfo(ctx, gw.PID)
+			}
+			return gw
 		}
 	}
 	// Fallback: text parsing
@@ -247,12 +273,60 @@ func parseGatewayStatusJSON(output string) SystemGateway {
 	return SystemGateway{Status: "offline"}
 }
 
+// formatBytes formats bytes into a human-readable string (KB/MB/GB).
+func formatBytes(b int64) string {
+	if b < 0 {
+		return "0B"
+	}
+	const (
+		KB = 1024
+		MB = KB * 1024
+		GB = MB * 1024
+	)
+	switch {
+	case b >= GB:
+		return fmt.Sprintf("%.1fGB", float64(b)/float64(GB))
+	case b >= MB:
+		return fmt.Sprintf("%.1fMB", float64(b)/float64(MB))
+	case b >= KB:
+		return fmt.Sprintf("%.0fKB", float64(b)/float64(KB))
+	default:
+		return fmt.Sprintf("%dB", b)
+	}
+}
+
+// getProcessInfo returns uptime and memory usage for a PID using ps.
+// Uses a 3-second context timeout to avoid hanging on unresponsive ps.
+func getProcessInfo(ctx context.Context, pid int) (uptime string, memory string) {
+	tctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	// Get elapsed time and RSS via ps
+	out, err := exec.CommandContext(tctx, "ps", "-o", "etime=,rss=", "-p", fmt.Sprintf("%d", pid)).Output()
+	if err != nil {
+		return "", ""
+	}
+	fields := strings.Fields(strings.TrimSpace(string(out)))
+	if len(fields) >= 1 {
+		uptime = strings.TrimSpace(fields[0])
+	}
+	if len(fields) >= 2 {
+		if rssKB, err := strconv.ParseInt(fields[1], 10, 64); err == nil {
+			memory = formatBytes(rssKB * 1024)
+		}
+	}
+	return
+}
+
 // detectGatewayFallback checks if the gateway HTTP port is responding.
-func detectGatewayFallback(ctx context.Context, gatewayPort int) SystemGateway {
+// timeoutMs controls how long to wait; defaults to 1500ms if <= 0.
+func detectGatewayFallback(ctx context.Context, gatewayPort int, timeoutMs int) SystemGateway {
 	if gatewayPort <= 0 {
 		gatewayPort = 18789
 	}
-	tctx, cancel := context.WithTimeout(ctx, 1500*time.Millisecond)
+	if timeoutMs <= 0 {
+		timeoutMs = 1500
+	}
+	tctx, cancel := context.WithTimeout(ctx, time.Duration(timeoutMs)*time.Millisecond)
 	defer cancel()
 	req, err := http.NewRequestWithContext(tctx, http.MethodHead, fmt.Sprintf("http://127.0.0.1:%d/", gatewayPort), nil)
 	if err != nil {
@@ -294,9 +368,11 @@ func resolveOpenclawBin() string {
 	candidates := []string{
 		filepath.Join(home, ".asdf", "shims", "openclaw"),
 	}
-	// Also probe asdf nodejs installs — glob common versions
+	// Also probe asdf nodejs installs — sort newest-first so the highest version is tried first
 	if nodeDir := filepath.Join(home, ".asdf", "installs", "nodejs"); nodeDir != "" {
 		if entries, err := os.ReadDir(nodeDir); err == nil {
+			// Sort by name descending (lexicographic reverse = newest version first)
+			sort.Slice(entries, func(i, j int) bool { return entries[i].Name() > entries[j].Name() })
 			for _, e := range entries {
 				if e.IsDir() {
 					candidates = append(candidates, filepath.Join(nodeDir, e.Name(), "bin", "openclaw"))

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -152,7 +153,7 @@ func TestSystemConfig_PerMetricThresholdClamping(t *testing.T) {
 		wantCrit float64
 	}{
 		{"valid cpu thresholds", `{"system":{"cpu":{"warn":75,"critical":90}}}`, "cpu", 75, 90},
-		{"cpu crit < warn → clamp", `{"system":{"cpu":{"warn":80,"critical":60}}}`, "cpu", 80, 95},
+		{"cpu crit < warn → use globalCrit", `{"system":{"cpu":{"warn":80,"critical":60}}}`, "cpu", 80, 85},
 		{"ram warn at edge", `{"system":{"ram":{"warn":90,"critical":95}}}`, "ram", 90, 95},
 		{"swap crit > 100 → 100", `{"system":{"swap":{"warn":85,"critical":105}}}`, "swap", 85, 100},
 		{"disk defaults when absent", `{"system":{}}`, "disk", 80, 95},
@@ -266,4 +267,145 @@ func TestSystemConfig_Defaults(t *testing.T) {
 	if cfg.System.CriticalPercent != 85 {
 		t.Errorf("expected CriticalPercent=85, got %f", cfg.System.CriticalPercent)
 	}
+}
+
+// ── Tests for parseGatewayStatusJSON (Fix #12) ────────────────────────────
+
+func TestParseGatewayStatusJSON_RunningService(t *testing.T) {
+	ctx := context.Background()
+	input := `{"service":{"loaded":true,"runtime":{"status":"running","pid":1234}},"version":"1.0.0"}`
+	got := parseGatewayStatusJSON(ctx, input)
+	if got.Status != "online" {
+		t.Errorf("expected status=online, got %q", got.Status)
+	}
+	if got.PID != 1234 {
+		t.Errorf("expected pid=1234, got %d", got.PID)
+	}
+	if got.Version != "1.0.0" {
+		t.Errorf("expected version=1.0.0, got %q", got.Version)
+	}
+}
+
+func TestParseGatewayStatusJSON_LoadedButNotRunning(t *testing.T) {
+	ctx := context.Background()
+	// loaded=true should still give online (fallback when runtime.status missing)
+	input := `{"service":{"loaded":true,"runtime":{"status":"stopped","pid":0}},"version":""}`
+	got := parseGatewayStatusJSON(ctx, input)
+	if got.Status != "online" {
+		t.Errorf("loaded=true with status=stopped: expected online, got %q", got.Status)
+	}
+}
+
+func TestParseGatewayStatusJSON_RuntimeStatusPreferred(t *testing.T) {
+	ctx := context.Background()
+	// runtime.status=running should give online even if loaded=false
+	input := `{"service":{"loaded":false,"runtime":{"status":"running","pid":42}},"version":""}`
+	got := parseGatewayStatusJSON(ctx, input)
+	if got.Status != "online" {
+		t.Errorf("runtime.status=running: expected online, got %q", got.Status)
+	}
+}
+
+func TestParseGatewayStatusJSON_Offline(t *testing.T) {
+	ctx := context.Background()
+	input := `{"service":{"loaded":false,"runtime":{"status":"stopped","pid":0}},"version":""}`
+	got := parseGatewayStatusJSON(ctx, input)
+	if got.Status != "offline" {
+		t.Errorf("expected offline, got %q", got.Status)
+	}
+}
+
+func TestParseGatewayStatusJSON_LeadingNonJSON(t *testing.T) {
+	ctx := context.Background()
+	input := "some log line\nanother line\n{\"service\":{\"loaded\":true,\"runtime\":{\"status\":\"running\",\"pid\":99}},\"version\":\"2.0\"}"
+	got := parseGatewayStatusJSON(ctx, input)
+	if got.Status != "online" {
+		t.Errorf("with leading text: expected online, got %q", got.Status)
+	}
+	if got.Version != "2.0" {
+		t.Errorf("expected version=2.0, got %q", got.Version)
+	}
+}
+
+func TestParseGatewayStatusJSON_EmptyJSON(t *testing.T) {
+	ctx := context.Background()
+	got := parseGatewayStatusJSON(ctx, "{}")
+	if got.Status != "offline" {
+		t.Errorf("empty json: expected offline, got %q", got.Status)
+	}
+}
+
+func TestParseGatewayStatusJSON_InvalidJSON(t *testing.T) {
+	ctx := context.Background()
+	got := parseGatewayStatusJSON(ctx, "not json at all")
+	if got.Status == "" {
+		t.Error("expected non-empty status on invalid input")
+	}
+}
+
+// ── Tests for formatBytes (Fix #12) ──────────────────────────────────────
+
+func TestFormatBytes(t *testing.T) {
+	tests := []struct {
+		input int64
+		want  string
+	}{
+		{-100, "0B"},
+		{-1, "0B"},
+		{0, "0B"},
+		{512, "512B"},
+		{1023, "1023B"},
+		{1024, "1KB"},
+		{2048, "2KB"},
+		{1048576, "1.0MB"},
+		{10 * 1048576, "10.0MB"},
+		{1073741824, "1.0GB"},
+		{5 * 1073741824, "5.0GB"},
+	}
+	for _, tt := range tests {
+		t.Run(fmt.Sprintf("bytes_%d", tt.input), func(t *testing.T) {
+			got := formatBytes(tt.input)
+			if got != tt.want {
+				t.Errorf("formatBytes(%d) = %q, want %q", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestFormatBytes_NegativeGuard(t *testing.T) {
+	got := formatBytes(-9999)
+	if got != "0B" {
+		t.Errorf("expected 0B for negative input, got %q", got)
+	}
+}
+
+// ── Tests for getProcessInfo (Fix #12) ───────────────────────────────────
+
+func TestGetProcessInfo_CurrentProcess(t *testing.T) {
+	ctx := context.Background()
+	pid := os.Getpid()
+	uptime, memory := getProcessInfo(ctx, pid)
+	// Just verify the function doesn't panic and returns something for the current process
+	// ps output depends on platform availability
+	if uptime == "" && memory == "" {
+		t.Log("getProcessInfo returned empty strings — ps may not be available in this environment (acceptable)")
+	}
+}
+
+func TestGetProcessInfo_InvalidPID(t *testing.T) {
+	ctx := context.Background()
+	// PID 0 should not exist; we expect empty strings, not a panic
+	uptime, memory := getProcessInfo(ctx, 0)
+	if uptime != "" || memory != "" {
+		t.Logf("getProcessInfo(0) returned uptime=%q memory=%q — unexpected but not fatal", uptime, memory)
+	}
+}
+
+func TestGetProcessInfo_ContextTimeout(t *testing.T) {
+	// Verify function respects a very short context timeout without hanging
+	ctx, cancel := context.WithTimeout(context.Background(), 1)
+	defer cancel()
+	pid := os.Getpid()
+	// Should return without blocking even if context is already cancelled
+	_, _ = getProcessInfo(ctx, pid)
 }

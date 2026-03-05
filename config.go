@@ -103,7 +103,7 @@ func defaultConfig() Config {
 			PollSeconds:        10,
 			MetricsTTLSeconds:  10,
 			VersionsTTLSeconds: 300,
-			GatewayTimeoutMs:   1500,
+			GatewayTimeoutMs:   5000, // `openclaw gateway status --json` typically takes ~3s to respond; 5s gives headroom
 			GatewayPort:        18789,
 			DiskPath:           "/",
 			WarnPercent:        70,
@@ -153,8 +153,8 @@ func loadConfig(dir string) Config {
 	if cfg.System.VersionsTTLSeconds < 30 || cfg.System.VersionsTTLSeconds > 3600 {
 		cfg.System.VersionsTTLSeconds = 300
 	}
-	if cfg.System.GatewayTimeoutMs < 200 || cfg.System.GatewayTimeoutMs > 10000 {
-		cfg.System.GatewayTimeoutMs = 1500
+	if cfg.System.GatewayTimeoutMs < 200 || cfg.System.GatewayTimeoutMs > 15000 {
+		cfg.System.GatewayTimeoutMs = 5000
 	}
 	// Sync gateway port from AI config (system.gatewayPort overrides ai.gatewayPort if set)
 	if cfg.System.GatewayPort <= 0 {
@@ -183,7 +183,10 @@ func loadConfig(dir string) Config {
 			t.Warn = globalWarn
 		}
 		if t.Critical <= t.Warn || t.Critical > 100 {
-			if t.Warn < 95 {
+			// Prefer global critical if valid, otherwise derive from warn
+			if globalCrit > t.Warn && globalCrit <= 100 {
+				t.Critical = globalCrit
+			} else if t.Warn < 95 {
 				t.Critical = t.Warn + 15
 				if t.Critical > 100 {
 					t.Critical = 100
