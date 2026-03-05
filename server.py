@@ -309,13 +309,35 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
         elif self.path in ("/", "/index.html"):
             self.handle_index()
         else:
-            super().do_GET()
+            # Allowlist static files — never serve arbitrary repo files
+            clean = self.path.split("?")[0].rstrip("/")
+            ALLOWED_STATIC = {
+                "/themes.json", "/favicon.ico", "/favicon.png",
+                "/config.json",  # user-facing dashboard config, not server config
+            }
+            ALLOWED_EXT = {".css", ".js", ".png", ".jpg", ".jpeg", ".gif", ".svg", ".ico", ".woff", ".woff2"}
+            if clean in ALLOWED_STATIC or any(clean.endswith(ext) for ext in ALLOWED_EXT):
+                super().do_GET()
+            else:
+                self.send_error(404, "Not Found")
 
     def do_HEAD(self):
-        if self.path in ("/api/system", "/api/system/"):
+        if self.path in ("/", "/index.html"):
+            self.handle_index(head_only=True)
+        elif self.path in ("/api/system", "/api/system/"):
             self.handle_system(head_only=True)
+        elif self.path == "/api/refresh" or self.path.startswith("/api/refresh?"):
+            self.handle_refresh(head_only=True)
         else:
-            super().do_HEAD()
+            clean = self.path.split("?")[0].rstrip("/")
+            ALLOWED_STATIC = {
+                "/themes.json", "/favicon.ico", "/favicon.png", "/config.json",
+            }
+            ALLOWED_EXT = {".css", ".js", ".png", ".jpg", ".jpeg", ".gif", ".svg", ".ico", ".woff", ".woff2"}
+            if clean in ALLOWED_STATIC or any(clean.endswith(ext) for ext in ALLOWED_EXT):
+                super().do_HEAD()
+            else:
+                self.send_error(404, "Not Found")
 
     def handle_system(self, head_only: bool = False):
         """GET /api/system — host metrics + versions with TTL cache."""
@@ -333,7 +355,7 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
         if not head_only:
             self.wfile.write(body)
 
-    def handle_index(self):
+    def handle_index(self, head_only=False):
         """Serve index.html with theme preset and version injected."""
         index_path = os.path.join(DIR, "index.html")
         try:
@@ -353,10 +375,25 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
-            self.wfile.write(body)
+            if not head_only:
+                self.wfile.write(body)
         except FileNotFoundError:
             self.send_response(404)
             self.end_headers()
+
+    def do_OPTIONS(self):
+        """CORS preflight handler — mirrors Go server behavior."""
+        origin = self.headers.get("Origin", "")
+        self.send_response(204)
+        if origin.startswith("http://localhost:") or origin.startswith("http://127.0.0.1:"):
+            self.send_header("Access-Control-Allow-Origin", origin)
+        else:
+            self.send_header("Access-Control-Allow-Origin", "http://localhost:8080")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, HEAD, OPTIONS")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
+        self.send_header("Access-Control-Max-Age", "86400")
+        self.send_header("Content-Length", "0")
+        self.end_headers()
 
     def do_POST(self):
         if self.path == "/api/chat":
@@ -365,32 +402,41 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
             self.send_response(404)
             self.end_headers()
 
-    def handle_refresh(self):
+    def handle_refresh(self, head_only=False):
         run_refresh()
 
         try:
             with open(DATA_FILE, "r") as f:
                 data = f.read()
+            body = data.encode()
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.send_header("Cache-Control", "no-cache")
+            self.send_header("Content-Length", str(len(body)))
             origin = self.headers.get("Origin", "")
             if origin.startswith("http://localhost:") or origin.startswith("http://127.0.0.1:"):
                 self.send_header("Access-Control-Allow-Origin", origin)
             else:
                 self.send_header("Access-Control-Allow-Origin", "http://localhost:8080")
             self.end_headers()
-            self.wfile.write(data.encode())
+            if not head_only:
+                self.wfile.write(body)
         except FileNotFoundError:
+            body = json.dumps({"error": "data.json not found"}).encode()
             self.send_response(503)
             self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
             self.end_headers()
-            self.wfile.write(json.dumps({"error": "data.json not found"}).encode())
+            if not head_only:
+                self.wfile.write(body)
         except Exception as e:
+            body = json.dumps({"error": str(e)}).encode()
             self.send_response(500)
             self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
             self.end_headers()
-            self.wfile.write(json.dumps({"error": str(e)}).encode())
+            if not head_only:
+                self.wfile.write(body)
 
     _MAX_BODY = 64 * 1024        # 64 KB request body limit
     _MAX_QUESTION = 2000          # max question length in chars
@@ -454,7 +500,8 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
             token=_gateway_token,
             model=_ai_cfg.get("model", ""),
         )
-        self._send_json(200, result)
+        status = 502 if "error" in result else 200
+        self._send_json(status, result)
 
     def _send_json(self, status, data):
         """Send a JSON response with CORS headers."""
@@ -509,12 +556,15 @@ def run_refresh():
             return True  # debounced, serve cached
 
         try:
-            subprocess.run(
+            result = subprocess.run(
                 ["bash", REFRESH_SCRIPT],
                 timeout=REFRESH_TIMEOUT,
                 cwd=DIR,
                 capture_output=True,
             )
+            if result.returncode != 0:
+                print(f"[dashboard] refresh.sh exited with code {result.returncode}: {result.stderr.decode(errors='replace')[:200]}")
+                return False
             _last_refresh = time.time()
             return True
         except subprocess.TimeoutExpired:
