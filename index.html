@@ -664,6 +664,7 @@ const Theme = {
     root.style.setProperty('--bg',c.bg);
     root.style.setProperty('--surface',c.surface);
     root.style.setProperty('--surfaceHover',c.surfaceHover);
+    root.style.setProperty('--glass',c.glass||c.surface);
     root.style.setProperty('--border',c.border);
     root.style.setProperty('--accent',c.accent);
     root.style.setProperty('--accent2',c.accent2);
@@ -802,9 +803,9 @@ const Renderer = {
   _svgCache: {},
   RECENT_WINDOW_MS: 5 * 60 * 1000,
 
-  reconcileRows(tbodyId, rows, keyFn, rowHtmlFn) {
+  reconcileRows(tbodyId, rows, _keyFn, rowHtmlFn) {
     // DirtyChecker gates calls, so innerHTML replacement is safe for all sizes.
-    // Previous >100 row path had ordering bugs (new rows always appended at end).
+    // _keyFn retained for caller compatibility but unused after simplification.
     $(tbodyId).innerHTML = rows.map(rowHtmlFn).join('');
   },
 
