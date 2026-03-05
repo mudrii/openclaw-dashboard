@@ -381,6 +381,20 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
             self.send_response(404)
             self.end_headers()
 
+    def do_OPTIONS(self):
+        """CORS preflight handler — mirrors Go server behavior."""
+        origin = self.headers.get("Origin", "")
+        self.send_response(204)
+        if origin.startswith("http://localhost:") or origin.startswith("http://127.0.0.1:"):
+            self.send_header("Access-Control-Allow-Origin", origin)
+        else:
+            self.send_header("Access-Control-Allow-Origin", "http://localhost:8080")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, HEAD, OPTIONS")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
+        self.send_header("Access-Control-Max-Age", "86400")
+        self.send_header("Content-Length", "0")
+        self.end_headers()
+
     def do_POST(self):
         if self.path == "/api/chat":
             self.handle_chat()
