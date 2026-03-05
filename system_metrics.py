@@ -6,6 +6,7 @@ No external dependencies — stdlib + subprocess only.
 """
 
 import json
+import logging
 import os
 import platform
 import re
@@ -13,6 +14,8 @@ import subprocess
 import threading
 import time
 from typing import Optional
+
+_log = logging.getLogger(__name__)
 
 # ── version (set by server.py before use) ──────────────────────────────────
 _dashboard_version: str = "unknown"
@@ -38,7 +41,7 @@ _cfg: dict = {
     "pollSeconds": 5,
     "metricsTtlSeconds": 5,
     "versionsTtlSeconds": 300,
-    "gatewayTimeoutMs": 1500,
+    "gatewayTimeoutMs": 5000,
     "diskPath": "/",
     "warnPercent": 70,
     "criticalPercent": 85,
@@ -114,6 +117,8 @@ def get_payload() -> tuple[int, bytes]:
 def _bg_refresh() -> None:
     try:
         _collect_all()
+    except Exception:
+        _log.exception("[system] background refresh failed")
     finally:
         with _ms.lock:
             _ms.refreshing = False
@@ -154,8 +159,14 @@ def _collect_all() -> Optional[bytes]:
         Global warnPercent/criticalPercent is NOT used as fallback to keep defaults sane.
         Clamp to valid values: 1 <= warn <= 99 and warn < critical <= 100."""
         per = _cfg.get(key, {})
-        w = float(per.get("warn") or default_warn) if isinstance(per, dict) else default_warn
-        c = float(per.get("critical") or default_crit) if isinstance(per, dict) else default_crit
+        try:
+            w = float(per.get("warn") or default_warn) if isinstance(per, dict) else default_warn
+        except (ValueError, TypeError):
+            w = default_warn
+        try:
+            c = float(per.get("critical") or default_crit) if isinstance(per, dict) else default_crit
+        except (ValueError, TypeError):
+            c = default_crit
 
         w = max(1.0, min(99.0, w))
         c = max(1.0, min(100.0, c))
@@ -167,8 +178,9 @@ def _collect_all() -> Optional[bytes]:
             "critical": c,
         }
 
+    all_failed = all(x.get("error") for x in [cpu, ram, swap, disk])
     resp = {
-        "ok": True,
+        "ok": not all_failed,
         "degraded": degraded,
         "stale": False,
         "collectedAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
@@ -245,7 +257,7 @@ def _read_proc_stat() -> Optional[dict]:
         fields = line.split()
         if not fields or fields[0] != "cpu":
             return None
-        keys = ["user", "nice", "system", "idle", "iowait", "irq", "softirq"]
+        keys = ["user", "nice", "system", "idle", "iowait", "irq", "softirq", "steal"]
         return {keys[i]: int(fields[i + 1]) for i in range(min(len(keys), len(fields) - 1))}
     except Exception:
         return None
@@ -380,18 +392,57 @@ def _collect_versions() -> dict:
     except Exception:
         pass
 
-    # Gateway status — probe via HTTP HEAD only.
-    # openclaw CLI responsiveness does NOT imply gateway daemon health.
+    # Gateway status — try `openclaw gateway status --json` first for PID/uptime/memory,
+    # fall back to HTTP HEAD probe.
     gw = {"version": "", "status": "unknown", "error": None}
     try:
-        gw_port = _cfg.get("gatewayPort", 18789)
-        import urllib.request as _ur
-        req = _ur.Request(f"http://127.0.0.1:{gw_port}/", method="HEAD")
-        with _ur.urlopen(req, timeout=timeout_s) as resp:
-            gw["status"] = "online" if resp.status < 500 else "offline"
-    except Exception as e:
-        gw["status"] = "offline"
-        gw["error"] = str(e)
+        r = subprocess.run(
+            [oc_bin, "gateway", "status", "--json"],
+            capture_output=True, text=True, timeout=max(timeout_s, 5.0)
+        )
+        import json as _json
+        raw = r.stdout.strip()
+        start = raw.find("{")
+        if start >= 0:
+            parsed = _json.loads(raw[start:])
+            svc = parsed.get("service", {})
+            runtime = svc.get("runtime", {})
+            gw["status"] = "online" if svc.get("loaded") else "offline"
+            gw["version"] = parsed.get("version", "")
+            pid = runtime.get("pid")
+            if pid:
+                gw["pid"] = pid
+                # Get uptime + memory from ps
+                try:
+                    ps = subprocess.run(
+                        ["ps", "-o", "etime=,rss=", "-p", str(pid)],
+                        capture_output=True, text=True, timeout=2
+                    )
+                    fields = ps.stdout.strip().split()
+                    if len(fields) >= 1:
+                        gw["uptime"] = fields[0]
+                    if len(fields) >= 2:
+                        rss_kb = int(fields[1])
+                        rss_bytes = rss_kb * 1024
+                        if rss_bytes >= 1024**3:
+                            gw["memory"] = f"{rss_bytes/1024**3:.1f}GB"
+                        elif rss_bytes >= 1024**2:
+                            gw["memory"] = f"{rss_bytes/1024**2:.1f}MB"
+                        else:
+                            gw["memory"] = f"{rss_kb}KB"
+                except Exception:
+                    pass
+    except Exception:
+        # Fallback: HTTP HEAD probe
+        try:
+            gw_port = _cfg.get("gatewayPort", 18789)
+            import urllib.request as _ur
+            req = _ur.Request(f"http://127.0.0.1:{gw_port}/", method="HEAD")
+            with _ur.urlopen(req, timeout=timeout_s) as resp:
+                gw["status"] = "online" if resp.status < 500 else "offline"
+        except Exception as e:
+            gw["status"] = "offline"
+            gw["error"] = str(e)
 
     return {
         "dashboard": _dashboard_version,
