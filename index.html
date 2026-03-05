@@ -1475,8 +1475,8 @@ const SystemBar = {
   },
   async fetch() {
     if(this._inflight)return; this._inflight=true;
-    try{const r=await fetch('/api/system');if(r.ok){this.render(await r.json());}else{window._sysBarActive=false;}}
-    catch(e){window._sysBarActive=false;}finally{this._inflight=false;}
+    try{const r=await fetch('/api/system');if(r.ok){this.render(await r.json());}else{window._sysBarActive=false;window._gwOnlineConfirmed=false;}}
+    catch(e){window._sysBarActive=false;window._gwOnlineConfirmed=false;}finally{this._inflight=false;}
   },
   start(ms){ms=Math.max(ms||5000,2000);if(this._timer&&this._lastMs===ms)return;if(this._timer)clearInterval(this._timer);this._lastMs=ms;this.fetch();this._timer=setInterval(()=>this.fetch(),ms);},
   _lastMs:0
