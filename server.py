@@ -311,9 +311,11 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
         else:
             # Allowlist static files — never serve arbitrary repo files
             clean = self.path.split("?")[0].rstrip("/")
+            if ".." in clean:
+                self.send_error(403, "Forbidden")
+                return
             ALLOWED_STATIC = {
                 "/themes.json", "/favicon.ico", "/favicon.png",
-                "/config.json",  # user-facing dashboard config, not server config
             }
             ALLOWED_EXT = {".css", ".js", ".png", ".jpg", ".jpeg", ".gif", ".svg", ".ico", ".woff", ".woff2"}
             if clean in ALLOWED_STATIC or any(clean.endswith(ext) for ext in ALLOWED_EXT):
@@ -330,8 +332,11 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
             self.handle_refresh(head_only=True)
         else:
             clean = self.path.split("?")[0].rstrip("/")
+            if ".." in clean:
+                self.send_error(403, "Forbidden")
+                return
             ALLOWED_STATIC = {
-                "/themes.json", "/favicon.ico", "/favicon.png", "/config.json",
+                "/themes.json", "/favicon.ico", "/favicon.png",
             }
             ALLOWED_EXT = {".css", ".js", ".png", ".jpg", ".jpeg", ".gif", ".svg", ".ico", ".woff", ".woff2"}
             if clean in ALLOWED_STATIC or any(clean.endswith(ext) for ext in ALLOWED_EXT):
@@ -430,7 +435,8 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
             if not head_only:
                 self.wfile.write(body)
         except Exception as e:
-            body = json.dumps({"error": str(e)}).encode()
+            _log.exception("refresh error: %s", e)
+            body = json.dumps({"error": "failed to read dashboard data"}).encode()
             self.send_response(500)
             self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", str(len(body)))

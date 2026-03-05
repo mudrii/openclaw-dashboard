@@ -61,7 +61,7 @@ type Server struct {
 	systemSvc *SystemService
 }
 
-func NewServer(dir, version string, cfg Config, gatewayToken string, indexHTML []byte) *Server {
+func NewServer(dir, version string, cfg Config, gatewayToken string, indexHTML []byte, serverCtx context.Context) *Server {
 	content := string(indexHTML)
 	preset := html.EscapeString(cfg.Theme.Preset)
 	meta := "<head>\n<meta name=\"oc-theme\" content=\"" + preset + "\">"
@@ -77,7 +77,7 @@ func NewServer(dir, version string, cfg Config, gatewayToken string, indexHTML [
 		indexContentLength: strconv.Itoa(len(rendered)),
 		corsDefault:        "http://localhost:" + strconv.Itoa(cfg.Server.Port),
 		httpClient:         &http.Client{Timeout: 60 * time.Second},
-		systemSvc:          NewSystemService(cfg.System, version),
+		systemSvc:          NewSystemService(cfg.System, version, serverCtx),
 	}
 }
 
@@ -261,7 +261,7 @@ func (s *Server) handleRefresh(w http.ResponseWriter, r *http.Request) {
 		if os.IsNotExist(err) {
 			s.sendJSONRaw(w, r, http.StatusServiceUnavailable, errDataMissing)
 		} else {
-			s.sendJSON(w, r, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			s.sendJSON(w, r, http.StatusInternalServerError, map[string]string{"error": "failed to read dashboard data"})
 		}
 		return
 	}
@@ -304,6 +304,11 @@ func (s *Server) getDataCached() map[string]any {
 	}
 
 	s.dataMu.Lock()
+	// Double-check: another goroutine may have updated while we read/parsed
+	if s.cachedData != nil && !mtime.After(s.cachedDataMtime) {
+		defer s.dataMu.Unlock()
+		return s.cachedData
+	}
 	s.cachedData = parsed
 	s.cachedDataMtime = mtime
 	s.cachedDataRaw = raw

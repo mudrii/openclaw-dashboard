@@ -65,7 +65,11 @@ func main() {
 		fmt.Println("[dashboard] WARNING: ai.enabled=true but OPENCLAW_GATEWAY_TOKEN not found in dotenv")
 	}
 
-	srv := NewServer(dir, version, cfg, gatewayToken, indexHTML)
+	// Server lifecycle context — cancelled on SIGINT/SIGTERM for clean goroutine shutdown
+	serverCtx, serverCancel := context.WithCancel(context.Background())
+	defer serverCancel()
+
+	srv := NewServer(dir, version, cfg, gatewayToken, indexHTML, serverCtx)
 
 	// Pre-warm data.json in background so first browser hit is instant
 	srv.PreWarm()
@@ -101,6 +105,7 @@ func main() {
 	}()
 
 	<-stop
+	serverCancel() // cancel background goroutines (metrics refresh, etc.)
 	fmt.Println("\n[dashboard] shutting down...")
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()

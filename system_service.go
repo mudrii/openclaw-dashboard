@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"math"
 	"net/http"
@@ -20,8 +21,9 @@ import (
 
 // SystemService collects host metrics and versions with TTL caching.
 type SystemService struct {
-	cfg     SystemConfig
-	dashVer string
+	cfg       SystemConfig
+	dashVer   string
+	serverCtx context.Context // lifecycle context — cancelled on graceful shutdown
 
 	metricsMu      sync.RWMutex
 	metricsPayload []byte
@@ -33,8 +35,8 @@ type SystemService struct {
 	verAt     time.Time
 }
 
-func NewSystemService(cfg SystemConfig, dashVer string) *SystemService {
-	return &SystemService{cfg: cfg, dashVer: dashVer}
+func NewSystemService(cfg SystemConfig, dashVer string, serverCtx context.Context) *SystemService {
+	return &SystemService{cfg: cfg, dashVer: dashVer, serverCtx: serverCtx}
 }
 
 // GetJSON returns (statusCode, jsonBody).
@@ -61,7 +63,7 @@ func (s *SystemService) GetJSON(ctx context.Context) (int, []byte) {
 		if !s.metricsRefresh {
 			s.metricsRefresh = true
 			go func() {
-				data, hardFail := s.refresh(context.Background())
+				data, hardFail := s.refresh(s.serverCtx)
 				if data == nil || hardFail {
 					log.Printf("[system] background refresh failed: data=%v hardFail=%v", data == nil, hardFail)
 				}
@@ -420,7 +422,7 @@ func fetchLatestNpmVersion(ctx context.Context, timeoutMs int) string {
 	var pkg struct {
 		Version string `json:"version"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&pkg); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&pkg); err != nil {
 		return ""
 	}
 	return pkg.Version
