@@ -444,9 +444,22 @@ def _collect_versions() -> dict:
             gw["status"] = "offline"
             gw["error"] = str(e)
 
+    # Latest version from npm registry (best-effort)
+    latest = ""
+    try:
+        import urllib.request as _ur
+        req = _ur.Request("https://registry.npmjs.org/openclaw/latest")
+        req.add_header("Accept", "application/json")
+        with _ur.urlopen(req, timeout=min(timeout_s, 3)) as resp:
+            import json as _json
+            latest = _json.loads(resp.read()).get("version", "")
+    except Exception:
+        pass
+
     return {
         "dashboard": _dashboard_version,
         "openclaw": openclaw,
+        "latest": latest,
         "gateway": gw,
     }
 

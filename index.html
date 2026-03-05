@@ -279,7 +279,6 @@ body{font-family:-apple-system,BlinkMacSystemFont,'SF Pro','Helvetica Neue',sans
   </div>
   <!-- 2. System Metrics Top Bar (inside header) -->
   <div class="system-topbar" id="systemTopBar" style="display:none">
-    <span class="sys-pill" id="sysGw" title="Gateway status">Gateway</span>
     <span class="sys-pill" id="sysOclaw" title="OpenClaw version">OpenClaw</span>
     <span class="sys-divider"></span>
     <span class="sys-pill" id="sysCpu" title="CPU usage">CPU</span>
@@ -1445,6 +1444,15 @@ const SystemBar = {
   _timer: null, _inflight: false,
   cls(p, w, c) { return p==null?'sys-err':p>=c?'sys-crit':p>=w?'sys-warn':'sys-ok'; },
   fmt(b) { if(!b)return'0B'; const g=b/1073741824; return g>=1?g.toFixed(1)+'GB':(b/1048576).toFixed(0)+'MB'; },
+  _versionsBehind(installed, latest) {
+    // YYYY.M.D version scheme — count how many releases behind
+    const parse=v=>{const p=v.split('.').map(Number);return p.length>=3?p:[0,0,0];};
+    const [iy,im,id]=parse(installed),[ly,lm,ld]=parse(latest);
+    if(iy===ly&&im===lm&&id===ld)return 0;
+    if(iy<ly)return 2;if(iy>ly)return 0;
+    if(im<lm)return(lm-im)>=2?2:1;if(im>lm)return 0;
+    return(ld-id)>=2?2:1;
+  },
   render(d) {
     const bar=$('systemTopBar'); if(!d){bar.style.display='none';return;}
     bar.style.display='flex';
@@ -1463,9 +1471,11 @@ const SystemBar = {
     sp('sysRam','RAM',ramErr?null:(d.ram?.percent??null),tRam,!ramErr&&d.ram?.totalBytes>0?'RAM '+this.fmt(d.ram.usedBytes)+'/'+this.fmt(d.ram.totalBytes):null);
     sp('sysSwap','Swap',swapErr?null:(d.swap?.percent??null),tSwap);
     sp('sysDisk','Disk',d.disk?.error?null:(d.disk?.percent??null),tDisk,d.disk?.totalBytes>0?'Disk used '+this.fmt(d.disk.usedBytes)+'/'+this.fmt(d.disk.totalBytes)+' ('+d.disk.percent.toFixed(1)+'%)':null);
-    const oc=$('sysOclaw');oc.className='sys-pill sys-ok';oc.textContent='OpenClaw '+(d.versions?.openclaw||'?');
-    const gw=$('sysGw');const gwok=['online','running'].includes(d.versions?.gateway?.status);
-    gw.className='sys-pill '+(gwok?'sys-ok':'sys-err');gw.textContent='GW '+(d.versions?.gateway?.status||'?');
+    const oc=$('sysOclaw');const inst=d.versions?.openclaw||'?';const latest=d.versions?.latest||'';
+    let ocClass='sys-ok';
+    if(latest&&inst!=='?'&&inst!==latest){const behind=this._versionsBehind(inst,latest);ocClass=behind>=2?'sys-err':behind===1?'sys-warn':'sys-ok';}
+    oc.className='sys-pill '+ocClass;oc.textContent='OpenClaw '+inst+(latest&&inst!==latest?' (latest: '+latest+')':'');
+    const gwok=['online','running'].includes(d.versions?.gateway?.status);
     // Set global flag so Renderer.render() can skip re-creating the "Gateway is offline" alert
     window._gwOnlineConfirmed = gwok;
     $('sysStale').style.display=d.stale?'inline':'none';
