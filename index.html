@@ -502,23 +502,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'SF Pro','Helvetica Neue',sans
   </div>
 </section>
 
-<!-- 11. Bottom Row -->
-<div class="grid-3">
-  <div class="glass panel">
-    <div class="section-header"><span class="section-title">🧠 Available Models</span></div>
-    <div class="models-grid" id="modelsGrid"></div>
-  </div>
-  <div class="glass panel">
-    <div class="section-header"><span class="section-title">🔧 Skills</span></div>
-    <div style="display:flex;flex-wrap:wrap;gap:5px" id="skillsGrid"></div>
-  </div>
-  <div class="glass panel">
-    <div class="section-header"><span class="section-title">📜 Git Log</span></div>
-    <div id="gitPanel"></div>
-  </div>
-</div>
-
-<!-- 12. Agent Configuration -->
+<!-- 11. Agent Configuration (includes Models, Skills, Git Log) -->
 <section class="oc-section" data-section="agent-config" style="margin-top:16px">
   <div class="oc-section-header">
     <button class="oc-section-toggle" aria-expanded="false" aria-controls="oc-body-agent-config" aria-label="Toggle Agent Configuration" onclick="Sections.toggle('agent-config')">
@@ -528,6 +512,21 @@ body{font-family:-apple-system,BlinkMacSystemFont,'SF Pro','Helvetica Neue',sans
     <span class="section-count" id="agentCount"></span>
   </div>
   <div class="oc-section-body" id="oc-body-agent-config">
+  <!-- Models / Skills / Git Log row -->
+  <div class="grid-3" style="margin-bottom:16px">
+    <div class="glass panel">
+      <div class="section-header"><span class="section-title">🧠 Available Models</span></div>
+      <div class="models-grid" id="modelsGrid"></div>
+    </div>
+    <div class="glass panel">
+      <div class="section-header"><span class="section-title">🔧 Skills</span></div>
+      <div style="display:flex;flex-wrap:wrap;gap:5px" id="skillsGrid"></div>
+    </div>
+    <div class="glass panel">
+      <div class="section-header"><span class="section-title">📜 Git Log</span></div>
+      <div id="gitPanel"></div>
+    </div>
+  </div>
   <div class="glass panel">
 
   <!-- Agent Cards Row -->
