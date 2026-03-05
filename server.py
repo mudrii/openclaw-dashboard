@@ -408,15 +408,21 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
             if not head_only:
                 self.wfile.write(body)
         except FileNotFoundError:
+            body = json.dumps({"error": "data.json not found"}).encode()
             self.send_response(503)
             self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
             self.end_headers()
-            self.wfile.write(json.dumps({"error": "data.json not found"}).encode())
+            if not head_only:
+                self.wfile.write(body)
         except Exception as e:
+            body = json.dumps({"error": str(e)}).encode()
             self.send_response(500)
             self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
             self.end_headers()
-            self.wfile.write(json.dumps({"error": str(e)}).encode())
+            if not head_only:
+                self.wfile.write(body)
 
     _MAX_BODY = 64 * 1024        # 64 KB request body limit
     _MAX_QUESTION = 2000          # max question length in chars
