@@ -50,8 +50,11 @@ REFRESH_SCRIPT = os.path.join(DIR, "refresh.sh")
 DATA_FILE = os.path.join(DIR, "data.json")
 REFRESH_TIMEOUT = 15
 
-# Pre-rendered index.html — computed once at startup (parity with Go's indexHTMLRendered)
+# Pre-rendered index.html — computed at startup, re-rendered when config.json changes.
+# Uses mtime-based invalidation: checks config.json mtime on each request,
+# re-renders only if the file was modified (like Go's data cache pattern).
 _rendered_index = None
+_rendered_index_config_mtime = 0.0
 
 
 def _render_index():
@@ -73,11 +76,50 @@ def _render_index():
     content = content.replace("__VERSION__", _html_mod.escape(VERSION, quote=True))
     return content.encode("utf-8")
 
+
+def _get_rendered_index():
+    """Return pre-rendered index.html, re-rendering if config.json changed.
+
+    Checks config.json mtime on each call — lightweight stat() avoids
+    serving stale theme after config edits (no server restart needed).
+    """
+    global _rendered_index, _rendered_index_config_mtime
+    try:
+        mtime = os.path.getmtime(CONFIG_FILE)
+    except OSError:
+        mtime = 0.0
+    if _rendered_index is not None and mtime <= _rendered_index_config_mtime:
+        return _rendered_index
+    _rendered_index = _render_index()
+    _rendered_index_config_mtime = mtime
+    return _rendered_index
+
+
 _last_refresh = 0
 _refresh_lock = threading.Lock()
 _debounce_sec = 30
 _ai_cfg = {}
 _gateway_token = ""
+
+# ── Chat rate limiter (10 req/min per IP) ──────────────────────────────────
+_CHAT_RATE_LIMIT = 10       # max requests per window
+_CHAT_RATE_WINDOW = 60.0    # window in seconds
+_chat_rate_lock = threading.Lock()
+_chat_rate_buckets: dict = {}  # ip → [tokens_remaining, last_reset_time]
+
+
+def _chat_rate_allow(ip: str) -> bool:
+    """Check if IP is within chat rate limit. Returns True if allowed."""
+    now = time.time()
+    with _chat_rate_lock:
+        bucket = _chat_rate_buckets.get(ip)
+        if bucket is None or (now - bucket[1]) >= _CHAT_RATE_WINDOW:
+            _chat_rate_buckets[ip] = [_CHAT_RATE_LIMIT - 1, now]
+            return True
+        if bucket[0] <= 0:
+            return False
+        bucket[0] -= 1
+        return True
 
 # data.json mtime-based cache — parity with Go's getDataCached()
 _data_cache_lock = threading.Lock()
@@ -182,7 +224,15 @@ def get_session_model(session_key, session_file=None):
 
 
 def _get_data_cached():
-    """Return parsed data.json with mtime-based caching — parity with Go's getDataCached()."""
+    """Return parsed data.json with mtime-based caching — parity with Go's getDataCached().
+
+    Uses intentional double-checked locking: the file is read *outside* the lock
+    (between two ``with _data_cache_lock`` blocks).  Two threads may both decide
+    to read simultaneously — this is harmless because both read the same file and
+    the last writer wins.  The worst case is one redundant file read, which is
+    cheaper than holding the lock during disk I/O.  Matches Go's getDataCached()
+    pattern.
+    """
     global _data_cache_mtime, _data_cache_parsed, _data_cache_raw
     try:
         mtime = os.path.getmtime(DATA_FILE)
@@ -193,6 +243,7 @@ def _get_data_cached():
         if _data_cache_parsed is not None and mtime <= _data_cache_mtime:
             return _data_cache_parsed
 
+    # File read outside lock — intentional; see docstring above.
     try:
         with open(DATA_FILE, "r") as f:
             raw = f.read()
@@ -313,7 +364,11 @@ MAX_GATEWAY_RESP = 1 << 20  # 1MB — parity with Go's maxGatewayResp
 def call_gateway(system, history, question, port, token, model):
     """Call the OpenClaw gateway's OpenAI-compatible chat completions endpoint.
 
-    Returns {"answer": "..."} on success, {"error": "..."} on failure.
+    Returns (http_status, result_dict):
+      - (200, {"answer": "..."}) on success
+      - (502, {"error": "..."}) on gateway failure (unreachable, HTTP error, parse error)
+      - (504, {"error": "..."}) on timeout
+    Matches Go's handleChat behavior: proper HTTP status codes instead of always 200.
     """
     messages = [{"role": "system", "content": system}]
     messages.extend(history)
@@ -340,23 +395,23 @@ def call_gateway(system, history, question, port, token, model):
         with urllib.request.urlopen(req, timeout=60) as resp:
             raw = resp.read(MAX_GATEWAY_RESP + 1)
             if len(raw) > MAX_GATEWAY_RESP:
-                return {"error": f"Gateway response too large (>{MAX_GATEWAY_RESP} bytes)"}
+                return 502, {"error": f"Gateway response too large (>{MAX_GATEWAY_RESP} bytes)"}
             body = json.loads(raw.decode())
             content = (
                 body.get("choices", [{}])[0]
                     .get("message", {})
                     .get("content", "")
             )
-            return {"answer": content or "(empty response)"}
+            return 200, {"answer": content or "(empty response)"}
     except urllib.error.HTTPError as e:
         body = e.read().decode()
-        return {"error": f"Gateway HTTP {e.code}: {body[:200]}"}
+        return 502, {"error": f"Gateway HTTP {e.code}: {body[:200]}"}
     except urllib.error.URLError as e:
-        return {"error": f"Gateway unreachable: {e.reason}"}
+        return 502, {"error": f"Gateway unreachable: {e.reason}"}
     except socket.timeout:
-        return {"error": "Gateway timed out — model took too long to respond"}
+        return 504, {"error": "Gateway timed out — model took too long to respond"}
     except Exception as e:
-        return {"error": f"Unexpected error: {e}"}
+        return 502, {"error": f"Unexpected error: {e}"}
 
 
 class DashboardHandler(http.server.SimpleHTTPRequestHandler):
@@ -431,7 +486,7 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
 
     def handle_index(self, head_only=False):
         """Serve pre-rendered index.html with theme and version injected."""
-        body = _rendered_index
+        body = _get_rendered_index()
         if body is None:
             self.send_response(404)
             self.end_headers()
@@ -523,6 +578,18 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
             self._send_json(503, {"error": "AI chat is disabled in config.json"})
             return
 
+        # Rate limit: 10 req/min per IP
+        client_ip = self.client_address[0] if self.client_address else "unknown"
+        if not _chat_rate_allow(client_ip):
+            self.send_response(429)
+            self.send_header("Retry-After", "60")
+            body = json.dumps({"error": "Rate limit exceeded — max 10 requests per minute"}).encode()
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
+
         length = int(self.headers.get("Content-Length", 0))
         if length > self._MAX_BODY:
             # Drain body to prevent HTTP/1.1 framing corruption on keep-alive
@@ -568,7 +635,7 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
         data = _get_data_cached()
 
         system_prompt = build_dashboard_prompt(data)
-        result = call_gateway(
+        status, result = call_gateway(
             system=system_prompt,
             history=history,
             question=question,
@@ -576,7 +643,6 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
             token=_gateway_token,
             model=_ai_cfg.get("model", ""),
         )
-        status = 502 if "error" in result else 200
         self._send_json(status, result)
 
     def _send_json(self, status, data):

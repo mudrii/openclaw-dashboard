@@ -371,6 +371,66 @@ func TestRefresh_DataMissing_Returns503(t *testing.T) {
 	}
 }
 
+// --- Rate limiting ---
+
+func TestChat_RateLimitExceeded(t *testing.T) {
+	dir := t.TempDir()
+	cfg := defaultConfig()
+	cfg.AI.Enabled = true
+	srv := NewServer(dir, "test", cfg, "tok", []byte("<head></head>"), context.Background())
+
+	// Send chatRateLimit requests — all should be accepted (400 because no gateway, but not 429)
+	for i := 0; i < chatRateLimit; i++ {
+		body := `{"question":"hello"}`
+		req := httptest.NewRequest(http.MethodPost, "/api/chat", strings.NewReader(body))
+		req.RemoteAddr = "192.168.1.1:12345"
+		w := httptest.NewRecorder()
+		srv.ServeHTTP(w, req)
+		if w.Code == http.StatusTooManyRequests {
+			t.Fatalf("request %d should not be rate limited", i+1)
+		}
+	}
+
+	// Next request should be rate limited
+	body := `{"question":"one more"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/chat", strings.NewReader(body))
+	req.RemoteAddr = "192.168.1.1:12345"
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	if w.Code != http.StatusTooManyRequests {
+		t.Fatalf("expected 429 after %d requests, got %d", chatRateLimit, w.Code)
+	}
+	if ra := w.Header().Get("Retry-After"); ra != "60" {
+		t.Errorf("expected Retry-After: 60, got %q", ra)
+	}
+}
+
+func TestChat_RateLimitPerIP(t *testing.T) {
+	dir := t.TempDir()
+	cfg := defaultConfig()
+	cfg.AI.Enabled = true
+	srv := NewServer(dir, "test", cfg, "tok", []byte("<head></head>"), context.Background())
+
+	// Exhaust rate limit for IP A
+	for i := 0; i < chatRateLimit; i++ {
+		req := httptest.NewRequest(http.MethodPost, "/api/chat", strings.NewReader(`{"question":"hi"}`))
+		req.RemoteAddr = "10.0.0.1:1111"
+		w := httptest.NewRecorder()
+		srv.ServeHTTP(w, req)
+	}
+
+	// IP B should still be allowed
+	req := httptest.NewRequest(http.MethodPost, "/api/chat", strings.NewReader(`{"question":"hi"}`))
+	req.RemoteAddr = "10.0.0.2:2222"
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	if w.Code == http.StatusTooManyRequests {
+		t.Fatal("different IP should not be rate limited")
+	}
+}
+
 // --- Helpers ---
 
 func writeJSON(t *testing.T, path string, v any) {

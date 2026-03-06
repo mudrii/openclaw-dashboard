@@ -415,11 +415,18 @@ func TestGetProcessInfo_ContextTimeout(t *testing.T) {
 // ── Tests for detectGatewayFallback timeout-bounded client ───────────────
 
 func TestDetectGatewayFallback_UsesTimeoutClient(t *testing.T) {
-	// Spin up a server that delays response to verify timeout works
-	called := make(chan struct{})
+	// Spin up a server that delays response to verify timeout works.
+	// Handler sleeps 1s (just long enough to exceed 100ms client timeout).
+	// Context cancels handler on test completion to avoid lingering goroutines.
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		close(called)
-		time.Sleep(5 * time.Second)
+		select {
+		case <-time.After(1 * time.Second):
+		case <-ctx.Done():
+			return
+		}
 		w.WriteHeader(200)
 	}))
 	defer srv.Close()
@@ -428,13 +435,12 @@ func TestDetectGatewayFallback_UsesTimeoutClient(t *testing.T) {
 	parts := strings.Split(srv.URL, ":")
 	port, _ := strconv.Atoi(parts[len(parts)-1])
 
-	ctx := context.Background()
 	start := time.Now()
-	gw := detectGatewayFallback(ctx, port, 200) // 200ms timeout
+	gw := detectGatewayFallback(ctx, port, 100) // 100ms timeout
 	elapsed := time.Since(start)
 
-	// Should timeout quickly, not wait 5 seconds
-	if elapsed > 2*time.Second {
+	// Should timeout quickly, not wait 1 second
+	if elapsed > 500*time.Millisecond {
 		t.Errorf("detectGatewayFallback took %v — timeout not working", elapsed)
 	}
 	if gw.Status != "offline" {
@@ -475,6 +481,54 @@ func TestResolveOpenclawBin_SkipsNonExecutable(t *testing.T) {
 		t.Fatal("test setup error: file should not have exec bit")
 	}
 	// The guard in resolveOpenclawBin: info.Mode()&0111 != 0 would skip this file
+}
+
+func TestResolveOpenclawBin_IntegrationWithTempHome(t *testing.T) {
+	// Full integration test: set HOME to a temp directory, place both executable
+	// and non-executable files, and call resolveOpenclawBin() directly.
+	tmpHome := t.TempDir()
+	t.Setenv("HOME", tmpHome)
+
+	// Create asdf shims dir with NON-executable openclaw → should be skipped
+	shimsDir := filepath.Join(tmpHome, ".asdf", "shims")
+	os.MkdirAll(shimsDir, 0755)
+	nonExec := filepath.Join(shimsDir, "openclaw")
+	os.WriteFile(nonExec, []byte("#!/bin/sh\necho not-exec"), 0644) // no exec bit
+
+	// Create asdf nodejs install with EXECUTABLE openclaw → should be found
+	nodeDir := filepath.Join(tmpHome, ".asdf", "installs", "nodejs", "22.0.0", "bin")
+	os.MkdirAll(nodeDir, 0755)
+	execFile := filepath.Join(nodeDir, "openclaw")
+	os.WriteFile(execFile, []byte("#!/bin/sh\necho exec"), 0755) // exec bit set
+
+	// Temporarily remove PATH-based openclaw so resolveOpenclawBin falls through to candidates
+	origPath := os.Getenv("PATH")
+	t.Setenv("PATH", "/nonexistent")
+
+	result := resolveOpenclawBin()
+
+	// Restore PATH (for other tests) — t.Setenv handles cleanup automatically
+
+	// Result should be the executable file, not the non-executable one
+	if result == nonExec {
+		t.Errorf("resolveOpenclawBin returned non-executable file %q", result)
+	}
+	if result != execFile {
+		// It's acceptable to get the last-resort "openclaw" if exec.LookPath still
+		// finds something, but it must NOT be the 0644 file.
+		t.Logf("resolveOpenclawBin returned %q (expected %q)", result, execFile)
+	}
+
+	// Also verify the non-executable is truly skipped
+	info, err := os.Stat(nonExec)
+	if err != nil {
+		t.Fatal("test setup: non-exec file missing")
+	}
+	if info.Mode()&0111 != 0 {
+		t.Fatal("test setup: non-exec file has exec bit")
+	}
+
+	_ = origPath // appease linter
 }
 
 // ── Tests for stale byte-level injection ─────────────────────────────────

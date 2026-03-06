@@ -52,18 +52,16 @@ No automated check that both servers respond identically to the same requests. A
 2. Test runner starts both Go and Python servers, sends identical requests
 3. Compare: status codes, JSON keys, CORS headers, error shapes
 
-### 5. Rate limiting on /api/chat
+### 5. ✅ Rate limiting on /api/chat — IMPLEMENTED (2026-03-06)
 **Sonnet SEC-2 | Effort: 1-2h**
 
-No per-minute rate limit on `/api/chat`. Any local process can spam the endpoint, forwarding to the LLM gateway and incurring costs. Request size limits (64KB body, 2000 char question) are in place.
+~~No per-minute rate limit on `/api/chat`.~~
 
-**Why deferred:** Low risk since both servers only listen on localhost. Rate limiting adds complexity (token bucket state, configuration surface). The existing body size limits prevent the worst abuse vectors.
-
-**Proposed path:**
-1. Add `chat.rateLimit` config option (default: 10 req/min)
-2. Go: `golang.org/x/time/rate` token bucket per IP
-3. Python: simple sliding-window counter in `handle_chat()`
-4. Return 429 with `Retry-After` header
+**Implemented:** 10 req/min per IP token-bucket rate limiter in both Go and Python.
+- Go: `chatRateLimiter` struct with `sync.Map` + per-bucket mutex, periodic cleanup goroutine
+- Python: `_chat_rate_allow()` with `threading.Lock` + dict of `[tokens, last_reset]` buckets
+- Both return 429 with `Retry-After: 60` header when limit exceeded
+- Tests: `TestChat_RateLimitExceeded`, `TestChat_RateLimitPerIP` (Go), `TestChatRateLimit` (Python)
 
 ### 6. Single-file frontend extraction
 **Opus §5.3 | Effort: 4-8h**
@@ -72,9 +70,9 @@ No per-minute rate limit on `/api/chat`. Any local process can spam the endpoint
 
 **Why deferred:** The current `//go:embed index.html` pattern is simple and works. Extraction requires a build step (esbuild/vite), which adds CI complexity.
 
-### 7. Merge getDataRawCached/getDataCached into single cache layer
+### 7. ✅ Merge getDataRawCached/getDataCached into single cache layer — IMPLEMENTED (2026-03-06)
 **Sonnet PERF-3 | Effort: 1h**
 
-Both functions stat and read `data.json` independently. Merging into a single `loadData()` that fills both caches atomically would eliminate the (very minor) possibility of double-read on concurrent requests.
+~~Both functions stat and read `data.json` independently.~~
 
-**Why deferred:** Current code is correct (double-check locking ensures coherence). The optimization is marginal since `data.json` is typically < 100KB.
+**Implemented:** Single `loadData()` function that fills both raw bytes and parsed map caches atomically under one lock acquisition. `getDataRawCached()` and `getDataCached()` now delegate to `loadData()`. Eliminates double-read on concurrent requests.

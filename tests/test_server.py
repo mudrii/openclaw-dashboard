@@ -413,5 +413,64 @@ class TestSystemEndpoint(ServerTestBase):
         self.assertIn("ok", data)
 
 
+class TestChatRateLimit(unittest.TestCase):
+    """Test the per-IP rate limiter for /api/chat."""
+
+    @classmethod
+    def setUpClass(cls):
+        sys.path.insert(0, REPO)
+        import server
+        cls.server = server
+
+    def setUp(self):
+        # Reset rate limiter state before each test
+        with self.server._chat_rate_lock:
+            self.server._chat_rate_buckets.clear()
+
+    def test_allows_within_limit(self):
+        for i in range(self.server._CHAT_RATE_LIMIT):
+            self.assertTrue(self.server._chat_rate_allow("127.0.0.1"),
+                            f"request {i+1} should be allowed")
+
+    def test_blocks_over_limit(self):
+        for _ in range(self.server._CHAT_RATE_LIMIT):
+            self.server._chat_rate_allow("127.0.0.1")
+        self.assertFalse(self.server._chat_rate_allow("127.0.0.1"),
+                         "should be blocked after limit exceeded")
+
+    def test_per_ip_isolation(self):
+        for _ in range(self.server._CHAT_RATE_LIMIT):
+            self.server._chat_rate_allow("10.0.0.1")
+        # Different IP should still be allowed
+        self.assertTrue(self.server._chat_rate_allow("10.0.0.2"),
+                        "different IP should not be affected")
+
+
+class TestCallGatewayReturnTypes(unittest.TestCase):
+    """Test that call_gateway returns proper (status, dict) tuples."""
+
+    @classmethod
+    def setUpClass(cls):
+        sys.path.insert(0, REPO)
+        from server import call_gateway
+        cls.call = staticmethod(call_gateway)
+
+    def test_unreachable_returns_502(self):
+        status, result = self.call(
+            system="test", history=[], question="hi",
+            port=19999, token="fake", model="test",
+        )
+        self.assertEqual(status, 502)
+        self.assertIn("error", result)
+
+    def test_returns_tuple(self):
+        status, result = self.call(
+            system="test", history=[], question="hi",
+            port=19999, token="fake", model="test",
+        )
+        self.assertIsInstance(status, int)
+        self.assertIsInstance(result, dict)
+
+
 if __name__ == "__main__":
     unittest.main()
