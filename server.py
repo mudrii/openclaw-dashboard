@@ -8,6 +8,7 @@ import json
 import logging
 import os
 import socket
+import socketserver
 import subprocess
 import threading
 import time
@@ -49,11 +50,40 @@ REFRESH_SCRIPT = os.path.join(DIR, "refresh.sh")
 DATA_FILE = os.path.join(DIR, "data.json")
 REFRESH_TIMEOUT = 15
 
+# Pre-rendered index.html — computed once at startup (parity with Go's indexHTMLRendered)
+_rendered_index = None
+
+
+def _render_index():
+    """Pre-render index.html with theme preset and version injected."""
+    import html as _html_mod
+    index_path = os.path.join(DIR, "index.html")
+    try:
+        with open(index_path, "r", encoding="utf-8") as f:
+            content = f.read()
+    except FileNotFoundError:
+        return None
+    preset = load_config().get("theme", {}).get("preset", "midnight")
+    safe_preset = _html_mod.escape(preset, quote=True)
+    content = content.replace(
+        "<head>",
+        f'<head>\n<meta name="oc-theme" content="{safe_preset}">',
+        1,
+    )
+    content = content.replace("__VERSION__", _html_mod.escape(VERSION, quote=True))
+    return content.encode("utf-8")
+
 _last_refresh = 0
 _refresh_lock = threading.Lock()
 _debounce_sec = 30
 _ai_cfg = {}
 _gateway_token = ""
+
+# data.json mtime-based cache — parity with Go's getDataCached()
+_data_cache_lock = threading.Lock()
+_data_cache_mtime = 0.0
+_data_cache_parsed = None
+_data_cache_raw = None
 
 
 OPENCLAW_PATH = os.path.expanduser("~/.openclaw")
@@ -149,6 +179,33 @@ def get_session_model(session_key, session_file=None):
     parts = (session_key or "").split(":")
     agent_name = parts[1] if len(parts) >= 2 else "main"
     return _load_agent_default_models().get(agent_name, "unknown")
+
+
+def _get_data_cached():
+    """Return parsed data.json with mtime-based caching — parity with Go's getDataCached()."""
+    global _data_cache_mtime, _data_cache_parsed, _data_cache_raw
+    try:
+        mtime = os.path.getmtime(DATA_FILE)
+    except OSError:
+        return {}
+
+    with _data_cache_lock:
+        if _data_cache_parsed is not None and mtime <= _data_cache_mtime:
+            return _data_cache_parsed
+
+    try:
+        with open(DATA_FILE, "r") as f:
+            raw = f.read()
+        parsed = json.loads(raw)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {}
+
+    with _data_cache_lock:
+        if _data_cache_parsed is None or mtime > _data_cache_mtime:
+            _data_cache_parsed = parsed
+            _data_cache_raw = raw.encode()
+            _data_cache_mtime = mtime
+        return _data_cache_parsed
 
 
 def load_config():
@@ -250,6 +307,9 @@ def build_dashboard_prompt(data):
     return "\n".join(lines)
 
 
+MAX_GATEWAY_RESP = 1 << 20  # 1MB — parity with Go's maxGatewayResp
+
+
 def call_gateway(system, history, question, port, token, model):
     """Call the OpenClaw gateway's OpenAI-compatible chat completions endpoint.
 
@@ -278,7 +338,10 @@ def call_gateway(system, history, question, port, token, model):
 
     try:
         with urllib.request.urlopen(req, timeout=60) as resp:
-            body = json.loads(resp.read().decode())
+            raw = resp.read(MAX_GATEWAY_RESP + 1)
+            if len(raw) > MAX_GATEWAY_RESP:
+                return {"error": f"Gateway response too large (>{MAX_GATEWAY_RESP} bytes)"}
+            body = json.loads(raw.decode())
             content = (
                 body.get("choices", [{}])[0]
                     .get("message", {})
@@ -367,30 +430,18 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
             self.wfile.write(body)
 
     def handle_index(self, head_only=False):
-        """Serve index.html with theme preset and version injected."""
-        index_path = os.path.join(DIR, "index.html")
-        try:
-            with open(index_path, "r", encoding="utf-8") as f:
-                html = f.read()
-            import html as _html_mod
-            preset = load_config().get("theme", {}).get("preset", "midnight")
-            safe_preset = _html_mod.escape(preset, quote=True)
-            html = html.replace(
-                "<head>",
-                f'<head>\n<meta name="oc-theme" content="{safe_preset}">',
-                1,
-            )
-            html = html.replace("__VERSION__", _html_mod.escape(VERSION, quote=True))
-            body = html.encode("utf-8")
-            self.send_response(200)
-            self.send_header("Content-Type", "text/html; charset=utf-8")
-            self.send_header("Content-Length", str(len(body)))
-            self.end_headers()
-            if not head_only:
-                self.wfile.write(body)
-        except FileNotFoundError:
+        """Serve pre-rendered index.html with theme and version injected."""
+        body = _rendered_index
+        if body is None:
             self.send_response(404)
             self.end_headers()
+            return
+        self.send_response(200)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        if not head_only:
+            self.wfile.write(body)
 
     def do_OPTIONS(self):
         """CORS preflight handler — mirrors Go server behavior."""
@@ -433,9 +484,15 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
             if not head_only:
                 self.wfile.write(body)
         except FileNotFoundError:
-            body = json.dumps({"error": "data.json not found"}).encode()
+            body = json.dumps({"error": "data.json not found — refresh in progress, try again shortly"}).encode()
             self.send_response(503)
             self.send_header("Content-Type", "application/json")
+            self.send_header("Cache-Control", "no-cache")
+            origin = self.headers.get("Origin", "")
+            if origin.startswith("http://localhost:") or origin.startswith("http://127.0.0.1:"):
+                self.send_header("Access-Control-Allow-Origin", origin)
+            else:
+                self.send_header("Access-Control-Allow-Origin", "http://localhost:8080")
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
             if not head_only:
@@ -445,6 +502,12 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
             body = json.dumps({"error": "failed to read dashboard data"}).encode()
             self.send_response(500)
             self.send_header("Content-Type", "application/json")
+            self.send_header("Cache-Control", "no-cache")
+            origin = self.headers.get("Origin", "")
+            if origin.startswith("http://localhost:") or origin.startswith("http://127.0.0.1:"):
+                self.send_header("Access-Control-Allow-Origin", origin)
+            else:
+                self.send_header("Access-Control-Allow-Origin", "http://localhost:8080")
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
             if not head_only:
@@ -502,11 +565,7 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
             })
         history = safe_history
 
-        try:
-            with open(DATA_FILE, "r") as f:
-                data = json.load(f)
-        except (FileNotFoundError, json.JSONDecodeError):
-            data = {}
+        data = _get_data_cached()
 
         system_prompt = build_dashboard_prompt(data)
         result = call_gateway(
@@ -592,7 +651,15 @@ def run_refresh():
             return False
 
 
+class ThreadingDashboardServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
+    """Multi-threaded HTTP server — prevents refresh.sh from blocking all requests."""
+    daemon_threads = True
+
+
 def main():
+    global _rendered_index
+    _rendered_index = _render_index()
+
     cfg = load_config()
     server_cfg = cfg.get("server", {})
     refresh_cfg = cfg.get("refresh", {})
@@ -651,7 +718,7 @@ examples:
     )
     args = parser.parse_args()
 
-    server = http.server.HTTPServer((args.bind, args.port), DashboardHandler)
+    server = ThreadingDashboardServer((args.bind, args.port), DashboardHandler)
     server.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     print(f"[dashboard] v{VERSION}")
     print(f"[dashboard] Serving on http://{args.bind}:{args.port}/")

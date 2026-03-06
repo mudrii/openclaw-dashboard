@@ -95,7 +95,9 @@ func (s *Server) PreWarm() {
 // This is intentionally restrictive — Python serves everything (including
 // .git/config, server.py, config.json) which is a security risk.
 var allowedStatic = map[string]string{
-	"/themes.json": "application/json",
+	"/themes.json":  "application/json",
+	"/favicon.ico":  "image/x-icon",
+	"/favicon.png":  "image/png",
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -112,7 +114,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case r.Method == http.MethodOptions:
 		s.setCORSHeaders(w, r)
 		w.Header().Set("Access-Control-Allow-Methods", "GET, HEAD, POST, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
 		w.Header().Set("Access-Control-Max-Age", "86400")
 		w.WriteHeader(http.StatusNoContent)
 	case r.Method == http.MethodPost && r.URL.Path == "/api/chat":

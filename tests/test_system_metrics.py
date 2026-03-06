@@ -155,5 +155,105 @@ class TestCache(unittest.TestCase):
         self.assertFalse(data["ok"])
 
 
+class TestThresholdClamping(unittest.TestCase):
+    """Parity with Go's TestSystemConfig_PerMetricThresholdClamping — ensures per-metric
+    thresholds are clamped to valid ranges and critical > warn."""
+
+    def _reset_state(self):
+        import system_metrics as sm
+        sm._ms.payload = None
+        sm._ms.at = 0.0
+        sm._ms.refreshing = False
+
+    def setUp(self):
+        self._reset_state()
+
+    def tearDown(self):
+        self._reset_state()
+
+    def _get_thresholds(self, cfg_overrides):
+        import system_metrics as sm
+        saved = dict(sm._cfg)
+        sm._cfg.update(cfg_overrides)
+        sm._ms.payload = None
+        sm._ms.at = 0.0
+        try:
+            status, body = sm.get_payload()
+            self.assertEqual(status, 200)
+            import json
+            data = json.loads(body)
+            return data.get("thresholds", {})
+        finally:
+            sm._cfg = saved
+
+    def test_valid_thresholds_unchanged(self):
+        t = self._get_thresholds({"cpu": {"warn": 75, "critical": 90}})
+        self.assertEqual(t["cpu"]["warn"], 75)
+        self.assertEqual(t["cpu"]["critical"], 90)
+
+    def test_critical_less_than_warn_clamped(self):
+        t = self._get_thresholds({"cpu": {"warn": 80, "critical": 60}})
+        self.assertEqual(t["cpu"]["warn"], 80)
+        self.assertGreater(t["cpu"]["critical"], t["cpu"]["warn"],
+            "critical must be > warn after clamping")
+
+    def test_critical_exceeds_100_clamped(self):
+        t = self._get_thresholds({"swap": {"warn": 85, "critical": 105}})
+        self.assertEqual(t["swap"]["warn"], 85)
+        self.assertLessEqual(t["swap"]["critical"], 100)
+        self.assertGreater(t["swap"]["critical"], t["swap"]["warn"])
+
+    def test_defaults_when_absent(self):
+        t = self._get_thresholds({})
+        # Default: 80/95
+        self.assertEqual(t["disk"]["warn"], 80)
+        self.assertEqual(t["disk"]["critical"], 95)
+
+    def test_warn_clamped_to_1_min(self):
+        t = self._get_thresholds({"ram": {"warn": -5, "critical": 50}})
+        self.assertGreaterEqual(t["ram"]["warn"], 1)
+
+    def test_warn_clamped_to_99_max(self):
+        t = self._get_thresholds({"ram": {"warn": 150, "critical": 200}})
+        self.assertLessEqual(t["ram"]["warn"], 99)
+        self.assertGreater(t["ram"]["critical"], t["ram"]["warn"])
+
+
+class TestStaleInjection(unittest.TestCase):
+    """Test that stale flag is correctly injected via byte replacement."""
+
+    def _reset_state(self):
+        import system_metrics as sm
+        sm._ms.payload = None
+        sm._ms.at = 0.0
+        sm._ms.refreshing = False
+
+    def setUp(self):
+        self._reset_state()
+
+    def tearDown(self):
+        self._reset_state()
+
+    def test_stale_injection_works(self):
+        import system_metrics as sm
+        import json
+        # Collect fresh data first
+        status, body = sm.get_payload()
+        self.assertEqual(status, 200)
+        data = json.loads(body)
+        self.assertFalse(data.get("stale", True))
+
+        # Expire the cache but keep payload for stale serving
+        sm._ms.at = 0
+        sm._cfg["metricsTtlSeconds"] = 0
+
+        # This should return stale=true
+        status2, body2 = sm.get_payload()
+        self.assertEqual(status2, 200)
+        data2 = json.loads(body2)
+        self.assertTrue(data2.get("stale"),
+            "Expected stale=true in expired cache response")
+
+
 if __name__ == "__main__":
     unittest.main()

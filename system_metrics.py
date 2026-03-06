@@ -96,13 +96,12 @@ def get_payload() -> tuple[int, bytes]:
                     should_start = True
         if should_start:
             threading.Thread(target=_bg_refresh, daemon=True).start()
-        # Inject stale flag
-        try:
-            data = json.loads(payload)
-            data["stale"] = True
-            return 200, json.dumps(data).encode()
-        except Exception:
-            return 200, payload
+        # Inject stale flag — byte-level replacement avoids unmarshal/remarshal overhead
+        stale_payload = payload.replace(b'"stale": false', b'"stale": true', 1)
+        if stale_payload == payload:
+            # Try without spaces (json.dumps default has spaces after colons)
+            stale_payload = payload.replace(b'"stale":false', b'"stale":true', 1)
+        return 200, stale_payload
 
     # No cache — collect synchronously
     data = _collect_all()

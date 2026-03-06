@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -76,15 +77,9 @@ func (s *SystemService) GetJSON(ctx context.Context) (int, []byte) {
 		b := s.metricsPayload
 		s.metricsMu.Unlock()
 
-		// Mark stale in response
-		var resp SystemResponse
-		if err := json.Unmarshal(b, &resp); err == nil {
-			resp.Stale = true
-			if out, err := json.Marshal(resp); err == nil {
-				return http.StatusOK, out
-			}
-		}
-		return http.StatusOK, b
+		// Mark stale in response — byte-level replacement avoids unmarshal/remarshal overhead
+		staleBytes := bytes.Replace(b, []byte(`"stale":false`), []byte(`"stale":true`), 1)
+		return http.StatusOK, staleBytes
 	}
 
 	// No cache — collect synchronously
@@ -348,7 +343,8 @@ func detectGatewayFallback(ctx context.Context, gatewayPort int, timeoutMs int) 
 		e := "probe failed"
 		return SystemGateway{Status: "offline", Error: &e}
 	}
-	resp, err := http.DefaultClient.Do(req)
+	client := &http.Client{Timeout: time.Duration(timeoutMs) * time.Millisecond}
+	resp, err := client.Do(req)
 	if err == nil {
 		resp.Body.Close()
 		return SystemGateway{Status: "online"}
@@ -400,7 +396,7 @@ func resolveOpenclawBin() string {
 		"/opt/homebrew/bin/openclaw",
 	)
 	for _, c := range candidates {
-		if info, err := os.Stat(c); err == nil && !info.IsDir() {
+		if info, err := os.Stat(c); err == nil && !info.IsDir() && info.Mode()&0111 != 0 {
 			return c
 		}
 	}

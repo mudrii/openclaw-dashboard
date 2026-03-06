@@ -195,6 +195,177 @@ class TestDebounce(ServerTestBase):
         json.loads(body2)
 
 
+class TestRefreshCORSOnError(unittest.TestCase):
+    """Test that CORS headers are present on error responses from /api/refresh."""
+
+    port = None
+    proc = None
+    _data_json_existed = False
+
+    @classmethod
+    def setUpClass(cls):
+        cls.port = _free_port()
+        # Temporarily remove data.json to trigger 503 on refresh
+        cls._data_json_existed = os.path.exists(DATA_FILE)
+        if cls._data_json_existed:
+            os.rename(DATA_FILE, DATA_FILE + ".bak")
+        env = os.environ.copy()
+        env["DASHBOARD_PORT"] = str(cls.port)
+        env["DASHBOARD_BIND"] = "127.0.0.1"
+        cls.proc = subprocess.Popen(
+            [sys.executable, SERVER_PY, "-p", str(cls.port)],
+            cwd=REPO,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=env,
+        )
+        for _ in range(30):
+            try:
+                conn = http.client.HTTPConnection("127.0.0.1", cls.port, timeout=1)
+                conn.request("GET", "/")
+                conn.getresponse()
+                conn.close()
+                return
+            except Exception:
+                time.sleep(0.2)
+        raise RuntimeError("Server didn't start in time")
+
+    @classmethod
+    def tearDownClass(cls):
+        if cls.proc:
+            cls.proc.terminate()
+            cls.proc.wait(timeout=5)
+        # Restore data.json if it existed before
+        if cls._data_json_existed and os.path.exists(DATA_FILE + ".bak"):
+            os.rename(DATA_FILE + ".bak", DATA_FILE)
+
+    def test_refresh_503_has_cors_header(self):
+        """CORS headers must be present even on 503 error responses."""
+        conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=10)
+        conn.request("GET", "/api/refresh", headers={"Origin": "http://localhost:3000"})
+        resp = conn.getresponse()
+        resp.read()
+        conn.close()
+        # Server should return 503 (no data.json) but with CORS
+        if resp.status == 503:
+            cors = resp.getheader("Access-Control-Allow-Origin", "")
+            self.assertEqual(cors, "http://localhost:3000",
+                "503 response missing CORS header — browser JS can't read error")
+
+    def test_refresh_503_error_message_matches_go(self):
+        """Error message on 503 should match Go server's message."""
+        conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=10)
+        conn.request("GET", "/api/refresh")
+        resp = conn.getresponse()
+        body = resp.read().decode()
+        conn.close()
+        if resp.status == 503:
+            data = json.loads(body)
+            self.assertIn("data.json not found", data.get("error", ""))
+
+
+class TestThreadingServer(ServerTestBase):
+    """Verify the Python server handles concurrent requests without blocking."""
+
+    def test_concurrent_refresh_and_index(self):
+        """Multiple concurrent requests to different endpoints should not block."""
+        results = {}
+        errors = []
+
+        def fetch(name, path):
+            try:
+                conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=10)
+                conn.request("GET", path)
+                resp = conn.getresponse()
+                resp.read()
+                conn.close()
+                results[name] = resp.status
+            except Exception as e:
+                errors.append(f"{name}: {e}")
+
+        threads = [
+            threading.Thread(target=fetch, args=("index", "/")),
+            threading.Thread(target=fetch, args=("refresh", "/api/refresh")),
+            threading.Thread(target=fetch, args=("system", "/api/system")),
+        ]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(timeout=15)
+
+        self.assertFalse(errors, f"Concurrent request errors: {errors}")
+        for name, status in results.items():
+            self.assertEqual(status, 200, f"{name} returned {status}")
+
+
+class TestSystemDisabled(unittest.TestCase):
+    """Test system.enabled=false returns 503 in Python server."""
+
+    port = None
+    proc = None
+
+    @classmethod
+    def setUpClass(cls):
+        import tempfile
+        cls.port = _free_port()
+        # Write a config.json with system.enabled=false
+        cls._config_bak = None
+        config_path = os.path.join(REPO, "config.json")
+        if os.path.exists(config_path):
+            with open(config_path, "r") as f:
+                cls._config_bak = f.read()
+        with open(config_path, "r") as f:
+            cfg = json.load(f)
+        cfg.setdefault("system", {})["enabled"] = False
+        with open(config_path, "w") as f:
+            json.dump(cfg, f)
+
+        if not os.path.exists(DATA_FILE):
+            with open(DATA_FILE, "w") as f:
+                json.dump({"gateway": {}, "totalCostToday": 0, "crons": [], "sessions": []}, f)
+
+        env = os.environ.copy()
+        env["DASHBOARD_PORT"] = str(cls.port)
+        env["DASHBOARD_BIND"] = "127.0.0.1"
+        cls.proc = subprocess.Popen(
+            [sys.executable, SERVER_PY, "-p", str(cls.port)],
+            cwd=REPO,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=env,
+        )
+        for _ in range(30):
+            try:
+                conn = http.client.HTTPConnection("127.0.0.1", cls.port, timeout=1)
+                conn.request("GET", "/")
+                conn.getresponse()
+                conn.close()
+                break
+            except Exception:
+                time.sleep(0.2)
+
+    @classmethod
+    def tearDownClass(cls):
+        if cls.proc:
+            cls.proc.terminate()
+            cls.proc.wait(timeout=5)
+        # Restore original config
+        config_path = os.path.join(REPO, "config.json")
+        if cls._config_bak is not None:
+            with open(config_path, "w") as f:
+                f.write(cls._config_bak)
+
+    def test_system_disabled_returns_503(self):
+        conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=10)
+        conn.request("GET", "/api/system")
+        resp = conn.getresponse()
+        body = resp.read().decode()
+        conn.close()
+        self.assertEqual(resp.status, 503)
+        data = json.loads(body)
+        self.assertFalse(data.get("ok"))
+
+
 class TestSystemEndpoint(ServerTestBase):
     """Tests for GET /api/system endpoint."""
 

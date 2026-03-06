@@ -170,6 +170,23 @@ class TestServerRobustness(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.port = _free_port()
+        # Ensure data.json exists so server can serve it in CI
+        # (refresh.sh requires a live OpenClaw install which CI doesn't have)
+        if not os.path.exists(DATA_JSON):
+            with open(DATA_JSON, "w") as f:
+                json.dump({
+                    "gateway": {"status": "unknown"},
+                    "totalCostToday": 0,
+                    "crons": [],
+                    "sessions": [],
+                    "tokenUsage": [],
+                    "subagentRuns": [],
+                    "dailyChart": [],
+                    "models": [],
+                    "skills": [],
+                    "gitLog": [],
+                    "agentConfig": {},
+                }, f)
         env = os.environ.copy()
         env["DASHBOARD_BIND"] = "127.0.0.1"
         env["DASHBOARD_PORT"] = str(cls.port)
@@ -218,9 +235,8 @@ class TestServerRobustness(unittest.TestCase):
         self.assertTrue(headers.get("Content-Type", "").startswith("application/json"))
 
     def test_tc10_data_endpoint_has_numeric_total_cost_today(self):
-        status, _, body = _request(self.port, "GET", "/api/data")
-        if status != 200:
-            status, _, body = _request(self.port, "GET", "/api/refresh")
+        # /api/data was never implemented — use /api/refresh directly
+        status, _, body = _request(self.port, "GET", "/api/refresh")
         self.assertEqual(status, 200)
         data = json.loads(body.decode("utf-8", errors="replace"))
         self.assertIsInstance(data.get("totalCostToday"), (int, float),

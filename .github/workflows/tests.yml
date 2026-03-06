@@ -27,7 +27,7 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Run static analysis tests (no server needed)
-        run: python -m pytest tests/test_frontend.py tests/test_critical.py tests/test_dockerfile.py tests/test_nix_flake.py tests/test_system_metrics.py -v
+        run: python -m pytest tests/test_frontend.py tests/test_dockerfile.py tests/test_nix_flake.py tests/test_system_metrics.py -v
 
       - name: Run schema tests
         run: python -m pytest tests/test_data_schema.py -v
@@ -35,7 +35,7 @@ jobs:
         # data.json only exists after refresh.sh runs against a real OpenClaw install
 
       - name: Run server integration tests
-        run: python -m pytest tests/test_server.py tests/test_chat.py tests/test_hierarchy_recent.py -v
+        run: python -m pytest tests/test_server.py tests/test_chat.py tests/test_hierarchy_recent.py tests/test_critical.py -v
 
   lint-shell:
     name: Lint refresh.sh
