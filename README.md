@@ -47,6 +47,8 @@ It's not trying to replace the OpenClaw CLI or Telegram interface. It's the at-a
 - 🖌️ **Glass Morphism UI** — Subtle transparency and hover effects
 - 📱 **Responsive** — Adapts to desktop, tablet, and mobile
 - 🔒 **Local Only** — Runs on localhost, no external dependencies
+- 🛡️ **Rate Limiting** — 10 req/min per-IP on `/api/chat` (Go + Python, 429 + Retry-After)
+- ⏱️ **HTTP Timeouts** — Read 30s / Write 90s / Idle 120s (Go server)
 - 🐧 **Cross-Platform** — macOS and Linux
 - ⚡ **Zero Dependencies** — Pure HTML/CSS/JS frontend, Python stdlib backend, or single Go binary
 - 📊 **Top Metrics Bar** — Always-on CPU/RAM/swap/disk + gateway status, per-metric thresholds, macOS + Linux
@@ -237,11 +239,13 @@ server.py / openclaw-dashboard (Go)   ← HTTP server (choose one)
 | `/api/refresh` | Blocking (waits for `refresh.sh`) | Stale-while-revalidate (instant response) |
 | `/api/chat` | Reads `data.json` per request | Mtime-cached `data.json` (dual raw+parsed cache) |
 | `/api/system` | `system_metrics.py` — TTL cache, stale-serving | `SystemService` — parallel collectors, RWMutex cache |
-| Static files | Serves everything (⚠️ including `.git/`) | Allowlisted only (`themes.json`) |
+| Static files | Allowlisted (`themes.json`, `data.json`, `index.html`) | Allowlisted only (`themes.json`) |
+| Rate limiting | 10 req/min per-IP on `/api/chat` | 10 req/min per-IP on `/api/chat` |
+| HTTP timeouts | N/A (stdlib defaults) | Read 30s / Write 90s / Idle 120s |
 | Pre-warm | None | Runs `refresh.sh` at startup |
-| Shutdown | Immediate kill | Graceful (drains requests, 5s timeout) |
-| Gateway limit | Unbounded | 1MB response cap |
-| Tests | `pytest` (123 tests) | `go test -race` (57 tests) |
+| Shutdown | Clean thread exit | Graceful (drains requests, 5s timeout) |
+| Gateway limit | 1MB response cap | 1MB response cap |
+| Tests | `pytest` (165 tests) | `go test -race` (87 tests) |
 
 When you open the dashboard, `index.html` calls `/api/refresh`. The server runs `refresh.sh` (with 30s debounce) to collect fresh data from your OpenClaw installation, then returns the JSON. No cron jobs needed.
 
