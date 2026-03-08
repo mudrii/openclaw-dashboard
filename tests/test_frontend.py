@@ -249,5 +249,106 @@ class TestNoRawPlaceholderTokens(unittest.TestCase):
             f"Found raw %%PLACEHOLDER%% tokens in index.html: {raw_placeholders}")
 
 
+class TestGatewayRuntimeConfigSplit(unittest.TestCase):
+    """Verify Gateway area is split into Runtime (live /api/system) + Config (data.json) cards."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.html = read(INDEX_HTML)
+
+    # --- HTML structure ---
+
+    def test_gateway_runtime_panel_present(self):
+        """gatewayRuntimePanel div must exist in HTML."""
+        self.assertIn('id="gatewayRuntimePanel"', self.html,
+            "Missing gatewayRuntimePanel element")
+
+    def test_gateway_runtime_panel_inner_present(self):
+        """gatewayRuntimePanelInner inner div must exist for JS targeting."""
+        self.assertIn('id="gatewayRuntimePanelInner"', self.html,
+            "Missing gatewayRuntimePanelInner element")
+
+    def test_gateway_config_panel_present(self):
+        """gatewayConfigPanel div must exist in HTML."""
+        self.assertIn('id="gatewayConfigPanel"', self.html,
+            "Missing gatewayConfigPanel element")
+
+    def test_gateway_config_panel_inner_present(self):
+        """gatewayConfigPanelInner inner div must exist for JS targeting."""
+        self.assertIn('id="gatewayConfigPanelInner"', self.html,
+            "Missing gatewayConfigPanelInner element")
+
+    def test_old_gateway_panel_removed(self):
+        """The old combined gatewayPanel / gatewayPanelInner must not exist."""
+        self.assertNotIn('id="gatewayPanel"', self.html,
+            "Old combined gatewayPanel must be removed (split into Runtime+Config)")
+        self.assertNotIn('id="gatewayPanelInner"', self.html,
+            "Old gatewayPanelInner must be removed (now gatewayConfigPanelInner)")
+
+    def test_gateway_runtime_panel_label(self):
+        """Gateway Runtime card must have 'Gateway Runtime' label."""
+        self.assertIn("Gateway Runtime", self.html,
+            "Gateway Runtime card label missing")
+
+    def test_gateway_config_panel_label(self):
+        """Gateway Config card must have 'Gateway Config' label."""
+        self.assertIn("Gateway Config", self.html,
+            "Gateway Config card label missing")
+
+    # --- Data sources ---
+
+    def test_config_panel_reads_from_agentconfig_gateway(self):
+        """Renderer populates gatewayConfigPanelInner from AC.gateway (config snapshot)."""
+        self.assertIn("$('gatewayConfigPanelInner').innerHTML", self.html,
+            "gatewayConfigPanelInner must be written by Renderer from AC.gateway")
+        # AC.gateway is the config source
+        self.assertIn("const GW = AC.gateway", self.html,
+            "Config panel must read from AC.gateway")
+
+    def test_runtime_panel_updated_by_systembar(self):
+        """SystemBar.render() must update gatewayRuntimePanelInner from /api/system data."""
+        self.assertIn("$('gatewayRuntimePanelInner')", self.html,
+            "SystemBar must reference gatewayRuntimePanelInner")
+
+    def test_runtime_panel_shows_state(self):
+        """Runtime card renders state label from gwState."""
+        match = re.search(
+            r"gatewayRuntimePanelInner.*?stateLabel.*?stateColor",
+            self.html, re.DOTALL
+        )
+        self.assertIsNotNone(match,
+            "gatewayRuntimePanelInner render must include stateLabel + stateColor")
+
+    def test_runtime_panel_shows_uptime_from_systembar(self):
+        """Runtime card sources uptime from fmtDurationMs(gwRuntime.uptimeMs) via SystemBar."""
+        self.assertIn("fmtDurationMs(gwRuntime.uptimeMs)", self.html,
+            "Uptime must come from gwRuntime.uptimeMs via SystemBar")
+
+    def test_config_panel_shows_port(self):
+        """Config card renders GW.port."""
+        self.assertIn("GW.port", self.html,
+            "Config panel must render GW.port")
+
+    def test_config_panel_shows_auth_mode(self):
+        """Config card renders GW.authMode."""
+        self.assertIn("GW.authMode", self.html,
+            "Config panel must render GW.authMode")
+
+    # --- No duplication with System Health ---
+
+    def test_system_health_gateway_row_unchanged(self):
+        """hGw (System Health gateway row) must still be present and untouched."""
+        self.assertIn('id="hGw"', self.html,
+            "System Health hGw row must remain unchanged")
+
+    def test_runtime_panel_not_duplicate_of_health_row(self):
+        """Runtime card is a separate element from hGw (no content duplication in HTML)."""
+        # Both should exist but as distinct elements
+        self.assertIn('id="hGw"', self.html)
+        self.assertIn('id="gatewayRuntimePanelInner"', self.html)
+        # They must be different ids
+        self.assertNotEqual('id="hGw"', 'id="gatewayRuntimePanelInner"')
+
+
 if __name__ == "__main__":
     unittest.main()

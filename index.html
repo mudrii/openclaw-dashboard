@@ -561,10 +561,16 @@ body{font-family:-apple-system,BlinkMacSystemFont,'SF Pro','Helvetica Neue',sans
       <div id="searchPanelInner"></div>
     </div>
 
-    <!-- Gateway -->
-    <div style="background:var(--glass);border:1px solid var(--border);border-radius:8px;padding:12px" id="gatewayPanel">
-      <div style="font-size:9px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-bottom:10px">🌐 Gateway</div>
-      <div id="gatewayPanelInner"></div>
+    <!-- Gateway Runtime (live /api/system data) -->
+    <div style="background:var(--glass);border:1px solid var(--border);border-radius:8px;padding:12px" id="gatewayRuntimePanel">
+      <div style="font-size:9px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-bottom:10px">⚡ Gateway Runtime</div>
+      <div id="gatewayRuntimePanelInner"><span style="color:var(--dim);font-size:12px">Loading…</span></div>
+    </div>
+
+    <!-- Gateway Config (config snapshot from data.json) -->
+    <div style="background:var(--glass);border:1px solid var(--border);border-radius:8px;padding:12px" id="gatewayConfigPanel">
+      <div style="font-size:9px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-bottom:10px">🌐 Gateway Config</div>
+      <div id="gatewayConfigPanelInner"></div>
     </div>
 
     <!-- Subagent Limits -->
@@ -1092,9 +1098,9 @@ const Renderer = {
       kv('Cache TTL', (SR.cacheTtlMinutes||'—')+' min'),
     ].join('') : '<span style="color:var(--dim);font-size:12px">Not configured</span>';
 
-    // Gateway Panel
+    // Gateway Config Panel (config snapshot from data.json / agentConfig.gateway)
     const GW = AC.gateway||{};
-    $('gatewayPanelInner').innerHTML = GW.port ? [
+    $('gatewayConfigPanelInner').innerHTML = GW.port ? [
       kv('Port', GW.port, 'var(--green)'),
       kv('Mode', GW.mode),
       kv('Bind', GW.bind),
@@ -1541,6 +1547,29 @@ const SystemBar = {
     }
     if(gwVersion.memory)$('hMem').textContent=gwVersion.memory;
     if(gwok){const as=$('alertsSection');if(as){const items=as.querySelectorAll('.alert-item');items.forEach(el=>{if(el.textContent.includes('Gateway is offline'))el.remove();})}}
+
+    // Gateway Runtime card — populated from live /api/system data
+    const gwRtEl=$('gatewayRuntimePanelInner');
+    if(gwRtEl){
+      const esc2=s=>String(s??'—').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      const kvR=(k,v,c='var(--text)')=>`<div style="display:flex;justify-content:space-between;margin-bottom:4px"><span style="font-size:12px;color:var(--muted)">${esc2(k)}</span><span style="font-size:12px;color:${c};font-weight:600">${esc2(v)}</span></div>`;
+      const stateLabel=gwState.source==='runtime'
+        ?(gwLive&&gwReady?'Online':(gwLive?'Live / Not Ready':'Offline'))
+        :(gwok?'Online':'Offline');
+      const stateColor=gwState.source==='runtime'
+        ?(gwLive&&gwReady?'var(--green)':(gwLive?'var(--yellow)':'var(--red)'))
+        :(gwok?'var(--green)':'var(--red)');
+      const upTxt=gwState.source==='runtime'?this.fmtDurationMs(gwRuntime.uptimeMs)||gwVersion.uptime||'—':gwVersion.uptime||'—';
+      const probeSource=gwState.source==='runtime'?'live probes':'status fallback';
+      gwRtEl.innerHTML=[
+        kvR('State', stateLabel, stateColor),
+        kvR('Version', gwVersion.version||'—'),
+        kvR('PID', gwVersion.pid||'—'),
+        kvR('Uptime', upTxt),
+        kvR('Memory', gwVersion.memory||'—'),
+        kvR('Source', probeSource, 'var(--muted)'),
+      ].join('');
+    }
 
     if(d.pollSeconds&&d.pollSeconds>0&&d.pollSeconds*1000!==this._lastMs)this.start(d.pollSeconds*1000);
   },
