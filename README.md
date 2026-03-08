@@ -75,6 +75,7 @@ Two server options — choose what fits your environment:
 ### Option A: Go Binary (recommended)
 
 Download a single pre-built binary — no runtime dependencies needed:
+Release assets are raw binaries, so the download URLs do not end in `.tar.gz`.
 
 ```bash
 # macOS (Apple Silicon)
