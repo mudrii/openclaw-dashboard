@@ -1548,6 +1548,31 @@ const SystemBar = {
     if(gwVersion.memory)$('hMem').textContent=gwVersion.memory;
     if(gwok){const as=$('alertsSection');if(as){const items=as.querySelectorAll('.alert-item');items.forEach(el=>{if(el.textContent.includes('Gateway is offline'))el.remove();})}}
 
+    // Gateway readiness alert — synthesized from /api/system failing[] list (generic, not channel-specific).
+    // Shown when gateway is live but not all dependencies are ready (e.g. discord, slack, telegram).
+    // Disappears automatically when readiness recovers or gateway goes fully offline.
+    // Does not conflict with the "Gateway is offline" alert: that alert is shown only when gwLive=false.
+    {
+      const gwFailingDeps = Array.isArray(gwRuntime.failing) ? gwRuntime.failing : [];
+      const gwReadyAlertEl = $('gw-readiness-alert');
+      if (gwLive && !gwReady && gwState.source === 'runtime') {
+        const depStr = gwFailingDeps.length ? gwFailingDeps.map(f => esc(f)).join(', ') : '';
+        const alertMsg = depStr ? 'Gateway not ready: ' + depStr : 'Gateway not ready';
+        if (gwReadyAlertEl) {
+          gwReadyAlertEl.querySelector('.alert-msg').innerHTML = alertMsg;
+        } else {
+          const alertEl = document.createElement('div');
+          alertEl.id = 'gw-readiness-alert';
+          alertEl.className = 'alert-item alert-medium';
+          alertEl.innerHTML = '<span class="alert-icon">🟡</span><span class="alert-msg">' + alertMsg + '</span>';
+          const as = $('alertsSection');
+          if (as) as.insertAdjacentElement('afterbegin', alertEl);
+        }
+      } else if (gwReadyAlertEl) {
+        gwReadyAlertEl.remove();
+      }
+    }
+
     // Gateway Runtime card — populated from live /api/system data
     const gwRtEl=$('gatewayRuntimePanelInner');
     if(gwRtEl){

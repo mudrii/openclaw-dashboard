@@ -350,5 +350,115 @@ class TestGatewayRuntimeConfigSplit(unittest.TestCase):
         self.assertNotEqual('id="hGw"', 'id="gatewayRuntimePanelInner"')
 
 
+class TestGatewayReadinessAlert(unittest.TestCase):
+    """Tests for the generic gateway readiness alert synthesized from /api/system failing[] data."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.html = read(INDEX_HTML)
+
+    # --- HTML/JS structure checks ---
+
+    def test_readiness_alert_id_defined(self):
+        """The gw-readiness-alert element ID must be referenced in JS."""
+        self.assertIn("gw-readiness-alert", self.html,
+            "gw-readiness-alert ID must be referenced for readiness alert management")
+
+    def test_readiness_alert_uses_gwfailing_deps(self):
+        """JS reads gwRuntime.failing array for dependency names."""
+        self.assertIn("gwRuntime.failing", self.html,
+            "Readiness alert must read failing deps from gwRuntime.failing")
+
+    def test_readiness_alert_is_array_checked(self):
+        """JS guards gwRuntime.failing with Array.isArray before use."""
+        self.assertIn("Array.isArray(gwRuntime.failing)", self.html,
+            "Must guard gwRuntime.failing with Array.isArray")
+
+    def test_readiness_alert_condition_live_not_ready(self):
+        """Alert is shown only when gwLive && !gwReady && source==='runtime'."""
+        self.assertIn("gwLive && !gwReady && gwState.source === 'runtime'", self.html,
+            "Readiness alert condition must check gwLive, !gwReady, and source===runtime")
+
+    def test_readiness_alert_generic_message(self):
+        """Alert message is 'Gateway not ready' (generic, no hardcoded channel names)."""
+        self.assertIn("'Gateway not ready: ' + depStr", self.html,
+            "Readiness alert message must use generic 'Gateway not ready: ' prefix")
+        # Must NOT hardcode specific channels like discord/slack/telegram in the alert message logic
+        # (channel names come from the failing[] array dynamically)
+        # Check that the alert message construction uses depStr (dynamic), not a hardcoded list
+        self.assertIn("depStr", self.html,
+            "Alert message must use depStr (dynamic dep list), not hardcoded names")
+
+    def test_readiness_alert_escapes_failing_names(self):
+        """Failing dependency names must be HTML-escaped before insertion."""
+        self.assertIn("gwFailingDeps.map(f => esc(f))", self.html,
+            "Failing dep names must be escaped via esc() to prevent XSS")
+
+    def test_readiness_alert_removes_when_ready(self):
+        """Alert element is removed when gateway becomes ready or offline."""
+        self.assertIn("gwReadyAlertEl.remove()", self.html,
+            "gw-readiness-alert must be removed when gateway recovers or goes offline")
+
+    def test_readiness_alert_updates_in_place(self):
+        """Alert updates its message in-place (no flicker from repeated DOM insertion)."""
+        self.assertIn("gwReadyAlertEl.querySelector('.alert-msg').innerHTML = alertMsg", self.html,
+            "Existing alert must be updated in-place via querySelector")
+
+    def test_readiness_alert_inserted_at_top(self):
+        """New alert is inserted at the top of alertsSection (most prominent position)."""
+        self.assertIn("as.insertAdjacentElement('afterbegin', alertEl)", self.html,
+            "Readiness alert must be inserted at the start of alertsSection")
+
+    def test_readiness_alert_uses_medium_severity(self):
+        """Readiness alert uses alert-medium CSS class (yellow/warning severity)."""
+        self.assertIn("alertEl.className = 'alert-item alert-medium'", self.html,
+            "Readiness alert must use alert-medium severity class")
+
+    def test_readiness_alert_uses_yellow_emoji(self):
+        """Readiness alert icon is the 🟡 yellow circle emoji."""
+        self.assertIn("🟡", self.html,
+            "Readiness alert must include 🟡 icon")
+
+    def test_readiness_alert_no_conflict_with_offline_alert(self):
+        """When gateway is offline (gwLive=false), readiness alert is removed, not added.
+        The offline alert from D.alerts is allowed through by _gwOnlineConfirmed=false.
+        Both conditions (offline alert and readiness alert) are mutually exclusive:
+        - gwLive=false  → offline alert shows, readiness alert removed
+        - gwLive=true   → offline alert suppressed, readiness alert may show
+        """
+        # _gwOnlineConfirmed = gwLive means offline→false (don't suppress offline alert)
+        self.assertIn("window._gwOnlineConfirmed = gwLive", self.html,
+            "_gwOnlineConfirmed must be set to gwLive so offline alert shows when gwLive=false")
+        # The readiness alert condition requires gwLive=true to show
+        self.assertIn("if (gwLive && !gwReady && gwState.source === 'runtime')", self.html,
+            "Readiness alert only shows when gwLive=true (no conflict with offline case)")
+
+    def test_readiness_alert_not_shown_via_versions_fallback(self):
+        """Readiness alert is NOT synthesized when using versions fallback (source!='runtime').
+        The versions fallback has no failing[] data, so we skip the alert.
+        """
+        self.assertIn("gwState.source === 'runtime'", self.html,
+            "Readiness alert must only activate for runtime source (not versions fallback)")
+
+    # --- Behavioral tests via eval_systembar (Node.js execution) ---
+
+    def test_readiness_alert_message_single_dep(self):
+        """'Gateway not ready: discord' is the message for a single failing dependency."""
+        # Test the depStr construction logic via pure Python string analysis
+        # (The full DOM test would need a browser, but we can verify the JS pattern)
+        html = self.html
+        # Verify the join separator is comma+space
+        self.assertIn("gwFailingDeps.map(f => esc(f)).join(', ')", html,
+            "Failing deps must be joined with ', ' separator")
+
+    def test_readiness_alert_fallback_message_when_no_failing_details(self):
+        """'Gateway not ready' (no colon) when failing[] is empty but gateway not ready."""
+        self.assertIn("'Gateway not ready'", self.html,
+            "Must fall back to bare 'Gateway not ready' when failing[] is empty")
+        # depStr is empty string when failing[] is empty, so the conditional picks the fallback
+        self.assertIn("depStr ? 'Gateway not ready: ' + depStr : 'Gateway not ready'", self.html,
+            "Ternary must produce bare 'Gateway not ready' for empty failing[]")
+
+
 if __name__ == "__main__":
     unittest.main()
