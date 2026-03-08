@@ -1,5 +1,53 @@
 # Changelog
 
+## v2026.3.8 — Runtime Observability
+
+### Features
+
+- **Runtime observability MVP** — `/api/system` now includes an `openclaw` block with live gateway runtime state sourced from three endpoints: `/healthz` (liveness + uptime), `/readyz` (readiness + failing deps), and `openclaw status --json` (version, latency, security). Both Go (`collectOpenclawRuntime`) and Python (`_collect_openclaw_runtime`) backends collect this data in parallel alongside existing metrics.
+- **Gateway Runtime + Config card split** — System Settings now shows two separate cards: *Gateway Runtime* (live `/api/system` data — state, uptime, version, source indicator) and *Gateway Config* (static config snapshot from `data.json` — port, mode, bind, auth). The old combined `gatewayPanel`/`gatewayPanelInner` has been removed.
+- **Gateway readiness alerts** — Alert banner synthesizes a `🟡 Gateway not ready: discord` (or any failing dep) alert from the `openclaw.gateway.failing[]` array. Auto-clears when readiness recovers or gateway goes fully offline. Distinct from the "Gateway is offline" alert — both states are mutually exclusive by design.
+
+### Improvements
+
+- **Health pill simplified** — `hGw` now shows `● Online` or `● Offline` (green/red) for the fully-healthy case, or `● Live` (green, no `/ Not Ready`) when live but not ready. Readiness detail is surfaced exclusively through the Alerts banner — no more misleading compound state label in the health row.
+- **`_gatewayState()` helper (JS)** — New `SystemBar._gatewayState(d)` function encapsulates the runtime-vs-versions fallback decision. Returns `{source, ok, live, ready}`. Runtime data is trusted when `healthEndpointOk`, `readyEndpointOk`, `uptimeMs>0`, or `failing.length>0`.
+- **`_versionsBehind()` robustness** — Strips beta/dev/build suffixes (e.g., `-beta-runtime-observability`, `-dev.1`) before comparing `YYYY.M.D` version triplets. Avoids false "behind" warnings on pre-release installs.
+- **`fmtDurationMs()` added to SystemBar** — Converts uptime in ms to human-readable `Ns / Nm / Nh / Nd` string; used by both the Gateway Runtime card and the health row uptime display.
+- **`localStorage` key bumped** — `ocDash-v1` → `ocDash-v2` to reset collapse defaults and prevent stale UI state after upgrade.
+- **Stale-while-revalidate on `/api/refresh`** (Go) — Response uses JSON round-trip to safely inject `"stale":true` instead of fragile byte-level string replacement that would silently fail on whitespace/ordering differences (B2 fix).
+- **Versions collected before parallel phase** (Go) — `getVersionsCached()` now runs before the parallel goroutine group so `collectOpenclawRuntime` always receives real version data instead of an empty struct (B1 fix).
+
+### Bug Fixes
+
+- **Go: `bytes` import removed** — Stale `"bytes"` import from the old byte-level stale injection was cleaned up.
+- **Python: `_parse_json_array_fragment` removed** — Dead helper added during development but never called; removed to keep the codebase clean.
+- **Gateway status: parse stdout on non-zero exit** — Both Go and Python now attempt to parse `openclaw gateway status --json` stdout even when the command exits non-zero. Many CLIs emit valid JSON to stdout while exiting 1 (e.g., gateway offline but status successfully queried). Falls back to HTTP probe only when stdout has no usable JSON (I2 fix).
+- **Thundering herd prevention** (Python) — `_refreshing` flag in `_VersionsState` prevents multiple concurrent calls from spawning redundant collection goroutines when the cache is cold. Returns stale data to waiters while one refresh is in flight.
+- **CPU sampling interval** — Increased from 50 ms to 200 ms (Linux dual-`/proc/stat` sample) to reduce noise and give a more representative utilisation window.
+- **`fetchJSONMapAllowStatus` for readyz 503** — New helper accepts a set of allowed HTTP status codes so `/readyz` 503 responses (partial readiness) are parsed as valid JSON rather than discarded as errors.
+
+### Breaking Changes
+
+- **`gatewayPanel` / `gatewayPanelInner` removed** — Any external scripts or browser extensions targeting these DOM IDs will break. Use `gatewayRuntimePanelInner` (live data) or `gatewayConfigPanelInner` (config) instead.
+- **Top-bar GW pill removed** — `sysGateway` span is no longer present in the HTML. Gateway state is still shown in the System Health row (`hGw`) and the Gateway Runtime card.
+- **Install commands changed** — Release assets are raw binaries, not tarballs. The correct download format is `curl -L <url> -o openclaw-dashboard` (no `| tar xz`). See Quick Start.
+
+### Internal
+
+- **`system_types.go`** — Added `SystemOpenclaw`, `SystemOpenclawGateway`, `SystemOpenclawStatus`, `SystemOpenclawFreshness` structs; `SystemResponse.Openclaw` field added.
+- **`system_service.go`** — Added `collectOpenclawRuntime()`, `probeOpenclawGatewayEndpoints()`, `parseOpenclawStatusJSON()`, `fetchJSONMapAllowStatus()`, `_versionTriplet()` helpers; added `regexp` import; removed stale `bytes` import.
+- **`system_metrics.py`** — Added `_collect_openclaw_runtime()`, `_fetch_json_url_allow_status()`, `_parse_json_object_fragment()`; removed dead `_parse_json_array_fragment()`.
+- **`version.go`** — Removed unused `resolveRepoRoot()` helper (dead after embed approach solidified).
+- **`version_test.go`** — Removed `TestResolveRepoRoot_Direct` and `TestResolveRepoRoot_DistSubdir` tests (function deleted).
+- **`main.go`** — Simplified to `dir := filepath.Dir(exe)` (no longer calls `resolveRepoRoot`).
+- **Go dependency bumps** in `go.mod`.
+- **56 new frontend tests** in `tests/test_frontend.py` — `TestGatewayPillRemoved`, `TestNoRawPlaceholderTokens`, `TestGatewayRuntimeConfigSplit`, `TestGatewayReadinessAlert`, `_versionsBehind` and `_gatewayState` behavioral tests.
+- **37 new Python tests** in `tests/test_system_metrics.py` — `TestOpenclawRuntime`, `TestStaleInjectionSafe`, `TestVersionCollectionI2`, `TestVersionsCacheThunderingHerd`.
+- **384 new Go tests** in `system_test.go`.
+
+---
+
 ## v2026.3.5 — 2026-03-04
 
 ### Fixed

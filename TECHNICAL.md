@@ -1,6 +1,6 @@
 # TECHNICAL.md — OpenClaw Dashboard Internals
 
-> **Version:** 2026.3.3 · **Repo:** [github.com/mudrii/openclaw-dashboard](https://github.com/mudrii/openclaw-dashboard)
+> **Version:** 2026.3.8 · **Repo:** [github.com/mudrii/openclaw-dashboard](https://github.com/mudrii/openclaw-dashboard)
 >
 > This document covers architecture, data flow, and implementation details for developers and contributors. For features and quick start, see [README.md](README.md).
 
@@ -108,6 +108,26 @@ pgrep -f openclaw-gateway
 ```
 
 If a PID is found, a follow-up `ps -p <pid> -o etime=,rss=` extracts uptime and RSS memory.
+
+### Runtime Observability (`/api/system` — `openclaw` block)
+
+In addition to the `refresh.sh`/`data.json` pipeline, the `/api/system` endpoint includes a live `openclaw` block collected from three sources in parallel:
+
+| Source | Data Collected |
+|--------|---------------|
+| `GET /healthz` | `live`, `uptimeMs`, `healthEndpointOk` |
+| `GET /readyz` | `ready`, `failing[]`, `readyEndpointOk` |
+| `openclaw status --json` | `currentVersion`, `latestVersion`, `connectLatencyMs`, `security` |
+
+The `readyz` endpoint returns a `503` body with JSON when some dependencies are failing. `fetchJSONMapAllowStatus` (Go) / `_fetch_json_url_allow_status` (Python) accept configurable HTTP status codes so the body is parsed rather than discarded.
+
+The frontend's `SystemBar._gatewayState(d)` helper decides whether to trust the runtime data or fall back to the `versions.gateway` status field from `refresh.sh`. Runtime is trusted when any of these signals is present: `healthEndpointOk`, `readyEndpointOk`, `uptimeMs > 0`, or `failing.length > 0`.
+
+**Gateway Readiness Alert flow:**
+1. `SystemBar.render()` checks `gwLive && !gwReady && gwState.source === 'runtime'`
+2. Builds alert message from `gwRuntime.failing[]` (e.g., `"Gateway not ready: discord, slack"`)
+3. Inserts/updates `<div id="gw-readiness-alert" class="alert-item alert-medium">` at the top of `#alertsSection`
+4. Removes the alert when gateway recovers (`ready=true`) or goes offline (`live=false`)
 
 ---
 
@@ -399,7 +419,7 @@ Each setting resolves through a priority chain (highest wins):
 | `lastRefresh` | `string` | Human-readable timestamp (`"2026-02-16 13:45:00 UTC"`) |
 | `lastRefreshMs` | `number` | Unix epoch milliseconds |
 
-### Gateway
+### Gateway (data.json — Config/Status from refresh.sh)
 
 | Key | Type | Description |
 |-----|------|-------------|
@@ -408,6 +428,8 @@ Each setting resolves through a priority chain (highest wins):
 | `gateway.uptime` | `string` | Elapsed time from `ps` (e.g., `"3-02:15:30"`) |
 | `gateway.memory` | `string` | Formatted RSS (e.g., `"245 MB"`) |
 | `gateway.rss` | `number` | Raw RSS in KB |
+
+> Note: The dashboard UI shows two separate cards in System Settings — **Gateway Runtime** (populated from live `/api/system` data by `SystemBar.render()`) and **Gateway Config** (populated from `data.json`'s `agentConfig.gateway` by `Renderer.render()`). The `gatewayPanel`/`gatewayPanelInner` element from earlier versions has been removed; use `gatewayRuntimePanelInner` or `gatewayConfigPanelInner` instead.
 
 ### Cost Fields
 
@@ -659,14 +681,14 @@ python3 server.py --bind 0.0.0.0 --port 9090
 ### Testing Checklist
 
 ```bash
-# Go tests (39 tests, with race detector)
+# Go tests (run with race detector)
 go test -race -v ./...
 
 # Python tests
 python3 -m pytest tests/ -v
 ```
 
-- [ ] `go test -race ./...` passes (all 39 tests green)
+- [ ] `go test -race ./...` passes (all tests green)
 - [ ] `bash refresh.sh` produces valid JSON
 - [ ] `data.json` contains expected keys
 - [ ] Dashboard renders on desktop (1440px+)
@@ -675,6 +697,8 @@ python3 -m pytest tests/ -v
 - [ ] Auto-refresh countdown works
 - [ ] Tab switching (today/7d/30d/all-time) works for all tabbed panels
 - [ ] Gateway offline state renders correctly
+- [ ] Gateway readiness alert appears when `live=true, ready=false`
+- [ ] Gateway Runtime card populates from `/api/system` data
 - [ ] Alerts display with correct severity styling
 
 #### Go Test Coverage
@@ -685,6 +709,7 @@ python3 -m pytest tests/ -v
 | `chat_test.go` | 8 | Gateway calls (success, errors, empty, oversized), system prompt building |
 | `config_test.go` | 11 | Config defaults/overrides/clamping, dotenv parsing (quotes, comments, equals), expandHome |
 | `version_test.go` | 3 | VERSION file, fallback, empty file |
+| `system_test.go` | 384 | Openclaw runtime collection, gateway probes, `fetchJSONMapAllowStatus`, `parseGatewayStatusJSON`, CPU/RAM/swap/disk collectors, versions caching, thundering herd prevention |
 
 ### PR Guidelines
 

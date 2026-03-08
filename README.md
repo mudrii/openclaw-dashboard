@@ -54,6 +54,9 @@ It's not trying to replace the OpenClaw CLI or Telegram interface. It's the at-a
 - 📊 **Top Metrics Bar** — Always-on CPU/RAM/swap/disk + gateway status, per-metric thresholds, macOS + Linux
 - 💬 **AI Chat** — Natural language queries about costs, sessions, crons, and config via OpenClaw gateway
 - 🎯 **Accurate Model Display** — 5-level resolution chain ensures every session/sub-agent shows its real model, not the default
+- 🔍 **Runtime Observability** — `/api/system` now includes live gateway runtime state (liveness, readiness, failing deps, uptime, PID, memory) sourced from `/healthz`, `/readyz`, and `openclaw status --json`
+- 🟡 **Gateway Readiness Alerts** — Alert banner shows `🟡 Gateway not ready: discord` (or any failing dep) and auto-clears on recovery; distinct from offline/online state
+- ⚡ **Gateway Runtime + Config Cards** — System Settings split into two panels: Gateway Runtime (live probes) and Gateway Config (static config snapshot)
 
 ## Quick Start
 
@@ -75,24 +78,24 @@ Download a single pre-built binary — no runtime dependencies needed:
 
 ```bash
 # macOS (Apple Silicon)
-curl -L https://github.com/mudrii/openclaw-dashboard/releases/latest/download/openclaw-dashboard-darwin-arm64.tar.gz | tar xz
-chmod +x openclaw-dashboard-darwin-arm64
-./openclaw-dashboard-darwin-arm64 --port 8080
+curl -L https://github.com/mudrii/openclaw-dashboard/releases/latest/download/openclaw-dashboard-darwin-arm64 -o openclaw-dashboard
+chmod +x openclaw-dashboard
+./openclaw-dashboard --port 8080
 
 # macOS (Intel)
-curl -L https://github.com/mudrii/openclaw-dashboard/releases/latest/download/openclaw-dashboard-darwin-amd64.tar.gz | tar xz
-chmod +x openclaw-dashboard-darwin-amd64
-./openclaw-dashboard-darwin-amd64 --port 8080
+curl -L https://github.com/mudrii/openclaw-dashboard/releases/latest/download/openclaw-dashboard-darwin-amd64 -o openclaw-dashboard
+chmod +x openclaw-dashboard
+./openclaw-dashboard --port 8080
 
 # Linux (x86_64)
-curl -L https://github.com/mudrii/openclaw-dashboard/releases/latest/download/openclaw-dashboard-linux-amd64.tar.gz | tar xz
-chmod +x openclaw-dashboard-linux-amd64
-./openclaw-dashboard-linux-amd64 --port 8080
+curl -L https://github.com/mudrii/openclaw-dashboard/releases/latest/download/openclaw-dashboard-linux-amd64 -o openclaw-dashboard
+chmod +x openclaw-dashboard
+./openclaw-dashboard --port 8080
 
 # Linux (ARM64 / Raspberry Pi)
-curl -L https://github.com/mudrii/openclaw-dashboard/releases/latest/download/openclaw-dashboard-linux-arm64.tar.gz | tar xz
-chmod +x openclaw-dashboard-linux-arm64
-./openclaw-dashboard-linux-arm64 --port 8080
+curl -L https://github.com/mudrii/openclaw-dashboard/releases/latest/download/openclaw-dashboard-linux-arm64 -o openclaw-dashboard
+chmod +x openclaw-dashboard
+./openclaw-dashboard --port 8080
 ```
 
 Verify download integrity:
@@ -245,7 +248,7 @@ server.py / openclaw-dashboard (Go)   ← HTTP server (choose one)
 | Pre-warm | None | Runs `refresh.sh` at startup |
 | Shutdown | Clean thread exit | Graceful (drains requests, 5s timeout) |
 | Gateway limit | 1MB response cap | 1MB response cap |
-| Tests | `pytest` (165 tests) | `go test -race` (87 tests) |
+| Tests | `pytest` (122 tests) | `go test -race` (87 tests) |
 
 When you open the dashboard, `index.html` calls `/api/refresh`. The server runs `refresh.sh` (with 30s debounce) to collect fresh data from your OpenClaw installation, then returns the JSON. No cron jobs needed.
 
@@ -404,7 +407,23 @@ The top bar shows live host metrics — always visible above the alerts banner.
 - **macOS** — CPU via `top -l 2` (current delta), RAM via `vm_stat`, Swap via `sysctl vm.swapusage`, Disk via `statfs`
 - **Linux** — CPU via `/proc/stat` (200ms dual-sample including steal field), RAM+Swap via `/proc/meminfo` (single read, shared), Disk via `statfs`
 
-**API endpoint:** `GET /api/system` — returns JSON with all metrics, thresholds, and version info. Includes stale-serving semantics (returns cached data immediately while refreshing in background).
+**API endpoint:** `GET /api/system` — returns JSON with all metrics, thresholds, version info, and the `openclaw` runtime block. Includes stale-serving semantics (returns cached data immediately while refreshing in background).
+
+**`openclaw` block in `/api/system`** — provides live gateway runtime state beyond what `refresh.sh` collects:
+
+| Field | Description |
+|-------|-------------|
+| `openclaw.gateway.live` | `true` when `/healthz` returns 200 |
+| `openclaw.gateway.ready` | `true` when `/readyz` indicates all deps ready |
+| `openclaw.gateway.uptimeMs` | Process uptime in milliseconds (from `/healthz`) |
+| `openclaw.gateway.failing` | Array of failing dependency names from `/readyz` |
+| `openclaw.gateway.healthEndpointOk` | Whether `/healthz` endpoint responded |
+| `openclaw.gateway.readyEndpointOk` | Whether `/readyz` endpoint responded |
+| `openclaw.status.currentVersion` | Installed OpenClaw version |
+| `openclaw.status.latestVersion` | Latest published version (from npm) |
+| `openclaw.status.connectLatencyMs` | Gateway connection latency (ms) |
+| `openclaw.freshness.gateway` | RFC3339 timestamp of last successful gateway probe |
+| `openclaw.freshness.status` | RFC3339 timestamp of last successful status probe |
 
 ---
 

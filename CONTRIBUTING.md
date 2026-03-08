@@ -8,8 +8,14 @@ Thanks for your interest in contributing!
 git clone https://github.com/mudrii/openclaw-dashboard.git
 cd openclaw-dashboard
 
-# Run all tests (no server needed for most)
-.venv/bin/python3 -m pytest tests/ --ignore=tests/test_e2e.py -v
+# Go tests (with race detector)
+go test -race ./...
+
+# Run core Python tests (no server or data.json needed)
+python3 -m pytest tests/test_frontend.py tests/test_system_metrics.py tests/test_server.py -v
+
+# Run all tests (test_critical.py and test_data_schema.py depend on live data.json)
+python3 -m pytest tests/ --ignore=tests/test_e2e.py -v
 
 # Run the full suite including E2E (requires playwright)
 .venv/bin/python3 -m pytest tests/ -v --timeout=30
@@ -47,28 +53,32 @@ The suite has four tiers. Run the fastest tiers first.
 
 | Tier | File(s) | Server needed? | Speed | What it catches |
 |------|---------|----------------|-------|-----------------|
-| **Static analysis** | `test_frontend.py`, `test_critical.py`, `test_nix_flake.py`, `test_dockerfile.py` | No | ~0.1s | Missing functions, missing security patterns, wrong structure |
+| **Static analysis** | `test_frontend.py`, `test_system_metrics.py`, `test_critical.py`, `test_nix_flake.py`, `test_dockerfile.py` | No | ~1s | Missing functions, missing security patterns, wrong structure, runtime observability contract |
 | **Schema** | `test_data_schema.py` | No (reads `data.json`) | ~0.1s | `refresh.sh` output drift, missing keys, wrong types |
-| **Server integration** | `test_server.py`, `test_chat.py` | No (starts own server) | ~3s | HTTP contract, CORS, debouncing, chat endpoint |
+| **Server integration** | `test_server.py`, `test_chat.py` | No (starts own server) | ~3s | HTTP contract, CORS, debouncing, chat endpoint, `/api/system` |
+| **Go** | `system_test.go`, `*_test.go` | No | ~50s | Runtime collectors, caching, gateway probes, all server routes |
 | **E2E** | `test_e2e.py` | No (starts own server) | ~15s | Real browser tab switching, chart toggle, countdown, chat panel |
 
 ### Running Individual Tiers
 
 ```bash
 # Tier 1: static only (fastest feedback loop)
-.venv/bin/python3 -m pytest tests/test_frontend.py tests/test_critical.py -v
+python3 -m pytest tests/test_frontend.py tests/test_system_metrics.py tests/test_critical.py -v
 
 # Tier 1 + 2: no server required
-.venv/bin/python3 -m pytest tests/test_frontend.py tests/test_data_schema.py tests/test_critical.py tests/test_nix_flake.py tests/test_dockerfile.py -v
+python3 -m pytest tests/test_frontend.py tests/test_system_metrics.py tests/test_data_schema.py tests/test_critical.py tests/test_nix_flake.py tests/test_dockerfile.py -v
 
 # Tier 1-3: full static + integration (no browser)
-.venv/bin/python3 -m pytest tests/ --ignore=tests/test_e2e.py -v
+python3 -m pytest tests/ --ignore=tests/test_e2e.py -v
+
+# Go tests (recommended before any commit)
+go test -race ./...
 
 # Tier 4: E2E (requires playwright — see setup below)
 .venv/bin/python3 -m pytest tests/test_e2e.py -v --timeout=30
 
 # Run a single test by name
-.venv/bin/python3 -m pytest tests/test_frontend.py::TestFrontendJS::test_ac15_esc_defined_and_used -v
+python3 -m pytest tests/test_frontend.py::TestFrontendJS::test_ac15_esc_defined_and_used -v
 ```
 
 ### Setting Up E2E Tests
@@ -265,7 +275,8 @@ refactor: extract donut chart logic into renderDonut()
 
 Before opening a PR, verify:
 
-- [ ] All tests pass: `.venv/bin/python3 -m pytest tests/ --ignore=tests/test_e2e.py -v`
+- [ ] All Go tests pass: `go test -race ./...`
+- [ ] All Python tests pass: `python3 -m pytest tests/test_frontend.py tests/test_system_metrics.py tests/test_server.py -v`
 - [ ] New behaviour has a test (AC number claimed, registered in `tests/README.md`)
 - [ ] Any new HTML template literals use `esc()` on every dynamic value
 - [ ] No new globals added outside the 7 module objects + 4 utilities

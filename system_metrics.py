@@ -561,13 +561,16 @@ def _collect_openclaw_runtime(oc_bin: str, versions: dict) -> dict:
             gw_errors.append(f"gateway /healthz: {e}")
 
         try:
-            ready = _fetch_json_url(f"http://127.0.0.1:{gw_port}/readyz", timeout_s)
+            # readyz returns 503 when not ready — but the body still contains
+            # useful JSON (ready, failing, uptimeMs). Parse on both 200 and 503.
+            ready = _fetch_json_url_allow_status(
+                f"http://127.0.0.1:{gw_port}/readyz", timeout_s, {200, 503}
+            )
             gateway["readyEndpointOk"] = True
             gateway["ready"] = bool(ready.get("ready"))
             gateway["uptimeMs"] = int(ready.get("uptimeMs") or 0)
             failing = [str(x) for x in (ready.get("failing") or []) if str(x)]
-            if failing:
-                gateway["failing"] = failing
+            gateway["failing"] = failing
             freshness["gateway"] = _now_rfc3339()
         except Exception as e:
             gw_errors.append(f"gateway /readyz: {e}")
@@ -650,6 +653,29 @@ def _collect_openclaw_runtime(oc_bin: str, versions: dict) -> dict:
     return runtime
 
 
+def _fetch_json_url_allow_status(url: str, timeout_s: float, allowed: set[int]) -> dict:
+    """Fetch JSON from a URL, accepting specific HTTP status codes.
+
+    readyz returns 503 when not ready but still has a useful JSON body
+    (ready, failing, uptimeMs). This variant allows parsing on non-2xx.
+    """
+    req = urllib.request.Request(url)
+    try:
+        with urllib.request.urlopen(req, timeout=timeout_s) as resp:
+            if resp.status not in allowed:
+                raise ValueError(f"status {resp.status}")
+            payload = resp.read()
+    except urllib.error.HTTPError as e:
+        if e.code in allowed:
+            payload = e.read()
+        else:
+            raise ValueError(f"status {e.code}") from e
+    data = json.loads(payload.decode("utf-8", errors="replace"))
+    if not isinstance(data, dict):
+        raise ValueError("expected JSON object")
+    return data
+
+
 def _fetch_json_url(url: str, timeout_s: float) -> dict:
     """Fetch a JSON object from a URL. Raises on any non-2xx status — parity with Go's fetchJSONMap (I1 fix)."""
     req = urllib.request.Request(url)
@@ -672,16 +698,6 @@ def _parse_json_object_fragment(text: str) -> dict:
     data = json.loads(text[start:])
     if not isinstance(data, dict):
         raise ValueError("expected JSON object")
-    return data
-
-
-def _parse_json_array_fragment(text: str) -> list:
-    start = text.find("[")
-    if start < 0:
-        raise ValueError("json array not found")
-    data = json.loads(text[start:])
-    if not isinstance(data, list):
-        raise ValueError("expected JSON array")
     return data
 
 
