@@ -10,9 +10,11 @@ import logging
 import os
 import platform
 import re
+import shutil
 import subprocess
 import threading
 import time
+import urllib.request
 from typing import Optional
 
 _log = logging.getLogger(__name__)
@@ -96,11 +98,17 @@ def get_payload() -> tuple[int, bytes]:
                     should_start = True
         if should_start:
             threading.Thread(target=_bg_refresh, daemon=True).start()
-        # Inject stale flag — byte-level replacement avoids unmarshal/remarshal overhead
-        stale_payload = payload.replace(b'"stale": false', b'"stale": true', 1)
-        if stale_payload == payload:
-            # Try without spaces (json.dumps default has spaces after colons)
-            stale_payload = payload.replace(b'"stale":false', b'"stale":true', 1)
+        # B2 fix: safe JSON parse/modify/serialize instead of fragile byte replacement.
+        # The old byte-level approach silently served stale data as fresh when the
+        # exact byte pattern didn't match (e.g. different json.dumps spacing).
+        try:
+            stale_data = json.loads(payload)
+            stale_data["stale"] = True
+            stale_payload = json.dumps(stale_data).encode()
+        except (json.JSONDecodeError, TypeError):
+            # Last resort: serve original payload unchanged (still stale but marked fresh)
+            _log.warning("[system] failed to parse cached payload for stale injection")
+            stale_payload = payload
         return 200, stale_payload
 
     # No cache — collect synchronously
@@ -148,8 +156,11 @@ def _collect_all() -> Optional[bytes]:
     if disk.get("error"):
         errors.append("disk: " + disk["error"])
 
-    # ── Versions (separate TTL) ──
+    # ── Versions + OpenClaw runtime observability ──
     versions = _get_versions_cached()
+    openclaw = _collect_openclaw_runtime(_resolve_openclaw_bin(), versions)
+    if openclaw.get("errors"):
+        errors.extend([f"openclaw: {e}" for e in openclaw.get("errors", [])])
 
     degraded = bool(errors)
 
@@ -195,6 +206,7 @@ def _collect_all() -> Optional[bytes]:
         "swap": swap,
         "disk": disk,
         "versions": versions,
+        "openclaw": openclaw,
     }
     if errors:
         resp["errors"] = errors
@@ -355,22 +367,33 @@ def _get_versions_cached() -> dict:
     return v
 
 
+def _versionish_sort_key(value: str):
+    key = []
+    for token in re.findall(r"\d+|[A-Za-z]+", value):
+        if token.isdigit():
+            key.append((1, int(token)))
+        else:
+            key.append((0, token.lower()))
+    return tuple(key)
+
+
 def _resolve_openclaw_bin() -> str:
     """Find openclaw binary — asdf shims may not be in server's PATH."""
-    import shutil
     if shutil.which("openclaw"):
         return "openclaw"
     home = os.path.expanduser("~")
     candidates = [
         os.path.join(home, ".asdf", "shims", "openclaw"),
-        "/usr/local/bin/openclaw",
-        "/opt/homebrew/bin/openclaw",
     ]
-    # Probe all asdf nodejs installs dynamically
+    # Probe all asdf nodejs installs dynamically, highest version first.
     node_dir = os.path.join(home, ".asdf", "installs", "nodejs")
     if os.path.isdir(node_dir):
-        for ver in sorted(os.listdir(node_dir), reverse=True):
-            candidates.insert(0, os.path.join(node_dir, ver, "bin", "openclaw"))
+        versions = sorted(os.listdir(node_dir), key=_versionish_sort_key, reverse=True)
+        candidates.extend(os.path.join(node_dir, ver, "bin", "openclaw") for ver in versions)
+    candidates.extend([
+        "/usr/local/bin/openclaw",
+        "/opt/homebrew/bin/openclaw",
+    ])
     for c in candidates:
         if os.path.isfile(c) and os.access(c, os.X_OK):
             return c
@@ -392,53 +415,68 @@ def _collect_versions() -> dict:
         pass
 
     # Gateway status — try `openclaw gateway status --json` first for PID/uptime/memory,
-    # fall back to HTTP HEAD probe.
+    # fall back to HTTP HEAD probe when the CLI output is unusable.
+    # I2 fix: parse stdout even on non-zero exit — the Go version returns stdout alongside
+    # the error, and many CLIs emit valid JSON to stdout while exiting non-zero (e.g. when
+    # the gateway is offline but status was successfully queried).
     gw = {"version": "", "status": "unknown", "error": None}
+    need_fallback = True
     try:
         r = subprocess.run(
             [oc_bin, "gateway", "status", "--json"],
             capture_output=True, text=True, timeout=max(timeout_s, 5.0)
         )
-        import json as _json
         raw = r.stdout.strip()
         start = raw.find("{")
         if start >= 0:
-            parsed = _json.loads(raw[start:])
-            svc = parsed.get("service", {})
-            runtime = svc.get("runtime", {})
-            gw["status"] = "online" if svc.get("loaded") else "offline"
-            gw["version"] = parsed.get("version", "")
-            pid = runtime.get("pid")
-            if pid:
-                gw["pid"] = pid
-                # Get uptime + memory from ps
-                try:
-                    ps = subprocess.run(
-                        ["ps", "-o", "etime=,rss=", "-p", str(pid)],
-                        capture_output=True, text=True, timeout=2
-                    )
-                    fields = ps.stdout.strip().split()
-                    if len(fields) >= 1:
-                        gw["uptime"] = fields[0]
-                    if len(fields) >= 2:
-                        rss_kb = int(fields[1])
-                        rss_bytes = rss_kb * 1024
-                        if rss_bytes >= 1024**3:
-                            gw["memory"] = f"{rss_bytes/1024**3:.1f}GB"
-                        elif rss_bytes >= 1024**2:
-                            gw["memory"] = f"{rss_bytes/1024**2:.1f}MB"
-                        else:
-                            gw["memory"] = f"{rss_kb}KB"
-                except Exception:
-                    pass
+            try:
+                parsed = json.loads(raw[start:])
+            except json.JSONDecodeError:
+                parsed = None
+            if isinstance(parsed, dict):
+                svc = parsed.get("service") if isinstance(parsed, dict) else {}
+                svc = svc if isinstance(svc, dict) else {}
+                runtime = svc.get("runtime") if isinstance(svc, dict) else {}
+                runtime = runtime if isinstance(runtime, dict) else {}
+                runtime_status = str(runtime.get("status", "")).lower()
+                gw["status"] = "online" if runtime_status == "running" or svc.get("loaded") else "offline"
+                version = parsed.get("version", "") if isinstance(parsed, dict) else ""
+                if isinstance(version, str):
+                    gw["version"] = version
+                pid = runtime.get("pid")
+                if pid:
+                    gw["pid"] = pid
+                    # Get uptime + memory from ps
+                    try:
+                        ps = subprocess.run(
+                            ["ps", "-o", "etime=,rss=", "-p", str(pid)],
+                            capture_output=True, text=True, timeout=2
+                        )
+                        fields = ps.stdout.strip().split()
+                        if len(fields) >= 1:
+                            gw["uptime"] = fields[0]
+                        if len(fields) >= 2:
+                            rss_kb = int(fields[1])
+                            rss_bytes = rss_kb * 1024
+                            if rss_bytes >= 1024**3:
+                                gw["memory"] = f"{rss_bytes/1024**3:.1f}GB"
+                            elif rss_bytes >= 1024**2:
+                                gw["memory"] = f"{rss_bytes/1024**2:.1f}MB"
+                            else:
+                                gw["memory"] = f"{rss_kb}KB"
+                    except Exception:
+                        pass
+                need_fallback = False
     except Exception:
-        # Fallback: HTTP HEAD probe
+        pass
+
+    if need_fallback:
         try:
             gw_port = _cfg.get("gatewayPort", 18789)
-            import urllib.request as _ur
-            req = _ur.Request(f"http://127.0.0.1:{gw_port}/", method="HEAD")
-            with _ur.urlopen(req, timeout=timeout_s) as resp:
+            req = urllib.request.Request(f"http://127.0.0.1:{gw_port}/", method="HEAD")
+            with urllib.request.urlopen(req, timeout=timeout_s) as resp:
                 gw["status"] = "online" if resp.status < 500 else "offline"
+                gw["error"] = None
         except Exception as e:
             gw["status"] = "offline"
             gw["error"] = str(e)
@@ -461,6 +499,170 @@ def _collect_versions() -> dict:
         "latest": latest,
         "gateway": gw,
     }
+
+
+def _collect_openclaw_runtime(oc_bin: str, versions: dict) -> dict:
+    """Collect live OpenClaw runtime observability for /api/system.openclaw.
+    Partial failures are expected and reported in openclaw.errors.
+
+    All 4 subcollectors (gateway probes, status, channels, bindings) run in
+    parallel via ThreadPoolExecutor — parity with Go's sync.WaitGroup approach.
+    """
+    from concurrent.futures import ThreadPoolExecutor
+    timeout_s = max(_cfg.get("gatewayTimeoutMs", 1500) / 1000, 0.2)
+    gw_port = int(_cfg.get("gatewayPort", 18789) or 18789)
+
+    # Results accumulated from parallel subcollectors
+    errors: list[str] = []
+    gateway = {
+        "live": False,
+        "ready": False,
+        "uptimeMs": 0,
+        "healthEndpointOk": False,
+        "readyEndpointOk": False,
+    }
+    freshness: dict[str, str] = {}
+    status: dict = {}
+
+    # ── Subcollector 1: Gateway /healthz + /readyz probes ──
+    def _probe_gateway():
+        nonlocal gateway, freshness
+        gw_errors = []
+        try:
+            health = _fetch_json_url(f"http://127.0.0.1:{gw_port}/healthz", timeout_s)
+            gateway["healthEndpointOk"] = True
+            gateway["live"] = bool(health.get("ok") or str(health.get("status", "")).lower() == "live")
+            freshness["gateway"] = _now_rfc3339()
+        except Exception as e:
+            gw_errors.append(f"gateway /healthz: {e}")
+
+        try:
+            ready = _fetch_json_url(f"http://127.0.0.1:{gw_port}/readyz", timeout_s)
+            gateway["readyEndpointOk"] = True
+            gateway["ready"] = bool(ready.get("ready"))
+            gateway["uptimeMs"] = int(ready.get("uptimeMs") or 0)
+            failing = [str(x) for x in (ready.get("failing") or []) if str(x)]
+            if failing:
+                gateway["failing"] = failing
+            freshness["gateway"] = _now_rfc3339()
+        except Exception as e:
+            gw_errors.append(f"gateway /readyz: {e}")
+        return gw_errors
+
+    # ── Subcollector 2: openclaw status --json ──
+    def _probe_status():
+        nonlocal status, freshness
+        try:
+            r = subprocess.run([oc_bin, "status", "--json"], capture_output=True, text=True, timeout=timeout_s)
+            # I2 fix: attempt to parse stdout even on non-zero exit — matching Go behavior
+            # where runWithTimeout returns stdout alongside the error. Many CLIs emit valid
+            # JSON status data to stdout while exiting non-zero.
+            parse_errors: list[str] = []
+            if r.returncode != 0:
+                stderr_msg = (r.stderr or "").strip()
+                parse_errors.append(
+                    f"status --json: exit code {r.returncode}" + (f": {stderr_msg}" if stderr_msg else "")
+                )
+            # Try to extract useful data from stdout regardless of exit code
+            stdout_text = (r.stdout or "").strip()
+            if stdout_text and "{" in stdout_text:
+                try:
+                    parsed = _parse_json_object_fragment(stdout_text)
+                    current = parsed.get("currentVersion") or parsed.get("version")
+                    if isinstance(current, str) and current:
+                        status["currentVersion"] = current
+                    latest = parsed.get("latestVersion")
+                    if isinstance(latest, str) and latest:
+                        status["latestVersion"] = latest
+                    if isinstance(parsed.get("connectLatencyMs"), (int, float)):
+                        status["connectLatencyMs"] = int(parsed.get("connectLatencyMs"))
+                    security = parsed.get("security")
+                    if isinstance(security, dict):
+                        status["security"] = security
+                    freshness["status"] = _now_rfc3339()
+                except (ValueError, json.JSONDecodeError):
+                    # stdout wasn't valid JSON — fall through to report the exit code error
+                    pass
+            elif r.returncode == 0:
+                # Zero exit but no JSON → unexpected
+                parse_errors.append("status --json: empty/non-JSON stdout")
+            return parse_errors
+        except Exception as e:
+            return [f"status --json: {e}"]
+
+    # Run runtime subcollectors in parallel — gateway + status only.
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        futures = [
+            pool.submit(_probe_gateway),
+            pool.submit(_probe_status),
+        ]
+        for f in futures:
+            result_errors = f.result()
+            if result_errors:
+                errors.extend(result_errors)
+
+    # Build status dict with omitempty semantics
+    status_out: dict = {}
+    cv = status.get("currentVersion") or versions.get("openclaw", "")
+    if cv:
+        status_out["currentVersion"] = cv
+    lv = status.get("latestVersion") or versions.get("latest", "")
+    if lv:
+        status_out["latestVersion"] = lv
+    if status.get("connectLatencyMs"):
+        status_out["connectLatencyMs"] = status["connectLatencyMs"]
+    if status.get("security"):
+        status_out["security"] = status["security"]
+
+    runtime: dict = {
+        "gateway": gateway,
+        "status": status_out,
+        "freshness": freshness,
+    }
+    # Only include errors if non-empty (Go omitempty on slice)
+    if errors:
+        runtime["errors"] = errors
+
+    return runtime
+
+
+def _fetch_json_url(url: str, timeout_s: float) -> dict:
+    """Fetch a JSON object from a URL. Raises on any non-2xx status — parity with Go's fetchJSONMap (I1 fix)."""
+    req = urllib.request.Request(url)
+    with urllib.request.urlopen(req, timeout=timeout_s) as resp:
+        # Reject any non-2xx status code — both 4xx and 5xx indicate the endpoint
+        # did not return a valid JSON payload we should trust.
+        if resp.status < 200 or resp.status >= 300:
+            raise ValueError(f"status {resp.status}")
+        payload = resp.read()
+    data = json.loads(payload.decode("utf-8", errors="replace"))
+    if not isinstance(data, dict):
+        raise ValueError("expected JSON object")
+    return data
+
+
+def _parse_json_object_fragment(text: str) -> dict:
+    start = text.find("{")
+    if start < 0:
+        raise ValueError("json object not found")
+    data = json.loads(text[start:])
+    if not isinstance(data, dict):
+        raise ValueError("expected JSON object")
+    return data
+
+
+def _parse_json_array_fragment(text: str) -> list:
+    start = text.find("[")
+    if start < 0:
+        raise ValueError("json array not found")
+    data = json.loads(text[start:])
+    if not isinstance(data, list):
+        raise ValueError("expected JSON array")
+    return data
+
+
+def _now_rfc3339() -> str:
+    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 
 
 # ── Parsers (exported for unit tests) ─────────────────────────────────────

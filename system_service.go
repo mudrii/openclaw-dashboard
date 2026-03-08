@@ -1,8 +1,8 @@
 package main
 
 import (
-	"context"
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -96,15 +97,25 @@ func (s *SystemService) GetJSON(ctx context.Context) (int, []byte) {
 // refresh collects fresh metrics and returns (jsonBytes, isHardFail).
 // isHardFail=true when ALL core collectors failed (no useful data).
 func (s *SystemService) refresh(ctx context.Context) ([]byte, bool) {
-	// Run versions + disk + CPU/RAM/Swap all in parallel for minimum wall-clock time.
-	var ver SystemVersions
+	// Collect versions first (heavily cached — 300s TTL, effectively free on hot path).
+	// This guarantees collectOpenclawRuntime receives real version data instead of an
+	// empty SystemVersions{}, eliminating the fragile post-hoc patching that previously
+	// existed (B1 fix).
+	ver := s.getVersionsCached(ctx)
+
+	// Run OpenClaw runtime + disk + CPU/RAM/Swap in parallel for minimum wall-clock time.
+	var openclaw SystemOpenclaw
 	var disk SystemDisk
 	var cpu SystemCPU
 	var ram SystemRAM
 	var swap SystemSwap
+	oclawBin := resolveOpenclawBin()
 	var wg sync.WaitGroup
 	wg.Add(3)
-	go func() { defer wg.Done(); ver = s.getVersionsCached(ctx) }()
+	go func() {
+		defer wg.Done()
+		openclaw = collectOpenclawRuntime(ctx, oclawBin, s.cfg.GatewayTimeoutMs, s.cfg.GatewayPort, ver)
+	}()
 	go func() { defer wg.Done(); disk = collectDiskRoot(s.cfg.DiskPath) }()
 	go func() {
 		defer wg.Done()
@@ -130,6 +141,7 @@ func (s *SystemService) refresh(ctx context.Context) ([]byte, bool) {
 		Swap:     swap,
 		Disk:     disk,
 		Versions: ver,
+		Openclaw: openclaw,
 	}
 
 	if cpu.Error != nil {
@@ -147,6 +159,12 @@ func (s *SystemService) refresh(ctx context.Context) ([]byte, bool) {
 	if disk.Error != nil {
 		resp.Degraded = true
 		resp.Errors = append(resp.Errors, "disk: "+*disk.Error)
+	}
+	if len(openclaw.Errors) > 0 {
+		resp.Degraded = true
+		for _, e := range openclaw.Errors {
+			resp.Errors = append(resp.Errors, "openclaw: "+e)
+		}
 	}
 
 	b, err := json.Marshal(resp)
@@ -243,6 +261,204 @@ func collectVersions(ctx context.Context, dashVer string, timeoutMs int, gateway
 	v.Latest = fetchLatestNpmVersion(ctx, timeoutMs)
 
 	return v
+}
+
+func collectOpenclawRuntime(ctx context.Context, oclawBin string, timeoutMs int, gatewayPort int, versions SystemVersions) SystemOpenclaw {
+	openclaw := SystemOpenclaw{
+		Gateway: SystemOpenclawGateway{},
+		Status: SystemOpenclawStatus{
+			CurrentVersion: versions.Openclaw,
+			LatestVersion:  versions.Latest,
+		},
+		Freshness: SystemOpenclawFreshness{},
+	}
+	stamp := func() string { return time.Now().UTC().Format(time.RFC3339) }
+
+	var wg sync.WaitGroup
+	var gw SystemOpenclawGateway
+	var gwErrs []string
+	var gwFresh string
+	var status SystemOpenclawStatus
+	var statusErr error
+	var statusFresh string
+
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		gw, gwErrs = probeOpenclawGatewayEndpoints(ctx, gatewayPort, timeoutMs)
+		if len(gwErrs) == 0 {
+			gwFresh = stamp()
+		}
+	}()
+	go func() {
+		defer wg.Done()
+		out, err := runWithTimeout(ctx, timeoutMs, oclawBin, "status", "--json")
+		if err != nil {
+			statusErr = fmt.Errorf("status --json: %w", err)
+			return
+		}
+		status, statusErr = parseOpenclawStatusJSON(out, versions)
+		if statusErr == nil {
+			statusFresh = stamp()
+		}
+	}()
+	wg.Wait()
+
+	openclaw.Gateway = gw
+	if len(gwErrs) > 0 {
+		openclaw.Errors = append(openclaw.Errors, gwErrs...)
+	}
+	if statusErr != nil {
+		openclaw.Errors = append(openclaw.Errors, statusErr.Error())
+	} else {
+		openclaw.Status = status
+	}
+	openclaw.Freshness = SystemOpenclawFreshness{
+		Gateway: gwFresh,
+		Status:  statusFresh,
+	}
+
+	if openclaw.Status.CurrentVersion == "" {
+		openclaw.Status.CurrentVersion = versions.Openclaw
+	}
+	if openclaw.Status.LatestVersion == "" {
+		openclaw.Status.LatestVersion = versions.Latest
+	}
+
+	return openclaw
+}
+
+func probeOpenclawGatewayEndpoints(ctx context.Context, gatewayPort int, timeoutMs int) (SystemOpenclawGateway, []string) {
+	if gatewayPort <= 0 {
+		gatewayPort = 18789
+	}
+	if timeoutMs <= 0 {
+		timeoutMs = 1500
+	}
+	base := fmt.Sprintf("http://127.0.0.1:%d", gatewayPort)
+	timeout := time.Duration(timeoutMs) * time.Millisecond
+	client := &http.Client{Timeout: timeout}
+	gw := SystemOpenclawGateway{}
+	var errs []string
+
+	if m, err := fetchJSONMap(ctx, client, base+"/healthz"); err != nil {
+		errs = append(errs, "gateway /healthz: "+err.Error())
+	} else {
+		gw.HealthEndpointOk = true
+		if ok, okSet := boolFromAny(m["ok"]); okSet {
+			gw.Live = ok
+		}
+		if s, ok := m["status"].(string); ok && strings.EqualFold(s, "live") {
+			gw.Live = true
+		}
+	}
+
+	if m, err := fetchJSONMap(ctx, client, base+"/readyz"); err != nil {
+		errs = append(errs, "gateway /readyz: "+err.Error())
+	} else {
+		gw.ReadyEndpointOk = true
+		if ready, ok := boolFromAny(m["ready"]); ok {
+			gw.Ready = ready
+		}
+		if uptime, ok := int64FromAny(m["uptimeMs"]); ok {
+			gw.UptimeMs = uptime
+		}
+		gw.Failing = stringSliceFromAny(m["failing"])
+	}
+
+	return gw, errs
+}
+
+func fetchJSONMap(ctx context.Context, client *http.Client, url string) (map[string]any, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	// Reject any non-2xx status — both 4xx (client error) and 5xx (server error)
+	// indicate the endpoint did not return a valid JSON payload we should trust. (I1 fix)
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("status %d", resp.StatusCode)
+	}
+	var payload map[string]any
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&payload); err != nil {
+		return nil, err
+	}
+	return payload, nil
+}
+
+func parseOpenclawStatusJSON(output string, versions SystemVersions) (SystemOpenclawStatus, error) {
+	status := SystemOpenclawStatus{CurrentVersion: versions.Openclaw, LatestVersion: versions.Latest}
+	var raw map[string]any
+	if err := decodeJSONObjectFromOutput(output, &raw); err != nil {
+		return status, err
+	}
+	if current, ok := raw["currentVersion"].(string); ok && current != "" {
+		status.CurrentVersion = current
+	}
+	if current, ok := raw["version"].(string); ok && current != "" && status.CurrentVersion == "" {
+		status.CurrentVersion = current
+	}
+	if latest, ok := raw["latestVersion"].(string); ok && latest != "" {
+		status.LatestVersion = latest
+	}
+	if ms, ok := int64FromAny(raw["connectLatencyMs"]); ok {
+		status.ConnectLatencyMs = ms
+	}
+	if sec, ok := raw["security"].(map[string]any); ok {
+		status.Security = sec
+	}
+	return status, nil
+}
+
+func decodeJSONObjectFromOutput(output string, v any) error {
+	start := strings.Index(output, "{")
+	if start < 0 {
+		return fmt.Errorf("json object not found")
+	}
+	return json.Unmarshal([]byte(output[start:]), v)
+}
+
+func boolFromAny(v any) (bool, bool) {
+	b, ok := v.(bool)
+	return b, ok
+}
+
+func int64FromAny(v any) (int64, bool) {
+	switch x := v.(type) {
+	case int:
+		return int64(x), true
+	case int64:
+		return x, true
+	case float64:
+		return int64(x), true
+	case json.Number:
+		i, err := x.Int64()
+		if err == nil {
+			return i, true
+		}
+		return 0, false
+	default:
+		return 0, false
+	}
+}
+
+func stringSliceFromAny(v any) []string {
+	arr, ok := v.([]any)
+	if !ok {
+		return nil
+	}
+	out := make([]string, 0, len(arr))
+	for _, it := range arr {
+		if s, ok := it.(string); ok && s != "" {
+			out = append(out, s)
+		}
+	}
+	return out
 }
 
 // parseGatewayStatusJSON parses `openclaw gateway status --json` output.
@@ -369,6 +585,36 @@ func runWithTimeout(ctx context.Context, timeoutMs int, name string, args ...str
 	return strings.TrimSpace(string(out)), nil
 }
 
+var versionishTokenRe = regexp.MustCompile(`[0-9]+|[A-Za-z]+`)
+
+func versionishGreater(a, b string) bool {
+	ta := versionishTokenRe.FindAllString(strings.ToLower(a), -1)
+	tb := versionishTokenRe.FindAllString(strings.ToLower(b), -1)
+	n := len(ta)
+	if len(tb) < n {
+		n = len(tb)
+	}
+	for i := 0; i < n; i++ {
+		ai, aErr := strconv.Atoi(ta[i])
+		bi, bErr := strconv.Atoi(tb[i])
+		switch {
+		case aErr == nil && bErr == nil:
+			if ai != bi {
+				return ai > bi
+			}
+		case aErr == nil:
+			return true
+		case bErr == nil:
+			return false
+		default:
+			if ta[i] != tb[i] {
+				return ta[i] > tb[i]
+			}
+		}
+	}
+	return len(ta) > len(tb)
+}
+
 // resolveOpenclawBin finds the openclaw binary, checking PATH then known asdf locations.
 // asdf shims may not be on the server's PATH when launched as a background process.
 func resolveOpenclawBin() string {
@@ -379,11 +625,10 @@ func resolveOpenclawBin() string {
 	candidates := []string{
 		filepath.Join(home, ".asdf", "shims", "openclaw"),
 	}
-	// Also probe asdf nodejs installs — sort newest-first so the highest version is tried first
+	// Also probe asdf nodejs installs — sort newest-first using version-aware comparison.
 	if nodeDir := filepath.Join(home, ".asdf", "installs", "nodejs"); nodeDir != "" {
 		if entries, err := os.ReadDir(nodeDir); err == nil {
-			// Sort by name descending (lexicographic reverse = newest version first)
-			sort.Slice(entries, func(i, j int) bool { return entries[i].Name() > entries[j].Name() })
+			sort.Slice(entries, func(i, j int) bool { return versionishGreater(entries[i].Name(), entries[j].Name()) })
 			for _, e := range entries {
 				if e.IsDir() {
 					candidates = append(candidates, filepath.Join(nodeDir, e.Name(), "bin", "openclaw"))
@@ -432,5 +677,3 @@ func fetchLatestNpmVersion(ctx context.Context, timeoutMs int) string {
 	}
 	return pkg.Version
 }
-
-

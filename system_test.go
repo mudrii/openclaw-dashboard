@@ -37,6 +37,26 @@ func TestHandleSystem_GET_Returns200WithSchema(t *testing.T) {
 	if w.Header().Get("Content-Type") != "application/json" {
 		t.Errorf("expected application/json, got %s", w.Header().Get("Content-Type"))
 	}
+
+	var raw map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &raw); err != nil {
+		t.Fatalf("invalid JSON map decode: %v", err)
+	}
+	oc, ok := raw["openclaw"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected openclaw block in /api/system response")
+	}
+	for _, key := range []string{"gateway", "status", "freshness"} {
+		if _, ok := oc[key]; !ok {
+			t.Errorf("openclaw.%s missing", key)
+		}
+	}
+	// Channels and Bindings were removed from runtime observability — verify they're absent
+	for _, removed := range []string{"channels", "bindings"} {
+		if _, present := oc[removed]; present {
+			t.Errorf("openclaw.%s should no longer be present in /api/system response", removed)
+		}
+	}
 }
 
 func TestHandleSystem_HEAD_NoBody(t *testing.T) {
@@ -230,6 +250,48 @@ func TestHandleSystem_DegradedReturns200(t *testing.T) {
 	}
 	if !resp.Degraded {
 		t.Error("expected degraded=true when disk path invalid")
+	}
+}
+
+func TestCollectOpenclawRuntime_GracefulDegradation(t *testing.T) {
+	gw := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/healthz":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"ok":true,"status":"live"}`))
+		case "/readyz":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"ready":true,"failing":[],"uptimeMs":1234}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer gw.Close()
+	parts := strings.Split(gw.URL, ":")
+	port, _ := strconv.Atoi(parts[len(parts)-1])
+
+	binDir := t.TempDir()
+	fake := filepath.Join(binDir, "openclaw")
+	script := `#!/bin/sh
+if [ "$1" = "status" ] && [ "$2" = "--json" ]; then
+  echo '{"connectLatencyMs":42,"security":{"mode":"strict"}}'
+  exit 0
+fi
+exit 1
+`
+	if err := os.WriteFile(fake, []byte(script), 0o755); err != nil {
+		t.Fatalf("write fake openclaw: %v", err)
+	}
+
+	oc := collectOpenclawRuntime(context.Background(), fake, 1500, port, SystemVersions{Openclaw: "2026.3.7", Latest: "2026.3.8"})
+	if !oc.Gateway.Live || !oc.Gateway.Ready {
+		t.Fatalf("expected gateway live+ready true, got %+v", oc.Gateway)
+	}
+	if !oc.Gateway.HealthEndpointOk || !oc.Gateway.ReadyEndpointOk {
+		t.Fatalf("expected endpoint flags true, got %+v", oc.Gateway)
+	}
+	if oc.Status.CurrentVersion != "2026.3.7" || oc.Status.LatestVersion != "2026.3.8" {
+		t.Fatalf("expected status versions from SystemVersions, got %+v", oc.Status)
 	}
 }
 
@@ -531,6 +593,32 @@ func TestResolveOpenclawBin_IntegrationWithTempHome(t *testing.T) {
 	_ = origPath // appease linter
 }
 
+func TestResolveOpenclawBin_PrefersHighestNodeInstallVersion(t *testing.T) {
+	tmpHome := t.TempDir()
+	t.Setenv("HOME", tmpHome)
+	t.Setenv("PATH", "/nonexistent")
+
+	versions := []string{"9.9.9", "10.0.0", "25.7.0", "25.8.0"}
+	var expected string
+	for _, ver := range versions {
+		nodeDir := filepath.Join(tmpHome, ".asdf", "installs", "nodejs", ver, "bin")
+		if err := os.MkdirAll(nodeDir, 0755); err != nil {
+			t.Fatalf("mkdir %s: %v", ver, err)
+		}
+		target := filepath.Join(nodeDir, "openclaw")
+		if err := os.WriteFile(target, []byte("#!/bin/sh\necho "+ver), 0755); err != nil {
+			t.Fatalf("write %s: %v", ver, err)
+		}
+		if ver == "25.8.0" {
+			expected = target
+		}
+	}
+
+	if got := resolveOpenclawBin(); got != expected {
+		t.Fatalf("resolveOpenclawBin() = %q, want %q", got, expected)
+	}
+}
+
 // ── Tests for stale byte-level injection ─────────────────────────────────
 
 func TestStaleByteInjection(t *testing.T) {
@@ -629,6 +717,149 @@ func TestCORS_AllowHeaders_IncludesAuthorization(t *testing.T) {
 }
 
 // ── Refresh error CORS ───────────────────────────────────────────────────
+
+// ── Tests for fetchJSONMap HTTP status handling (I1 fix) ─────────────────
+
+func TestFetchJSONMap_Rejects4xx(t *testing.T) {
+	codes := []int{400, 401, 403, 404, 405, 429}
+	for _, code := range codes {
+		t.Run(fmt.Sprintf("status_%d", code), func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(code)
+				_, _ = w.Write([]byte(`{"error":"nope"}`))
+			}))
+			defer srv.Close()
+
+			client := &http.Client{Timeout: 2 * time.Second}
+			_, err := fetchJSONMap(context.Background(), client, srv.URL)
+			if err == nil {
+				t.Fatalf("expected error for HTTP %d, got nil", code)
+			}
+			if !strings.Contains(err.Error(), fmt.Sprintf("status %d", code)) {
+				t.Errorf("expected error to contain 'status %d', got %q", code, err.Error())
+			}
+		})
+	}
+}
+
+func TestFetchJSONMap_Accepts2xx(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(200)
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	}))
+	defer srv.Close()
+
+	client := &http.Client{Timeout: 2 * time.Second}
+	m, err := fetchJSONMap(context.Background(), client, srv.URL)
+	if err != nil {
+		t.Fatalf("unexpected error for 200: %v", err)
+	}
+	if ok, _ := boolFromAny(m["ok"]); !ok {
+		t.Errorf("expected ok=true, got %v", m)
+	}
+}
+
+func TestFetchJSONMap_Rejects5xx(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(500)
+	}))
+	defer srv.Close()
+
+	client := &http.Client{Timeout: 2 * time.Second}
+	_, err := fetchJSONMap(context.Background(), client, srv.URL)
+	if err == nil {
+		t.Fatal("expected error for HTTP 500, got nil")
+	}
+}
+
+// ── Tests for B1 fix: version flow correctness ──────────────────────────
+
+func TestCollectOpenclawRuntime_ReceivesVersionsFromCaller(t *testing.T) {
+	// Verify that when versions are passed in, they appear in the output status
+	// even when `openclaw status --json` doesn't return version fields.
+	gw := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/healthz":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"ok":true}`))
+		case "/readyz":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"ready":true,"uptimeMs":100}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer gw.Close()
+	parts := strings.Split(gw.URL, ":")
+	port, _ := strconv.Atoi(parts[len(parts)-1])
+
+	binDir := t.TempDir()
+	fake := filepath.Join(binDir, "openclaw")
+	// status --json returns empty JSON (no version fields)
+	script := `#!/bin/sh
+if [ "$1" = "status" ] && [ "$2" = "--json" ]; then
+  echo '{"connectLatencyMs":5}'
+  exit 0
+fi
+exit 1
+`
+	os.WriteFile(fake, []byte(script), 0o755)
+
+	inputVersions := SystemVersions{Openclaw: "2026.3.9-test", Latest: "2026.3.10"}
+	oc := collectOpenclawRuntime(context.Background(), fake, 1500, port, inputVersions)
+
+	// The versions from the caller should be used as fallback
+	if oc.Status.CurrentVersion != "2026.3.9-test" {
+		t.Errorf("expected currentVersion='2026.3.9-test', got %q", oc.Status.CurrentVersion)
+	}
+	if oc.Status.LatestVersion != "2026.3.10" {
+		t.Errorf("expected latestVersion='2026.3.10', got %q", oc.Status.LatestVersion)
+	}
+}
+
+func TestCollectOpenclawRuntime_StatusOverridesCallerVersions(t *testing.T) {
+	// When `openclaw status --json` DOES return version fields, they should
+	// override the caller-provided values.
+	gw := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/healthz":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"ok":true}`))
+		case "/readyz":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"ready":true}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer gw.Close()
+	parts := strings.Split(gw.URL, ":")
+	port, _ := strconv.Atoi(parts[len(parts)-1])
+
+	binDir := t.TempDir()
+	fake := filepath.Join(binDir, "openclaw")
+	script := `#!/bin/sh
+if [ "$1" = "status" ] && [ "$2" = "--json" ]; then
+  echo '{"currentVersion":"2026.3.11-live","latestVersion":"2026.3.12"}'
+  exit 0
+fi
+exit 1
+`
+	os.WriteFile(fake, []byte(script), 0o755)
+
+	inputVersions := SystemVersions{Openclaw: "2026.3.9-old", Latest: "2026.3.10-old"}
+	oc := collectOpenclawRuntime(context.Background(), fake, 1500, port, inputVersions)
+
+	// status --json values should override caller-provided versions
+	if oc.Status.CurrentVersion != "2026.3.11-live" {
+		t.Errorf("expected currentVersion='2026.3.11-live', got %q", oc.Status.CurrentVersion)
+	}
+	if oc.Status.LatestVersion != "2026.3.12" {
+		t.Errorf("expected latestVersion='2026.3.12', got %q", oc.Status.LatestVersion)
+	}
+}
 
 func TestRefresh_DataMissing_HasCORSHeaders(t *testing.T) {
 	dir := t.TempDir()
