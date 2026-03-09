@@ -127,6 +127,7 @@ func NewServer(dir, version string, cfg Config, gatewayToken string, indexHTML [
 	meta := "<head>\n<meta name=\"oc-theme\" content=\"" + preset + "\">"
 	content = strings.Replace(content, "<head>", meta, 1)
 	content = strings.ReplaceAll(content, "__VERSION__", html.EscapeString(version))
+	content = strings.ReplaceAll(content, "__RUNTIME__", "Go")
 	rendered := []byte(content)
 	s := &Server{
 		dir:                dir,

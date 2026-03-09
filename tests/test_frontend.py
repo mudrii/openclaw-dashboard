@@ -463,5 +463,35 @@ class TestGatewayReadinessAlert(unittest.TestCase):
             "Ternary must produce bare 'Gateway not ready' for empty failing[]")
 
 
+class TestRuntimeBadge(unittest.TestCase):
+    """AC-runtime-badge: header runtime indicator + sysOclaw pill de-duplication."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.html = read(INDEX_HTML)
+
+    def test_runtime_placeholder_in_header(self):
+        """__RUNTIME__ must appear in the header version link area."""
+        self.assertIn("__RUNTIME__", self.html,
+            "__RUNTIME__ placeholder must be present in index.html (injected by server)")
+
+    def test_runtime_separator_in_header(self):
+        """Header link must use '· v__VERSION__' pattern after runtime label."""
+        self.assertIn("__RUNTIME__ · v__VERSION__", self.html,
+            "Header link must show '__RUNTIME__ · v__VERSION__' for runtime badge")
+
+    def test_syspill_strips_openclaw_prefix(self):
+        """sysOclaw JS must strip 'OpenClaw ' prefix from currentVersion to avoid duplication."""
+        self.assertIn("rawInst=ocStatus.currentVersion||d.versions?.openclaw||'?'", self.html,
+            "rawInst variable must capture currentVersion")
+        self.assertIn(".replace(/^OpenClaw\\s+/i,'')", self.html,
+            "sysOclaw JS must strip 'OpenClaw ' prefix from rawInst")
+
+    def test_syspill_text_uses_stripped_inst(self):
+        """sysOclaw textContent must concatenate 'OpenClaw ' with the stripped inst."""
+        self.assertIn("'OpenClaw '+inst", self.html,
+            "sysOclaw must prepend 'OpenClaw ' to the (now-stripped) inst value")
+
+
 if __name__ == "__main__":
     unittest.main()

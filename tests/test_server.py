@@ -514,5 +514,35 @@ class TestCallGatewayReturnTypes(unittest.TestCase):
         self.assertIsInstance(result, dict)
 
 
+class TestRenderIndex(unittest.TestCase):
+    """Tests for _render_index() runtime/version injection — AC-runtime-badge."""
+
+    def setUp(self):
+        # Import server module freshly so VERSION is accessible
+        sys.path.insert(0, REPO)
+        import importlib
+        self.server = importlib.import_module("server")
+
+    def test_runtime_placeholder_replaced_with_python(self):
+        """_render_index must replace __RUNTIME__ with 'Python'."""
+        rendered = self.server._render_index()
+        if rendered is None:
+            self.skipTest("index.html not found")
+        html = rendered.decode("utf-8")
+        self.assertNotIn("__RUNTIME__", html,
+            "__RUNTIME__ placeholder was not replaced by _render_index()")
+        self.assertIn("Python", html,
+            "'Python' runtime label not injected into rendered index.html")
+
+    def test_version_placeholder_still_replaced(self):
+        """__VERSION__ replacement must still work alongside __RUNTIME__."""
+        rendered = self.server._render_index()
+        if rendered is None:
+            self.skipTest("index.html not found")
+        html = rendered.decode("utf-8")
+        self.assertNotIn("__VERSION__", html,
+            "__VERSION__ placeholder was not replaced")
+
+
 if __name__ == "__main__":
     unittest.main()

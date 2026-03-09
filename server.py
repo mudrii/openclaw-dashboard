@@ -76,6 +76,7 @@ def _render_index():
         1,
     )
     content = content.replace("__VERSION__", _html_mod.escape(VERSION, quote=True))
+    content = content.replace("__RUNTIME__", "Python")
     return content.encode("utf-8")
 
 

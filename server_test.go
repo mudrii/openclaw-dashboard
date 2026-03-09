@@ -305,6 +305,23 @@ func TestIndex_VersionInjected(t *testing.T) {
 	}
 }
 
+func TestIndex_RuntimeInjected(t *testing.T) {
+	dir := t.TempDir()
+	srv := NewServer(dir, "1.0", defaultConfig(), "", []byte("<head><body>__RUNTIME__ · v__VERSION__</body>"), context.Background())
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	body := w.Body.String()
+	if !strings.Contains(body, "Go") {
+		t.Fatal("runtime badge 'Go' not injected into index.html")
+	}
+	if strings.Contains(body, "__RUNTIME__") {
+		t.Fatal("__RUNTIME__ placeholder not replaced")
+	}
+}
+
 func TestIndex_ThemeMetaInjected(t *testing.T) {
 	dir := t.TempDir()
 	cfg := defaultConfig()
