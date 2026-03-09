@@ -1509,15 +1509,18 @@ const SystemBar = {
     const ocData=d.openclaw||{};
     const ocStatus=ocData.status||{};
     const rawInst=ocStatus.currentVersion||d.versions?.openclaw||'?';
-    // Strip leading "OpenClaw " prefix — some builds embed it in currentVersion
-    const inst=rawInst.replace(/^OpenClaw\s+/i,'');
+    // Strip all leading "OpenClaw " prefixes — some builds or data paths embed one or more
+    const inst=rawInst.replace(/^(OpenClaw\s+)+/i,'').trim();
+    // Normalize for comparison: strip commit/build parenthetical e.g. " (3caab92)"
+    // so "2026.3.8 (3caab92)" compares equal to "2026.3.8"
+    const instNorm=inst.replace(/\s*\([^)]*\)/,'').trim();
     const latest=ocStatus.latestVersion||d.versions?.latest||'';
     const oc=$('sysOclaw');
     let ocClass='sys-ok';
-    if(latest&&inst!=='?'&&inst!==latest){const behind=this._versionsBehind(inst,latest);ocClass=behind>=2?'sys-err':behind===1?'sys-warn':'sys-ok';}
+    if(latest&&inst!=='?'&&instNorm!==latest){const behind=this._versionsBehind(inst,latest);ocClass=behind>=2?'sys-err':behind===1?'sys-warn':'sys-ok';}
     const latency=ocStatus.connectLatencyMs?(' · '+ocStatus.connectLatencyMs+'ms'):'';
     oc.className='sys-pill '+ocClass;
-    oc.textContent='OpenClaw '+inst+latency+(latest&&inst!==latest?' (latest: '+latest+')':'');
+    oc.textContent='OpenClaw '+inst+latency+(latest&&instNorm!==latest?' (latest: '+latest+')':'');
 
     const gwRuntime=ocData.gateway||{};
     const gwVersion=d.versions?.gateway||{};
