@@ -73,32 +73,28 @@ Then run:
 
 ```bash
 openclaw-dashboard --refresh   # generate data.json
-openclaw-dashboard             # start server on http://localhost:9090
+openclaw-dashboard             # start server on http://localhost:8080
 ```
 
 ### Pre-built Binary
 
-Download a single pre-built binary — no runtime dependencies needed.
+Download a release tarball — includes the binary plus runtime assets.
 
 ```bash
 # macOS (Apple Silicon)
-curl -L https://github.com/mudrii/openclaw-dashboard/releases/latest/download/openclaw-dashboard-darwin-arm64 -o openclaw-dashboard
-chmod +x openclaw-dashboard
+curl -L https://github.com/mudrii/openclaw-dashboard/releases/latest/download/openclaw-dashboard-darwin-arm64.tar.gz | tar xz
 ./openclaw-dashboard --port 8080
 
 # macOS (Intel)
-curl -L https://github.com/mudrii/openclaw-dashboard/releases/latest/download/openclaw-dashboard-darwin-amd64 -o openclaw-dashboard
-chmod +x openclaw-dashboard
+curl -L https://github.com/mudrii/openclaw-dashboard/releases/latest/download/openclaw-dashboard-darwin-amd64.tar.gz | tar xz
 ./openclaw-dashboard --port 8080
 
 # Linux (x86_64)
-curl -L https://github.com/mudrii/openclaw-dashboard/releases/latest/download/openclaw-dashboard-linux-amd64 -o openclaw-dashboard
-chmod +x openclaw-dashboard
+curl -L https://github.com/mudrii/openclaw-dashboard/releases/latest/download/openclaw-dashboard-linux-amd64.tar.gz | tar xz
 ./openclaw-dashboard --port 8080
 
 # Linux (ARM64 / Raspberry Pi)
-curl -L https://github.com/mudrii/openclaw-dashboard/releases/latest/download/openclaw-dashboard-linux-arm64 -o openclaw-dashboard
-chmod +x openclaw-dashboard
+curl -L https://github.com/mudrii/openclaw-dashboard/releases/latest/download/openclaw-dashboard-linux-arm64.tar.gz | tar xz
 ./openclaw-dashboard --port 8080
 ```
 
@@ -107,9 +103,6 @@ Verify download integrity:
 curl -L https://github.com/mudrii/openclaw-dashboard/releases/latest/download/checksums-sha256.txt -o checksums-sha256.txt
 shasum -a 256 -c checksums-sha256.txt
 ```
-
-> **Note:** Use the release tarball if you want the bundled runtime defaults from
-> `assets/runtime/` plus `VERSION` alongside the binary.
 
 ### One-Line Install
 
@@ -124,6 +117,23 @@ This will:
 4. Run initial data refresh
 5. Start the server as a system service
 6. Open http://127.0.0.1:8080
+
+### Upgrading via Homebrew
+
+```bash
+brew upgrade mudrii/tap/openclaw-dashboard
+```
+
+### Running as a Background Service (macOS)
+
+After installing via Homebrew, you can run the dashboard as a launchd service:
+
+```bash
+# Start on login
+brew services start mudrii/tap/openclaw-dashboard
+
+# Or manually create a launchd plist pointing to /opt/homebrew/bin/openclaw-dashboard
+```
 
 ### Build from Source
 
