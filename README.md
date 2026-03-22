@@ -41,43 +41,44 @@ It's not trying to replace the OpenClaw CLI or Telegram interface. It's the at-a
 
 ### Key Features
 
-- 🔄 **On-Demand Refresh** — `server.py` refreshes data when you open the dashboard (no stale data)
+- 🔄 **On-Demand Refresh** — Refreshes data when you open the dashboard (no stale data)
 - ⏱️ **Auto-Refresh** — Page auto-refreshes every 60 seconds with countdown timer
 - 🎨 **6 Built-in Themes** — 3 dark (Midnight, Nord, Catppuccin Mocha) + 3 light (GitHub, Solarized, Catppuccin Latte), switchable from the UI
 - 🖌️ **Glass Morphism UI** — Subtle transparency and hover effects
 - 📱 **Responsive** — Adapts to desktop, tablet, and mobile
 - 🔒 **Local Only** — Runs on localhost, no external dependencies
-- 🛡️ **Rate Limiting** — 10 req/min per-IP on `/api/chat` (Go + Python, 429 + Retry-After)
-- ⏱️ **HTTP Timeouts** — Read 30s / Write 90s / Idle 120s (Go server)
+- 🛡️ **Rate Limiting** — 10 req/min per-IP on `/api/chat` (429 + Retry-After)
+- ⏱️ **HTTP Timeouts** — Read 30s / Write 90s / Idle 120s
 - 🐧 **Cross-Platform** — macOS and Linux
-- ⚡ **Zero Dependencies** — Pure HTML/CSS/JS frontend, Python stdlib backend, or single Go binary
+- ⚡ **Zero Dependencies** — Pure HTML/CSS/JS frontend, single Go binary backend
 - 📊 **Top Metrics Bar** — Always-on CPU/RAM/swap/disk + gateway status, per-metric thresholds, macOS + Linux
 - 💬 **AI Chat** — Natural language queries about costs, sessions, crons, and config via OpenClaw gateway
 - 🎯 **Accurate Model Display** — 5-level resolution chain ensures every session/sub-agent shows its real model, not the default
-- 🔍 **Runtime Observability** — `/api/system` now includes live gateway runtime state (liveness, readiness, failing deps, uptime, PID, memory) sourced from `/healthz`, `/readyz`, and `openclaw status --json`
-- 🟡 **Gateway Readiness Alerts** — Alert banner shows `🟡 Gateway not ready: discord` (or any failing dep) and auto-clears on recovery; distinct from offline/online state
+- 🔍 **Runtime Observability** — `/api/system` includes live gateway runtime state (liveness, readiness, failing deps, uptime, PID, memory) sourced from `/healthz`, `/readyz`, and `openclaw status --json`
+- 🟡 **Gateway Readiness Alerts** — Alert banner shows `🟡 Gateway not ready: discord` (or any failing dep) and auto-clears on recovery
 - ⚡ **Gateway Runtime + Config Cards** — System Settings split into two panels: Gateway Runtime (live probes) and Gateway Config (static config snapshot)
 
 ## Quick Start
 
-Two server options — choose what fits your environment:
+### Homebrew (macOS / Linux)
 
-| | Go Binary | Python Server |
-|---|---|---|
-| **Install** | Download one file | Clone repo + Python 3 |
-| **Runtime deps** | None | Python 3.6+ |
-| **Throughput** | ~2,019 req/s | 1,745 req/s |
-| **Deploy size** | 9.5 MB (arm64), 10 MB (amd64) | ~81 MB (Python framework) |
-| **Best for** | Production, headless, containers | Quick setup, customization |
+```bash
+brew install mudrii/tap/openclaw-dashboard
+```
 
-> Go now ships as the same release artifact family as `v2026.3.8` and continues to include runtime-observability features.
-> For reproducible numbers, see the latest entry in [BENCHMARK.md](BENCHMARK.md) (Go vs Python, `/api/system`, 20k requests @ 200 concurrency).
+The Homebrew formula installs the binary and seeds a writable runtime directory at
+`~/.openclaw/dashboard` on first run.
 
-### Option A: Go Binary (recommended)
+Then run:
+
+```bash
+openclaw-dashboard --refresh   # generate data.json
+openclaw-dashboard             # start server on http://localhost:9090
+```
+
+### Pre-built Binary
 
 Download a single pre-built binary — no runtime dependencies needed.
-
-> Note: latest release assets are versioned as `openclaw-dashboard-<platform>-<arch>`, while the `latest/download/...` links below always point to the current release.
 
 ```bash
 # macOS (Apple Silicon)
@@ -107,75 +108,46 @@ curl -L https://github.com/mudrii/openclaw-dashboard/releases/latest/download/ch
 shasum -a 256 -c checksums-sha256.txt
 ```
 
-> **Note:** Place `config.json`, `themes.json`, and `refresh.sh` in the same directory as the binary for full functionality.
+> **Note:** Use the release tarball if you want the bundled runtime defaults from
+> `assets/runtime/` plus `VERSION` alongside the binary.
 
-### Option B: Python Server
+### One-Line Install
 
 ```bash
-# One-line install
 curl -fsSL https://raw.githubusercontent.com/mudrii/openclaw-dashboard/main/install.sh | bash
 ```
 
 This will:
 1. Install to `~/.openclaw/dashboard`
-2. Create a default config
-3. Run initial data refresh
-4. Start `server.py` as a system service
-5. Open http://127.0.0.1:8080
+2. Download the pre-built Go binary for your platform
+3. Create a default config
+4. Run initial data refresh
+5. Start the server as a system service
+6. Open http://127.0.0.1:8080
 
-### Manual Install (Python)
-
-```bash
-# Clone the repo
-git clone https://github.com/mudrii/openclaw-dashboard.git ~/.openclaw/dashboard
-cd ~/.openclaw/dashboard
-
-# Create your config
-cp examples/config.minimal.json config.json
-nano config.json  # Set your bot name
-
-# Start the server (refreshes data on-demand)
-python3 server.py &
-
-# Or bind to LAN for access from other devices
-python3 server.py --bind 0.0.0.0 &
-
-# Open in browser
-open http://127.0.0.1:8080  # macOS
-xdg-open http://127.0.0.1:8080  # Linux
-```
-
-### Build from Source (Go)
+### Build from Source
 
 ```bash
 git clone https://github.com/mudrii/openclaw-dashboard.git
 cd openclaw-dashboard
-go build -ldflags="-s -w" -o openclaw-dashboard .
+go build -ldflags="-s -w" -o openclaw-dashboard ./cmd/openclaw-dashboard
 ./openclaw-dashboard --port 8080
 ```
 
 ### Docker
 
 ```bash
-# Go binary (default — 30MB image, recommended)
 docker build -t openclaw-dashboard .
 docker run -p 8080:8080 -v ~/.openclaw:/home/dashboard/.openclaw openclaw-dashboard
-
-# Python server (alternative — 180MB image)
-docker build --target python -t openclaw-dashboard:python .
-docker run -p 8080:8080 -v ~/.openclaw:/home/dashboard/.openclaw openclaw-dashboard:python
 ```
 
 ### Nix Flake
 
 ```bash
-# Go binary (default)
+# Run directly
 nix run github:mudrii/openclaw-dashboard
 
-# Python server
-nix run github:mudrii/openclaw-dashboard#python-server
-
-# Dev shell (Go + Python + tools)
+# Dev shell (Go + tools)
 nix develop github:mudrii/openclaw-dashboard
 ```
 
@@ -194,7 +166,8 @@ Click the 🎨 button in the header to switch themes instantly — no reload or 
 
 ### Custom Themes
 
-Add your own themes by editing `themes.json`. Each theme defines 19 CSS color variables:
+Add your own themes by editing `themes.json` in your runtime directory. Default themes
+ship from `assets/runtime/themes.json`. Each theme defines 19 CSS color variables:
 
 ```json
 {
@@ -229,37 +202,49 @@ Add your own themes by editing `themes.json`. Each theme defines 19 CSS color va
 
 ## Architecture
 
-```
-server.py / openclaw-dashboard (Go)   ← HTTP server (choose one)
-  ├── index.html   ← Single-page dashboard (fetches /api/refresh, /api/chat)
-  ├── themes.json  ← Theme definitions (user-editable)
-  ├── refresh.sh   ← Data collection script (called by server)
-  └── data.json    ← Generated data (auto-refreshed)
+```text
+cmd/openclaw-dashboard/      CLI entrypoint
+internal/appconfig/          config loading
+internal/appruntime/         runtime-dir resolution
+internal/appchat/            chat prompt + gateway client
+internal/apprefresh/         data collector
+internal/appserver/          HTTP server
+internal/appsystem/          metrics and runtime probes
+web/index.html              embedded frontend
+assets/runtime/             runtime defaults
+data.json                   generated dashboard data
 ```
 
-**Two server implementations, same API:**
+**Endpoints:**
 
-| | Python (`server.py`) | Go (`openclaw-dashboard`) |
+| Endpoint | Method | Description |
 |---|---|---|
-| Serves `index.html` | From disk | Embedded in binary (`//go:embed`) |
-| `/api/refresh` | Blocking (waits for `refresh.sh`) | Stale-while-revalidate (instant response) |
-| `/api/chat` | Reads `data.json` per request | Mtime-cached `data.json` (dual raw+parsed cache) |
-| `/api/system` | `system_metrics.py` — TTL cache, stale-serving | `SystemService` — parallel collectors, RWMutex cache |
-| Static files | Allowlisted (`themes.json`, `data.json`, `index.html`) | Allowlisted only (`themes.json`) |
-| Rate limiting | 10 req/min per-IP on `/api/chat` | 10 req/min per-IP on `/api/chat` |
-| HTTP timeouts | N/A (stdlib defaults) | Read 30s / Write 90s / Idle 120s |
-| Pre-warm | None | Runs `refresh.sh` at startup |
-| Shutdown | Clean thread exit | Graceful (drains requests, 5s timeout) |
-| Gateway limit | 1MB response cap | 1MB response cap |
-| Tests | `pytest` (122 tests) | `go test -race` (87 tests) |
+| `/` | GET | Serves embedded `web/index.html` with theme/version injection |
+| `/api/refresh` | GET | Stale-while-revalidate data.json (instant response, background refresh) |
+| `/api/chat` | POST | AI chat via OpenClaw gateway (10 req/min rate limit) |
+| `/api/system` | GET | Live host metrics (CPU/RAM/Swap/Disk) + gateway status |
 
-When you open the dashboard, `index.html` calls `/api/refresh`. The server runs `refresh.sh` (with 30s debounce) to collect fresh data from your OpenClaw installation, then returns the JSON. No cron jobs needed.
+| Feature | Details |
+|---|---|
+| Serves frontend | Embedded from `web/index.html` (`//go:embed`) |
+| `/api/refresh` | Stale-while-revalidate (instant response) |
+| `/api/chat` | Mtime-cached `data.json` (dual raw+parsed cache) |
+| `/api/system` | `SystemService` — parallel collectors, RWMutex cache |
+| Static files | Allowlisted only (`themes.json`, optional favicons) |
+| Rate limiting | 10 req/min per-IP on `/api/chat` |
+| HTTP timeouts | Read 30s / Write 90s / Idle 120s |
+| Pre-warm | Runs `--refresh` at startup |
+| Shutdown | Graceful (drains requests, 5s timeout) |
+| Gateway limit | 1MB response cap |
+| Tests | `go test -race` |
+
+When you open the dashboard, the embedded frontend calls `/api/refresh`. The server runs `--refresh` (with 30s debounce) to collect fresh data from your OpenClaw installation, then returns the JSON. No cron jobs needed.
 
 The `/api/chat` endpoint accepts `{"question": "...", "history": [...]}` and forwards a stateless request to the OpenClaw gateway's OpenAI-compatible `/v1/chat/completions` endpoint, with a system prompt built from live `data.json`.
 
 ### Frontend Module Structure
 
-The entire frontend lives in a single `<script>` tag inside `index.html` — zero dependencies, no build step. The JS is organized into 7 plain objects:
+The entire frontend lives in a single `<script>` tag inside `web/index.html` — zero dependencies, no build step. The JS is organized into 7 plain objects:
 
 ```
 ┌─────────────────────────────────────────────┐
@@ -299,7 +284,9 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for the full specification.
 
 ## Configuration
 
-Edit `config.json`:
+Edit `config.json` in your dashboard runtime directory. In a source checkout or
+`install.sh` install this is the project/install folder; with Homebrew it is
+`~/.openclaw/dashboard/config.json`.
 
 ```json
 {
@@ -343,7 +330,7 @@ Edit `config.json`:
 | `bot.name` | `"OpenClaw Dashboard"` | Dashboard title |
 | `bot.emoji` | `"🦞"` | Avatar emoji |
 | `theme.preset` | `"midnight"` | Default theme (`midnight`, `nord`, `catppuccin-mocha`, `github-light`, `solarized-light`, `catppuccin-latte`) |
-| `timezone` | `"UTC"` | IANA timezone for all time calculations (requires Python 3.9+) |
+| `timezone` | `"UTC"` | IANA timezone for all time calculations |
 | `refresh.intervalSeconds` | `30` | Debounce interval for refresh |
 | `alerts.dailyCostHigh` | `50` | Daily cost threshold for high alert ($) |
 | `alerts.dailyCostWarn` | `20` | Daily cost threshold for warning alert ($) |
@@ -412,7 +399,7 @@ The top bar shows live host metrics — always visible above the alerts banner.
 
 **API endpoint:** `GET /api/system` — returns JSON with all metrics, thresholds, version info, and the `openclaw` runtime block. Includes stale-serving semantics (returns cached data immediately while refreshing in background).
 
-**`openclaw` block in `/api/system`** — provides live gateway runtime state beyond what `refresh.sh` collects:
+**`openclaw` block in `/api/system`** — provides live gateway runtime state beyond what the refresh collector gathers:
 
 | Field | Description |
 |-------|-------------|
@@ -527,18 +514,10 @@ rm -rf ~/.openclaw/dashboard
 
 ## Requirements
 
-**Go binary (Option A):**
-- Pre-built binary — no runtime dependencies
-- `refresh.sh` + `bash` (for data collection)
+- Pre-built Go binary — no runtime dependencies
+- `bash` (only needed if using the optional `refresh.sh` wrapper script, not required for the binary itself)
 - **OpenClaw** — Installed at `~/.openclaw` ([docs](https://docs.openclaw.ai))
 - **macOS** 10.15+ or **Linux** (Ubuntu 18.04+, Debian 10+, ARM64)
-
-**Python server (Option B):**
-- **Python 3.6+** — Backend server and data collection
-- **OpenClaw** — Installed at `~/.openclaw` ([docs](https://docs.openclaw.ai))
-- **macOS** 10.15+ or **Linux** (Ubuntu 18.04+, Debian 10+)
-
-**Both options:**
 - Modern web browser
 
 ## Contributing

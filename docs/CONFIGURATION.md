@@ -2,7 +2,10 @@
 
 ## config.json
 
-The dashboard is configured via `config.json` in the dashboard directory.
+The dashboard is configured via `config.json` in the active dashboard runtime directory.
+In a source checkout that is usually the repo root. In Homebrew installs it is
+`~/.openclaw/dashboard/config.json`. Default runtime files in this repo live in
+`assets/runtime/`.
 
 ### Full Example
 
@@ -35,6 +38,21 @@ The dashboard is configured via `config.json` in the dashboard directory.
     "model": "",
     "maxHistory": 6,
     "dotenvPath": "~/.openclaw/.env"
+  },
+  "system": {
+    "enabled": true,
+    "pollSeconds": 10,
+    "metricsTtlSeconds": 10,
+    "versionsTtlSeconds": 300,
+    "gatewayTimeoutMs": 5000,
+    "gatewayPort": 18789,
+    "diskPath": "/",
+    "warnPercent": 70,
+    "criticalPercent": 85,
+    "cpu": { "warn": 80, "critical": 95 },
+    "ram": { "warn": 80, "critical": 95 },
+    "swap": { "warn": 80, "critical": 95 },
+    "disk": { "warn": 80, "critical": 95 }
   }
 }
 ```
@@ -67,7 +85,10 @@ Theme choice persists via `localStorage` (key: `ocDashTheme`). The `theme.preset
 
 #### Custom Themes
 
-Add custom themes by editing `themes.json` in the dashboard directory. Each theme requires a `name`, `type` (`dark` or `light`), `icon`, and a `colors` object with all 19 CSS variables:
+Add custom themes by editing `themes.json` in the dashboard runtime directory.
+The built-in defaults ship from `assets/runtime/themes.json`. Each theme requires
+a `name`, `type` (`dark` or `light`), `icon`, and a `colors` object with all 19
+CSS variables:
 
 ```json
 {
@@ -108,7 +129,7 @@ All 19 color variables must be provided. The theme appears automatically in the 
 |-----|------|---------|-------------|
 | `timezone` | string | `"UTC"` | IANA timezone name for all time calculations and displayed timestamps |
 
-Accepts any IANA timezone name, e.g. `"UTC"`, `"America/New_York"`, `"Europe/London"`. All "today" cost windows, cron timestamps, and chart bucket boundaries use this timezone. Requires Python 3.9+ (`zoneinfo` stdlib); older Python falls back to GMT+8.
+Accepts any IANA timezone name, e.g. `"UTC"`, `"America/New_York"`, `"Europe/London"`. All "today" cost windows, cron timestamps, and chart bucket boundaries use this timezone. The Go binary uses `time.LoadLocation()` from the standard library.
 
 ### Panels
 
@@ -139,6 +160,28 @@ Panel visibility is not configurable — all panels are always displayed.
 ### OpenClaw Path
 
 To change the OpenClaw data directory, set the `OPENCLAW_HOME` environment variable — that is the runtime source of truth for both `refresh.sh` and the installer. The `openclawPath` key in `config.json` is not read by the current runtime.
+
+### System Metrics
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `system.enabled` | boolean | `true` | Enable/disable the top metrics bar and `/api/system` endpoint |
+| `system.pollSeconds` | number | `10` | How often the browser polls `/api/system` (2-60 seconds) |
+| `system.metricsTtlSeconds` | number | `10` | Server-side metrics cache TTL (2-60 seconds) |
+| `system.versionsTtlSeconds` | number | `300` | Version/gateway probe cache TTL (30-3600 seconds) |
+| `system.gatewayTimeoutMs` | number | `5000` | Timeout for gateway liveness probe (200-15000 ms) |
+| `system.gatewayPort` | number | `18789` | Gateway port for health probes (defaults to `ai.gatewayPort`) |
+| `system.diskPath` | string | `"/"` | Filesystem path to report disk usage for |
+| `system.warnPercent` | number | `70` | Global warn threshold (% used) — overridden by per-metric values |
+| `system.criticalPercent` | number | `85` | Global critical threshold (% used) — overridden by per-metric values |
+| `system.cpu.warn` | number | `80` | CPU warn threshold (%) |
+| `system.cpu.critical` | number | `95` | CPU critical threshold (%) |
+| `system.ram.warn` | number | `80` | RAM warn threshold (%) |
+| `system.ram.critical` | number | `95` | RAM critical threshold (%) |
+| `system.swap.warn` | number | `80` | Swap warn threshold (%) |
+| `system.swap.critical` | number | `95` | Swap critical threshold (%) |
+| `system.disk.warn` | number | `80` | Disk warn threshold (%) |
+| `system.disk.critical` | number | `95` | Disk critical threshold (%) |
 
 ### AI Chat
 
@@ -172,15 +215,18 @@ To change the OpenClaw data directory, set the `OPENCLAW_HOME` environment varia
 | Variable | Description |
 |----------|-------------|
 | `OPENCLAW_HOME` | OpenClaw installation path (source of truth for `refresh.sh` and installer) |
-| `OPENCLAW_GATEWAY_TOKEN` | Gateway bearer token consumed by `server.py` via `ai.dotenvPath` |
+| `OPENCLAW_GATEWAY_TOKEN` | Gateway bearer token loaded from `ai.dotenvPath` |
+| `OPENCLAW_DASHBOARD_DIR` | Override the dashboard runtime directory |
+| `DASHBOARD_PORT` | Override the HTTP listen port (takes precedence over `server.port` in config) |
+| `DASHBOARD_BIND` | Override the HTTP bind address (takes precedence over `server.host` in config) |
 
 ## Data Flow
 
-1. Browser opens `index.html`
+1. Browser opens the embedded frontend from `web/index.html` (`//go:embed`)
 2. JavaScript calls `GET /api/refresh`
-3. `server.py` runs `refresh.sh` (debounced)
-4. `refresh.sh` reads OpenClaw data → writes `data.json`
-5. `server.py` returns `data.json` content
+3. Go server runs data collection (debounced) via `RunRefreshCollector()` in `internal/apprefresh`
+4. Collector reads OpenClaw data → writes `data.json` (atomic via tmp + rename)
+5. Server returns `data.json` content (stale-while-revalidate)
 6. Dashboard renders all panels (including AI chat UI if enabled)
 7. AI chat uses `POST /api/chat` with `{question, history}` and receives `{answer}` or `{error}`
 8. Auto-refresh repeats every 60 seconds

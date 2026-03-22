@@ -14,7 +14,7 @@ Now I have everything I need. Here's the complete, implementation-ready plan:
 ## Executive Summary
 
 The dashboard currently renders 11 sections in a fixed, always-visible layout. This plan adds per-section collapse/expand toggles with:
-- **Zero backend changes** — 100% client-side, one `index.html` edit covers both Go binary and Python server modes
+- **Zero backend changes** — 100% client-side, one `index.html` edit covers all Go distribution modes
 - **localStorage persistence** — collapse state survives page reloads with versioned schema and graceful fallback
 - **Full accessibility** — ARIA attributes, keyboard navigation, focus indicators, prefers-reduced-motion
 - **ATDD-first delivery** — failing tests written before any HTML/CSS/JS touches

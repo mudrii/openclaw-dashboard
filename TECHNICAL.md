@@ -1,6 +1,6 @@
 # TECHNICAL.md — OpenClaw Dashboard Internals
 
-> **Version:** 2026.3.8 · **Repo:** [github.com/mudrii/openclaw-dashboard](https://github.com/mudrii/openclaw-dashboard)
+> **Version:** 2026.3.22 · **Repo:** [github.com/mudrii/openclaw-dashboard](https://github.com/mudrii/openclaw-dashboard)
 >
 > This document covers architecture, data flow, and implementation details for developers and contributors. For features and quick start, see [README.md](README.md).
 
@@ -26,22 +26,20 @@
 
 ## 1. File Structure
 
-| File | Lines | Purpose |
-|------|------:|---------|
-| `index.html` | 1160 | Single-file frontend — embedded CSS + JS, glass morphism themed UI, 11 dashboard sections, 6 themes, 3 SVG charts |
-| `themes.json` | 158 | Theme definitions — 6 built-in themes (3 dark + 3 light), 19 CSS variables each |
-| `server.py` | ~400 | Python HTTP server — static files + `/api/refresh` + `/api/chat` endpoints |
-| `refresh.sh` | 774 | Bash wrapper invoking inline Python to parse OpenClaw data → `data.json` |
-| `install.sh` | 151 | Cross-platform installer (macOS LaunchAgent / Linux systemd) |
-| `uninstall.sh` | 47 | Service teardown + file cleanup |
-| `config.json` | — | Runtime configuration (bot/theme/server/refresh/alerts/ai; some compatibility keys are currently no-op) |
-| `data.json` | — | Generated dashboard data (gitignored) |
-| `docs/CONFIGURATION.md` | — | Configuration reference |
-| `examples/config.full.json` | — | All available config options |
-| `examples/config.minimal.json` | — | Minimal starter config |
-| `tests/*.py` | — | Automated static + integration tests (pytest/unittest compatible) |
-| `*_test.go` | — | Go test suite — 39 tests covering server, chat, config, and version (run with `go test -race ./...`) |
-| `screenshots/` | — | Dashboard screenshots for README |
+| Path | Purpose |
+|------|---------|
+| `cmd/openclaw-dashboard/` | CLI entrypoint |
+| `internal/appconfig/` | Config loading and normalization |
+| `internal/appruntime/` | Runtime dir resolution, version detection, Homebrew seeding |
+| `internal/appchat/` | Prompt builder and gateway client |
+| `internal/apprefresh/` | Dashboard data collector and aggregators |
+| `internal/appserver/` | HTTP handlers, refresh coordinator, static serving |
+| `internal/appsystem/` | Host metrics and OpenClaw runtime probes |
+| `web/index.html` | Embedded single-file frontend |
+| `assets/runtime/` | Runtime defaults (`config.json`, `themes.json`, `refresh.sh`) |
+| `testdata/` | Reusable fixtures for tests |
+| `examples/` | Example configs |
+| `docs/CONFIGURATION.md` | Configuration reference |
 
 ---
 
@@ -52,45 +50,41 @@ Browser                                              Browser
   │                                                    ▲
   │ GET /api/refresh?t=<cache-bust>                    │ JSON response
   ▼                                                    │
-server.py ─── debounce check ──► refresh.sh ──► data.json.tmp
-  │           (30s default)        │                │
-  │           if < 30s:            │ inline Python  │ mv (atomic)
-  │           serve cached         │ reads OpenClaw │
-  │                                ▼                ▼
-  └──────── read data.json ◄──── data.json
+openclaw-dashboard ─── debounce check ──► RunRefreshCollector() ──► data.json.tmp
+  │           (internal/appserver)          (internal/apprefresh)  │
+  │           (30s default)                    │                    │ rename (atomic)
+  │           if < 30s:                        │ reads OpenClaw     │
+  │           still return cached              │ filesystem         ▼
+  │                                            ▼                data.json
+  └──────── read data.json ◄──────────────────────────────────────┘
+       (mtime-cached in memory)
 
 Browser                                              OpenClaw Gateway
   │ POST /api/chat {"question","history"}                 ▲
   ▼                                                       │ POST /v1/chat/completions
-server.py handle_chat()                                   │ Bearer token from dotenv
-  ├─ load data.json                                       │
-  ├─ build_dashboard_prompt(data)                         │
-  └─ call_gateway(...) ───────────────────────────────────┘
+openclaw-dashboard handleChat()                           │ Bearer token from dotenv
+  ├─ load data.json (mtime-cached)                        │
+  ├─ buildSystemPrompt(data)                              │
+  └─ callGateway(...) ────────────────────────────────────┘
 ```
 
 ### Debounce Mechanism
 
-`server.py` tracks `_last_refresh` (epoch timestamp). If less than `_debounce_sec` seconds have elapsed since the last successful refresh, `refresh.sh` is skipped and the cached `data.json` is served directly. Default: **30 seconds** (configurable via `config.json` → `refresh.intervalSeconds`).
+`internal/appserver` tracks `lastRefresh` on the `Server` struct. `handleRefresh` starts a background refresh only when `time.Since(lastRefresh)` is at least the configured interval **and** no refresh is already running. Until then, responses still serve the current `data.json` (stale-while-revalidate). Default: **30 seconds** (configurable via runtime `config.json` → `refresh.intervalSeconds`).
 
 ### Atomic Write
 
-`refresh.sh` writes Python output to `data.json.tmp`, then:
-```bash
-if [ -s "$DIR/data.json.tmp" ]; then
-    mv "$DIR/data.json.tmp" "$DIR/data.json"
-fi
-```
-The `-s` check ensures an empty/failed output doesn't clobber the existing data. `mv` on the same filesystem is atomic.
+`internal/apprefresh` marshals JSON, writes `data.json.tmp`, then `os.Rename`s it to `data.json`. Rename within the same directory is atomic on Unix; a failed write or marshal does not replace the previous file.
 
 ### Concurrency
 
-`_refresh_lock` (a `threading.Lock`) prevents concurrent `refresh.sh` invocations. The subprocess has a **15-second timeout** (`REFRESH_TIMEOUT`).
+`Server.mu` (`sync.Mutex`) in `internal/appserver` coordinates `lastRefresh`, `refreshRunning`, and overlapping work. Debounce and “only one collector at a time” are enforced via `sync.Mutex`.
 
 ---
 
 ## 3. Data Sources
 
-`refresh.sh` reads these files from the OpenClaw directory (default `~/.openclaw`):
+The refresh collector (`internal/apprefresh`, invoked by `openclaw-dashboard --refresh` or from the runtime `refresh.sh`) reads these files from the OpenClaw directory (default `~/.openclaw`):
 
 | Source Path | What It Provides |
 |-------------|-----------------|
@@ -111,7 +105,7 @@ If a PID is found, a follow-up `ps -p <pid> -o etime=,rss=` extracts uptime and 
 
 ### Runtime Observability (`/api/system` — `openclaw` block)
 
-In addition to the `refresh.sh`/`data.json` pipeline, the `/api/system` endpoint includes a live `openclaw` block collected from three sources in parallel:
+In addition to the `data.json` pipeline, the `/api/system` endpoint includes a live `openclaw` block collected from three sources in parallel:
 
 | Source | Data Collected |
 |--------|---------------|
@@ -119,9 +113,9 @@ In addition to the `refresh.sh`/`data.json` pipeline, the `/api/system` endpoint
 | `GET /readyz` | `ready`, `failing[]`, `readyEndpointOk` |
 | `openclaw status --json` | `currentVersion`, `latestVersion`, `connectLatencyMs`, `security` |
 
-The `readyz` endpoint returns a `503` body with JSON when some dependencies are failing. `fetchJSONMapAllowStatus` (Go) / `_fetch_json_url_allow_status` (Python) accept configurable HTTP status codes so the body is parsed rather than discarded.
+The `readyz` endpoint returns a `503` body with JSON when some dependencies are failing. `fetchJSONMapAllowStatus` accepts configurable HTTP status codes so the body is parsed rather than discarded.
 
-The frontend's `SystemBar._gatewayState(d)` helper decides whether to trust the runtime data or fall back to the `versions.gateway` status field from `refresh.sh`. Runtime is trusted when any of these signals is present: `healthEndpointOk`, `readyEndpointOk`, `uptimeMs > 0`, or `failing.length > 0`.
+The frontend's `SystemBar._gatewayState(d)` helper decides whether to trust the runtime data or fall back to the `versions.gateway` status field from `data.json`. Runtime is trusted when any of these signals is present: `healthEndpointOk`, `readyEndpointOk`, `uptimeMs > 0`, or `failing.length > 0`.
 
 **Gateway Readiness Alert flow:**
 1. `SystemBar.render()` checks `gwLive && !gwReady && gwState.source === 'runtime'`
@@ -133,11 +127,11 @@ The frontend's `SystemBar._gatewayState(d)` helper decides whether to trust the 
 
 ## 4. Data Processing Logic
 
-All processing runs in the inline Python block within `refresh.sh`.
+All aggregation and collector processing now runs under `internal/apprefresh/`.
 
 ### Model Name Normalization
 
-The `model_name()` function maps raw provider/model IDs (e.g., `anthropic/claude-opus-4-6`) to friendly display names (e.g., `Claude Opus 4.6`). It strips the provider prefix and matches against known substrings:
+The `modelName()` function maps raw provider/model IDs (e.g., `anthropic/claude-opus-4-6`) to friendly display names (e.g., `Claude Opus 4.6`). It strips the provider prefix and matches against known substrings:
 
 | Pattern | Display Name |
 |---------|-------------|
@@ -169,10 +163,10 @@ Sessions with `:run:` in the key are skipped (duplicate cron run sessions).
 
 ### Token Aggregation
 
-For each `.jsonl` file, the script reads every line, filters for `assistant` role messages with non-zero `usage.totalTokens`, and aggregates into eight `defaultdict` buckets:
+For each `.jsonl` file, the collector reads assistant usage records and aggregates into eight `map[string]*tokenBucket` buckets. Parsed per-file summaries are persisted in `.token-usage-cache.json` in the dashboard runtime directory and reused when a transcript file's size and mtime have not changed, so refresh does not rescan the full transcript history every run:
 
 - **`models_all`** — all-time per-model totals
-- **`models_today`** — today-only per-model totals (compared against `today_str` in the configured timezone)
+- **`models_today`** — today-only per-model totals (compared against `todayStr` in the configured timezone)
 - **`models_7d`** — last 7 days per-model totals
 - **`models_30d`** — last 30 days per-model totals
 - **`subagent_all`** — all-time subagent-only totals
@@ -186,7 +180,7 @@ Messages from `delivery-mirror` models are excluded.
 
 ### Cost Calculation
 
-Cost is extracted from `message.usage.cost.total` in JSONL assistant messages. Only `dict`-type cost objects are parsed.
+Cost is extracted from `message.usage.cost.total` in JSONL assistant messages. Only JSON object-shaped cost values are parsed.
 
 ### Alert Generation
 
@@ -203,8 +197,8 @@ Alerts are generated based on configurable thresholds:
 
 ### Projected Monthly Cost
 
-```python
-projected_from_today = total_cost_today * 30
+```go
+projectedMonthly := totalCostToday * 30
 ```
 
 ---
@@ -254,10 +248,12 @@ Glass morphism: `.glass` class applies semi-transparent background + subtle bord
 ### Data Flow
 
 ```
-loadData()
+DataLayer.fetch()
   → fetch('/api/refresh?t=' + Date.now())
-  → parse JSON → store in global D
-  → render()
+  → parse JSON → store in State.data (frozen snapshot)
+  → DirtyChecker.diff(current, prev)
+      → computes 13 boolean dirty flags via stableSnapshot()
+  → Renderer.render(snapshot, dirtyFlags)
       → renderHeader (bot name, emoji, gateway status)
       → renderAlerts
       → renderHealthRow (gateway, PID, uptime, memory, compaction, sessions)
@@ -286,9 +282,9 @@ A centered `.donut-hole` div (55% size, page background color) creates the hole 
 
 ### Tab State
 
-Three tab variables control today/7d/30d/all-time views: `uTab` (token usage), `srTab` (subagent runs), `stTab` (subagent tokens). Tab buttons update the variable and call `render()` which reads the current tab state.
+Three tab variables within the `State` module control today/7d/30d/all-time views: `State.tabs.uTab` (token usage), `State.tabs.srTab` (subagent runs), `State.tabs.stTab` (subagent tokens). Tab buttons call `State.setTab()` which updates the tab value and triggers `App.renderNow()` to re-render with the current tab state.
 
-The `switchTab` pattern uses `setTabCls4(prefix, tab, cls)` which updates four tab buttons (`T`, `7`, `30`, `A` suffixes) to set the active CSS class.
+The tab switching pattern uses `State.setTab(prefix, tab)` which updates the internal tab variable and invokes the render cycle. Tab button CSS classes are managed by the `Renderer` during each render pass.
 
 ### Charts & Trends
 
@@ -306,79 +302,68 @@ All charts are generated as inline `<svg>` elements with `viewBox="0 0 400 300"`
 
 The theme system loads themes from `themes.json` at startup and applies them by setting 19 CSS custom properties on `document.documentElement`:
 
-| Function | Purpose |
-|----------|---------|
-| `loadThemes()` | Fetches `themes.json`, restores saved theme from `localStorage('ocDashTheme')`, calls `applyTheme()` |
-| `applyTheme(id)` | Sets all 19 `--*` CSS variables from `THEMES[id].colors`, saves to `localStorage` |
-| `renderThemeMenu()` | Builds the dropdown menu, grouping themes by `type` (`dark` / `light`) |
-| `toggleThemeMenu()` | Toggles `.open` class on `#themeMenu` |
+| Method | Purpose |
+|--------|---------|
+| `Theme.load()` | Fetches `themes.json`, restores saved theme from `localStorage('ocDashTheme')`, calls `Theme.apply()` |
+| `Theme.apply(id)` | Sets all 19 `--*` CSS variables from the theme's `colors` object, saves to `localStorage` |
+| `Theme.renderMenu()` | Builds the dropdown menu, grouping themes by `type` (`dark` / `light`) |
+| `Theme.toggleMenu()` | Toggles `.open` class on `#themeMenu` |
 
 The 19 CSS variables controlled by themes: `bg`, `surface`, `surfaceHover`, `border`, `accent`, `accent2`, `green`, `yellow`, `red`, `orange`, `purple`, `text`, `textStrong`, `muted`, `dim`, `darker`, `tableBg`, `tableHover`, `scrollThumb`.
 
-Theme state is stored globally in `THEMES` (all definitions) and `currentTheme` (active theme ID). Clicking outside the theme picker closes the menu via a `document.addEventListener('click', ...)` handler.
+Theme state is stored within the `Theme` module object (theme definitions and active theme ID). Clicking outside the theme picker closes the menu via a `document.addEventListener('click', ...)` handler.
 
 ---
 
 ## 6. Server Architecture
 
-Two implementations share the same API surface. Both serve `index.html`, `/api/refresh`, and `/api/chat`.
-
-### Python Server (`server.py`)
-
-- Built on `http.server.HTTPServer` + `SimpleHTTPRequestHandler`
-- Single-threaded request handling (Python's default)
-- Two custom routes:
-  - `GET /api/refresh` (with optional query params)
-  - `POST /api/chat`
-- All other paths: static file serving from the dashboard directory
+The `openclaw-dashboard` binary embeds `web/index.html` via `//go:embed` and implements the HTTP API.
 
 ### Go Server (`openclaw-dashboard` binary)
 
-- Single binary with `index.html` embedded via `//go:embed`
+- Single binary with static assets embedded from `web/` and runtime defaults loaded from the resolved dashboard directory with fallback to `assets/runtime/`
 - Concurrent request handling (Go's `net/http` goroutine-per-request model)
-- Routes: `GET|HEAD /`, `GET|HEAD /api/refresh`, `POST /api/chat`, allowlisted static files
-- All other paths return 404; non-GET/HEAD/POST returns 405
+- Routes: `GET|HEAD /`, `GET|HEAD /api/refresh`, `GET|HEAD /api/system`, `POST /api/chat`, allowlisted static files (`/themes.json`, `/favicon.ico`, `/favicon.png`)
+- All other paths return 404; non-GET/HEAD/POST (except `OPTIONS`) returns 405
 - **Graceful shutdown**: handles SIGINT/SIGTERM, drains in-flight requests (5s timeout)
-- **Pre-warm**: runs `refresh.sh` at startup so the first browser hit is instant
-- **Dual mtime cache**: `cachedDataRaw` ([]byte for /api/refresh) and `cachedData` (parsed map for /api/chat) share a `sync.RWMutex` with coherence — updating either cache invalidates the other
-- **Allowlisted static files**: only `themes.json` is served; all other files return 404 (unlike Python which serves the entire directory including `.git/config`)
+- **Pre-warm**: runs `runRefresh()` once in the background at startup so the first browser hit is fast
+- **Dual mtime cache**: `cachedDataRaw` ([]byte for `/api/refresh`) and `cachedData` (parsed map for `/api/chat`) share a `sync.RWMutex` with coherence — updating either cache invalidates the other
+- **Allowlisted static files**: only configured paths are served from disk; arbitrary path traversal is rejected
 - **Gateway response limit**: caps upstream response at 1MB
 
 ### `/api/refresh` Endpoint
 
-1. Calls `run_refresh()` (debounced, non-blocking in Go)
+1. `handleRefresh` applies debounce and may start a refresh goroutine (calls `RunRefreshCollector` in `internal/apprefresh`)
 2. Returns cached or disk `data.json` with headers:
    - `Content-Type: application/json`
    - `Cache-Control: no-cache`
    - `Content-Length: <size>`
    - `Access-Control-Allow-Origin: <origin>` when origin is `http://localhost:*` or `http://127.0.0.1:*`
    - fallback CORS origin: `http://localhost:<configured-port>`
-3. Go uses stale-while-revalidate: returns existing cached data immediately, triggers refresh in background if stale
-4. On error: returns 503 (no data.json) or 500 (other)
+3. Stale-while-revalidate: returns existing data immediately while a stale refresh runs in the background
+4. On error: returns 503 (no `data.json`) or 500 (other)
 
 ### `/api/chat` Endpoint
 
 1. Checks `ai.enabled` from `config.json`
 2. Validates JSON body (64KB limit) and non-empty `question` (2000 char limit)
 3. Sanitises `history`: only `user`/`assistant` roles, truncates content to 4000 chars, caps at `ai.maxHistory` entries
-4. Loads `data.json` (mtime-cached in Go, per-request in Python) and builds a compact system prompt
+4. Loads `data.json` (mtime-cached) and builds a compact system prompt
 5. Calls OpenClaw gateway endpoint:
    - `POST http://localhost:<ai.gatewayPort>/v1/chat/completions`
    - headers: `Authorization: Bearer <OPENCLAW_GATEWAY_TOKEN>`
-   - Response capped at 1MB (Go only)
+   - Response capped at 1MB
 6. Returns:
    - HTTP 200 `{"answer":"..."}` on success
-   - HTTP 400 for bad input, 413 for oversized body, 502 for gateway errors, 503 if AI disabled
+   - HTTP 400 for bad input, 413 for oversized body, 429 when rate-limited, 502 for gateway errors, 503 if AI disabled
 
 ### Quiet Logging
 
-**Python:** `log_message()` is overridden to only print lines containing `/api/refresh`, `/api/chat`, or `error`. Static file requests are suppressed.
-
-**Go:** Uses `log.Printf` for `/api/refresh`, `/api/chat`, and errors. No static file logging.
+Uses `log.Printf` for `/api/refresh`, `/api/chat`, and errors. Static file requests are not logged.
 
 ### LAN Mode
 
-When bound to `0.0.0.0`, both servers auto-detect the local IP and print it for convenience.
+When bound to `0.0.0.0`, the server auto-detects the local IP and prints it for convenience.
 
 ---
 
@@ -391,7 +376,7 @@ Each setting resolves through a priority chain (highest wins):
 | Bind address | `--bind` / `-b` | `DASHBOARD_BIND` | `server.host` | `127.0.0.1` |
 | Port | `--port` / `-p` | `DASHBOARD_PORT` | `server.port` | `8080` |
 | Debounce interval | — | — | `refresh.intervalSeconds` | `30` |
-| OpenClaw path (refresh script) | — | `OPENCLAW_HOME` | *(not read by runtime)* | `~/.openclaw` |
+| OpenClaw path (refresh) | — | `OPENCLAW_HOME` | *(not read by runtime)* | `~/.openclaw` |
 | AI chat enabled | — | — | `ai.enabled` | `true` |
 | Gateway port | — | — | `ai.gatewayPort` | `18789` |
 | Chat model | — | — | `ai.model` | `""` |
@@ -404,7 +389,7 @@ Each setting resolves through a priority chain (highest wins):
 | Context % threshold | — | — | `alerts.contextPct` | `80` |
 | Memory threshold | — | — | `alerts.memoryMb` | `640` |
 
-**Implementation detail:** `server.py` applies `config.json` values, then env vars, then CLI args for bind/port. AI config is loaded from `config.json`, while `OPENCLAW_GATEWAY_TOKEN` is read from `ai.dotenvPath` via `read_dotenv()`. `refresh.sh` resolves OpenClaw path from `OPENCLAW_HOME` (or `~/.openclaw`) and does not read `config.openclawPath`.
+**Implementation detail:** The Go binary applies `config.json` defaults, then environment variables, then CLI flags for bind/port. AI settings come from `config.json`; `OPENCLAW_GATEWAY_TOKEN` is read from `ai.dotenvPath`. The refresh collector uses `OPENCLAW_HOME` (or `~/.openclaw`) and does not read `config.openclawPath`.
 
 ---
 
@@ -419,7 +404,7 @@ Each setting resolves through a priority chain (highest wins):
 | `lastRefresh` | `string` | Human-readable timestamp (`"2026-02-16 13:45:00 UTC"`) |
 | `lastRefreshMs` | `number` | Unix epoch milliseconds |
 
-### Gateway (data.json — Config/Status from refresh.sh)
+### Gateway (data.json — config/status from refresh collector)
 
 | Key | Type | Description |
 |-----|------|-------------|
@@ -590,18 +575,18 @@ systemctl --user status openclaw-dashboard
 
 ### Install Flow
 
-1. Check prerequisites (Python 3, OpenClaw directory)
+1. Check prerequisites (OpenClaw directory at `OPENCLAW_HOME` or `~/.openclaw`)
 2. Clone repo (or `git pull` if exists, or `curl` tarball if no git)
 3. `chmod +x` scripts
 4. Copy `examples/config.minimal.json` → `config.json` (if not exists)
-5. Run initial `refresh.sh`
+5. Run initial data generation: `./openclaw-dashboard --refresh` (or `bash refresh.sh`, which invokes the same flag)
 6. Create and load OS-specific service
 7. Print URLs
 
 ### Uninstall Flow
 
 1. Stop and remove service (LaunchAgent or systemd)
-2. Kill any running `server.py` processes
+2. Kill any running `openclaw-dashboard` processes
 3. `rm -rf` the install directory
 
 ---
@@ -610,12 +595,12 @@ systemctl --user status openclaw-dashboard
 
 | Dependency | Required For | Notes |
 |------------|-------------|-------|
-| **Python 3.x** | `server.py`, inline Python in `refresh.sh` | stdlib only — `json`, `glob`, `os`, `subprocess`, `http.server`, `urllib`, `threading`, `collections`, `datetime` |
+| **Go** | Building from source | Optional if using pre-built `openclaw-dashboard` binaries from releases |
 | **Bash** | `refresh.sh`, `install.sh`, `uninstall.sh` | POSIX-compatible |
 | **Git** | Git log panel, installer | Optional (panel shows empty without it) |
 | **OpenClaw** | Data source | Standard `~/.openclaw` directory structure |
 
-**Zero external packages:** No npm, no pip, no CDN, no build tools.
+**Zero external packages (runtime):** No npm, no pip, no CDN, no third-party Go modules — stdlib only. Pre-built binaries do not require a local Go toolchain.
 
 **Browser requirements:** CSS Grid, CSS custom properties, `fetch` API, `conic-gradient` — any modern browser (Chrome 69+, Firefox 65+, Safari 12.1+).
 
@@ -633,13 +618,13 @@ systemctl --user status openclaw-dashboard
 | **Gateway token handling** | `/api/chat` uses `OPENCLAW_GATEWAY_TOKEN` loaded from dotenv (`ai.dotenvPath`) |
 | **Prompt safety** | `/api/chat` includes client-supplied `history` in gateway payload; treat this as untrusted input |
 | **No auth/authz** | Anyone who can reach the port can see all data |
-| **Subprocess execution** | `server.py` executes `refresh.sh` via `subprocess.run` — ensure the script isn't writable by others |
+| **Subprocess execution** | `refresh.sh` locates and runs the `openclaw-dashboard` binary with `--refresh`; keep install paths and scripts writable only by trusted users |
 
 ---
 
 ## 12. Known Limitations
 
-- **Timezone** — configurable via `config.json` `timezone` key (IANA names, default `UTC`); requires Python 3.9+ for `zoneinfo`, older Python falls back to fixed GMT+8
+- **Timezone** — configurable via `config.json` `timezone` (IANA names, default `UTC`); the collector uses `time.LoadLocation` and falls back to UTC with a stderr warning if the name is unknown
 - **No authentication** — relies on network-level access control
 - **Polling only** — no WebSocket; frontend polls every 60s, server debounces at 30s
 - **Limited historical data** — `dailyChart` provides 30 days of daily aggregates; no finer granularity
@@ -661,35 +646,33 @@ systemctl --user status openclaw-dashboard
 cd ~/src/openclaw-dashboard
 
 # Test data refresh
-bash refresh.sh
-cat data.json | python3 -m json.tool | head -50
+./openclaw-dashboard --refresh
+# or: bash assets/runtime/refresh.sh
+cat data.json | jq . | head -50
 
 # Start dev server
-python3 server.py
+./openclaw-dashboard --port 8080
 # → http://127.0.0.1:8080
 
 # LAN access
-python3 server.py --bind 0.0.0.0 --port 9090
+./openclaw-dashboard --bind 0.0.0.0 --port 9090
 ```
 
 ### Editing
 
-- **Frontend:** Edit `index.html` directly. No build step. Refresh browser.
-- **Data processing:** Edit the Python block inside `refresh.sh` (between `<< 'PYEOF'` and `PYEOF`).
-- **Server:** Edit `server.py`. Restart to apply.
+- **Frontend:** Edit `web/index.html` directly. No build step. Refresh browser.
+- **Data processing:** Edit `internal/apprefresh/` or the thin root wrappers. Rebuild the binary (or `go run ./cmd/openclaw-dashboard`) to apply.
+- **Server:** Edit `internal/appserver/`, `internal/appchat/`, or the thin root wrappers. Rebuild to apply.
 
 ### Testing Checklist
 
 ```bash
 # Go tests (run with race detector)
 go test -race -v ./...
-
-# Python tests
-python3 -m pytest tests/ -v
 ```
 
 - [ ] `go test -race ./...` passes (all tests green)
-- [ ] `bash refresh.sh` produces valid JSON
+- [ ] `./openclaw-dashboard --refresh` (or `bash refresh.sh`) produces valid JSON
 - [ ] `data.json` contains expected keys
 - [ ] Dashboard renders on desktop (1440px+)
 - [ ] Dashboard renders on tablet (768–1024px)
@@ -705,38 +688,38 @@ python3 -m pytest tests/ -v
 
 | File | Tests | Coverage |
 |------|------:|----------|
-| `server_test.go` | 18 | Cache coherence, HEAD/GET, static allowlist, path traversal, CORS, routing, index rendering, data missing |
-| `chat_test.go` | 8 | Gateway calls (success, errors, empty, oversized), system prompt building |
+| `server_test.go` | 22 | Cache coherence, HEAD/GET, static allowlist, path traversal, CORS, routing, index rendering, data missing |
+| `chat_test.go` | 11 | Gateway calls (success, errors, empty, oversized), system prompt building |
 | `config_test.go` | 11 | Config defaults/overrides/clamping, dotenv parsing (quotes, comments, equals), expandHome |
-| `version_test.go` | 3 | VERSION file, fallback, empty file |
-| `system_test.go` | 384 | Openclaw runtime collection, gateway probes, `fetchJSONMapAllowStatus`, `parseGatewayStatusJSON`, CPU/RAM/swap/disk collectors, versions caching, thundering herd prevention |
+| `version_test.go` | 12 | VERSION file, fallback, empty file |
+| `system_test.go` | 43 | Openclaw runtime collection, gateway probes, `fetchJSONMapAllowStatus`, `parseGatewayStatusJSON`, CPU/RAM/swap/disk collectors, versions caching, thundering herd prevention |
 
 ### PR Guidelines
 
 1. **Zero-dependency constraint** — no npm, no pip, no CDN, no external fonts
-2. **Single-file frontend** — CSS and JS stay embedded in `index.html`
-3. **Python stdlib only** — no third-party imports in `server.py` or `refresh.sh`
-4. **Go stdlib only** — no third-party imports in Go source
-5. **Test mobile + desktop** — check both responsive breakpoints
-6. **Run automated tests** — `go test -race ./...` and `pytest` before submitting changes
+2. **Single-file frontend** — CSS and JS stay embedded in `web/index.html`
+3. **Go stdlib only** — no third-party imports in Go source
+4. **Test mobile + desktop** — check both responsive breakpoints
+5. **Run automated tests** — `go test -race ./...` before submitting changes
 
 ### Adding a New Dashboard Panel
 
-1. Add HTML structure in `index.html` (follow existing `.glass .panel` pattern)
+1. Add HTML structure in `web/index.html` (follow existing `.glass .panel` pattern)
 2. Add render logic in the `render()` function
-3. If it needs new data, add extraction logic in the Python block of `refresh.sh`
-4. Add the new key to `data.json` output dict
+3. If it needs new data, add extraction logic in `internal/apprefresh` (inside `collectDashboardData` or helpers it calls)
+4. Add the new key to the `map[string]any` returned from `collectDashboardData`
 5. Optionally add a `panels.<name>` toggle in `config.json`
 
 ### Adding a New Alert Type
 
-In `refresh.sh` Python block, append to the `alerts` list:
-```python
-alerts.append({
-    'type': 'warning',      # warning | error | info
-    'icon': '⚠️',
-    'message': 'Description',
-    'severity': 'medium'     # critical | high | medium | low
+In `internal/apprefresh`, extend `BuildAlerts` (or the call site in `collectDashboardData`) with another `append`, for example:
+
+```go
+alerts = append(alerts, map[string]any{
+	"type":     "warning",
+	"icon":     "⚠️",
+	"message":  "Description",
+	"severity": "medium", // critical | high | medium | low
 })
 ```
 

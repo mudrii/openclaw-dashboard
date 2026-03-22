@@ -1,4 +1,4 @@
-package main
+package dashboard
 
 import (
 	"context"
@@ -641,9 +641,7 @@ func TestStaleByteInjection(t *testing.T) {
 	}
 
 	// Force cache to appear stale by backdating the timestamp
-	srv.systemSvc.metricsMu.Lock()
-	srv.systemSvc.metricsAt = time.Now().Add(-1 * time.Hour)
-	srv.systemSvc.metricsMu.Unlock()
+	expireMetricsCacheForTest(srv.systemSvc)
 
 	// Next request should get stale=true
 	req2 := httptest.NewRequest(http.MethodGet, "/api/system", nil)
@@ -863,9 +861,15 @@ exit 1
 
 func TestRefresh_DataMissing_HasCORSHeaders(t *testing.T) {
 	dir := t.TempDir()
-	srv := testServer(t, dir)
-	// No data.json
+	t.Setenv("OPENCLAW_HOME", t.TempDir())
 
+	prev := refreshCollectorFunc
+	defer func() { refreshCollectorFunc = prev }()
+	refreshCollectorFunc = func(dashboardDir, openclawPath string, cfgOpt ...Config) error {
+		return os.ErrNotExist
+	}
+
+	srv := testServer(t, dir)
 	req := httptest.NewRequest(http.MethodGet, "/api/refresh", nil)
 	req.Header.Set("Origin", "http://localhost:3000")
 	w := httptest.NewRecorder()
@@ -904,9 +908,7 @@ func TestStaleByteInjection_JSONRoundTrip(t *testing.T) {
 	}
 
 	// Expire the cache
-	srv.systemSvc.metricsMu.Lock()
-	srv.systemSvc.metricsAt = time.Now().Add(-1 * time.Hour)
-	srv.systemSvc.metricsMu.Unlock()
+	expireMetricsCacheForTest(srv.systemSvc)
 
 	// Stale request: should get stale=true via JSON round-trip (not byte replacement)
 	req2 := httptest.NewRequest(http.MethodGet, "/api/system", nil)
@@ -979,8 +981,6 @@ func TestCollectVersions_GatewayNoStdoutFallsBackToHTTP_I2(t *testing.T) {
 		t.Errorf("detectGatewayFallback: expected online for reachable HTTP server, got %q", gw.Status)
 	}
 }
-
-
 
 // ── Tests for I2 fix: collectOpenclawRuntime parses status stdout on non-zero exit
 

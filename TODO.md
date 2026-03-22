@@ -5,6 +5,7 @@
 - Security hardening (XSS, CORS, O(N²), shell safety, file handles)
 - Performance, dirty-checking & test suite (initial 44 ACs, rAF, scroll preserve, tab fix)
 - AI chat integration (`/api/chat`, chat panel UI, `ai` config block, chat test suite)
+- Python removal — Go-only codebase (server, data collection, system metrics)
 
 ---
 
@@ -29,22 +30,22 @@ See `ARCHITECTURE.md` for full spec.
 
 ## 🐳 Deployment
 
-- [x] **Dockerfile** — Python 3.12-slim, non-root user, port 8080, volume mount, healthcheck (AC27)
-- [x] **Nix flake** — `flake.nix` with `devShell`, `packages.default`, `apps.default` via flake-utils (AC28)
+- [x] **Dockerfile** — Go binary, non-root user, port 8080, volume mount, healthcheck
+- [x] **Nix flake** — `flake.nix` with `devShell`, `packages.default`, `apps.default` via flake-utils
 
 ## 🧪 Tests
 
-- [x] Update static tests AC17–AC20 after architecture refactor (done in refactor PR)
-- [x] Playwright E2E tests — 16 tests covering tabs, charts, countdown, chat panel, theme menu (needs `playwright` in venv)
+- [x] Go test suite — `go test -race` covering all endpoints and core logic
+- [x] Playwright E2E tests — 16 tests covering tabs, charts, countdown, chat panel, theme menu
 
 ## 📦 Release Plan
 
 1. ~~Architecture refactor (State/DataLayer/DirtyChecker/Renderer/Theme) with synchronized test updates.~~ ✅
 2. Performance follow-ups (incremental DOM/SVG updates if benchmark thresholds justify it).
 3. Deployment artifacts (Dockerfile + Nix flake).
+4. ~~Python removal — Go-only codebase.~~ ✅
 
 ## 🔖 Notes
 
-- 104 tracked tests collected (`test_frontend.py` + `test_data_schema.py` + `test_server.py` + `test_critical.py` + `test_hierarchy_recent.py` + `test_chat.py` + `test_dockerfile.py` + `test_nix_flake.py` + `test_e2e.py`)
+- Go test suite: `go test -race ./...`
 - Architecture doc: `ARCHITECTURE.md`
-- Test runner: `python3 -m pytest tests/ -v`

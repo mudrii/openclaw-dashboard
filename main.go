@@ -1,10 +1,11 @@
-package main
+package dashboard
 
 import (
 	"context"
 	_ "embed"
 	"flag"
 	"fmt"
+	"log"
 	"net"
 	"net/http"
 	"os"
@@ -15,23 +16,39 @@ import (
 	"time"
 )
 
-//go:embed index.html
+//go:embed web/index.html
 var indexHTML []byte
 
-func main() {
+// BuildVersion is set at link time.
+var BuildVersion string
+
+// Main runs the dashboard CLI and returns a process exit code.
+func Main() int {
 	// Resolve binary directory (follows symlinks)
 	exe, err := os.Executable()
 	if err != nil {
 		exe = "."
 	}
-	exe, _ = filepath.EvalSymlinks(exe)
+	if resolved, err := filepath.EvalSymlinks(exe); err != nil {
+		fmt.Fprintf(os.Stderr, "[dashboard] WARNING: EvalSymlinks failed: %v\n", err)
+	} else {
+		exe = resolved
+	}
 	binDir := filepath.Dir(exe)
 
-	// Resolve repo root: binaries built into dist/ (or other subdirs) need to
-	// find repo-root assets like refresh.sh, config.json, data.json, VERSION.
-	dir := resolveRepoRoot(binDir)
+	// Resolve the dashboard runtime directory. Source checkouts use the repo root,
+	// release archives use the extracted folder, and Homebrew installs hydrate a
+	// writable runtime directory under ~/.openclaw/dashboard.
+	dir, err := resolveDashboardDirWithError(binDir)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "[dashboard] failed to resolve runtime directory: %v\n", err)
+		return 1
+	}
 
-	version := detectVersion(dir)
+	version := BuildVersion
+	if version == "" {
+		version = detectVersion(dir)
+	}
 	cfg := loadConfig(dir)
 
 	// Env var defaults
@@ -45,6 +62,8 @@ func main() {
 	if envPort != "" {
 		if p, err := strconv.Atoi(envPort); err == nil {
 			envPortInt = p
+		} else {
+			log.Printf("[dashboard] WARNING: invalid DASHBOARD_PORT %q, using default %d", envPort, envPortInt)
 		}
 	}
 
@@ -55,11 +74,35 @@ func main() {
 	flag.IntVar(port, "p", envPortInt, "Listen port (shorthand)")
 	showVersion := flag.Bool("version", false, "Print version and exit")
 	flag.BoolVar(showVersion, "V", false, "Print version (shorthand)")
+	doRefresh := flag.Bool("refresh", false, "Generate data.json and exit")
 	flag.Parse()
 
 	if *showVersion {
 		fmt.Printf("openclaw-dashboard %s\n", version)
-		os.Exit(0)
+		return 0
+	}
+
+	if *doRefresh {
+		openclawPath := os.Getenv("OPENCLAW_HOME")
+		if openclawPath == "" {
+			home, err := os.UserHomeDir()
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "[dashboard] WARNING: UserHomeDir failed: %v\n", err)
+			}
+			openclawPath = filepath.Join(home, ".openclaw")
+		}
+		if _, err := os.Stat(openclawPath); os.IsNotExist(err) {
+			fmt.Fprintf(os.Stderr, "OpenClaw not found at %s\n", openclawPath)
+			return 1
+		}
+		fmt.Printf("Dashboard dir: %s\n", dir)
+		fmt.Printf("OpenClaw path: %s\n", openclawPath)
+		if err := refreshCollectorFunc(dir, openclawPath, cfg); err != nil {
+			fmt.Fprintf(os.Stderr, "refresh failed: %v\n", err)
+			return 1
+		}
+		fmt.Printf("✅ data.json refreshed at %s\n", time.Now().Format("2006-01-02 15:04:05"))
+		return 0
 	}
 
 	// Load gateway token from .env
@@ -103,15 +146,23 @@ func main() {
 	// Graceful shutdown on SIGINT/SIGTERM
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
+	defer signal.Stop(stop)
+	serverErr := make(chan error, 1)
 
 	go func() {
 		if err := httpSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			fmt.Fprintf(os.Stderr, "[dashboard] fatal: %v\n", err)
-			os.Exit(1)
+			serverErr <- err
 		}
 	}()
 
-	<-stop
+	select {
+	case <-stop:
+	case err := <-serverErr:
+		serverCancel()
+		fmt.Fprintf(os.Stderr, "[dashboard] fatal: %v\n", err)
+		return 1
+	}
+
 	serverCancel() // cancel background goroutines (metrics refresh, etc.)
 	fmt.Println("\n[dashboard] shutting down...")
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -120,6 +171,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "[dashboard] shutdown error: %v\n", err)
 	}
 	fmt.Println("[dashboard] stopped")
+	return 0
 }
 
 func localIP() string {

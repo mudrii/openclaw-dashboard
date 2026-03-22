@@ -14,8 +14,8 @@ labels: bug
 
 | Field | Value |
 |-------|-------|
-| Dashboard version | <!-- run: git describe --tags --> |
-| Python version | <!-- run: python3 --version --> |
+| Dashboard version | <!-- run: ./openclaw-dashboard --version --> |
+| Go version (if built from source) | <!-- run: go version --> |
 | Browser | <!-- e.g. Chrome 130, Firefox 131, Safari 18 --> |
 | OS | <!-- e.g. macOS 15.3, Ubuntu 22.04 --> |
 | OpenClaw version | <!-- run: openclaw --version --> |
@@ -43,20 +43,25 @@ labels: bug
 
 <!-- Tick all that apply -->
 
-- [ ] `server.py` — HTTP server, /api/refresh, /api/chat
-- [ ] `refresh.sh` — data collection script
+- [ ] `internal/appserver/` — HTTP server, /api/refresh, /api/chat, /api/system
+- [ ] `internal/apprefresh/` — data collection logic
+- [ ] `internal/appconfig/` — configuration loading and defaults
+- [ ] `internal/appchat/` — AI chat gateway communication
+- [ ] `internal/appsystem/` — system metrics (CPU, RAM, disk, gateway probes)
+- [ ] `internal/appruntime/` — runtime directory resolution, version detection
+- [ ] `refresh.sh` — shell wrapper
 - [ ] `index.html` JS — State / DataLayer / DirtyChecker
 - [ ] `index.html` JS — Renderer (specific section: ____________)
 - [ ] `index.html` JS — Theme / Chat / App
 - [ ] `index.html` CSS — layout or visual
 - [ ] `config.json` — configuration parsing
 - [ ] `themes.json` — theme definitions
-- [ ] Tests
+- [ ] Tests (`*_test.go`)
 - [ ] Other: ____________
 
 ## Relevant Logs
 
-<!-- Paste server.log lines, browser console errors, or refresh.sh stderr.
+<!-- Paste server.log lines, browser console errors, or refresh output.
      Use code blocks. Omit if not applicable. -->
 
 ```

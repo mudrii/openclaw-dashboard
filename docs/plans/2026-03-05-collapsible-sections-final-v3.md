@@ -69,8 +69,8 @@ The plan is strong and implementation-ready overall, but had one critical correc
    - Manual QA: keyboard, screen reader, private mode, reload persistence
 
 8. **Cross-backend validation**
-   - Run dashboard via Go binary and Python server
-   - Confirm identical behavior and markup rendering (shared `index.html` path)
+   - Run the dashboard via the Go binary
+   - Confirm identical behavior from source and release builds (shared `index.html` path)
 
 ---
 
@@ -87,7 +87,7 @@ The plan is strong and implementation-ready overall, but had one critical correc
 - [ ] No visible expand→collapse flash on load for persisted collapsed sections.
 - [ ] Works when localStorage is unavailable (no crash; session-only behavior).
 - [ ] Keyboard Enter/Space works on toggle button.
-- [ ] Same behavior from Go-served and Python-served dashboard.
+- [ ] Same behavior from source-served and release-served Go dashboard.
 
 ---
 
