@@ -16,7 +16,7 @@
           # Go binary (default) — single binary, zero runtime deps
           default = pkgs.buildGoModule {
             pname = "openclaw-dashboard";
-            version = "2026.3.22";
+            version = "2026.3.23";
             src = ./.;
             vendorHash = null; # no external deps
             subPackages = [ "cmd/openclaw-dashboard" ];

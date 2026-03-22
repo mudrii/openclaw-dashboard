@@ -1,5 +1,60 @@
 # Changelog
 
+## v2026.3.23 — Comprehensive Audit & Hardening
+
+### Error Handling
+
+- **15 silent failure fixes** — All `os.UserHomeDir()` calls (4 sites) now log warnings instead of silently producing invalid paths. `json.Marshal` errors in `sendJSON` and system metrics now return proper error responses instead of empty bodies.
+- **Gateway timeout classification** — `CallGateway` now correctly returns HTTP 504 (Gateway Timeout) instead of 502 when the HTTP client timeout fires, using `errors.Is(err, context.DeadlineExceeded)`.
+- **Config loading feedback** — `Load()` now logs when falling back to defaults (both config paths failed). Users are no longer silently served default configuration.
+- **Dotenv scanner error** — `ReadDotenv` now checks `scanner.Err()` after the parsing loop to detect truncated reads.
+- **Session/token cache logging** — `loadSessionStores`, `saveTokenUsageCache`, and `fetchLiveSessionModelsCLI` now log when skipping files or failing operations instead of silently returning partial data.
+- **Sort comparator panic guard** — Subagent run sorting now uses comma-ok type assertions to prevent panics on nil/non-string timestamp values.
+- **PID parse safety** — Gateway PID parsing now skips invalid entries instead of displaying "PID: 0".
+- **`ExpandHome` logging** — Logs warning when `UserHomeDir` fails, making tilde expansion failures visible.
+- **`DASHBOARD_PORT` validation** — Invalid (non-numeric) port environment variables now produce a warning instead of being silently ignored.
+
+### Linting & Code Quality
+
+- **Zero lint issues** — All `errcheck`, `ineffassign`, `staticcheck`, `govet`, `gocritic`, and `unused` checks pass clean.
+- **Added `.golangci.yml`** — Project-wide linter configuration with `errcheck`, `govet`, `ineffassign`, `staticcheck`, `unused`, `gocritic` enabled. Test files excluded from errcheck.
+- **Added `Makefile`** — Build automation with `make build`, `make test`, `make lint`, `make vet`, `make cover`, and `make check` targets.
+- **CI linting** — Added `golangci-lint` step to `.github/workflows/tests.yml` using `golangci/golangci-lint-action@v6`.
+- **Dead code removed** — Empty `refresh_sessions.go`, unused constants (`maxBodyBytes`, `maxQuestionLen`, `chatRateLimit`, `maxGatewayResp`), unused type aliases (`chatRequest`, `completionPayload`), unused functions (`collectVersionsLocal`, `fetchLatestNpmVersion`, `seedHomebrewRuntimeDir`, `copyIfMissing`).
+- **Unreachable code removed** — `strings.Contains(clean, "..")` after `filepath.Clean` (which never leaves `..`).
+- **Ineffectual assignments fixed** — Removed dead `todayStr`, `compactionMode`, `agentConfig` assignments in refresh pipeline.
+- **Errcheck compliance** — All `defer f.Close()` / `defer resp.Body.Close()` patterns wrapped properly. `os.Remove` cleanup errors explicitly discarded with `_ =`.
+- **If-else chains refactored** — Converted to switch statements in `clampThreshold` and model resolution.
+
+### Testing
+
+- **37 new tests** across 4 previously untested internal packages:
+  - `internal/appconfig` (13 tests, 74.2% coverage) — Default values, Load with valid/partial/invalid JSON, threshold clamping, ReadDotenv edge cases, ExpandHome
+  - `internal/appserver` (10 tests, 23.8% coverage) — HandleStaticFile allowlist/traversal, ServeHTTP routing/CORS/405, sendJSON marshal error, rate limiter
+  - `internal/appchat` (7 tests, 75.9% coverage) — BuildSystemPrompt, CallGateway success/error/timeout, GatewayError
+  - `internal/appruntime` (7 tests, 43.5% coverage) — DetectVersion, ResolveDashboardDir env override, ResolveRepoRoot, CopyIfMissing
+- **Extended `internal/appsystem`** (7 new tests, 12.5% coverage) — FormatBytes, BoolFromAny, VersionishGreater, DecodeJSONObjectFromOutput, ParseGatewayStatusJSON
+- **All 121 tests pass** with `-race` flag.
+
+### Documentation
+
+- **TECHNICAL.md** — Updated version header to 2026.3.22; frontend data flow section updated from legacy `loadData()/global D/render()` to current 7-module architecture (`DataLayer.fetch()`, `State`, `DirtyChecker.diff()`, `Renderer`); theme engine and tab state sections updated to reference module methods.
+- **docs/CONFIGURATION.md** — Added full `system` configuration section with 18 fields documented; added missing environment variables (`OPENCLAW_DASHBOARD_DIR`, `DASHBOARD_PORT`, `DASHBOARD_BIND`).
+- **README.md** — Clarified bash is optional (only for `refresh.sh` wrapper); updated `/api/system` description to reference Go refresh collector.
+- **Dockerfile** — Added `COPY VERSION ./` to builder and runtime stages for proper version detection; removed unused `curl` and `jq` packages from runtime image.
+- **`.goreleaser.yml`** — Fixed caveats port from 9090 to 8080.
+- **Bug report template** — Updated component list to reference `internal/` packages.
+- **Package doc comments** — Added to all 6 internal packages.
+- **`flake.nix`** — Updated version to 2026.3.22; removed `curl` and `jq` from runtime and dev dependencies.
+
+### Cleanup
+
+- **`.gitignore` updated** — Added `.claude/`, `coverage.out`, `coverage.html`.
+- **Removed tracked `.claude/settings.local.json`** from git.
+- **Deleted stale branches** — `master`, `remove-python-dependency`, `exp/openclaw-runtime-observability`.
+
+---
+
 ## v2026.3.22 — Go-Only Codebase
 
 ### Breaking Changes
