@@ -8,37 +8,26 @@ on:
 
 jobs:
   test:
-    name: Run test suite
+    name: Go test suite
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        python-version: ["3.9", "3.12"]
-
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v5
+      - uses: actions/setup-go@v5
         with:
-          python-version: ${{ matrix.python-version }}
-          cache: pip
+          go-version-file: go.mod
 
-      - name: Install dependencies
-        run: pip install -r requirements.txt
+      - name: Run vet
+        run: go vet ./...
 
-      - name: Run static analysis tests (no server needed)
-        run: python -m pytest tests/test_frontend.py tests/test_dockerfile.py tests/test_nix_flake.py tests/test_system_metrics.py -v
+      - name: Run tests with race detector
+        run: go test -race -v -count=1 ./...
 
-      - name: Run schema tests
-        run: python -m pytest tests/test_data_schema.py -v
-        continue-on-error: true
-        # data.json only exists after refresh.sh runs against a real OpenClaw install
-
-      - name: Run server integration tests
-        run: python -m pytest tests/test_server.py tests/test_chat.py tests/test_hierarchy_recent.py tests/test_critical.py -v
+      - name: Build binary
+        run: go build -ldflags="-s -w" -o openclaw-dashboard .
 
   lint-shell:
-    name: Lint refresh.sh
+    name: Lint shell scripts
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

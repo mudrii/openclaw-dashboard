@@ -17,13 +17,13 @@ import (
 )
 
 const (
-	maxBodyBytes      = 64 * 1024
-	maxQuestionLen    = 2000
-	maxHistoryItem    = 4000
-	maxGatewayResp    = 1 << 20 // 1MB limit on gateway response
-	refreshTimeout    = 15 * time.Second
-	chatRateLimit     = 10             // max requests per minute per IP
-	chatRateWindow    = 1 * time.Minute
+	maxBodyBytes            = 64 * 1024
+	maxQuestionLen          = 2000
+	maxHistoryItem          = 4000
+	maxGatewayResp          = 1 << 20 // 1MB limit on gateway response
+	refreshTimeout          = 15 * time.Second
+	chatRateLimit           = 10 // max requests per minute per IP
+	chatRateWindow          = 1 * time.Minute
 	chatRateCleanupInterval = 5 * time.Minute
 )
 
@@ -106,6 +106,7 @@ type Server struct {
 	mu             sync.Mutex
 	lastRefresh    time.Time
 	refreshRunning bool
+	refreshDone    chan struct{}
 
 	// Cached data.json for /api/chat prompt building
 	dataMu          sync.RWMutex
@@ -158,19 +159,16 @@ func NewServer(dir, version string, cfg Config, gatewayToken string, indexHTML [
 // PreWarm runs refresh.sh once in the background at startup so data.json
 // is ready before the first browser request arrives.
 func (s *Server) PreWarm() {
-	go func() {
-		log.Printf("[dashboard] pre-warming data.json...")
-		s.runRefresh()
-		log.Printf("[dashboard] pre-warm complete")
-	}()
+	log.Printf("[dashboard] pre-warming data.json...")
+	s.startRefresh()
 }
 
 // allowedStatic is a whitelist of static files the server will serve.
 // Intentionally restrictive to prevent leaking sensitive files.
 var allowedStatic = map[string]string{
-	"/themes.json":  "application/json",
-	"/favicon.ico":  "image/x-icon",
-	"/favicon.png":  "image/png",
+	"/themes.json": "application/json",
+	"/favicon.ico": "image/x-icon",
+	"/favicon.png": "image/png",
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -248,21 +246,35 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// runRefresh generates data.json using the Go-native data collector.
-// Prevents overlapping runs. Updates lastRefresh only on success.
-func (s *Server) runRefresh() {
+// startRefresh launches at most one refresh worker and returns a channel that
+// closes when the current refresh attempt completes.
+func (s *Server) startRefresh() chan struct{} {
 	s.mu.Lock()
 	if s.refreshRunning {
+		ch := s.refreshDone
 		s.mu.Unlock()
-		return
+		return ch
 	}
 	s.refreshRunning = true
+	ch := make(chan struct{})
+	s.refreshDone = ch
 	s.mu.Unlock()
 
+	go s.runRefresh(ch)
+	return ch
+}
+
+// runRefresh generates data.json using the Go-native data collector.
+// Updates lastRefresh only on success.
+func (s *Server) runRefresh(done chan struct{}) {
 	defer func() {
 		s.mu.Lock()
 		s.refreshRunning = false
+		if s.refreshDone == done {
+			s.refreshDone = nil
+		}
 		s.mu.Unlock()
+		close(done)
 	}()
 
 	openclawPath := os.Getenv("OPENCLAW_HOME")
@@ -271,7 +283,7 @@ func (s *Server) runRefresh() {
 		openclawPath = filepath.Join(home, ".openclaw")
 	}
 
-	if err := runRefreshCollector(s.dir, openclawPath); err != nil {
+	if err := refreshCollectorFunc(s.dir, openclawPath); err != nil {
 		log.Printf("[dashboard] refresh failed: %v", err)
 		return
 	}
@@ -336,22 +348,43 @@ func (s *Server) handleRefresh(w http.ResponseWriter, r *http.Request) {
 
 	s.mu.Lock()
 	shouldRun := !s.refreshRunning && time.Since(s.lastRefresh) >= debounce
+	waitCh := s.refreshDone
 	s.mu.Unlock()
 
 	if shouldRun {
-		go s.runRefresh()
+		waitCh = s.startRefresh()
 	}
 
 	data, err := s.getDataRawCached()
 	if err != nil {
-		if os.IsNotExist(err) {
-			s.sendJSONRaw(w, r, http.StatusServiceUnavailable, errDataMissing)
-		} else {
+		if !os.IsNotExist(err) {
 			s.sendJSON(w, r, http.StatusInternalServerError, map[string]string{"error": "failed to read dashboard data"})
+			return
 		}
+		if waitCh == nil {
+			waitCh = s.startRefresh()
+		}
+		if waitCh != nil {
+			ctx, cancel := context.WithTimeout(r.Context(), refreshTimeout)
+			defer cancel()
+			select {
+			case <-waitCh:
+			case <-ctx.Done():
+			}
+			data, err = s.getDataRawCached()
+			if err == nil {
+				goto respond
+			}
+			if !os.IsNotExist(err) {
+				s.sendJSON(w, r, http.StatusInternalServerError, map[string]string{"error": "failed to read dashboard data"})
+				return
+			}
+		}
+		s.sendJSONRaw(w, r, http.StatusServiceUnavailable, errDataMissing)
 		return
 	}
 
+respond:
 	s.setCORSHeaders(w, r)
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "no-cache")
@@ -364,12 +397,12 @@ func (s *Server) handleRefresh(w http.ResponseWriter, r *http.Request) {
 }
 
 // getDataCached returns parsed data.json — delegates to loadData().
-func (s *Server) getDataCached() map[string]any {
+func (s *Server) getDataCached() (map[string]any, error) {
 	_, parsed, err := s.loadData()
 	if err != nil || parsed == nil {
-		return map[string]any{}
+		return nil, err
 	}
-	return parsed
+	return parsed, nil
 }
 
 // handleChat handles the AI chat endpoint.
@@ -447,7 +480,15 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Use cached data.json — avoids re-reading + parsing ~100KB per request
-	dashData := s.getDataCached()
+	dashData, err := s.getDataCached()
+	if err != nil {
+		if os.IsNotExist(err) {
+			s.sendJSONRaw(w, r, http.StatusServiceUnavailable, errDataMissing)
+			return
+		}
+		s.sendJSON(w, r, http.StatusInternalServerError, map[string]string{"error": "dashboard data is invalid"})
+		return
+	}
 
 	systemPrompt := buildSystemPrompt(dashData)
 	answer, err := callGateway(

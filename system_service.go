@@ -35,6 +35,11 @@ type SystemService struct {
 	verCached  SystemVersions
 	verAt      time.Time
 	verRefresh bool // true while a goroutine is collecting versions
+
+	latestMu      sync.RWMutex
+	latestVer     string
+	latestAt      time.Time
+	latestRefresh bool
 }
 
 func NewSystemService(cfg SystemConfig, dashVer string, serverCtx context.Context) *SystemService {
@@ -110,6 +115,9 @@ func (s *SystemService) refresh(ctx context.Context) ([]byte, bool) {
 	// empty SystemVersions{}, eliminating the fragile post-hoc patching that previously
 	// existed (B1 fix).
 	ver := s.getVersionsCached(ctx)
+	if latest := s.getLatestVersionCached(); latest != "" {
+		ver.Latest = latest
+	}
 
 	// Run OpenClaw runtime + disk + CPU/RAM/Swap in parallel for minimum wall-clock time.
 	var openclaw SystemOpenclaw
@@ -213,13 +221,53 @@ func (s *SystemService) getVersionsCached(ctx context.Context) SystemVersions {
 	s.verRefresh = true
 	s.verMu.Unlock()
 
-	v := collectVersions(ctx, s.dashVer, s.cfg.GatewayTimeoutMs, s.cfg.GatewayPort)
+	v := collectVersionsLocal(ctx, s.dashVer, s.cfg.GatewayTimeoutMs, s.cfg.GatewayPort)
 	s.verMu.Lock()
 	s.verCached = v
 	s.verAt = time.Now()
 	s.verRefresh = false
 	s.verMu.Unlock()
 	return v
+}
+
+func (s *SystemService) getLatestVersionCached() string {
+	ttl := time.Duration(s.cfg.VersionsTTLSeconds) * time.Second
+	s.latestMu.RLock()
+	if s.latestAt != (time.Time{}) && time.Since(s.latestAt) < ttl {
+		v := s.latestVer
+		s.latestMu.RUnlock()
+		return v
+	}
+	cached := s.latestVer
+	s.latestMu.RUnlock()
+
+	s.latestMu.Lock()
+	if s.latestAt != (time.Time{}) && time.Since(s.latestAt) < ttl {
+		v := s.latestVer
+		s.latestMu.Unlock()
+		return v
+	}
+	if s.latestRefresh {
+		v := s.latestVer
+		s.latestMu.Unlock()
+		return v
+	}
+	s.latestRefresh = true
+	s.latestMu.Unlock()
+
+	go func() {
+		latest := fetchLatestNpmVersion(s.serverCtx, s.cfg.GatewayTimeoutMs)
+		now := time.Now()
+		s.latestMu.Lock()
+		if latest != "" {
+			s.latestVer = latest
+		}
+		s.latestAt = now
+		s.latestRefresh = false
+		s.latestMu.Unlock()
+	}()
+
+	return cached
 }
 
 // collectDiskRoot uses syscall.Statfs — works on both darwin and linux.
@@ -240,8 +288,9 @@ func collectDiskRoot(path string) SystemDisk {
 	return d
 }
 
-// collectVersions probes openclaw + gateway CLIs.
-func collectVersions(ctx context.Context, dashVer string, timeoutMs int, gatewayPort int) SystemVersions {
+// collectVersionsLocal probes openclaw + gateway CLIs without performing any
+// outbound network request. Latest-version lookup is handled asynchronously.
+func collectVersionsLocal(ctx context.Context, dashVer string, timeoutMs int, gatewayPort int) SystemVersions {
 	v := SystemVersions{Dashboard: dashVer}
 
 	// OpenClaw version
@@ -267,9 +316,6 @@ func collectVersions(ctx context.Context, dashVer string, timeoutMs int, gateway
 		gw = detectGatewayFallback(ctx, gatewayPort, timeoutMs)
 	}
 	v.Gateway = gw
-
-	// Latest version from npm registry (best-effort, non-blocking)
-	v.Latest = fetchLatestNpmVersion(ctx, timeoutMs)
 
 	return v
 }

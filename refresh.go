@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -14,6 +15,8 @@ import (
 	"strings"
 	"time"
 )
+
+var refreshCollectorFunc = runRefreshCollector
 
 // runRefreshCollector generates data.json from OpenClaw's filesystem data.
 // This generates data.json from OpenClaw's filesystem data.
@@ -39,6 +42,11 @@ func runRefreshCollector(dashboardDir, openclawPath string) error {
 	return nil
 }
 
+type sessionStoreFile struct {
+	agentName string
+	store     map[string]map[string]any
+}
+
 type tokenBucket struct {
 	Calls     int     `json:"calls"`
 	Input     int     `json:"input"`
@@ -58,17 +66,17 @@ func (b *tokenBucket) add(inp, out, cr, tt int, cost float64) {
 }
 
 type tokenUsageEntry struct {
-	Model         string  `json:"model"`
-	Calls         int     `json:"calls"`
-	Input         string  `json:"input"`
-	Output        string  `json:"output"`
-	CacheRead     string  `json:"cacheRead"`
-	TotalTokens   string  `json:"totalTokens"`
-	Cost          float64 `json:"cost"`
-	InputRaw      int     `json:"inputRaw"`
-	OutputRaw     int     `json:"outputRaw"`
-	CacheReadRaw  int     `json:"cacheReadRaw"`
-	TotalTokensRaw int    `json:"totalTokensRaw"`
+	Model          string  `json:"model"`
+	Calls          int     `json:"calls"`
+	Input          string  `json:"input"`
+	Output         string  `json:"output"`
+	CacheRead      string  `json:"cacheRead"`
+	TotalTokens    string  `json:"totalTokens"`
+	Cost           float64 `json:"cost"`
+	InputRaw       int     `json:"inputRaw"`
+	OutputRaw      int     `json:"outputRaw"`
+	CacheReadRaw   int     `json:"cacheReadRaw"`
+	TotalTokensRaw int     `json:"totalTokensRaw"`
 }
 
 func bucketsToList(m map[string]*tokenBucket) []tokenUsageEntry {
@@ -250,13 +258,15 @@ func collectDashboardData(dashboardDir, openclawPath string, cfg Config) map[str
 		}
 	}
 
+	sessionStores := loadSessionStores(basePath)
+
 	// Build group names from session data for bindings
-	groupNames := buildGroupNames(basePath)
+	groupNames := buildGroupNames(sessionStores)
 	enrichBindings(agentConfig, groupNames)
 
 	// Sessions
 	knownSIDs := map[string]string{}
-	sessionsList := collectSessions(basePath, loc, now, todayStr, modelAliases, knownSIDs, gateway)
+	sessionsList := collectSessions(sessionStores, basePath, loc, now, todayStr, modelAliases, knownSIDs, gateway)
 
 	// Backfill channel connectivity from recent session activity
 	backfillChannelConnectivity(agentConfig, sessionsList)
@@ -281,7 +291,7 @@ func collectDashboardData(dashboardDir, openclawPath string, cfg Config) map[str
 	dailySubagentCount := map[string]int{}
 
 	// Build sessionId → session key map
-	sidToKey := buildSIDToKeyMap(basePath)
+	sidToKey := buildSIDToKeyMap(sessionStores)
 
 	subagentRuns := collectTokenUsage(
 		basePath, loc, todayStr, date7d, date30d,
@@ -329,18 +339,18 @@ func collectDashboardData(dashboardDir, openclawPath string, cfg Config) map[str
 	projectedMonthly := totalCostToday * 30
 
 	return map[string]any{
-		"botName":  botName,
-		"botEmoji": botEmoji,
+		"botName":       botName,
+		"botEmoji":      botEmoji,
 		"lastRefresh":   now.Format("2006-01-02 15:04:05 ") + tzName,
 		"lastRefreshMs": now.UnixMilli(),
 
 		"gateway":        gateway,
 		"compactionMode": compactionMode,
 
-		"totalCostToday":    round2(totalCostToday),
-		"totalCostAllTime":  round2(totalCostAll),
-		"projectedMonthly":  round2(projectedMonthly),
-		"costBreakdown":     costBreakdown,
+		"totalCostToday":     round2(totalCostToday),
+		"totalCostAllTime":   round2(totalCostAll),
+		"projectedMonthly":   round2(projectedMonthly),
+		"costBreakdown":      costBreakdown,
 		"costBreakdownToday": costBreakdownToday,
 
 		"sessions":     limitSlice(sessionsList, 20),
@@ -348,7 +358,7 @@ func collectDashboardData(dashboardDir, openclawPath string, cfg Config) map[str
 
 		"crons": crons,
 
-		"subagentRuns":         limitSlice(subagentRuns, 30),
+		"subagentRuns":        limitSlice(subagentRuns, 30),
 		"subagentRunsToday":   limitSlice(subagentRunsToday, 20),
 		"subagentRuns7d":      limitSlice(subagentRuns7d, 50),
 		"subagentRuns30d":     limitSlice(subagentRuns30d, 100),
@@ -357,10 +367,10 @@ func collectDashboardData(dashboardDir, openclawPath string, cfg Config) map[str
 		"subagentCost7d":      round2(sumBucketCosts(subagent7d)),
 		"subagentCost30d":     round2(sumBucketCosts(subagent30d)),
 
-		"tokenUsage":      bucketsToList(modelsAll),
-		"tokenUsageToday": bucketsToList(modelsToday),
-		"tokenUsage7d":    bucketsToList(models7d),
-		"tokenUsage30d":   bucketsToList(models30d),
+		"tokenUsage":         bucketsToList(modelsAll),
+		"tokenUsageToday":    bucketsToList(modelsToday),
+		"tokenUsage7d":       bucketsToList(models7d),
+		"tokenUsage30d":      bucketsToList(models30d),
 		"subagentUsage":      bucketsToList(subagentAll),
 		"subagentUsageToday": bucketsToList(subagentToday),
 		"subagentUsage7d":    bucketsToList(subagent7d),
@@ -787,20 +797,20 @@ func parseOpenclawConfig(oc map[string]any, basePath string) (
 	}
 
 	agentConfig = map[string]any{
-		"primaryModel":   aliasOrID(modelAliases, primary),
-		"primaryModelId": primary,
-		"imageModel":     aliasOrID(modelAliases, imageModel),
-		"imageModelId":   imageModel,
-		"fallbacks":      fb3,
-		"streamMode":     jsonStrDefault(tgCfg, "streamMode", "off"),
+		"primaryModel":     aliasOrID(modelAliases, primary),
+		"primaryModelId":   primary,
+		"imageModel":       aliasOrID(modelAliases, imageModel),
+		"imageModelId":     imageModel,
+		"fallbacks":        fb3,
+		"streamMode":       jsonStrDefault(tgCfg, "streamMode", "off"),
 		"telegramDmPolicy": jsonStrDefault(tgCfg, "dmPolicy", "—"),
-		"telegramGroups": len(asObj(tgCfg["groups"])),
-		"channels":       channelsEnabled,
-		"channelStatus":  channelStatus,
+		"telegramGroups":   len(asObj(tgCfg["groups"])),
+		"channels":         channelsEnabled,
+		"channelStatus":    channelStatus,
 		"compaction": map[string]any{
-			"mode":              jsonStrDefault(compaction, "mode", "auto"),
+			"mode":               jsonStrDefault(compaction, "mode", "auto"),
 			"reserveTokensFloor": compaction["reserveTokensFloor"],
-			"memoryFlush":       compaction["memoryFlush"],
+			"memoryFlush":        compaction["memoryFlush"],
 			"softThresholdTokens": func() any {
 				mf := asObj(compaction["memoryFlush"])
 				if mf != nil {
@@ -827,17 +837,17 @@ func parseOpenclawConfig(oc map[string]any, basePath string) (
 				return "off"
 			}(),
 		},
-		"hooks":   hooksList,
-		"plugins": pluginsList,
-		"skills":  skillsCfg,
-		"bindings": bindingsList,
-		"tts":         hasTTS,
-		"diagnostics": diagEnabled,
-		"agents":      agentEntries,
+		"hooks":           hooksList,
+		"plugins":         pluginsList,
+		"skills":          skillsCfg,
+		"bindings":        bindingsList,
+		"tts":             hasTTS,
+		"diagnostics":     diagEnabled,
+		"agents":          agentEntries,
 		"availableModels": availModels,
 		"subagentConfig": map[string]any{
-			"maxConcurrent":      jsonObj(defaults, "subagents")["maxConcurrent"],
-			"maxSpawnDepth":      jsonObj(defaults, "subagents")["maxSpawnDepth"],
+			"maxConcurrent":       jsonObj(defaults, "subagents")["maxConcurrent"],
+			"maxSpawnDepth":       jsonObj(defaults, "subagents")["maxSpawnDepth"],
 			"maxChildrenPerAgent": jsonObj(defaults, "subagents")["maxChildrenPerAgent"],
 		},
 	}
@@ -845,8 +855,8 @@ func parseOpenclawConfig(oc map[string]any, basePath string) (
 	return compactionMode, skills, availableModels, modelAliases, agentConfig
 }
 
-func buildGroupNames(basePath string) map[string]string {
-	groupNames := map[string]string{}
+func loadSessionStores(basePath string) []sessionStoreFile {
+	var stores []sessionStoreFile
 	pattern := filepath.Join(basePath, "*/sessions/sessions.json")
 	files, _ := filepath.Glob(pattern)
 	for _, f := range files {
@@ -858,7 +868,17 @@ func buildGroupNames(basePath string) map[string]string {
 		if err := json.Unmarshal(data, &store); err != nil {
 			continue
 		}
-		for key, val := range store {
+		rel, _ := filepath.Rel(basePath, f)
+		agentName := strings.SplitN(rel, string(filepath.Separator), 2)[0]
+		stores = append(stores, sessionStoreFile{agentName: agentName, store: store})
+	}
+	return stores
+}
+
+func buildGroupNames(stores []sessionStoreFile) map[string]string {
+	groupNames := map[string]string{}
+	for _, sf := range stores {
+		for key, val := range sf.store {
 			if !strings.Contains(key, "group:") || strings.Contains(key, "topic") ||
 				strings.Contains(key, "run:") || strings.Contains(key, "subagent") {
 				continue
@@ -975,9 +995,9 @@ type limitedScanner struct {
 }
 
 type lineScanner struct {
-	data    []byte
-	offset  int
-	line    []byte
+	data   []byte
+	offset int
+	line   []byte
 }
 
 func newLimitedScanner(f *os.File, maxLines int) *limitedScanner {
@@ -1021,7 +1041,7 @@ func (s *lineScanner) scan() bool {
 	return true
 }
 
-func collectSessions(basePath string, loc *time.Location, now time.Time, todayStr string,
+func collectSessions(stores []sessionStoreFile, basePath string, loc *time.Location, now time.Time, todayStr string,
 	modelAliases map[string]string, knownSIDs map[string]string,
 	gateway map[string]any) []map[string]any {
 
@@ -1061,24 +1081,9 @@ func collectSessions(basePath string, loc *time.Location, now time.Time, todaySt
 	}
 
 	var sessionsList []map[string]any
-	pattern := filepath.Join(basePath, "*/sessions/sessions.json")
-	files, _ := filepath.Glob(pattern)
-
-	for _, storeFile := range files {
-		data, err := os.ReadFile(storeFile)
-		if err != nil {
-			continue
-		}
-		var store map[string]map[string]any
-		if err := json.Unmarshal(data, &store); err != nil {
-			continue
-		}
-
-		// Extract agent name from path
-		rel, _ := filepath.Rel(basePath, storeFile)
-		agentName := strings.SplitN(rel, string(filepath.Separator), 2)[0]
-
-		for key, val := range store {
+	for _, sf := range stores {
+		agentName := sf.agentName
+		for key, val := range sf.store {
 			sid, _ := val["sessionId"].(string)
 			if sid == "" {
 				continue
@@ -1343,20 +1348,10 @@ func collectCrons(cronPath string, loc *time.Location) []map[string]any {
 	return crons
 }
 
-func buildSIDToKeyMap(basePath string) map[string]string {
+func buildSIDToKeyMap(stores []sessionStoreFile) map[string]string {
 	sidToKey := map[string]string{}
-	pattern := filepath.Join(basePath, "*/sessions/sessions.json")
-	files, _ := filepath.Glob(pattern)
-	for _, f := range files {
-		data, err := os.ReadFile(f)
-		if err != nil {
-			continue
-		}
-		var store map[string]map[string]any
-		if err := json.Unmarshal(data, &store); err != nil {
-			continue
-		}
-		for k, v := range store {
+	for _, sf := range stores {
+		for k, v := range sf.store {
 			sid, _ := v["sessionId"].(string)
 			if sid != "" {
 				if _, exists := sidToKey[sid]; !exists {
@@ -1366,6 +1361,10 @@ func buildSIDToKeyMap(basePath string) map[string]string {
 		}
 	}
 	return sidToKey
+}
+
+func isSubagentSession(sessionKey, knownType string) bool {
+	return strings.Contains(sessionKey, "subagent:") || knownType == "subagent"
 }
 
 func collectTokenUsage(
@@ -1399,7 +1398,7 @@ func collectTokenUsage(
 		}
 
 		sessionKey := sidToKey[sid]
-		isSubagent := strings.Contains(sessionKey, "subagent:") || knownSIDs[sid] == ""
+		isSubagent := isSubagentSession(sessionKey, knownSIDs[sid])
 
 		var sessionCost float64
 		var sessionModel string
@@ -1416,7 +1415,14 @@ func collectTokenUsage(
 			continue
 		}
 
-		for _, line := range splitLines(data) {
+		for start := 0; start < len(data); {
+			line := data[start:]
+			if idx := bytes.IndexByte(line, '\n'); idx >= 0 {
+				line = line[:idx]
+				start += idx + 1
+			} else {
+				start = len(data)
+			}
 			if len(line) == 0 {
 				continue
 			}
@@ -1606,14 +1612,14 @@ func buildDailyChart(now time.Time, dailyCosts map[string]map[string]float64,
 		}
 
 		chart = append(chart, map[string]any{
-			"date":          d,
-			"label":         d[5:],
-			"total":         math.Round(totalCost*100) / 100,
-			"tokens":        totalTokens,
-			"calls":         totalCalls,
-			"subagentCost":  math.Round(dailySubagentCosts[d]*100) / 100,
-			"subagentRuns":  dailySubagentCount[d],
-			"models":        models,
+			"date":         d,
+			"label":        d[5:],
+			"total":        math.Round(totalCost*100) / 100,
+			"tokens":       totalTokens,
+			"calls":        totalCalls,
+			"subagentCost": math.Round(dailySubagentCosts[d]*100) / 100,
+			"subagentRuns": dailySubagentCount[d],
+			"models":       models,
 		})
 	}
 
@@ -1861,23 +1867,6 @@ func limitSlice[T any](s []T, max int) []T {
 		return s[:max]
 	}
 	return s
-}
-
-func splitLines(data []byte) [][]byte {
-	var lines [][]byte
-	start := 0
-	for i, b := range data {
-		if b == '\n' {
-			if i > start {
-				lines = append(lines, data[start:i])
-			}
-			start = i + 1
-		}
-	}
-	if start < len(data) {
-		lines = append(lines, data[start:])
-	}
-	return lines
 }
 
 func ensureMapMap(m map[string]map[string]float64, key string) map[string]float64 {

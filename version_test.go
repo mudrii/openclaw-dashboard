@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -189,5 +190,95 @@ func TestResolveRepoRoot_TooDeep(t *testing.T) {
 	// Should NOT find refresh.sh (4 levels up > 3 max)
 	if got == repoDir {
 		t.Fatalf("should not walk more than 3 levels up, but found repo root at %s", repoDir)
+	}
+}
+
+func TestResolveDashboardDir_EnvOverride(t *testing.T) {
+	override := t.TempDir()
+	t.Setenv("OPENCLAW_DASHBOARD_DIR", override)
+
+	got := resolveDashboardDir("/tmp/does-not-matter")
+	if got != override {
+		t.Fatalf("expected env override %s, got %s", override, got)
+	}
+}
+
+func TestResolveDashboardDir_HomebrewSeedsRuntimeDir(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("OPENCLAW_DASHBOARD_DIR", "")
+
+	cellar := filepath.Join(t.TempDir(), "Cellar", "openclaw-dashboard", "1.2.3")
+	binDir := filepath.Join(cellar, "bin")
+	shareDir := filepath.Join(cellar, "share", "openclaw-dashboard")
+	if err := os.MkdirAll(binDir, 0o755); err != nil {
+		t.Fatalf("mkdir bin: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(shareDir, "examples"), 0o755); err != nil {
+		t.Fatalf("mkdir share examples: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(shareDir, "themes.json"), []byte(`{"midnight":true}`), 0o644); err != nil {
+		t.Fatalf("write themes.json: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(shareDir, "config.json"), []byte(`{"server":{"port":8080}}`), 0o644); err != nil {
+		t.Fatalf("write config.json: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(shareDir, "refresh.sh"), []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatalf("write refresh.sh: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(shareDir, "VERSION"), []byte("9.9.9\n"), 0o644); err != nil {
+		t.Fatalf("write VERSION: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(shareDir, "examples", "config.minimal.json"), []byte(`{"server":{"port":8080}}`), 0o644); err != nil {
+		t.Fatalf("write config.minimal.json: %v", err)
+	}
+
+	got := resolveDashboardDir(binDir)
+	want := filepath.Join(home, ".openclaw", "dashboard")
+	if got != want {
+		t.Fatalf("expected homebrew runtime dir %s, got %s", want, got)
+	}
+
+	for _, rel := range []string{
+		"themes.json",
+		"config.json",
+		"refresh.sh",
+		"VERSION",
+		filepath.Join("examples", "config.minimal.json"),
+	} {
+		if _, err := os.Stat(filepath.Join(got, rel)); err != nil {
+			t.Fatalf("expected seeded %s: %v", rel, err)
+		}
+	}
+}
+
+func TestResolveDashboardDirWithError_HomebrewMissingRequiredAssetFails(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("OPENCLAW_DASHBOARD_DIR", "")
+
+	cellar := filepath.Join(t.TempDir(), "Cellar", "openclaw-dashboard", "1.2.3")
+	binDir := filepath.Join(cellar, "bin")
+	shareDir := filepath.Join(cellar, "share", "openclaw-dashboard")
+	if err := os.MkdirAll(binDir, 0o755); err != nil {
+		t.Fatalf("mkdir bin: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(shareDir, "examples"), 0o755); err != nil {
+		t.Fatalf("mkdir share examples: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(shareDir, "themes.json"), []byte(`{"midnight":true}`), 0o644); err != nil {
+		t.Fatalf("write themes.json: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(shareDir, "VERSION"), []byte("9.9.9\n"), 0o644); err != nil {
+		t.Fatalf("write VERSION: %v", err)
+	}
+	// refresh.sh intentionally missing
+
+	_, err := resolveDashboardDirWithError(binDir)
+	if err == nil {
+		t.Fatal("expected missing required Homebrew asset to fail resolution")
+	}
+	if !strings.Contains(err.Error(), "refresh.sh") {
+		t.Fatalf("expected error to mention refresh.sh, got %v", err)
 	}
 }

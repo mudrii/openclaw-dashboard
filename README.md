@@ -60,7 +60,23 @@ It's not trying to replace the OpenClaw CLI or Telegram interface. It's the at-a
 
 ## Quick Start
 
-### Pre-built Binary (recommended)
+### Homebrew (macOS / Linux)
+
+```bash
+brew install mudrii/tap/openclaw-dashboard
+```
+
+The Homebrew formula installs the binary and seeds a writable runtime directory at
+`~/.openclaw/dashboard` on first run.
+
+Then run:
+
+```bash
+openclaw-dashboard --refresh   # generate data.json
+openclaw-dashboard             # start server on http://localhost:9090
+```
+
+### Pre-built Binary
 
 Download a single pre-built binary — no runtime dependencies needed.
 
@@ -92,7 +108,8 @@ curl -L https://github.com/mudrii/openclaw-dashboard/releases/latest/download/ch
 shasum -a 256 -c checksums-sha256.txt
 ```
 
-> **Note:** Place `config.json`, `themes.json`, and `refresh.sh` in the same directory as the binary for full functionality.
+> **Note:** Use the release tarball if you want the bundled `config.json`,
+> `themes.json`, `refresh.sh`, and `VERSION` files alongside the binary.
 
 ### One-Line Install
 
@@ -261,7 +278,9 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for the full specification.
 
 ## Configuration
 
-Edit `config.json`:
+Edit `config.json` in your dashboard runtime directory. In a source checkout or
+`install.sh` install this is the project/install folder; with Homebrew it is
+`~/.openclaw/dashboard/config.json`.
 
 ```json
 {

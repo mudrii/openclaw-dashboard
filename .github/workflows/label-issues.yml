@@ -29,7 +29,7 @@ jobs:
                   'This issue appears to be missing key details. Please edit it to fill out the template — especially:',
                   '- **Steps to Reproduce** (numbered, one action per step)',
                   '- **Expected vs Actual Behaviour**',
-                  '- **Environment** (dashboard version, Python version, OS)',
+                  '- **Environment** (dashboard version, Go build or release artifact, OS)',
                   '',
                   'Issues without reproduction steps are hard to diagnose and may be closed.',
                 ].join('\n'),

@@ -1,0 +1,93 @@
+version: 2
+
+project_name: openclaw-dashboard
+
+before:
+  hooks:
+    - go mod tidy
+    - go test -race ./...
+
+builds:
+  - main: .
+    binary: openclaw-dashboard
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w -X main.buildVersion={{ .Version }}
+
+archives:
+  - format: tar.gz
+    name_template: "{{ .ProjectName }}-{{ .Os }}-{{ .Arch }}"
+    files:
+      - README.md
+      - LICENSE
+      - VERSION
+      - refresh.sh
+      - install.sh
+      - uninstall.sh
+      - config.json
+      - themes.json
+      - index.html
+      - examples/config.minimal.json
+      - examples/config.full.json
+
+checksum:
+  name_template: checksums-sha256.txt
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^ci:"
+      - "^chore:"
+
+brews:
+  - repository:
+      owner: mudrii
+      name: homebrew-tap
+      branch: main
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+    directory: Formula
+    homepage: "https://github.com/mudrii/openclaw-dashboard"
+    description: "Real-time monitoring dashboard for OpenClaw AI gateway"
+    license: "MIT"
+    install: |
+      bin.install "openclaw-dashboard"
+      pkgshare.install "refresh.sh"
+      pkgshare.install "themes.json"
+      pkgshare.install "config.json"
+      pkgshare.install "VERSION"
+      pkgshare.install "install.sh"
+      pkgshare.install "uninstall.sh"
+      pkgshare.install "index.html"
+      pkgshare.install "examples"
+    caveats: |
+      openclaw-dashboard is installed. The first run seeds a writable runtime directory at:
+
+        ~/.openclaw/dashboard
+
+      To get started:
+
+        1. Generate data.json (requires OpenClaw installed at ~/.openclaw):
+           openclaw-dashboard --refresh
+
+        2. Start the dashboard server:
+           openclaw-dashboard
+
+        3. Open http://localhost:9090 in your browser.
+
+      Configuration:
+        Edit ~/.openclaw/dashboard/config.json to customise settings.
+        Example configs are installed under:
+          #{pkgshare}/examples
+        Set OPENCLAW_HOME to point to a non-default OpenClaw install path.
+    test: |
+      assert_match version.to_s, shell_output("#{bin}/openclaw-dashboard --version")

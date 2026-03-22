@@ -54,7 +54,7 @@ When a section is collapsed, its inner content must be removed from tab order. O
 
 ### 8. Architecture Validation ✅
 
-Single shared `index.html` served by both Go and Python backends: **the plan is compatible.** All changes are frontend-only (HTML structure, CSS, JS). No backend changes needed. No divergence risk between Go and Python. The shared static file approach means both backends get the feature simultaneously.
+Single shared `index.html` served by the Go binary in both source and packaged installs: **the plan is compatible.** All changes are frontend-only (HTML structure, CSS, JS). No backend changes needed. No divergence risk across Go distribution modes. The shared static file approach means every install path gets the feature simultaneously.
 
 One thing to validate: are CSS and JS inline in `index.html` or in separate static files? If separate, ensure both backends serve the same static directory. If inline, all changes go in one file.
 
@@ -301,7 +301,7 @@ See Test Strategy section below.
 
 ### Phase 5: Verification & Merge
 
-5.1. Test in both Go and Python backend modes — serve the same `index.html`, verify identical behavior.
+5.1. Test in both Go source and packaged modes — serve the same `index.html`, verify identical behavior.
 5.2. Test with localStorage disabled (Safari private mode).
 5.3. Test with keyboard-only navigation.
 5.4. Test with screen reader (VoiceOver).
@@ -324,7 +324,7 @@ See Test Strategy section below.
 - [ ] **AC11:** No FOUC — sections that were collapsed before reload appear collapsed immediately, with no visible expand→collapse flash.
 - [ ] **AC12:** agent-config section defaults to collapsed on first visit.
 - [ ] **AC13:** System topbar is NOT collapsible and remains always visible.
-- [ ] **AC14:** Dashboard renders identically when served from Go backend and Python backend.
+- [ ] **AC14:** Dashboard renders identically when served from Go source and packaged builds.
 - [ ] **AC15:** `prefers-reduced-motion` users see no animation (chevron transition disabled).
 
 ---
@@ -361,7 +361,7 @@ See Test Strategy section below.
 - [ ] Keyboard-only: Tab to toggle, press Enter, confirm toggle.
 - [ ] Screen reader (VoiceOver): navigate to section, hear "expanded"/"collapsed".
 - [ ] Resize browser to mobile width — sections still collapse correctly.
-- [ ] Open via Go backend, repeat via Python backend — identical behavior.
+- [ ] Open via a source checkout, repeat via a packaged Go build — identical behavior.
 - [ ] Clear localStorage, reload — resets to defaults.
 
 ---

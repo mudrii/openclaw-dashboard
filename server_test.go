@@ -37,7 +37,10 @@ func TestCacheCoherence_RawUpdateInvalidatesParsed(t *testing.T) {
 	writeJSON(t, filepath.Join(dir, "data.json"), data1)
 
 	// Prime parsed cache via getDataCached
-	parsed := srv.getDataCached()
+	parsed, err := srv.getDataCached()
+	if err != nil {
+		t.Fatal(err)
+	}
 	if parsed["version"] != "v1" {
 		t.Fatalf("expected v1, got %v", parsed["version"])
 	}
@@ -57,7 +60,10 @@ func TestCacheCoherence_RawUpdateInvalidatesParsed(t *testing.T) {
 	}
 
 	// Now getDataCached MUST return v2, not stale v1
-	parsed2 := srv.getDataCached()
+	parsed2, err := srv.getDataCached()
+	if err != nil {
+		t.Fatal(err)
+	}
 	if parsed2["version"] != "v2" {
 		t.Fatalf("cache coherence bug: expected v2, got %v (stale parsed cache)", parsed2["version"])
 	}
@@ -290,6 +296,40 @@ func TestChat_InvalidJSON(t *testing.T) {
 	}
 }
 
+func TestChat_MissingDataJSON_Returns503(t *testing.T) {
+	dir := t.TempDir()
+	cfg := defaultConfig()
+	cfg.AI.Enabled = true
+	srv := NewServer(dir, "test", cfg, "tok", []byte("<head></head>"), context.Background())
+
+	req := httptest.NewRequest(http.MethodPost, "/api/chat", strings.NewReader(`{"question":"hello"}`))
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	if w.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected 503 when data.json missing, got %d body=%s", w.Code, w.Body.String())
+	}
+}
+
+func TestChat_InvalidDataJSON_Returns500(t *testing.T) {
+	dir := t.TempDir()
+	cfg := defaultConfig()
+	cfg.AI.Enabled = true
+	srv := NewServer(dir, "test", cfg, "tok", []byte("<head></head>"), context.Background())
+
+	if err := os.WriteFile(filepath.Join(dir, "data.json"), []byte("{bad json"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/chat", strings.NewReader(`{"question":"hello"}`))
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500 for invalid data.json, got %d body=%s", w.Code, w.Body.String())
+	}
+}
+
 // --- Index rendering ---
 
 func TestIndex_VersionInjected(t *testing.T) {
@@ -377,7 +417,13 @@ func TestCORS_ExternalOriginDefaulted(t *testing.T) {
 func TestRefresh_DataMissing_Returns503(t *testing.T) {
 	dir := t.TempDir()
 	srv := testServer(t, dir)
-	// No data.json created
+	t.Setenv("OPENCLAW_HOME", t.TempDir())
+
+	prev := refreshCollectorFunc
+	defer func() { refreshCollectorFunc = prev }()
+	refreshCollectorFunc = func(dashboardDir, openclawPath string) error {
+		return os.ErrNotExist
+	}
 
 	req := httptest.NewRequest(http.MethodGet, "/api/refresh", nil)
 	w := httptest.NewRecorder()
@@ -385,6 +431,37 @@ func TestRefresh_DataMissing_Returns503(t *testing.T) {
 
 	if w.Code != http.StatusServiceUnavailable {
 		t.Fatalf("expected 503 when data.json missing, got %d", w.Code)
+	}
+}
+
+func TestRefresh_DataMissing_WaitsForRefreshAndReturnsFreshData(t *testing.T) {
+	dir := t.TempDir()
+	srv := testServer(t, dir)
+	openclawHome := t.TempDir()
+	t.Setenv("OPENCLAW_HOME", openclawHome)
+
+	prev := refreshCollectorFunc
+	defer func() { refreshCollectorFunc = prev }()
+	refreshCollectorFunc = func(dashboardDir, openclawPath string) error {
+		if dashboardDir != dir {
+			t.Fatalf("unexpected dashboard dir: %s", dashboardDir)
+		}
+		if openclawPath != openclawHome {
+			t.Fatalf("unexpected openclaw path: %s", openclawPath)
+		}
+		time.Sleep(20 * time.Millisecond)
+		return os.WriteFile(filepath.Join(dashboardDir, "data.json"), []byte(`{"ok":true}`), 0o644)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/refresh", nil)
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 after waiting for initial refresh, got %d body=%s", w.Code, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), `"ok":true`) {
+		t.Fatalf("expected fresh data.json body, got %s", w.Body.String())
 	}
 }
 

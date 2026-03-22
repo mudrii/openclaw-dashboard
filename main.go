@@ -18,6 +18,9 @@ import (
 //go:embed index.html
 var indexHTML []byte
 
+// buildVersion is set at link time: go build -ldflags "-X main.buildVersion=1.2.3"
+var buildVersion string
+
 func main() {
 	// Resolve binary directory (follows symlinks)
 	exe, err := os.Executable()
@@ -27,11 +30,19 @@ func main() {
 	exe, _ = filepath.EvalSymlinks(exe)
 	binDir := filepath.Dir(exe)
 
-	// Resolve repo root: binaries built into dist/ (or other subdirs) need to
-	// find repo-root assets like refresh.sh, config.json, data.json, VERSION.
-	dir := resolveRepoRoot(binDir)
+	// Resolve the dashboard runtime directory. Source checkouts use the repo root,
+	// release archives use the extracted folder, and Homebrew installs hydrate a
+	// writable runtime directory under ~/.openclaw/dashboard.
+	dir, err := resolveDashboardDirWithError(binDir)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "[dashboard] failed to resolve runtime directory: %v\n", err)
+		os.Exit(1)
+	}
 
-	version := detectVersion(dir)
+	version := buildVersion
+	if version == "" {
+		version = detectVersion(dir)
+	}
 	cfg := loadConfig(dir)
 
 	// Env var defaults
@@ -75,7 +86,7 @@ func main() {
 		}
 		fmt.Printf("Dashboard dir: %s\n", dir)
 		fmt.Printf("OpenClaw path: %s\n", openclawPath)
-		if err := runRefreshCollector(dir, openclawPath); err != nil {
+		if err := refreshCollectorFunc(dir, openclawPath); err != nil {
 			fmt.Fprintf(os.Stderr, "refresh failed: %v\n", err)
 			os.Exit(1)
 		}

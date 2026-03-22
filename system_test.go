@@ -864,7 +864,13 @@ exit 1
 func TestRefresh_DataMissing_HasCORSHeaders(t *testing.T) {
 	dir := t.TempDir()
 	srv := testServer(t, dir)
-	// No data.json
+	t.Setenv("OPENCLAW_HOME", t.TempDir())
+
+	prev := refreshCollectorFunc
+	defer func() { refreshCollectorFunc = prev }()
+	refreshCollectorFunc = func(dashboardDir, openclawPath string) error {
+		return os.ErrNotExist
+	}
 
 	req := httptest.NewRequest(http.MethodGet, "/api/refresh", nil)
 	req.Header.Set("Origin", "http://localhost:3000")
@@ -979,8 +985,6 @@ func TestCollectVersions_GatewayNoStdoutFallsBackToHTTP_I2(t *testing.T) {
 		t.Errorf("detectGatewayFallback: expected online for reachable HTTP server, got %q", gw.Status)
 	}
 }
-
-
 
 // ── Tests for I2 fix: collectOpenclawRuntime parses status stdout on non-zero exit
 
