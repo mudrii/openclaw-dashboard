@@ -1,4 +1,4 @@
-package main
+package dashboard
 
 import (
 	"context"
@@ -641,9 +641,7 @@ func TestStaleByteInjection(t *testing.T) {
 	}
 
 	// Force cache to appear stale by backdating the timestamp
-	srv.systemSvc.metricsMu.Lock()
-	srv.systemSvc.metricsAt = time.Now().Add(-1 * time.Hour)
-	srv.systemSvc.metricsMu.Unlock()
+	expireMetricsCacheForTest(srv.systemSvc)
 
 	// Next request should get stale=true
 	req2 := httptest.NewRequest(http.MethodGet, "/api/system", nil)
@@ -910,9 +908,7 @@ func TestStaleByteInjection_JSONRoundTrip(t *testing.T) {
 	}
 
 	// Expire the cache
-	srv.systemSvc.metricsMu.Lock()
-	srv.systemSvc.metricsAt = time.Now().Add(-1 * time.Hour)
-	srv.systemSvc.metricsMu.Unlock()
+	expireMetricsCacheForTest(srv.systemSvc)
 
 	// Stale request: should get stale=true via JSON round-trip (not byte replacement)
 	req2 := httptest.NewRequest(http.MethodGet, "/api/system", nil)

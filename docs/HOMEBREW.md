@@ -36,5 +36,6 @@ That runtime directory is where users should edit:
 - `themes.json`
 - `data.json`
 
-Example configs are shipped under the formula's `examples` directory in
-`pkgshare`.
+The packaged defaults come from this repo's `assets/runtime/` directory and are
+installed into `pkgshare` during the release build. Example configs are shipped
+under the formula's `examples` directory in `pkgshare`.

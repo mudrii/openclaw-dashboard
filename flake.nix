@@ -19,6 +19,7 @@
             version = "2026.3.8";
             src = ./.;
             vendorHash = null; # no external deps
+            subPackages = [ "cmd/openclaw-dashboard" ];
 
             ldflags = [ "-s" "-w" ];
 
@@ -26,9 +27,9 @@
 
             postInstall = ''
               mkdir -p $out/share/openclaw-dashboard/examples
-              cp ${./refresh.sh} $out/share/openclaw-dashboard/refresh.sh
-              cp ${./themes.json} $out/share/openclaw-dashboard/themes.json
-              cp ${./config.json} $out/share/openclaw-dashboard/config.json
+              cp ${./assets/runtime/refresh.sh} $out/share/openclaw-dashboard/refresh.sh
+              cp ${./assets/runtime/themes.json} $out/share/openclaw-dashboard/themes.json
+              cp ${./assets/runtime/config.json} $out/share/openclaw-dashboard/config.json
               cp ${./VERSION} $out/share/openclaw-dashboard/VERSION
               cp ${./examples/config.minimal.json} $out/share/openclaw-dashboard/examples/config.minimal.json
               cp ${./examples/config.full.json} $out/share/openclaw-dashboard/examples/config.full.json
@@ -54,8 +55,8 @@
           shellHook = ''
             echo "OpenClaw Dashboard dev shell"
             echo ""
-            echo "  Go:     go run . --port 8080"
-            echo "  Build:  go build -ldflags='-s -w' -o openclaw-dashboard ."
+            echo "  Go:     go run ./cmd/openclaw-dashboard --port 8080"
+            echo "  Build:  go build -ldflags='-s -w' -o openclaw-dashboard ./cmd/openclaw-dashboard"
             echo "  Test:   go test -race -v -count=1 ./..."
           '';
         };

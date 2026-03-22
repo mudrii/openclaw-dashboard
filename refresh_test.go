@@ -1,4 +1,4 @@
-package main
+package dashboard
 
 import (
 	"encoding/json"
@@ -320,28 +320,10 @@ func TestCollectCrons_ParsesJobs(t *testing.T) {
 	dir := t.TempDir()
 	cronPath := filepath.Join(dir, "jobs.json")
 
-	cronData := map[string]any{
-		"jobs": []any{
-			map[string]any{
-				"name":    "daily-report",
-				"enabled": true,
-				"schedule": map[string]any{
-					"kind": "every",
-					"everyMs": float64(3600000),
-				},
-				"state": map[string]any{
-					"lastStatus":     "ok",
-					"lastRunAtMs":    float64(time.Now().Add(-1 * time.Hour).UnixMilli()),
-					"nextRunAtMs":    float64(time.Now().Add(1 * time.Hour).UnixMilli()),
-					"lastDurationMs": float64(1200),
-				},
-				"payload": map[string]any{
-					"model": "claude-sonnet",
-				},
-			},
-		},
+	data, err := os.ReadFile(filepath.Join("testdata", "cron", "jobs.every.json"))
+	if err != nil {
+		t.Fatal(err)
 	}
-	data, _ := json.Marshal(cronData)
 	if err := os.WriteFile(cronPath, data, 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -519,8 +501,8 @@ func TestBuildDailyChart_Returns30Days(t *testing.T) {
 func TestBuildSIDToKeyMap(t *testing.T) {
 	stores := []sessionStoreFile{
 		{
-			agentName: "main",
-			store: map[string]map[string]any{
+			AgentName: "main",
+			Store: map[string]map[string]any{
 				"session-abc": {"type": "task", "sessionId": "sid1"},
 				"session-def": {"type": "chat", "sessionId": "sid2"},
 			},
@@ -565,4 +547,3 @@ func TestRunRefreshCollector_WithoutConfig(t *testing.T) {
 		t.Fatalf("runRefreshCollector without config: %v", err)
 	}
 }
-

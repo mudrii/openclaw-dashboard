@@ -108,8 +108,8 @@ curl -L https://github.com/mudrii/openclaw-dashboard/releases/latest/download/ch
 shasum -a 256 -c checksums-sha256.txt
 ```
 
-> **Note:** Use the release tarball if you want the bundled `config.json`,
-> `themes.json`, `refresh.sh`, and `VERSION` files alongside the binary.
+> **Note:** Use the release tarball if you want the bundled runtime defaults from
+> `assets/runtime/` plus `VERSION` alongside the binary.
 
 ### One-Line Install
 
@@ -130,7 +130,7 @@ This will:
 ```bash
 git clone https://github.com/mudrii/openclaw-dashboard.git
 cd openclaw-dashboard
-go build -ldflags="-s -w" -o openclaw-dashboard .
+go build -ldflags="-s -w" -o openclaw-dashboard ./cmd/openclaw-dashboard
 ./openclaw-dashboard --port 8080
 ```
 
@@ -166,7 +166,8 @@ Click the 🎨 button in the header to switch themes instantly — no reload or 
 
 ### Custom Themes
 
-Add your own themes by editing `themes.json`. Each theme defines 19 CSS color variables:
+Add your own themes by editing `themes.json` in your runtime directory. Default themes
+ship from `assets/runtime/themes.json`. Each theme defines 19 CSS color variables:
 
 ```json
 {
@@ -201,30 +202,35 @@ Add your own themes by editing `themes.json`. Each theme defines 19 CSS color va
 
 ## Architecture
 
-```
-openclaw-dashboard (Go binary)
-  ├── index.html   ← Single-page dashboard (embedded in binary via go:embed)
-  ├── themes.json  ← Theme definitions (user-editable)
-  ├── refresh.sh   ← Data refresh wrapper (calls Go binary with --refresh)
-  └── data.json    ← Generated data (auto-refreshed)
+```text
+cmd/openclaw-dashboard/      CLI entrypoint
+internal/appconfig/          config loading
+internal/appruntime/         runtime-dir resolution
+internal/appchat/            chat prompt + gateway client
+internal/apprefresh/         data collector
+internal/appserver/          HTTP server
+internal/appsystem/          metrics and runtime probes
+web/index.html              embedded frontend
+assets/runtime/             runtime defaults
+data.json                   generated dashboard data
 ```
 
 **Endpoints:**
 
 | Endpoint | Method | Description |
 |---|---|---|
-| `/` | GET | Serves embedded `index.html` with theme/version injection |
+| `/` | GET | Serves embedded `web/index.html` with theme/version injection |
 | `/api/refresh` | GET | Stale-while-revalidate data.json (instant response, background refresh) |
 | `/api/chat` | POST | AI chat via OpenClaw gateway (10 req/min rate limit) |
 | `/api/system` | GET | Live host metrics (CPU/RAM/Swap/Disk) + gateway status |
 
 | Feature | Details |
 |---|---|
-| Serves `index.html` | Embedded in binary (`//go:embed`) |
+| Serves frontend | Embedded from `web/index.html` (`//go:embed`) |
 | `/api/refresh` | Stale-while-revalidate (instant response) |
 | `/api/chat` | Mtime-cached `data.json` (dual raw+parsed cache) |
 | `/api/system` | `SystemService` — parallel collectors, RWMutex cache |
-| Static files | Allowlisted only (`themes.json`) |
+| Static files | Allowlisted only (`themes.json`, optional favicons) |
 | Rate limiting | 10 req/min per-IP on `/api/chat` |
 | HTTP timeouts | Read 30s / Write 90s / Idle 120s |
 | Pre-warm | Runs `--refresh` at startup |
@@ -232,13 +238,13 @@ openclaw-dashboard (Go binary)
 | Gateway limit | 1MB response cap |
 | Tests | `go test -race` |
 
-When you open the dashboard, `index.html` calls `/api/refresh`. The server runs `--refresh` (with 30s debounce) to collect fresh data from your OpenClaw installation, then returns the JSON. No cron jobs needed.
+When you open the dashboard, the embedded frontend calls `/api/refresh`. The server runs `--refresh` (with 30s debounce) to collect fresh data from your OpenClaw installation, then returns the JSON. No cron jobs needed.
 
 The `/api/chat` endpoint accepts `{"question": "...", "history": [...]}` and forwards a stateless request to the OpenClaw gateway's OpenAI-compatible `/v1/chat/completions` endpoint, with a system prompt built from live `data.json`.
 
 ### Frontend Module Structure
 
-The entire frontend lives in a single `<script>` tag inside `index.html` — zero dependencies, no build step. The JS is organized into 7 plain objects:
+The entire frontend lives in a single `<script>` tag inside `web/index.html` — zero dependencies, no build step. The JS is organized into 7 plain objects:
 
 ```
 ┌─────────────────────────────────────────────┐

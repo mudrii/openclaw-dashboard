@@ -2,7 +2,10 @@
 
 ## config.json
 
-The dashboard is configured via `config.json` in the dashboard directory.
+The dashboard is configured via `config.json` in the active dashboard runtime directory.
+In a source checkout that is usually the repo root. In Homebrew installs it is
+`~/.openclaw/dashboard/config.json`. Default runtime files in this repo live in
+`assets/runtime/`.
 
 ### Full Example
 
@@ -67,7 +70,10 @@ Theme choice persists via `localStorage` (key: `ocDashTheme`). The `theme.preset
 
 #### Custom Themes
 
-Add custom themes by editing `themes.json` in the dashboard directory. Each theme requires a `name`, `type` (`dark` or `light`), `icon`, and a `colors` object with all 19 CSS variables:
+Add custom themes by editing `themes.json` in the dashboard runtime directory.
+The built-in defaults ship from `assets/runtime/themes.json`. Each theme requires
+a `name`, `type` (`dark` or `light`), `icon`, and a `colors` object with all 19
+CSS variables:
 
 ```json
 {
@@ -176,9 +182,9 @@ To change the OpenClaw data directory, set the `OPENCLAW_HOME` environment varia
 
 ## Data Flow
 
-1. Browser opens `index.html` (embedded in Go binary via `//go:embed`)
+1. Browser opens the embedded frontend from `web/index.html` (`//go:embed`)
 2. JavaScript calls `GET /api/refresh`
-3. Go server runs data collection (debounced) via `runRefreshCollector()` in `refresh.go`
+3. Go server runs data collection (debounced) via `RunRefreshCollector()` in `internal/apprefresh`
 4. Collector reads OpenClaw data → writes `data.json` (atomic via tmp + rename)
 5. Server returns `data.json` content (stale-while-revalidate)
 6. Dashboard renders all panels (including AI chat UI if enabled)

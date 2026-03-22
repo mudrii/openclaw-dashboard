@@ -24,7 +24,7 @@ jobs:
         run: go test -race -v -count=1 ./...
 
       - name: Build binary
-        run: go build -ldflags="-s -w" -o openclaw-dashboard .
+        run: go build -ldflags="-s -w" -o openclaw-dashboard ./cmd/openclaw-dashboard
 
   lint-shell:
     name: Lint shell scripts
@@ -36,7 +36,7 @@ jobs:
         run: sudo apt-get install -y shellcheck
 
       - name: Check refresh.sh
-        run: shellcheck --severity=warning refresh.sh
+        run: shellcheck --severity=warning assets/runtime/refresh.sh
 
       - name: Check install.sh
         run: shellcheck --severity=warning install.sh || true

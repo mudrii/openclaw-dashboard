@@ -12,7 +12,7 @@ cd openclaw-dashboard
 go test -race ./...
 
 # Build the dashboard binary
-go build
+go build ./cmd/openclaw-dashboard
 ```
 
 ---
@@ -33,10 +33,10 @@ go build
 
 Before writing a line of code, understand these non-negotiable constraints:
 
-- **Zero frontend dependencies** — no npm, no CDN, no external fonts, no build tools. The entire frontend is a single `index.html` with vanilla HTML/CSS/JS.
+- **Zero frontend dependencies** — no npm, no CDN, no external fonts, no build tools. The entire frontend is a single `web/index.html` with vanilla HTML/CSS/JS.
 - **Zero Go external dependencies** — `go.mod` has no third-party modules; only the Go standard library is allowed.
 - **Backend standard library only** — the Go server, refresh collector, and tests use `net/http`, `encoding/json`, `os/exec` (with `argv` slices, not shells), and other stdlib packages only.
-- **Single file frontend** — all JS lives inside one `<script>` tag in `index.html`. No splitting into modules, no bundler.
+- **Single file frontend** — all JS lives inside one `<script>` tag in `web/index.html`. No splitting into modules, no bundler.
 - **7-module JS structure** — new JS must fit into the existing `State / DataLayer / DirtyChecker / Renderer / Theme / Chat / App` object hierarchy. Do not add globals outside these objects (except the four allowed utilities: `$`, `esc`, `safeColor`, `relTime`).
 - **XSS safety** — every value inserted into the DOM via template literals must be wrapped in `esc()`. Never concatenate raw user data into HTML strings.
 
@@ -44,7 +44,7 @@ Before writing a line of code, understand these non-negotiable constraints:
 
 ## Test Suite Overview
 
-All automated tests are Go tests in the repository root (`package main`). Run the full suite before every commit:
+All automated tests are Go tests in the repository root (`package dashboard`). Run the full suite before every commit:
 
 ```bash
 go test -race ./...
@@ -76,7 +76,7 @@ go test -race -v -count=1 ./... -run '^TestYourName$'
 
 ### Refresh and `data.json`
 
-`refresh.sh` locates or builds the `openclaw-dashboard` binary and runs it with **`--refresh`**. The collector that writes `data.json` lives in **`refresh.go`** (`runRefreshCollector`, `collectDashboardData`, and helpers).
+`assets/runtime/refresh.sh` locates or builds the `openclaw-dashboard` binary and runs it with **`--refresh`**. The collector that writes `data.json` lives in **`internal/apprefresh`** (`RunRefreshCollector`, `collectDashboardData`, and helpers behind root compatibility wrappers).
 
 When you change the shape of `data.json`, add or extend Go tests that assert the new keys and types (for example by unmarshaling into `map[string]any` or a small struct, or by calling exported helpers from `*_test.go` in the same package). If logic is hard to reach without a full OpenClaw home directory, use minimal fixtures under `t.TempDir()` and keep tests deterministic.
 
@@ -84,7 +84,7 @@ When you change the shape of `data.json`, add or extend Go tests that assert the
 
 ## What to Test (by Change Type)
 
-### Changing `index.html` JS
+### Changing `web/index.html` JS
 
 There are no static-analysis tests for the frontend. Rely on:
 
@@ -94,7 +94,7 @@ There are no static-analysis tests for the frontend. Rely on:
 
 For behavior that is easy to get wrong (tab switching, chart toggles, scroll preservation), describe the manual scenario in the PR and run through it locally.
 
-### Changing the Go HTTP server (`server.go`, `chat.go`, etc.)
+### Changing the Go HTTP server (`internal/appserver`, `internal/appchat`, etc.)
 
 Add or extend tests in **`server_test.go`** or **`chat_test.go`**. Prefer `httptest.NewRecorder` and a real `ServeHTTP` call on the same handler stack the binary uses.
 
@@ -127,10 +127,10 @@ Always cover where it matters:
 - Error path (4xx for bad input), if applicable
 - CORS: allowed origin behavior matches existing tests — never `Access-Control-Allow-Origin: *` for credentialed-style use
 
-### Changing `refresh.sh` and `refresh.go`
+### Changing `refresh.sh` and refresh collection logic
 
-- **`refresh.sh`** only resolves `OPENCLAW_HOME`, finds the binary, and runs **`openclaw-dashboard --refresh`**. Keep it small, `set -euo pipefail`, and avoid `eval` or string-built shell commands.
-- **Data collection and `data.json` layout** belong in **`refresh.go`**. When you add fields or change types, update Go tests (new test functions or table-driven cases) so CI catches schema drift.
+- **`assets/runtime/refresh.sh`** only resolves `OPENCLAW_HOME`, finds the binary, and runs **`openclaw-dashboard --refresh`**. Keep it small, `set -euo pipefail`, and avoid `eval` or string-built shell commands.
+- **Data collection and `data.json` layout** belong in **`internal/apprefresh`**. When you add fields or change types, update Go tests (new test functions or table-driven cases) so CI catches schema drift.
 
 ### Changing CSS or themes
 
@@ -143,19 +143,19 @@ There is no automated visual regression suite. Required manual checks:
 
 ### Adding a new theme
 
-1. Add the theme object to `themes.json` — include all required color keys used by existing themes.
+1. Add the theme object to the runtime `themes.json` defaults in `assets/runtime/themes.json` — include all required color keys used by existing themes.
 2. Manually verify all themes still render (the menu regenerates dynamically).
-3. If you only touch `themes.json`, you typically do not need Go changes.
+3. If you only touch `assets/runtime/themes.json`, you typically do not need Go changes.
 
 ### Adding a new dashboard panel
 
-1. **Data:** extend **`collectDashboardData`** in **`refresh.go`** — add the new slice or object to the `map[string]any` returned to `data.json`.
-2. **UI:** add Renderer (and optional `State` / `DirtyChecker`) wiring in **`index.html`**, following the 7-module pattern.
+1. **Data:** extend **`collectDashboardData`** in **`internal/apprefresh`** — add the new slice or object to the `map[string]any` returned to `data.json`.
+2. **UI:** add Renderer (and optional `State` / `DirtyChecker`) wiring in **`web/index.html`**, following the 7-module pattern.
 3. **Tests:** add a Go test that proves the new field is present and correctly typed under controlled fixtures, or add a handler/integration test if the panel is also driven by an API.
 
 ### Adding a new alert type
 
-Alerts are built in **`buildAlerts`** in **`refresh.go`**. Each alert is a `map[string]any` with `type`, `icon`, `message`, and `severity` keys, appended to a slice.
+Alerts are built in **`BuildAlerts`** in **`internal/apprefresh`**. Each alert is a `map[string]any` with `type`, `icon`, `message`, and `severity` keys, appended to a slice.
 
 **Example — new condition and alert:**
 
@@ -198,7 +198,7 @@ Every change to HTML generation must be checked for XSS. The rule: **every dynam
 **Manual audit helper** — look for `${` insertions that are not wrapped in `esc(`:
 
 ```bash
-grep -n '\${[^}]*}' index.html | grep -v 'esc(' | head -40
+grep -n '\${[^}]*}' web/index.html | grep -v 'esc(' | head -40
 ```
 
 Review each hit; some may be safe literals, but anything derived from API or `data.json` must be escaped.
@@ -208,7 +208,7 @@ Review each hit; some may be safe literals, but anything derived from API or `da
 **Subprocess and shell safety**
 
 - Prefer **`exec.Command` / `exec.CommandContext` with a string slice argv** — never pass untrusted strings through `/bin/sh -c`.
-- Keep **`refresh.sh`** free of `eval` and of dynamically assembled commands from environment variables you do not fully control.
+- Keep **`assets/runtime/refresh.sh`** free of `eval` and of dynamically assembled commands from environment variables you do not fully control.
 
 ---
 
@@ -238,7 +238,7 @@ feat: add CSV export for token usage table
 fix: reconcileRows drops orphaned rows on tab switch
 perf: skip SVG re-render when data hash unchanged
 test: cover new refresh field in data.json
-docs: update CONTRIBUTING with refresh.go notes
+docs: update CONTRIBUTING with apprefresh notes
 refactor: extract donut chart logic into renderDonut()
 ```
 

@@ -62,20 +62,23 @@ if curl -fsSL "$BINARY_URL" -o openclaw-dashboard 2>/dev/null; then
   echo "✅ Binary downloaded"
 elif command -v go >/dev/null 2>&1; then
   echo "⚠️  Download failed, building from source..."
-  go build -ldflags="-s -w" -o openclaw-dashboard .
+  go build -ldflags="-s -w" -o openclaw-dashboard ./cmd/openclaw-dashboard
   echo "✅ Binary built from source"
 else
   echo "❌ Could not download binary and 'go' is not available to build from source"
   exit 1
 fi
 
-# Make scripts executable
+# Seed runtime assets into the install root
+cp assets/runtime/refresh.sh ./refresh.sh
 chmod +x refresh.sh
 
 # Create config if not exists
 if [ ! -f "config.json" ]; then
   echo "📝 Creating default config.json..."
-  if [ -f "examples/config.minimal.json" ]; then
+  if [ -f "assets/runtime/config.json" ]; then
+    cp assets/runtime/config.json config.json
+  elif [ -f "examples/config.minimal.json" ]; then
     cp examples/config.minimal.json config.json
   else
     echo '{"bot":{"name":"OpenClaw Dashboard","emoji":"🦞"},"server":{"port":8080}}' > config.json

@@ -1,4 +1,4 @@
-package main
+package dashboard
 
 import (
 	"context"
@@ -15,13 +15,14 @@ import (
 	"time"
 )
 
-//go:embed index.html
+//go:embed web/index.html
 var indexHTML []byte
 
-// buildVersion is set at link time: go build -ldflags "-X main.buildVersion=1.2.3"
-var buildVersion string
+// BuildVersion is set at link time.
+var BuildVersion string
 
-func main() {
+// Main runs the dashboard CLI and returns a process exit code.
+func Main() int {
 	// Resolve binary directory (follows symlinks)
 	exe, err := os.Executable()
 	if err != nil {
@@ -36,10 +37,10 @@ func main() {
 	dir, err := resolveDashboardDirWithError(binDir)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "[dashboard] failed to resolve runtime directory: %v\n", err)
-		os.Exit(1)
+		return 1
 	}
 
-	version := buildVersion
+	version := BuildVersion
 	if version == "" {
 		version = detectVersion(dir)
 	}
@@ -71,7 +72,7 @@ func main() {
 
 	if *showVersion {
 		fmt.Printf("openclaw-dashboard %s\n", version)
-		os.Exit(0)
+		return 0
 	}
 
 	if *doRefresh {
@@ -82,16 +83,16 @@ func main() {
 		}
 		if _, err := os.Stat(openclawPath); os.IsNotExist(err) {
 			fmt.Fprintf(os.Stderr, "OpenClaw not found at %s\n", openclawPath)
-			os.Exit(1)
+			return 1
 		}
 		fmt.Printf("Dashboard dir: %s\n", dir)
 		fmt.Printf("OpenClaw path: %s\n", openclawPath)
 		if err := refreshCollectorFunc(dir, openclawPath); err != nil {
 			fmt.Fprintf(os.Stderr, "refresh failed: %v\n", err)
-			os.Exit(1)
+			return 1
 		}
 		fmt.Printf("✅ data.json refreshed at %s\n", time.Now().Format("2006-01-02 15:04:05"))
-		os.Exit(0)
+		return 0
 	}
 
 	// Load gateway token from .env
@@ -135,15 +136,23 @@ func main() {
 	// Graceful shutdown on SIGINT/SIGTERM
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
+	defer signal.Stop(stop)
+	serverErr := make(chan error, 1)
 
 	go func() {
 		if err := httpSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			fmt.Fprintf(os.Stderr, "[dashboard] fatal: %v\n", err)
-			os.Exit(1)
+			serverErr <- err
 		}
 	}()
 
-	<-stop
+	select {
+	case <-stop:
+	case err := <-serverErr:
+		serverCancel()
+		fmt.Fprintf(os.Stderr, "[dashboard] fatal: %v\n", err)
+		return 1
+	}
+
 	serverCancel() // cancel background goroutines (metrics refresh, etc.)
 	fmt.Println("\n[dashboard] shutting down...")
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -152,6 +161,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "[dashboard] shutdown error: %v\n", err)
 	}
 	fmt.Println("[dashboard] stopped")
+	return 0
 }
 
 func localIP() string {

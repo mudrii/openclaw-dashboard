@@ -1,0 +1,21 @@
+{
+  "jobs": [
+    {
+      "name": "daily-report",
+      "enabled": true,
+      "schedule": {
+        "kind": "every",
+        "everyMs": 3600000
+      },
+      "state": {
+        "lastStatus": "ok",
+        "lastRunAtMs": 1774152000000,
+        "nextRunAtMs": 1774155600000,
+        "lastDurationMs": 1200
+      },
+      "payload": {
+        "model": "claude-sonnet"
+      }
+    }
+  ]
+}

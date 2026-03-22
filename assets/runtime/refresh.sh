@@ -4,7 +4,11 @@
 
 set -euo pipefail
 
-DIR="$(cd "$(dirname "$0")" && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+DIR="$SCRIPT_DIR"
+if [ -f "$SCRIPT_DIR/../../go.mod" ] && [ -f "$SCRIPT_DIR/../../cmd/openclaw-dashboard/main.go" ]; then
+  DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
+fi
 OPENCLAW_PATH="${OPENCLAW_HOME:-$HOME/.openclaw}"
 OPENCLAW_PATH="${OPENCLAW_PATH/#\~/$HOME}"
 
@@ -33,7 +37,7 @@ if [ -z "$BINARY" ]; then
   # Try building from source if go is available
   if command -v go >/dev/null 2>&1 && [ -f "$DIR/go.mod" ]; then
     echo "📦 Building from source..."
-    (cd "$DIR" && go build -ldflags="-s -w" -o openclaw-dashboard .)
+    (cd "$DIR" && go build -ldflags="-s -w" -o openclaw-dashboard ./cmd/openclaw-dashboard)
     BINARY="$DIR/openclaw-dashboard"
   else
     echo "❌ openclaw-dashboard binary not found and 'go' is not available to build from source"

@@ -1,4 +1,4 @@
-package main
+package dashboard
 
 import (
 	"os"
@@ -15,6 +15,17 @@ func mustRun(t *testing.T, dir string, name string, args ...string) {
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("%s %v failed: %v\n%s", name, args, err, string(out))
+	}
+}
+
+func writeRepoRefreshScript(t *testing.T, dir string) {
+	t.Helper()
+	path := filepath.Join(dir, "assets", "runtime", "refresh.sh")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("mkdir assets/runtime: %v", err)
+	}
+	if err := os.WriteFile(path, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatalf("write refresh.sh: %v", err)
 	}
 }
 
@@ -93,9 +104,7 @@ func TestDetectVersion_ParentDirectoryVersionFile(t *testing.T) {
 
 func TestResolveRepoRoot_Direct(t *testing.T) {
 	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "refresh.sh"), []byte("#!/bin/sh\n"), 0644); err != nil {
-		t.Fatalf("write refresh.sh: %v", err)
-	}
+	writeRepoRefreshScript(t, dir)
 
 	got := resolveRepoRoot(dir)
 	if got != dir {
@@ -105,9 +114,7 @@ func TestResolveRepoRoot_Direct(t *testing.T) {
 
 func TestResolveRepoRoot_DistSubdir(t *testing.T) {
 	repo := t.TempDir()
-	if err := os.WriteFile(filepath.Join(repo, "refresh.sh"), []byte("#!/bin/sh\n"), 0644); err != nil {
-		t.Fatalf("write refresh.sh: %v", err)
-	}
+	writeRepoRefreshScript(t, repo)
 	dist := filepath.Join(repo, "dist")
 	if err := os.MkdirAll(dist, 0755); err != nil {
 		t.Fatalf("mkdir dist: %v", err)
@@ -120,11 +127,9 @@ func TestResolveRepoRoot_DistSubdir(t *testing.T) {
 }
 
 func TestResolveRepoRoot_RepoRootDirect(t *testing.T) {
-	// When binary is at repo root (refresh.sh is in same dir), return dir unchanged
+	// When binary is at repo root (assets/runtime/refresh.sh is in repo), return dir unchanged
 	repoDir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(repoDir, "refresh.sh"), []byte("#!/bin/bash\n"), 0755); err != nil {
-		t.Fatalf("write refresh.sh: %v", err)
-	}
+	writeRepoRefreshScript(t, repoDir)
 
 	got := resolveRepoRoot(repoDir)
 	if got != repoDir {
@@ -133,15 +138,13 @@ func TestResolveRepoRoot_RepoRootDirect(t *testing.T) {
 }
 
 func TestResolveRepoRoot_BinaryInDist(t *testing.T) {
-	// Binary in dist/ subdir, refresh.sh in parent (repo root)
+	// Binary in dist/ subdir, assets/runtime/refresh.sh in parent (repo root)
 	repoDir := t.TempDir()
 	distDir := filepath.Join(repoDir, "dist")
 	if err := os.MkdirAll(distDir, 0755); err != nil {
 		t.Fatalf("mkdir dist: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(repoDir, "refresh.sh"), []byte("#!/bin/bash\n"), 0755); err != nil {
-		t.Fatalf("write refresh.sh: %v", err)
-	}
+	writeRepoRefreshScript(t, repoDir)
 
 	got := resolveRepoRoot(distDir)
 	if got != repoDir {
@@ -150,15 +153,13 @@ func TestResolveRepoRoot_BinaryInDist(t *testing.T) {
 }
 
 func TestResolveRepoRoot_BinaryInDeepSubdir(t *testing.T) {
-	// Binary in build/output/ (2 levels deep), refresh.sh at repo root
+	// Binary in build/output/ (2 levels deep), assets/runtime/refresh.sh at repo root
 	repoDir := t.TempDir()
 	deepDir := filepath.Join(repoDir, "build", "output")
 	if err := os.MkdirAll(deepDir, 0755); err != nil {
 		t.Fatalf("mkdir deep dir: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(repoDir, "refresh.sh"), []byte("#!/bin/bash\n"), 0755); err != nil {
-		t.Fatalf("write refresh.sh: %v", err)
-	}
+	writeRepoRefreshScript(t, repoDir)
 
 	got := resolveRepoRoot(deepDir)
 	if got != repoDir {
@@ -167,7 +168,7 @@ func TestResolveRepoRoot_BinaryInDeepSubdir(t *testing.T) {
 }
 
 func TestResolveRepoRoot_NoRefreshScript(t *testing.T) {
-	// No refresh.sh anywhere — returns original dir
+	// No repo refresh script anywhere — returns original dir
 	dir := t.TempDir()
 	got := resolveRepoRoot(dir)
 	if got != dir {
@@ -176,18 +177,16 @@ func TestResolveRepoRoot_NoRefreshScript(t *testing.T) {
 }
 
 func TestResolveRepoRoot_TooDeep(t *testing.T) {
-	// refresh.sh is 4 levels up — beyond the 3-level limit
+	// assets/runtime/refresh.sh is 4 levels up — beyond the 3-level limit
 	repoDir := t.TempDir()
 	deepDir := filepath.Join(repoDir, "a", "b", "c", "d")
 	if err := os.MkdirAll(deepDir, 0755); err != nil {
 		t.Fatalf("mkdir deep dir: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(repoDir, "refresh.sh"), []byte("#!/bin/bash\n"), 0755); err != nil {
-		t.Fatalf("write refresh.sh: %v", err)
-	}
+	writeRepoRefreshScript(t, repoDir)
 
 	got := resolveRepoRoot(deepDir)
-	// Should NOT find refresh.sh (4 levels up > 3 max)
+	// Should NOT find assets/runtime/refresh.sh (4 levels up > 3 max)
 	if got == repoDir {
 		t.Fatalf("should not walk more than 3 levels up, but found repo root at %s", repoDir)
 	}

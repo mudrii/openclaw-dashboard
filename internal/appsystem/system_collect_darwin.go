@@ -1,6 +1,6 @@
 //go:build darwin
 
-package main
+package appsystem
 
 import (
 	"context"
@@ -15,7 +15,7 @@ import (
 
 // Pre-compiled regexes — compiled once at startup, not per-call.
 var (
-	reTopIdle    = regexp.MustCompile(`(\d+(?:\.\d+)?)%\s+idle`)    // P1-3: handles integer idle (e.g. "100% idle")
+	reTopIdle    = regexp.MustCompile(`(\d+(?:\.\d+)?)%\s+idle`) // P1-3: handles integer idle (e.g. "100% idle")
 	reVmPageSize = regexp.MustCompile(`page size of (\d+) bytes`)
 	reSwapUsage  = regexp.MustCompile(`total\s*=\s*([\d.]+)([MGT])\s+used\s*=\s*([\d.]+)([MGT])`)
 )

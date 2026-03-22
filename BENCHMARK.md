@@ -10,7 +10,8 @@ migration-era benchmark notes.
 - `go test` and `go test -race` coverage for the full Go codebase
 - Release-style builds for `darwin` and `linux` on `amd64` and `arm64`
 - Packaged installs carrying the runtime assets the binary expects:
-  `config.json`, `themes.json`, `refresh.sh`, `VERSION`, and example configs
+  `assets/runtime/config.json`, `assets/runtime/themes.json`,
+  `assets/runtime/refresh.sh`, `VERSION`, and example configs
 
 ## Reproduce locally
 
@@ -18,10 +19,10 @@ migration-era benchmark notes.
 go test -v -count=1 ./...
 go test -race -v -count=1 ./...
 
-GOOS=darwin GOARCH=amd64 CGO_ENABLED=0 go build -ldflags="-s -w -X main.buildVersion=$(tr -d '\n' < VERSION | sed 's/^v//')" -o dist/openclaw-dashboard-darwin-amd64 .
-GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 go build -ldflags="-s -w -X main.buildVersion=$(tr -d '\n' < VERSION | sed 's/^v//')" -o dist/openclaw-dashboard-darwin-arm64 .
-GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -ldflags="-s -w -X main.buildVersion=$(tr -d '\n' < VERSION | sed 's/^v//')" -o dist/openclaw-dashboard-linux-amd64 .
-GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -ldflags="-s -w -X main.buildVersion=$(tr -d '\n' < VERSION | sed 's/^v//')" -o dist/openclaw-dashboard-linux-arm64 .
+GOOS=darwin GOARCH=amd64 CGO_ENABLED=0 go build -ldflags="-s -w -X github.com/mudrii/openclaw-dashboard.BuildVersion=$(tr -d '\n' < VERSION | sed 's/^v//')" -o dist/openclaw-dashboard-darwin-amd64 ./cmd/openclaw-dashboard
+GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 go build -ldflags="-s -w -X github.com/mudrii/openclaw-dashboard.BuildVersion=$(tr -d '\n' < VERSION | sed 's/^v//')" -o dist/openclaw-dashboard-darwin-arm64 ./cmd/openclaw-dashboard
+GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -ldflags="-s -w -X github.com/mudrii/openclaw-dashboard.BuildVersion=$(tr -d '\n' < VERSION | sed 's/^v//')" -o dist/openclaw-dashboard-linux-amd64 ./cmd/openclaw-dashboard
+GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -ldflags="-s -w -X github.com/mudrii/openclaw-dashboard.BuildVersion=$(tr -d '\n' < VERSION | sed 's/^v//')" -o dist/openclaw-dashboard-linux-arm64 ./cmd/openclaw-dashboard
 ```
 
 ## Homebrew packaging

@@ -12,9 +12,11 @@
 FROM golang:1.26-alpine AS builder
 
 WORKDIR /build
-COPY go.mod *.go ./
-COPY index.html ./
-RUN CGO_ENABLED=0 go build -ldflags="-s -w" -o openclaw-dashboard .
+COPY go.mod ./
+COPY *.go ./
+COPY cmd/openclaw-dashboard ./cmd/openclaw-dashboard
+COPY web ./web
+RUN CGO_ENABLED=0 go build -ldflags="-s -w" -o openclaw-dashboard ./cmd/openclaw-dashboard
 
 # --- Stage 2: Runtime ---
 FROM alpine:3.21
@@ -23,8 +25,8 @@ RUN apk add --no-cache bash curl jq git
 
 WORKDIR /app
 COPY --from=builder /build/openclaw-dashboard .
-COPY refresh.sh themes.json config.json ./
-RUN chmod +x refresh.sh openclaw-dashboard
+COPY assets/runtime ./assets/runtime
+RUN chmod +x assets/runtime/refresh.sh openclaw-dashboard
 
 RUN adduser -D -u 1001 dashboard && \
     mkdir -p /home/dashboard/.openclaw && \

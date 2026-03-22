@@ -1,4 +1,4 @@
-package main
+package dashboard
 
 import (
 	"context"
@@ -327,6 +327,50 @@ func TestChat_InvalidDataJSON_Returns500(t *testing.T) {
 
 	if w.Code != http.StatusInternalServerError {
 		t.Fatalf("expected 500 for invalid data.json, got %d body=%s", w.Code, w.Body.String())
+	}
+}
+
+func TestChat_NullDataJSON_Returns500(t *testing.T) {
+	dir := t.TempDir()
+	cfg := defaultConfig()
+	cfg.AI.Enabled = true
+	srv := NewServer(dir, "test", cfg, "tok", []byte("<head></head>"), context.Background())
+
+	nullData, err := os.ReadFile(filepath.Join("testdata", "dashboard", "data-null.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "data.json"), nullData, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/chat", strings.NewReader(`{"question":"hello"}`))
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500 for null data.json, got %d body=%s", w.Code, w.Body.String())
+	}
+}
+
+func TestGetDataCached_NullDataJSON_ReturnsError(t *testing.T) {
+	dir := t.TempDir()
+	srv := testServer(t, dir)
+
+	nullData, err := os.ReadFile(filepath.Join("testdata", "dashboard", "data-null.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "data.json"), nullData, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	parsed, err := srv.getDataCached()
+	if err == nil {
+		t.Fatal("expected null data.json to be rejected")
+	}
+	if parsed != nil {
+		t.Fatalf("expected parsed data to be nil, got %#v", parsed)
 	}
 }
 

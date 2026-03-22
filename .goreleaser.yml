@@ -8,7 +8,7 @@ before:
     - go test -race ./...
 
 builds:
-  - main: .
+  - main: ./cmd/openclaw-dashboard
     binary: openclaw-dashboard
     env:
       - CGO_ENABLED=0
@@ -19,7 +19,7 @@ builds:
       - amd64
       - arm64
     ldflags:
-      - -s -w -X main.buildVersion={{ .Version }}
+      - -s -w -X github.com/mudrii/openclaw-dashboard.BuildVersion={{ .Version }}
 
 archives:
   - format: tar.gz
@@ -28,12 +28,12 @@ archives:
       - README.md
       - LICENSE
       - VERSION
-      - refresh.sh
+      - assets/runtime/refresh.sh
       - install.sh
       - uninstall.sh
-      - config.json
-      - themes.json
-      - index.html
+      - assets/runtime/config.json
+      - assets/runtime/themes.json
+      - web/index.html
       - examples/config.minimal.json
       - examples/config.full.json
 
@@ -61,13 +61,13 @@ brews:
     license: "MIT"
     install: |
       bin.install "openclaw-dashboard"
-      pkgshare.install "refresh.sh"
-      pkgshare.install "themes.json"
-      pkgshare.install "config.json"
+      pkgshare.install "assets/runtime/refresh.sh"
+      pkgshare.install "assets/runtime/themes.json"
+      pkgshare.install "assets/runtime/config.json"
       pkgshare.install "VERSION"
       pkgshare.install "install.sh"
       pkgshare.install "uninstall.sh"
-      pkgshare.install "index.html"
+      pkgshare.install "web/index.html"
       pkgshare.install "examples"
     caveats: |
       openclaw-dashboard is installed. The first run seeds a writable runtime directory at:

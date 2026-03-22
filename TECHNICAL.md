@@ -26,21 +26,20 @@
 
 ## 1. File Structure
 
-| File | Lines | Purpose |
-|------|------:|---------|
-| `index.html` | 1160 | Single-file frontend — embedded CSS + JS, glass morphism themed UI, 11 dashboard sections, 6 themes, 3 SVG charts |
-| `themes.json` | 158 | Theme definitions — 6 built-in themes (3 dark + 3 light), 19 CSS variables each |
-| `refresh.sh` | 45 | Bash wrapper calling the `openclaw-dashboard` binary with `--refresh` |
-| `refresh.go` | ~1900 | Data collector — reads OpenClaw filesystem state and writes `data.json` (`runRefreshCollector`, `collectDashboardData`, alerts, charts, token aggregation) |
-| `install.sh` | 172 | Cross-platform installer (macOS LaunchAgent / Linux systemd) |
-| `uninstall.sh` | 47 | Service teardown + file cleanup |
-| `config.json` | — | Runtime configuration (bot/theme/server/refresh/alerts/ai; some compatibility keys are currently no-op) |
-| `data.json` | — | Generated dashboard data (gitignored) |
-| `docs/CONFIGURATION.md` | — | Configuration reference |
-| `examples/config.full.json` | — | All available config options |
-| `examples/config.minimal.json` | — | Minimal starter config |
-| `*_test.go` | — | Go test suite — server, chat, config, refresh, system metrics, version, and related helpers (run with `go test -race ./...`) |
-| `screenshots/` | — | Dashboard screenshots for README |
+| Path | Purpose |
+|------|---------|
+| `cmd/openclaw-dashboard/` | CLI entrypoint |
+| `internal/appconfig/` | Config loading and normalization |
+| `internal/appruntime/` | Runtime dir resolution, version detection, Homebrew seeding |
+| `internal/appchat/` | Prompt builder and gateway client |
+| `internal/apprefresh/` | Dashboard data collector and aggregators |
+| `internal/appserver/` | HTTP handlers, refresh coordinator, static serving |
+| `internal/appsystem/` | Host metrics and OpenClaw runtime probes |
+| `web/index.html` | Embedded single-file frontend |
+| `assets/runtime/` | Runtime defaults (`config.json`, `themes.json`, `refresh.sh`) |
+| `testdata/` | Reusable fixtures for tests |
+| `examples/` | Example configs |
+| `docs/CONFIGURATION.md` | Configuration reference |
 
 ---
 
@@ -51,8 +50,8 @@ Browser                                              Browser
   │                                                    ▲
   │ GET /api/refresh?t=<cache-bust>                    │ JSON response
   ▼                                                    │
-openclaw-dashboard ─── debounce check ──► runRefreshCollector() ──► data.json.tmp
-  │           (in server.go)                (refresh.go)           │
+openclaw-dashboard ─── debounce check ──► RunRefreshCollector() ──► data.json.tmp
+  │           (internal/appserver)          (internal/apprefresh)  │
   │           (30s default)                    │                    │ rename (atomic)
   │           if < 30s:                        │ reads OpenClaw     │
   │           still return cached              │ filesystem         ▼
@@ -71,21 +70,21 @@ openclaw-dashboard handleChat()                           │ Bearer token from 
 
 ### Debounce Mechanism
 
-`server.go` tracks `lastRefresh` on the `Server` struct. `handleRefresh` starts a background `runRefresh()` only when `time.Since(lastRefresh)` is at least the configured interval **and** no refresh is already running. Until then, responses still serve the current `data.json` (stale-while-revalidate). Default: **30 seconds** (configurable via `config.json` → `refresh.intervalSeconds`).
+`internal/appserver` tracks `lastRefresh` on the `Server` struct. `handleRefresh` starts a background refresh only when `time.Since(lastRefresh)` is at least the configured interval **and** no refresh is already running. Until then, responses still serve the current `data.json` (stale-while-revalidate). Default: **30 seconds** (configurable via runtime `config.json` → `refresh.intervalSeconds`).
 
 ### Atomic Write
 
-`refresh.go` marshals JSON, writes `data.json.tmp`, then `os.Rename`s it to `data.json`. Rename within the same directory is atomic on Unix; a failed write or marshal does not replace the previous file.
+`internal/apprefresh` marshals JSON, writes `data.json.tmp`, then `os.Rename`s it to `data.json`. Rename within the same directory is atomic on Unix; a failed write or marshal does not replace the previous file.
 
 ### Concurrency
 
-`Server.mu` (`sync.Mutex`) coordinates `lastRefresh`, `refreshRunning`, and overlapping work: `runRefresh` returns immediately if a refresh is already in progress. Debounce and “only one collector at a time” are enforced via `sync.Mutex`.
+`Server.mu` (`sync.Mutex`) in `internal/appserver` coordinates `lastRefresh`, `refreshRunning`, and overlapping work. Debounce and “only one collector at a time” are enforced via `sync.Mutex`.
 
 ---
 
 ## 3. Data Sources
 
-The refresh collector (`refresh.go`, invoked by `openclaw-dashboard --refresh` or from `refresh.sh`) reads these files from the OpenClaw directory (default `~/.openclaw`):
+The refresh collector (`internal/apprefresh`, invoked by `openclaw-dashboard --refresh` or from the runtime `refresh.sh`) reads these files from the OpenClaw directory (default `~/.openclaw`):
 
 | Source Path | What It Provides |
 |-------------|-----------------|
@@ -128,7 +127,7 @@ The frontend's `SystemBar._gatewayState(d)` helper decides whether to trust the 
 
 ## 4. Data Processing Logic
 
-All processing runs in `refresh.go`.
+All aggregation and collector processing now runs under `internal/apprefresh/`.
 
 ### Model Name Normalization
 
@@ -316,11 +315,11 @@ Theme state is stored globally in `THEMES` (all definitions) and `currentTheme` 
 
 ## 6. Server Architecture
 
-The `openclaw-dashboard` binary embeds `index.html` via `//go:embed` and implements the HTTP API.
+The `openclaw-dashboard` binary embeds `web/index.html` via `//go:embed` and implements the HTTP API.
 
 ### Go Server (`openclaw-dashboard` binary)
 
-- Single binary with static assets embedded or read from the repo root
+- Single binary with static assets embedded from `web/` and runtime defaults loaded from the resolved dashboard directory with fallback to `assets/runtime/`
 - Concurrent request handling (Go's `net/http` goroutine-per-request model)
 - Routes: `GET|HEAD /`, `GET|HEAD /api/refresh`, `GET|HEAD /api/system`, `POST /api/chat`, allowlisted static files (`/themes.json`, `/favicon.ico`, `/favicon.png`)
 - All other paths return 404; non-GET/HEAD/POST (except `OPTIONS`) returns 405
@@ -332,7 +331,7 @@ The `openclaw-dashboard` binary embeds `index.html` via `//go:embed` and impleme
 
 ### `/api/refresh` Endpoint
 
-1. `handleRefresh` applies debounce and may start `runRefresh()` in a goroutine (calls `runRefreshCollector` in `refresh.go`)
+1. `handleRefresh` applies debounce and may start a refresh goroutine (calls `RunRefreshCollector` in `internal/apprefresh`)
 2. Returns cached or disk `data.json` with headers:
    - `Content-Type: application/json`
    - `Cache-Control: no-cache`
@@ -646,7 +645,7 @@ cd ~/src/openclaw-dashboard
 
 # Test data refresh
 ./openclaw-dashboard --refresh
-# or: bash refresh.sh
+# or: bash assets/runtime/refresh.sh
 cat data.json | jq . | head -50
 
 # Start dev server
@@ -659,9 +658,9 @@ cat data.json | jq . | head -50
 
 ### Editing
 
-- **Frontend:** Edit `index.html` directly. No build step. Refresh browser.
-- **Data processing:** Edit `refresh.go`. Rebuild the binary (or `go run .`) to apply.
-- **Server:** Edit `*.go` (e.g. `server.go`, `main.go`, `config.go`). Rebuild to apply.
+- **Frontend:** Edit `web/index.html` directly. No build step. Refresh browser.
+- **Data processing:** Edit `internal/apprefresh/` or the thin root wrappers. Rebuild the binary (or `go run ./cmd/openclaw-dashboard`) to apply.
+- **Server:** Edit `internal/appserver/`, `internal/appchat/`, or the thin root wrappers. Rebuild to apply.
 
 ### Testing Checklist
 
@@ -696,22 +695,22 @@ go test -race -v ./...
 ### PR Guidelines
 
 1. **Zero-dependency constraint** — no npm, no pip, no CDN, no external fonts
-2. **Single-file frontend** — CSS and JS stay embedded in `index.html`
+2. **Single-file frontend** — CSS and JS stay embedded in `web/index.html`
 3. **Go stdlib only** — no third-party imports in Go source
 4. **Test mobile + desktop** — check both responsive breakpoints
 5. **Run automated tests** — `go test -race ./...` before submitting changes
 
 ### Adding a New Dashboard Panel
 
-1. Add HTML structure in `index.html` (follow existing `.glass .panel` pattern)
+1. Add HTML structure in `web/index.html` (follow existing `.glass .panel` pattern)
 2. Add render logic in the `render()` function
-3. If it needs new data, add extraction logic in `refresh.go` (inside `collectDashboardData` or helpers it calls)
+3. If it needs new data, add extraction logic in `internal/apprefresh` (inside `collectDashboardData` or helpers it calls)
 4. Add the new key to the `map[string]any` returned from `collectDashboardData`
 5. Optionally add a `panels.<name>` toggle in `config.json`
 
 ### Adding a New Alert Type
 
-In `refresh.go`, extend `buildAlerts` (or the call site in `collectDashboardData`) with another `append`, for example:
+In `internal/apprefresh`, extend `BuildAlerts` (or the call site in `collectDashboardData`) with another `append`, for example:
 
 ```go
 alerts = append(alerts, map[string]any{
