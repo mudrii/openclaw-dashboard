@@ -25,8 +25,8 @@ server.log
 # Go binaries
 dashboard-go
 dashboard-go-*
-openclaw-dashboard
-openclaw-dashboard-*
+/openclaw-dashboard
+/openclaw-dashboard-*
 
 # Build artifacts
 dist/
