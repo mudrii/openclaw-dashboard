@@ -11,7 +11,7 @@ import (
 	"strings"
 )
 
-// buildSystemPrompt ports build_dashboard_prompt() from server.py exactly.
+// buildSystemPrompt builds a compact system prompt from dashboard data.
 // Optimised: direct WriteString calls instead of fmt.Sprintf to avoid heap allocs.
 func buildSystemPrompt(data map[string]any) string {
 	var b strings.Builder

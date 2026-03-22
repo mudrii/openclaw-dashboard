@@ -1,5 +1,5 @@
 #!/bin/bash
-# OpenClaw Dashboard Installer
+# OpenClaw Dashboard Installer (Go binary)
 # Supports: macOS, Linux
 # Usage: curl -fsSL https://raw.githubusercontent.com/mudrii/openclaw-dashboard/main/install.sh | bash
 
@@ -11,13 +11,16 @@ INSTALL_DIR="${OPENCLAW_HOME:-$HOME/.openclaw}/dashboard"
 echo "🦞 OpenClaw Dashboard Installer"
 echo ""
 
-# Detect OS
-OS="$(uname)"
-echo "📍 Detected: $OS"
-
-# Check prerequisites
-command -v python3 >/dev/null 2>&1 || { echo "❌ Python 3 is required"; exit 1; }
-echo "✅ Python 3 found"
+# Detect OS and architecture
+OS="$(uname -s | tr '[:upper:]' '[:lower:]')"
+ARCH="$(uname -m)"
+case "$ARCH" in
+  x86_64)  ARCH="amd64" ;;
+  aarch64) ARCH="arm64" ;;
+  arm64)   ARCH="arm64" ;;
+  *)       echo "❌ Unsupported architecture: $ARCH"; exit 1 ;;
+esac
+echo "📍 Detected: $OS/$ARCH"
 
 # Check OpenClaw installation
 OPENCLAW_PATH="${OPENCLAW_HOME:-$HOME/.openclaw}"
@@ -50,24 +53,43 @@ else
   cd "$INSTALL_DIR"
 fi
 
+# Download or build the Go binary
+BINARY_NAME="openclaw-dashboard-${OS}-${ARCH}"
+BINARY_URL="$REPO/releases/latest/download/$BINARY_NAME"
+echo "📦 Downloading Go binary ($BINARY_NAME)..."
+if curl -fsSL "$BINARY_URL" -o openclaw-dashboard 2>/dev/null; then
+  chmod +x openclaw-dashboard
+  echo "✅ Binary downloaded"
+elif command -v go >/dev/null 2>&1; then
+  echo "⚠️  Download failed, building from source..."
+  go build -ldflags="-s -w" -o openclaw-dashboard .
+  echo "✅ Binary built from source"
+else
+  echo "❌ Could not download binary and 'go' is not available to build from source"
+  exit 1
+fi
+
 # Make scripts executable
-chmod +x refresh.sh server.py
+chmod +x refresh.sh
 
 # Create config if not exists
 if [ ! -f "config.json" ]; then
   echo "📝 Creating default config.json..."
-  cp examples/config.minimal.json config.json
+  if [ -f "examples/config.minimal.json" ]; then
+    cp examples/config.minimal.json config.json
+  else
+    echo '{"bot":{"name":"OpenClaw Dashboard","emoji":"🦞"},"server":{"port":8080}}' > config.json
+  fi
   echo "   Edit config.json to customize your dashboard"
 fi
 
 # Initial data refresh
 echo "🔄 Running initial data refresh..."
-./refresh.sh
+./openclaw-dashboard --refresh
 
 # Setup auto-start based on OS
 echo ""
-if [ "$OS" = "Darwin" ]; then
-  # macOS: LaunchAgent using server.py
+if [ "$(uname)" = "Darwin" ]; then
   PLIST_DIR="$HOME/Library/LaunchAgents"
   PLIST_FILE="$PLIST_DIR/com.openclaw.dashboard.plist"
 
@@ -81,8 +103,9 @@ if [ "$OS" = "Darwin" ]; then
   <string>com.openclaw.dashboard</string>
   <key>ProgramArguments</key>
   <array>
-    <string>/usr/bin/python3</string>
-    <string>${INSTALL_DIR}/server.py</string>
+    <string>${INSTALL_DIR}/openclaw-dashboard</string>
+    <string>--port</string>
+    <string>8080</string>
   </array>
   <key>WorkingDirectory</key>
   <string>${INSTALL_DIR}</string>
@@ -102,8 +125,7 @@ PLISTEOF
   launchctl load "$PLIST_FILE"
   echo "🚀 Server started via LaunchAgent (auto-starts on login)"
 
-elif [ "$OS" = "Linux" ]; then
-  # Linux: systemd user service using server.py
+elif [ "$(uname)" = "Linux" ]; then
   if command -v systemctl >/dev/null 2>&1; then
     SERVICE_DIR="$HOME/.config/systemd/user"
     SERVICE_FILE="$SERVICE_DIR/openclaw-dashboard.service"
@@ -117,7 +139,7 @@ After=network.target
 [Service]
 Type=simple
 WorkingDirectory=${INSTALL_DIR}
-ExecStart=/usr/bin/python3 ${INSTALL_DIR}/server.py
+ExecStart=${INSTALL_DIR}/openclaw-dashboard --port 8080
 Restart=always
 RestartSec=5
 
@@ -131,11 +153,11 @@ SERVICEEOF
     echo "🚀 Server started via systemd user service"
   else
     echo "⚠️  systemd not found. Start manually:"
-    echo "   cd $INSTALL_DIR && python3 server.py &"
+    echo "   cd $INSTALL_DIR && ./openclaw-dashboard --port 8080 &"
   fi
 else
   echo "⚠️  Unknown OS. Start manually:"
-  echo "   cd $INSTALL_DIR && python3 server.py &"
+  echo "   cd $INSTALL_DIR && ./openclaw-dashboard --port 8080 &"
 fi
 
 echo ""
@@ -146,6 +168,5 @@ echo "🔄 API:       http://127.0.0.1:8080/api/refresh (on-demand refresh)"
 echo "⚙️  Config:    $INSTALL_DIR/config.json"
 echo "📚 Docs:      $INSTALL_DIR/docs/CONFIGURATION.md"
 echo ""
-echo "The server runs server.py which serves the dashboard AND"
-echo "refreshes data on-demand when you open the page."
-echo "No separate cron job needed!"
+echo "The Go binary serves the dashboard AND refreshes data on-demand"
+echo "when you open the page. No separate cron job needed!"

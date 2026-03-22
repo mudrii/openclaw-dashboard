@@ -1,4 +1,6 @@
-# OpenClaw Dashboard — Benchmark Report: Go vs Python
+# OpenClaw Dashboard — Benchmark Report: Go vs Python (Historical)
+
+> **Note:** As of v2026.3.22, the Python server has been removed. The Go binary is the only implementation. This document is retained as a historical reference for the benchmarks that informed that decision.
 
 ## 2026-03-09 Re-benchmark (v2026.3.8)
 

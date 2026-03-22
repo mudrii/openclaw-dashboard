@@ -1,5 +1,31 @@
 # Changelog
 
+## v2026.3.22 — Go-Only Codebase
+
+### Breaking Changes
+
+- **Python removed entirely** — `server.py`, `system_metrics.py`, and all Python test files have been removed. The Go binary is now the only server implementation.
+- **`refresh.sh` rewritten** — No longer contains embedded Python. Now calls the Go binary with `--refresh` flag. Data collection logic has been ported to Go (`refresh.go`).
+- **Dockerfile simplified** — Removed the `--target python` build stage. Only the Go binary stage remains.
+- **`install.sh` rewritten** — Now downloads/builds the Go binary instead of running `server.py`. System services use the Go binary.
+- **`uninstall.sh` updated** — Kills `openclaw-dashboard` process instead of `server.py`.
+- **Python 3 no longer required** — The dashboard has zero runtime dependencies beyond the single Go binary and `bash`.
+
+### Added
+
+- **`--refresh` flag** — `openclaw-dashboard --refresh` generates `data.json` and exits. Used by `refresh.sh` and available for cron/automation.
+- **`refresh.go`** — Full Go port of the Python data collection logic (~860 lines of Python → Go). Handles: OpenClaw config parsing, session collection, JSONL token usage scanning, cron job parsing, gateway health, git log, daily chart generation, alert building, frozen data merging.
+
+### Removed
+
+- `server.py` — Python HTTP server (replaced by Go server since v2026.3.3)
+- `system_metrics.py` — Python system metrics collector (replaced by Go `system_service.go`)
+- `requirements.txt` — No Python dependencies needed
+- `tests/` directory — 13 Python test files (Go test suite provides coverage)
+- `.pytest_cache/` — Pytest artifacts
+
+---
+
 ## v2026.3.8 — Runtime Observability
 
 ### Features

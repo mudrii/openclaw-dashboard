@@ -55,10 +55,31 @@ func main() {
 	flag.IntVar(port, "p", envPortInt, "Listen port (shorthand)")
 	showVersion := flag.Bool("version", false, "Print version and exit")
 	flag.BoolVar(showVersion, "V", false, "Print version (shorthand)")
+	doRefresh := flag.Bool("refresh", false, "Generate data.json and exit")
 	flag.Parse()
 
 	if *showVersion {
 		fmt.Printf("openclaw-dashboard %s\n", version)
+		os.Exit(0)
+	}
+
+	if *doRefresh {
+		openclawPath := os.Getenv("OPENCLAW_HOME")
+		if openclawPath == "" {
+			home, _ := os.UserHomeDir()
+			openclawPath = filepath.Join(home, ".openclaw")
+		}
+		if _, err := os.Stat(openclawPath); os.IsNotExist(err) {
+			fmt.Fprintf(os.Stderr, "OpenClaw not found at %s\n", openclawPath)
+			os.Exit(1)
+		}
+		fmt.Printf("Dashboard dir: %s\n", dir)
+		fmt.Printf("OpenClaw path: %s\n", openclawPath)
+		if err := runRefreshCollector(dir, openclawPath); err != nil {
+			fmt.Fprintf(os.Stderr, "refresh failed: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Printf("✅ data.json refreshed at %s\n", time.Now().Format("2006-01-02 15:04:05"))
 		os.Exit(0)
 	}
 

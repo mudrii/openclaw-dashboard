@@ -108,7 +108,7 @@ All 19 color variables must be provided. The theme appears automatically in the 
 |-----|------|---------|-------------|
 | `timezone` | string | `"UTC"` | IANA timezone name for all time calculations and displayed timestamps |
 
-Accepts any IANA timezone name, e.g. `"UTC"`, `"America/New_York"`, `"Europe/London"`. All "today" cost windows, cron timestamps, and chart bucket boundaries use this timezone. Requires Python 3.9+ (`zoneinfo` stdlib); older Python falls back to GMT+8.
+Accepts any IANA timezone name, e.g. `"UTC"`, `"America/New_York"`, `"Europe/London"`. All "today" cost windows, cron timestamps, and chart bucket boundaries use this timezone. The Go binary uses `time.LoadLocation()` from the standard library.
 
 ### Panels
 
@@ -172,15 +172,15 @@ To change the OpenClaw data directory, set the `OPENCLAW_HOME` environment varia
 | Variable | Description |
 |----------|-------------|
 | `OPENCLAW_HOME` | OpenClaw installation path (source of truth for `refresh.sh` and installer) |
-| `OPENCLAW_GATEWAY_TOKEN` | Gateway bearer token consumed by `server.py` via `ai.dotenvPath` |
+| `OPENCLAW_GATEWAY_TOKEN` | Gateway bearer token loaded from `ai.dotenvPath` |
 
 ## Data Flow
 
-1. Browser opens `index.html`
+1. Browser opens `index.html` (embedded in Go binary via `//go:embed`)
 2. JavaScript calls `GET /api/refresh`
-3. `server.py` runs `refresh.sh` (debounced)
-4. `refresh.sh` reads OpenClaw data → writes `data.json`
-5. `server.py` returns `data.json` content
+3. Go server runs data collection (debounced) via `runRefreshCollector()` in `refresh.go`
+4. Collector reads OpenClaw data → writes `data.json` (atomic via tmp + rename)
+5. Server returns `data.json` content (stale-while-revalidate)
 6. Dashboard renders all panels (including AI chat UI if enabled)
 7. AI chat uses `POST /api/chat` with `{question, history}` and receives `{answer}` or `{error}`
 8. Auto-refresh repeats every 60 seconds

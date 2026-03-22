@@ -31,8 +31,8 @@ if [ "$(uname)" = "Linux" ] && command -v systemctl >/dev/null 2>&1; then
   fi
 fi
 
-# Kill any running server.py processes for this install
-pkill -f "${INSTALL_DIR}/server.py" 2>/dev/null || true
+# Kill any running openclaw-dashboard processes for this install
+pkill -f "${INSTALL_DIR}/openclaw-dashboard" 2>/dev/null || true
 
 # Remove installation
 if [ -d "$INSTALL_DIR" ]; then

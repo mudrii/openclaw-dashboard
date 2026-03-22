@@ -304,7 +304,7 @@ func collectOpenclawRuntime(ctx context.Context, oclawBin string, timeoutMs int,
 	go func() {
 		defer wg.Done()
 		out, err := runWithTimeout(ctx, timeoutMs, oclawBin, "status", "--json")
-		// I2 fix: attempt to parse stdout even on non-zero exit — matching Python parity where
+		// I2 fix: attempt to parse stdout even on non-zero exit — CLIs often emit valid JSON while
 		// subprocess stdout is parsed regardless of returncode. Many CLIs emit valid JSON to
 		// stdout while exiting non-zero (e.g., status reported but gateway connect failed).
 		if out != "" {

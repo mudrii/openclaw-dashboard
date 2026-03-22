@@ -49,7 +49,7 @@ func detectVersion(dir string) string {
 			}
 		}
 	}
-	// 2. git describe --tags --abbrev=0 — with 5s timeout (parity with server.py)
+	// 2. git describe --tags --abbrev=0 — with 5s timeout
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "git", "describe", "--tags", "--abbrev=0")

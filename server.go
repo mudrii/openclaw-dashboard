@@ -8,7 +8,6 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -166,9 +165,8 @@ func (s *Server) PreWarm() {
 	}()
 }
 
-// allowedStatic is a whitelist of static files the Go server will serve.
-// This is intentionally restrictive — Python serves everything (including
-// .git/config, server.py, config.json) which is a security risk.
+// allowedStatic is a whitelist of static files the server will serve.
+// Intentionally restrictive to prevent leaking sensitive files.
 var allowedStatic = map[string]string{
 	"/themes.json":  "application/json",
 	"/favicon.ico":  "image/x-icon",
@@ -250,7 +248,7 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// runRefresh executes refresh.sh once using exec.CommandContext.
+// runRefresh generates data.json using the Go-native data collector.
 // Prevents overlapping runs. Updates lastRefresh only on success.
 func (s *Server) runRefresh() {
 	s.mu.Lock()
@@ -267,20 +265,15 @@ func (s *Server) runRefresh() {
 		s.mu.Unlock()
 	}()
 
-	ctx, cancel := context.WithTimeout(context.Background(), refreshTimeout)
-	defer cancel()
+	openclawPath := os.Getenv("OPENCLAW_HOME")
+	if openclawPath == "" {
+		home, _ := os.UserHomeDir()
+		openclawPath = filepath.Join(home, ".openclaw")
+	}
 
-	script := filepath.Join(s.dir, "refresh.sh")
-	cmd := exec.CommandContext(ctx, "bash", script)
-	cmd.Dir = s.dir
-
-	if err := cmd.Run(); err != nil {
-		if ctx.Err() == context.DeadlineExceeded {
-			log.Printf("[dashboard] refresh.sh timed out after %s", refreshTimeout)
-		} else {
-			log.Printf("[dashboard] refresh.sh failed: %v", err)
-		}
-		return // do NOT update lastRefresh — allow retry
+	if err := runRefreshCollector(s.dir, openclawPath); err != nil {
+		log.Printf("[dashboard] refresh failed: %v", err)
+		return
 	}
 
 	s.mu.Lock()

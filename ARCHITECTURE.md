@@ -1,8 +1,10 @@
-# OpenClaw Dashboard — Architecture Refactor Plan
+# OpenClaw Dashboard — Architecture
 
 > Status (as of 2026-02-27): **implemented**. All modules live in a single `<script>` tag.
 >
 > Constraints: single-file frontend, zero dependencies, no build step.
+>
+> Backend: single Go binary with embedded `index.html` (`//go:embed`), zero external Go dependencies.
 
 ## Current State (~750 lines JS)
 

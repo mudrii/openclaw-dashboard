@@ -28,14 +28,15 @@ labels: enhancement
 
 <!-- Where does this change live? Tick all that apply. -->
 
-- [ ] `server.py` — new endpoint or server behaviour
-- [ ] `refresh.sh` — new data collection
+- [ ] `server.go` / `*.go` — new endpoint or server behaviour
+- [ ] `refresh.go` — new data collection logic
+- [ ] `refresh.sh` — shell wrapper changes
 - [ ] `index.html` — new panel or section
 - [ ] `index.html` — change to existing panel: ____________
 - [ ] `config.json` — new config key
 - [ ] `themes.json` — theme change
 - [ ] Deployment (Docker / Nix)
-- [ ] Tests
+- [ ] Tests (`*_test.go`)
 - [ ] Other: ____________
 
 ## Constraints to Respect
@@ -43,7 +44,7 @@ labels: enhancement
 <!-- Tick which constraints this feature must stay within. -->
 
 - [ ] Zero frontend dependencies (no npm, no CDN, no build step)
-- [ ] Zero backend dependencies (Python stdlib only)
+- [ ] Zero Go module dependencies (stdlib only, `go.mod` has no `require`)
 - [ ] Single `index.html` file (no splitting into multiple JS files)
 - [ ] 7-module JS structure (State / DataLayer / DirtyChecker / Renderer / Theme / Chat / App)
 - [ ] XSS-safe: all dynamic values through `esc()`
