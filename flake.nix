@@ -10,13 +10,13 @@
     flake-utils.lib.eachDefaultSystem (system:
       let
         pkgs = nixpkgs.legacyPackages.${system};
-        runtimeDeps = [ pkgs.bash pkgs.curl pkgs.jq pkgs.git ];
+        runtimeDeps = [ pkgs.bash pkgs.git ];
       in {
         packages = {
           # Go binary (default) — single binary, zero runtime deps
           default = pkgs.buildGoModule {
             pname = "openclaw-dashboard";
-            version = "2026.3.8";
+            version = "2026.3.22";
             src = ./.;
             vendorHash = null; # no external deps
             subPackages = [ "cmd/openclaw-dashboard" ];
@@ -50,7 +50,7 @@
         devShells.default = pkgs.mkShell {
           buildInputs = [
             pkgs.go
-            pkgs.bash pkgs.curl pkgs.jq pkgs.git
+            pkgs.bash pkgs.git
           ];
           shellHook = ''
             echo "OpenClaw Dashboard dev shell"
