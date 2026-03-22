@@ -9,11 +9,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"time"
-
-	apprefresh "github.com/mudrii/openclaw-dashboard/internal/apprefresh"
 )
-
-var RefreshCollectorFunc = apprefresh.RunRefreshCollector
 
 // startRefresh launches at most one refresh worker and returns a channel that
 // closes when the current refresh attempt completes.
@@ -52,7 +48,7 @@ func (s *Server) runRefresh(done chan struct{}) {
 		openclawPath = filepath.Join(home, ".openclaw")
 	}
 
-	if err := RefreshCollectorFunc(s.dir, openclawPath, s.cfg); err != nil {
+	if err := s.refreshFn(s.dir, openclawPath, s.cfg); err != nil {
 		log.Printf("[dashboard] refresh failed: %v", err)
 		return
 	}

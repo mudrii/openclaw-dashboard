@@ -14,8 +14,9 @@ FROM golang:1.26-alpine AS builder
 WORKDIR /build
 COPY go.mod ./
 COPY *.go ./
-COPY cmd/openclaw-dashboard ./cmd/openclaw-dashboard
-COPY web ./web
+COPY cmd/ ./cmd/
+COPY internal/ ./internal/
+COPY web/ ./web/
 RUN CGO_ENABLED=0 go build -ldflags="-s -w" -o openclaw-dashboard ./cmd/openclaw-dashboard
 
 # --- Stage 2: Runtime ---

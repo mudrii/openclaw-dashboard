@@ -273,12 +273,11 @@ func (s *SystemService) getLatestVersionCached() string {
 
 	go func() {
 		latest := FetchLatestNpmVersion(s.serverCtx, s.cfg.GatewayTimeoutMs)
-		now := time.Now()
 		s.latestMu.Lock()
 		if latest != "" {
 			s.latestVer = latest
+			s.latestAt = time.Now()
 		}
-		s.latestAt = now
 		s.latestRefresh = false
 		s.latestMu.Unlock()
 	}()

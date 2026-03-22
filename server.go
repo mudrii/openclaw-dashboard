@@ -18,13 +18,8 @@ type Server struct {
 	systemSvc *SystemService
 }
 
-func syncRefreshCollector() {
-	appserver.RefreshCollectorFunc = refreshCollectorFunc
-}
-
 func NewServer(dir, version string, cfg Config, gatewayToken string, indexHTML []byte, serverCtx context.Context) *Server {
-	syncRefreshCollector()
-	inner := appserver.NewServer(dir, version, cfg, gatewayToken, indexHTML, serverCtx)
+	inner := appserver.NewServer(dir, version, cfg, gatewayToken, indexHTML, serverCtx, refreshCollectorFunc)
 	return &Server{
 		inner:     inner,
 		systemSvc: inner.SystemService(),
@@ -32,12 +27,10 @@ func NewServer(dir, version string, cfg Config, gatewayToken string, indexHTML [
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	syncRefreshCollector()
 	s.inner.ServeHTTP(w, r)
 }
 
 func (s *Server) PreWarm() {
-	syncRefreshCollector()
 	s.inner.PreWarm()
 }
 

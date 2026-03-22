@@ -119,11 +119,14 @@ type Server struct {
 	// System metrics service
 	systemSvc *appsystem.SystemService
 
+	// Refresh collector function (injected at construction, not a global)
+	refreshFn func(string, string, ...appconfig.Config) error
+
 	// Chat rate limiter (10 req/min per IP)
 	chatLimiter chatRateLimiter
 }
 
-func NewServer(dir, version string, cfg appconfig.Config, gatewayToken string, indexHTML []byte, serverCtx context.Context) *Server {
+func NewServer(dir, version string, cfg appconfig.Config, gatewayToken string, indexHTML []byte, serverCtx context.Context, refreshFn func(string, string, ...appconfig.Config) error) *Server {
 	content := string(indexHTML)
 	preset := html.EscapeString(cfg.Theme.Preset)
 	meta := "<head>\n<meta name=\"oc-theme\" content=\"" + preset + "\">"
@@ -141,6 +144,7 @@ func NewServer(dir, version string, cfg appconfig.Config, gatewayToken string, i
 		corsDefault:        "http://localhost:" + strconv.Itoa(cfg.Server.Port),
 		httpClient:         &http.Client{Timeout: 60 * time.Second},
 		systemSvc:          appsystem.NewSystemService(cfg.System, version, serverCtx),
+		refreshFn:          refreshFn,
 	}
 	// Start periodic cleanup of stale rate-limit entries
 	go func() {

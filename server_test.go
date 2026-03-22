@@ -460,7 +460,6 @@ func TestCORS_ExternalOriginDefaulted(t *testing.T) {
 
 func TestRefresh_DataMissing_Returns503(t *testing.T) {
 	dir := t.TempDir()
-	srv := testServer(t, dir)
 	t.Setenv("OPENCLAW_HOME", t.TempDir())
 
 	prev := refreshCollectorFunc
@@ -469,6 +468,7 @@ func TestRefresh_DataMissing_Returns503(t *testing.T) {
 		return os.ErrNotExist
 	}
 
+	srv := testServer(t, dir)
 	req := httptest.NewRequest(http.MethodGet, "/api/refresh", nil)
 	w := httptest.NewRecorder()
 	srv.ServeHTTP(w, req)
@@ -480,7 +480,6 @@ func TestRefresh_DataMissing_Returns503(t *testing.T) {
 
 func TestRefresh_DataMissing_WaitsForRefreshAndReturnsFreshData(t *testing.T) {
 	dir := t.TempDir()
-	srv := testServer(t, dir)
 	openclawHome := t.TempDir()
 	t.Setenv("OPENCLAW_HOME", openclawHome)
 
@@ -497,6 +496,7 @@ func TestRefresh_DataMissing_WaitsForRefreshAndReturnsFreshData(t *testing.T) {
 		return os.WriteFile(filepath.Join(dashboardDir, "data.json"), []byte(`{"ok":true}`), 0o644)
 	}
 
+	srv := testServer(t, dir)
 	req := httptest.NewRequest(http.MethodGet, "/api/refresh", nil)
 	w := httptest.NewRecorder()
 	srv.ServeHTTP(w, req)

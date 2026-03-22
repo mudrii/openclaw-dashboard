@@ -861,7 +861,6 @@ exit 1
 
 func TestRefresh_DataMissing_HasCORSHeaders(t *testing.T) {
 	dir := t.TempDir()
-	srv := testServer(t, dir)
 	t.Setenv("OPENCLAW_HOME", t.TempDir())
 
 	prev := refreshCollectorFunc
@@ -870,6 +869,7 @@ func TestRefresh_DataMissing_HasCORSHeaders(t *testing.T) {
 		return os.ErrNotExist
 	}
 
+	srv := testServer(t, dir)
 	req := httptest.NewRequest(http.MethodGet, "/api/refresh", nil)
 	req.Header.Set("Origin", "http://localhost:3000")
 	w := httptest.NewRecorder()

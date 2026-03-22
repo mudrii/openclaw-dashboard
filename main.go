@@ -87,7 +87,7 @@ func Main() int {
 		}
 		fmt.Printf("Dashboard dir: %s\n", dir)
 		fmt.Printf("OpenClaw path: %s\n", openclawPath)
-		if err := refreshCollectorFunc(dir, openclawPath); err != nil {
+		if err := refreshCollectorFunc(dir, openclawPath, cfg); err != nil {
 			fmt.Fprintf(os.Stderr, "refresh failed: %v\n", err)
 			return 1
 		}
