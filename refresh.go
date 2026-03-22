@@ -1,7 +1,7 @@
 package main
 
 import (
-	"bytes"
+	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -13,15 +13,20 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
 var refreshCollectorFunc = runRefreshCollector
 
 // runRefreshCollector generates data.json from OpenClaw's filesystem data.
-// This generates data.json from OpenClaw's filesystem data.
-func runRefreshCollector(dashboardDir, openclawPath string) error {
-	cfg := loadConfig(dashboardDir)
+func runRefreshCollector(dashboardDir, openclawPath string, cfgOpt ...Config) error {
+	var cfg Config
+	if len(cfgOpt) > 0 {
+		cfg = cfgOpt[0]
+	} else {
+		cfg = loadConfig(dashboardDir)
+	}
 	data := collectDashboardData(dashboardDir, openclawPath, cfg)
 
 	out, err := json.MarshalIndent(data, "", "  ")
@@ -129,6 +134,18 @@ func getBucket(m map[string]*tokenBucket, key string) *tokenBucket {
 }
 
 var reStripTelegramID = regexp.MustCompile(`\s*id[:\-]\s*-?\d+`)
+
+// titleCase uppercases the first byte of an ASCII string.
+// Replaces deprecated strings.Title for the simple provider-name case.
+func titleCase(s string) string {
+	if s == "" {
+		return s
+	}
+	if s[0] >= 'a' && s[0] <= 'z' {
+		return string(s[0]-32) + s[1:]
+	}
+	return s
+}
 
 func trimLabel(s string) string {
 	if s == "" {
@@ -240,10 +257,17 @@ func collectDashboardData(dashboardDir, openclawPath string, cfg Config) map[str
 		memoryThresholdKB = 640 * 1024
 	}
 
-	// Gateway health
-	gateway := collectGatewayHealth()
+	// Kick off independent collectors concurrently.
+	var gateway map[string]any
+	var crons []map[string]any
+	var gitLog []map[string]any
+	var cwg sync.WaitGroup
+	cwg.Add(3)
+	go func() { defer cwg.Done(); gateway = collectGatewayHealth() }()
+	go func() { defer cwg.Done(); crons = collectCrons(cronPath, loc) }()
+	go func() { defer cwg.Done(); gitLog = collectGitLog(openclawPath) }()
 
-	// OpenClaw config
+	// OpenClaw config (file I/O — runs while subprocesses are in flight)
 	compactionMode := "unknown"
 	var skills []map[string]any
 	var availableModels []map[string]any
@@ -264,15 +288,15 @@ func collectDashboardData(dashboardDir, openclawPath string, cfg Config) map[str
 	groupNames := buildGroupNames(sessionStores)
 	enrichBindings(agentConfig, groupNames)
 
+	// Wait for gateway before building sessions (sessions need gateway map)
+	cwg.Wait()
+
 	// Sessions
 	knownSIDs := map[string]string{}
 	sessionsList := collectSessions(sessionStores, basePath, loc, now, todayStr, modelAliases, knownSIDs, gateway)
 
 	// Backfill channel connectivity from recent session activity
 	backfillChannelConnectivity(agentConfig, sessionsList)
-
-	// Cron jobs
-	crons := collectCrons(cronPath, loc)
 
 	// Token usage from JSONL
 	modelsAll := map[string]*tokenBucket{}
@@ -320,9 +344,6 @@ func collectDashboardData(dashboardDir, openclawPath string, cfg Config) map[str
 	// Build daily chart data (last 30 days)
 	dailyChart := buildDailyChart(now, dailyCosts, dailyTokens, dailyCalls,
 		dailySubagentCosts, dailySubagentCount, dashboardDir)
-
-	// Git log
-	gitLog := collectGitLog(openclawPath)
 
 	// Alerts
 	totalCostToday := sumBucketCosts(modelsToday)
@@ -511,7 +532,7 @@ func parseOpenclawConfig(oc map[string]any, basePath string) (
 		modelAliases[mid] = alias
 		provider := "unknown"
 		if strings.Contains(mid, "/") {
-			provider = strings.Title(strings.SplitN(mid, "/", 2)[0])
+			provider = titleCase(strings.SplitN(mid, "/", 2)[0])
 		}
 		status := "available"
 		if mid == primary {
@@ -744,7 +765,7 @@ func parseOpenclawConfig(oc map[string]any, basePath string) (
 				if isDefault {
 					role = "Default"
 				} else {
-					role = strings.Title(strings.ReplaceAll(aid, "-", " "))
+					role = titleCase(strings.ReplaceAll(aid, "-", " "))
 				}
 			}
 			params := modelParams[amodel]
@@ -1387,7 +1408,9 @@ func collectTokenUsage(
 	deletedPattern := filepath.Join(basePath, "*/sessions/*.jsonl.deleted.*")
 	activeFiles, _ := filepath.Glob(activePattern)
 	deletedFiles, _ := filepath.Glob(deletedPattern)
-	allFiles := append(activeFiles, deletedFiles...)
+	allFiles := make([]string, 0, len(activeFiles)+len(deletedFiles))
+	allFiles = append(allFiles, activeFiles...)
+	allFiles = append(allFiles, deletedFiles...)
 
 	for _, f := range allFiles {
 		sid := filepath.Base(f)
@@ -1410,19 +1433,14 @@ func collectTokenUsage(
 			sessionTask = sid
 		}
 
-		data, err := os.ReadFile(f)
+		fh, err := os.Open(f)
 		if err != nil {
 			continue
 		}
-
-		for start := 0; start < len(data); {
-			line := data[start:]
-			if idx := bytes.IndexByte(line, '\n'); idx >= 0 {
-				line = line[:idx]
-				start += idx + 1
-			} else {
-				start = len(data)
-			}
+		scanner := bufio.NewScanner(fh)
+		scanner.Buffer(make([]byte, 0, 256*1024), 2*1024*1024)
+		for scanner.Scan() {
+			line := scanner.Bytes()
 			if len(line) == 0 {
 				continue
 			}
@@ -1519,6 +1537,7 @@ func collectTokenUsage(
 				}
 			}
 		}
+		fh.Close()
 
 		if isSubagent && sessionCost > 0 && !sessionLastTs.IsZero() {
 			var durationSec int

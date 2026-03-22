@@ -40,10 +40,18 @@ type SystemService struct {
 	latestVer     string
 	latestAt      time.Time
 	latestRefresh bool
+
+	binOnce sync.Once
+	binPath string
 }
 
 func NewSystemService(cfg SystemConfig, dashVer string, serverCtx context.Context) *SystemService {
 	return &SystemService{cfg: cfg, dashVer: dashVer, serverCtx: serverCtx}
+}
+
+func (s *SystemService) openclawBin() string {
+	s.binOnce.Do(func() { s.binPath = resolveOpenclawBin() })
+	return s.binPath
 }
 
 // GetJSON returns (statusCode, jsonBody).
@@ -125,7 +133,7 @@ func (s *SystemService) refresh(ctx context.Context) ([]byte, bool) {
 	var cpu SystemCPU
 	var ram SystemRAM
 	var swap SystemSwap
-	oclawBin := resolveOpenclawBin()
+	oclawBin := s.openclawBin()
 	var wg sync.WaitGroup
 	wg.Add(3)
 	go func() {
@@ -221,7 +229,7 @@ func (s *SystemService) getVersionsCached(ctx context.Context) SystemVersions {
 	s.verRefresh = true
 	s.verMu.Unlock()
 
-	v := collectVersionsLocal(ctx, s.dashVer, s.cfg.GatewayTimeoutMs, s.cfg.GatewayPort)
+	v := collectVersionsLocal(ctx, s.dashVer, s.cfg.GatewayTimeoutMs, s.cfg.GatewayPort, s.openclawBin())
 	s.verMu.Lock()
 	s.verCached = v
 	s.verAt = time.Now()
@@ -290,12 +298,10 @@ func collectDiskRoot(path string) SystemDisk {
 
 // collectVersionsLocal probes openclaw + gateway CLIs without performing any
 // outbound network request. Latest-version lookup is handled asynchronously.
-func collectVersionsLocal(ctx context.Context, dashVer string, timeoutMs int, gatewayPort int) SystemVersions {
+func collectVersionsLocal(ctx context.Context, dashVer string, timeoutMs int, gatewayPort int, oclawBin string) SystemVersions {
 	v := SystemVersions{Dashboard: dashVer}
 
 	// OpenClaw version
-	// Use full path — asdf shims may not be in the server's PATH
-	oclawBin := resolveOpenclawBin()
 	out, err := runWithTimeout(ctx, timeoutMs, oclawBin, "--version")
 	if err != nil {
 		v.Openclaw = "unknown"

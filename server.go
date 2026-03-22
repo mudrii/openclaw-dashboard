@@ -6,6 +6,7 @@ import (
 	"html"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -283,7 +284,7 @@ func (s *Server) runRefresh(done chan struct{}) {
 		openclawPath = filepath.Join(home, ".openclaw")
 	}
 
-	if err := refreshCollectorFunc(s.dir, openclawPath); err != nil {
+	if err := refreshCollectorFunc(s.dir, openclawPath, s.cfg); err != nil {
 		log.Printf("[dashboard] refresh failed: %v", err)
 		return
 	}
@@ -412,10 +413,10 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Rate limit: 10 req/min per IP
-	ip := r.RemoteAddr
-	if idx := strings.LastIndex(ip, ":"); idx >= 0 {
-		ip = ip[:idx]
+	// Rate limit: 10 req/min per IP (handles both IPv4 and IPv6)
+	ip, _, _ := net.SplitHostPort(r.RemoteAddr)
+	if ip == "" {
+		ip = r.RemoteAddr
 	}
 	if !s.chatLimiter.allow(ip) {
 		w.Header().Set("Retry-After", "60")

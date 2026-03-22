@@ -868,7 +868,7 @@ func TestRefresh_DataMissing_HasCORSHeaders(t *testing.T) {
 
 	prev := refreshCollectorFunc
 	defer func() { refreshCollectorFunc = prev }()
-	refreshCollectorFunc = func(dashboardDir, openclawPath string) error {
+	refreshCollectorFunc = func(dashboardDir, openclawPath string, cfgOpt ...Config) error {
 		return os.ErrNotExist
 	}
 

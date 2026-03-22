@@ -421,7 +421,7 @@ func TestRefresh_DataMissing_Returns503(t *testing.T) {
 
 	prev := refreshCollectorFunc
 	defer func() { refreshCollectorFunc = prev }()
-	refreshCollectorFunc = func(dashboardDir, openclawPath string) error {
+	refreshCollectorFunc = func(dashboardDir, openclawPath string, cfgOpt ...Config) error {
 		return os.ErrNotExist
 	}
 
@@ -442,7 +442,7 @@ func TestRefresh_DataMissing_WaitsForRefreshAndReturnsFreshData(t *testing.T) {
 
 	prev := refreshCollectorFunc
 	defer func() { refreshCollectorFunc = prev }()
-	refreshCollectorFunc = func(dashboardDir, openclawPath string) error {
+	refreshCollectorFunc = func(dashboardDir, openclawPath string, cfgOpt ...Config) error {
 		if dashboardDir != dir {
 			t.Fatalf("unexpected dashboard dir: %s", dashboardDir)
 		}
