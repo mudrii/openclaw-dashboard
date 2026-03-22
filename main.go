@@ -5,6 +5,7 @@ import (
 	_ "embed"
 	"flag"
 	"fmt"
+	"log"
 	"net"
 	"net/http"
 	"os"
@@ -28,7 +29,11 @@ func Main() int {
 	if err != nil {
 		exe = "."
 	}
-	exe, _ = filepath.EvalSymlinks(exe)
+	if resolved, err := filepath.EvalSymlinks(exe); err != nil {
+		fmt.Fprintf(os.Stderr, "[dashboard] WARNING: EvalSymlinks failed: %v\n", err)
+	} else {
+		exe = resolved
+	}
 	binDir := filepath.Dir(exe)
 
 	// Resolve the dashboard runtime directory. Source checkouts use the repo root,
@@ -57,6 +62,8 @@ func Main() int {
 	if envPort != "" {
 		if p, err := strconv.Atoi(envPort); err == nil {
 			envPortInt = p
+		} else {
+			log.Printf("[dashboard] WARNING: invalid DASHBOARD_PORT %q, using default %d", envPort, envPortInt)
 		}
 	}
 
@@ -78,7 +85,10 @@ func Main() int {
 	if *doRefresh {
 		openclawPath := os.Getenv("OPENCLAW_HOME")
 		if openclawPath == "" {
-			home, _ := os.UserHomeDir()
+			home, err := os.UserHomeDir()
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "[dashboard] WARNING: UserHomeDir failed: %v\n", err)
+			}
 			openclawPath = filepath.Join(home, ".openclaw")
 		}
 		if _, err := os.Stat(openclawPath); os.IsNotExist(err) {

@@ -51,7 +51,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 func (s *Server) HandleStaticFile(w http.ResponseWriter, r *http.Request, path, contentType string) {
 	// Clean the path to prevent traversal
 	clean := filepath.Clean(path)
-	if clean != path || strings.Contains(clean, "..") {
+	if clean != path {
 		http.NotFound(w, r)
 		return
 	}

@@ -1,9 +1,11 @@
+// Package appchat handles AI chat gateway communication and system prompt construction.
 package appchat
 
 import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -282,12 +284,12 @@ func CallGateway(ctx context.Context, system string, history []Message, question
 
 	resp, err := client.Do(req)
 	if err != nil {
-		if ctx.Err() == context.DeadlineExceeded {
+		if ctx.Err() == context.DeadlineExceeded || errors.Is(err, context.DeadlineExceeded) {
 			return "", &GatewayError{Status: http.StatusGatewayTimeout, Msg: "Gateway timed out — model took too long to respond"}
 		}
 		return "", &GatewayError{Status: http.StatusBadGateway, Msg: fmt.Sprintf("gateway unreachable: %v", err)}
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	respBody, err := io.ReadAll(io.LimitReader(resp.Body, maxGatewayResp+1))
 	if err != nil {

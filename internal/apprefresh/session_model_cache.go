@@ -3,6 +3,7 @@ package apprefresh
 import (
 	"context"
 	"encoding/json"
+	"log"
 	"os/exec"
 	"sync"
 	"time"
@@ -46,12 +47,17 @@ func fetchLiveSessionModelsCLI() map[string]string {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	out, err := exec.CommandContext(ctx, "openclaw", "sessions", "--json").Output()
-	if err != nil || len(out) == 0 {
+	if err != nil {
+		log.Printf("[dashboard] fetchLiveSessionModelsCLI: command failed: %v", err)
+		return models
+	}
+	if len(out) == 0 {
 		return models
 	}
 
 	var sessions any
-	if json.Unmarshal(out, &sessions) != nil {
+	if err := json.Unmarshal(out, &sessions); err != nil {
+		log.Printf("[dashboard] fetchLiveSessionModelsCLI: JSON parse failed: %v", err)
 		return models
 	}
 	switch s := sessions.(type) {

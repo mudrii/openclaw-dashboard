@@ -399,7 +399,7 @@ The top bar shows live host metrics — always visible above the alerts banner.
 
 **API endpoint:** `GET /api/system` — returns JSON with all metrics, thresholds, version info, and the `openclaw` runtime block. Includes stale-serving semantics (returns cached data immediately while refreshing in background).
 
-**`openclaw` block in `/api/system`** — provides live gateway runtime state beyond what `refresh.sh` collects:
+**`openclaw` block in `/api/system`** — provides live gateway runtime state beyond what the refresh collector gathers:
 
 | Field | Description |
 |-------|-------------|
@@ -515,7 +515,7 @@ rm -rf ~/.openclaw/dashboard
 ## Requirements
 
 - Pre-built Go binary — no runtime dependencies
-- `bash` (for `refresh.sh` wrapper)
+- `bash` (only needed if using the optional `refresh.sh` wrapper script, not required for the binary itself)
 - **OpenClaw** — Installed at `~/.openclaw` ([docs](https://docs.openclaw.ai))
 - **macOS** 10.15+ or **Linux** (Ubuntu 18.04+, Debian 10+, ARM64)
 - Modern web browser

@@ -82,7 +82,7 @@ brews:
         2. Start the dashboard server:
            openclaw-dashboard
 
-        3. Open http://localhost:9090 in your browser.
+        3. Open http://localhost:8080 in your browser.
 
       Configuration:
         Edit ~/.openclaw/dashboard/config.json to customise settings.

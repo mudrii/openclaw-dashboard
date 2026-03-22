@@ -7,12 +7,6 @@ import (
 	appserver "github.com/mudrii/openclaw-dashboard/internal/appserver"
 )
 
-const (
-	maxBodyBytes   = 64 * 1024
-	maxQuestionLen = 2000
-	chatRateLimit  = 10
-)
-
 type Server struct {
 	inner     *appserver.Server
 	systemSvc *SystemService

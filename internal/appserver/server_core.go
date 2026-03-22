@@ -1,3 +1,4 @@
+// Package appserver implements the HTTP server, routing, and request handling.
 package appserver
 
 import (
@@ -20,7 +21,6 @@ const (
 	maxBodyBytes            = 64 * 1024
 	maxQuestionLen          = 2000
 	maxHistoryItem          = 4000
-	maxGatewayResp          = 1 << 20 // 1MB limit on gateway response
 	refreshTimeout          = 15 * time.Second
 	chatRateLimit           = 10 // max requests per minute per IP
 	chatRateWindow          = 1 * time.Minute
@@ -175,7 +175,12 @@ func (s *Server) SystemService() *appsystem.SystemService {
 
 // sendJSON sends a JSON response with CORS headers (for dynamic payloads).
 func (s *Server) sendJSON(w http.ResponseWriter, r *http.Request, status int, v any) {
-	body, _ := json.Marshal(v)
+	body, err := json.Marshal(v)
+	if err != nil {
+		log.Printf("[dashboard] sendJSON: json.Marshal failed: %v", err)
+		body = []byte(`{"error":"internal server error"}`)
+		status = http.StatusInternalServerError
+	}
 	s.sendJSONRaw(w, r, status, body)
 }
 

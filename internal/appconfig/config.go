@@ -1,3 +1,4 @@
+// Package appconfig handles configuration loading and defaults for the dashboard.
 package appconfig
 
 import (
@@ -120,9 +121,10 @@ func Load(dir string) Config {
 		f, err = os.Open(filepath.Join(dir, "assets", "runtime", "config.json"))
 	}
 	if err != nil {
+		log.Printf("[dashboard] config: no config.json found, using defaults")
 		return cfg
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	if err := json.NewDecoder(f).Decode(&cfg); err != nil {
 		log.Printf("[dashboard] WARNING: invalid config.json, using defaults for missing/invalid fields: %v", err)
 	}
@@ -177,14 +179,15 @@ func Load(dir string) Config {
 			t.Warn = globalWarn
 		}
 		if t.Critical <= t.Warn || t.Critical > 100 {
-			if globalCrit > t.Warn && globalCrit <= 100 {
+			switch {
+			case globalCrit > t.Warn && globalCrit <= 100:
 				t.Critical = globalCrit
-			} else if t.Warn < 95 {
+			case t.Warn < 95:
 				t.Critical = t.Warn + 15
 				if t.Critical > 100 {
 					t.Critical = 100
 				}
-			} else {
+			default:
 				t.Critical = 100
 			}
 		}
@@ -203,7 +206,7 @@ func ReadDotenv(path string) map[string]string {
 	if err != nil {
 		return result
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	scanner := bufio.NewScanner(f)
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
@@ -224,15 +227,20 @@ func ReadDotenv(path string) map[string]string {
 		}
 		result[key] = val
 	}
+	if err := scanner.Err(); err != nil {
+		log.Printf("[dashboard] dotenv: scanner error reading %s: %v", expanded, err)
+	}
 	return result
 }
 
 func ExpandHome(path string) string {
 	if strings.HasPrefix(path, "~/") {
 		home, err := os.UserHomeDir()
-		if err == nil {
-			return filepath.Join(home, path[2:])
+		if err != nil {
+			log.Printf("[dashboard] WARNING: UserHomeDir failed, cannot expand ~: %v", err)
+			return path
 		}
+		return filepath.Join(home, path[2:])
 	}
 	return path
 }

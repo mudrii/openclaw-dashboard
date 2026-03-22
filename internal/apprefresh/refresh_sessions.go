@@ -2,6 +2,7 @@ package apprefresh
 
 import (
 	"encoding/json"
+	"log"
 	"math"
 	"os"
 	"path/filepath"
@@ -22,10 +23,12 @@ func loadSessionStores(basePath string) []SessionStoreFile {
 	for _, f := range files {
 		data, err := os.ReadFile(f)
 		if err != nil {
+			log.Printf("[dashboard] loadSessionStores: skipping unreadable file %s: %v", f, err)
 			continue
 		}
 		var store map[string]map[string]any
 		if err := json.Unmarshal(data, &store); err != nil {
+			log.Printf("[dashboard] loadSessionStores: skipping invalid JSON in %s: %v", f, err)
 			continue
 		}
 		rel, _ := filepath.Rel(basePath, f)
@@ -125,7 +128,7 @@ func getSessionModel(basePath, agentName, sessionID string, agentDefaults map[st
 		jsonlPath := filepath.Join(basePath, agentName, "sessions", sessionID+".jsonl")
 		f, err := os.Open(jsonlPath)
 		if err == nil {
-			defer f.Close()
+			defer func() { _ = f.Close() }()
 			scanner := newLimitedScanner(f, 10)
 			for scanner.Scan() {
 				var obj map[string]any
@@ -306,11 +309,12 @@ func collectSessions(stores []SessionStoreFile, basePath string, loc *time.Locat
 			modelOverride, _ := val["modelOverride"].(string)
 
 			var resolvedModel string
-			if gwModel != "" {
+			switch {
+			case gwModel != "":
 				resolvedModel = gwModel
-			} else if provOverride != "" && modelOverride != "" {
+			case provOverride != "" && modelOverride != "":
 				resolvedModel = provOverride + "/" + modelOverride
-			} else {
+			default:
 				m, _ := val["model"].(string)
 				if m != "" {
 					resolvedModel = m

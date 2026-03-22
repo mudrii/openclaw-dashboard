@@ -113,13 +113,16 @@ func saveTokenUsageCache(path string, cache tokenUsageCache) {
 	}
 	data, err := json.Marshal(cache)
 	if err != nil {
+		log.Printf("[dashboard] saveTokenUsageCache: marshal failed: %v", err)
 		return
 	}
 	tmp := path + ".tmp"
 	if err := os.WriteFile(tmp, data, 0o644); err != nil {
+		log.Printf("[dashboard] saveTokenUsageCache: write failed: %v", err)
 		return
 	}
 	if err := os.Rename(tmp, path); err != nil {
+		log.Printf("[dashboard] saveTokenUsageCache: rename failed: %v", err)
 		_ = os.Remove(tmp)
 	}
 }
@@ -136,7 +139,7 @@ func parseTokenUsageFile(path string, info os.FileInfo, loc *time.Location) (tok
 	if err != nil {
 		return summary, err
 	}
-	defer fh.Close()
+	defer func() { _ = fh.Close() }()
 
 	reader := bufio.NewReaderSize(fh, 256*1024)
 	var sessionFirstTs, sessionLastTs time.Time

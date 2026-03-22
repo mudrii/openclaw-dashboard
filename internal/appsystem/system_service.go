@@ -203,6 +203,7 @@ func (s *SystemService) refresh(ctx context.Context) ([]byte, bool) {
 
 	b, err := json.Marshal(resp)
 	if err != nil {
+		log.Printf("[dashboard] collectMetrics: json.Marshal failed: %v", err)
 		return nil, true
 	}
 	s.metricsMu.Lock()
@@ -462,7 +463,7 @@ func fetchJSONMapAllowStatus(ctx context.Context, client *http.Client, url strin
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	allowed := false
 	for _, s := range allowedStatuses {
 		if resp.StatusCode == s {
@@ -489,7 +490,7 @@ func FetchJSONMap(ctx context.Context, client *http.Client, url string) (map[str
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	// Reject any non-2xx status — both 4xx (client error) and 5xx (server error)
 	// indicate the endpoint did not return a valid JSON payload we should trust. (I1 fix)
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
@@ -673,7 +674,7 @@ func DetectGatewayFallback(ctx context.Context, gatewayPort int, timeoutMs int) 
 	client := &http.Client{Timeout: time.Duration(timeoutMs) * time.Millisecond}
 	resp, err := client.Do(req)
 	if err == nil {
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		return SystemGateway{Status: "online"}
 	}
 	e := "unreachable"
@@ -769,21 +770,25 @@ func FetchLatestNpmVersion(ctx context.Context, timeoutMs int) string {
 	client := &http.Client{Timeout: timeout}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://registry.npmjs.org/openclaw/latest", nil)
 	if err != nil {
+		log.Printf("[dashboard] FetchLatestNpmVersion: request creation failed: %v", err)
 		return ""
 	}
 	req.Header.Set("Accept", "application/json")
 	resp, err := client.Do(req)
 	if err != nil {
+		log.Printf("[dashboard] FetchLatestNpmVersion: request failed: %v", err)
 		return ""
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
+		log.Printf("[dashboard] FetchLatestNpmVersion: unexpected status %d", resp.StatusCode)
 		return ""
 	}
 	var pkg struct {
 		Version string `json:"version"`
 	}
 	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&pkg); err != nil {
+		log.Printf("[dashboard] FetchLatestNpmVersion: JSON decode failed: %v", err)
 		return ""
 	}
 	return pkg.Version

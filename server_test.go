@@ -12,6 +12,12 @@ import (
 	"time"
 )
 
+const (
+	maxBodyBytes   = 64 * 1024
+	maxQuestionLen = 2000
+	chatRateLimit  = 10
+)
+
 func testServer(t *testing.T, dir string) *Server {
 	t.Helper()
 	cfg := defaultConfig()

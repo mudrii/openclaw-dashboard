@@ -31,7 +31,7 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	defer r.Body.Close()
+	defer func() { _ = r.Body.Close() }()
 	lr := io.LimitReader(r.Body, int64(maxBodyBytes)+1)
 	bodyBytes, err := io.ReadAll(lr)
 	if err != nil {

@@ -1,0 +1,29 @@
+version: "2"
+
+run:
+  timeout: 5m
+
+linters:
+  enable:
+    - errcheck
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+    - gocritic
+
+  settings:
+    errcheck:
+      check-type-assertions: false
+    gocritic:
+      enabled-tags:
+        - diagnostic
+      disabled-checks:
+        - filepathJoin
+
+  exclusions:
+    rules:
+      - path: _test\.go
+        linters:
+          - errcheck
+          - gocritic

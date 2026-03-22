@@ -1,6 +1,6 @@
 # TECHNICAL.md — OpenClaw Dashboard Internals
 
-> **Version:** 2026.3.8 · **Repo:** [github.com/mudrii/openclaw-dashboard](https://github.com/mudrii/openclaw-dashboard)
+> **Version:** 2026.3.22 · **Repo:** [github.com/mudrii/openclaw-dashboard](https://github.com/mudrii/openclaw-dashboard)
 >
 > This document covers architecture, data flow, and implementation details for developers and contributors. For features and quick start, see [README.md](README.md).
 
@@ -248,10 +248,12 @@ Glass morphism: `.glass` class applies semi-transparent background + subtle bord
 ### Data Flow
 
 ```
-loadData()
+DataLayer.fetch()
   → fetch('/api/refresh?t=' + Date.now())
-  → parse JSON → store in global D
-  → render()
+  → parse JSON → store in State.data (frozen snapshot)
+  → DirtyChecker.diff(current, prev)
+      → computes 13 boolean dirty flags via stableSnapshot()
+  → Renderer.render(snapshot, dirtyFlags)
       → renderHeader (bot name, emoji, gateway status)
       → renderAlerts
       → renderHealthRow (gateway, PID, uptime, memory, compaction, sessions)
@@ -280,9 +282,9 @@ A centered `.donut-hole` div (55% size, page background color) creates the hole 
 
 ### Tab State
 
-Three tab variables control today/7d/30d/all-time views: `uTab` (token usage), `srTab` (subagent runs), `stTab` (subagent tokens). Tab buttons update the variable and call `render()` which reads the current tab state.
+Three tab variables within the `State` module control today/7d/30d/all-time views: `State.tabs.uTab` (token usage), `State.tabs.srTab` (subagent runs), `State.tabs.stTab` (subagent tokens). Tab buttons call `State.setTab()` which updates the tab value and triggers `App.renderNow()` to re-render with the current tab state.
 
-The `switchTab` pattern uses `setTabCls4(prefix, tab, cls)` which updates four tab buttons (`T`, `7`, `30`, `A` suffixes) to set the active CSS class.
+The tab switching pattern uses `State.setTab(prefix, tab)` which updates the internal tab variable and invokes the render cycle. Tab button CSS classes are managed by the `Renderer` during each render pass.
 
 ### Charts & Trends
 
@@ -300,16 +302,16 @@ All charts are generated as inline `<svg>` elements with `viewBox="0 0 400 300"`
 
 The theme system loads themes from `themes.json` at startup and applies them by setting 19 CSS custom properties on `document.documentElement`:
 
-| Function | Purpose |
-|----------|---------|
-| `loadThemes()` | Fetches `themes.json`, restores saved theme from `localStorage('ocDashTheme')`, calls `applyTheme()` |
-| `applyTheme(id)` | Sets all 19 `--*` CSS variables from `THEMES[id].colors`, saves to `localStorage` |
-| `renderThemeMenu()` | Builds the dropdown menu, grouping themes by `type` (`dark` / `light`) |
-| `toggleThemeMenu()` | Toggles `.open` class on `#themeMenu` |
+| Method | Purpose |
+|--------|---------|
+| `Theme.load()` | Fetches `themes.json`, restores saved theme from `localStorage('ocDashTheme')`, calls `Theme.apply()` |
+| `Theme.apply(id)` | Sets all 19 `--*` CSS variables from the theme's `colors` object, saves to `localStorage` |
+| `Theme.renderMenu()` | Builds the dropdown menu, grouping themes by `type` (`dark` / `light`) |
+| `Theme.toggleMenu()` | Toggles `.open` class on `#themeMenu` |
 
 The 19 CSS variables controlled by themes: `bg`, `surface`, `surfaceHover`, `border`, `accent`, `accent2`, `green`, `yellow`, `red`, `orange`, `purple`, `text`, `textStrong`, `muted`, `dim`, `darker`, `tableBg`, `tableHover`, `scrollThumb`.
 
-Theme state is stored globally in `THEMES` (all definitions) and `currentTheme` (active theme ID). Clicking outside the theme picker closes the menu via a `document.addEventListener('click', ...)` handler.
+Theme state is stored within the `Theme` module object (theme definitions and active theme ID). Clicking outside the theme picker closes the menu via a `document.addEventListener('click', ...)` handler.
 
 ---
 

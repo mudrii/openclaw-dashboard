@@ -1,3 +1,4 @@
+// Package appsystem collects and caches system metrics including CPU, RAM, disk, and version information.
 package appsystem
 
 // SystemThresholds holds per-metric warn/critical thresholds returned in the API.

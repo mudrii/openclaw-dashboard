@@ -18,10 +18,6 @@ func collectDiskRoot(path string) SystemDisk {
 	return appsystem.CollectDiskRoot(path)
 }
 
-func collectVersionsLocal(ctx context.Context, dashVer string, timeoutMs int, gatewayPort int, oclawBin string) SystemVersions {
-	return appsystem.CollectVersionsLocal(ctx, dashVer, timeoutMs, gatewayPort, oclawBin)
-}
-
 func collectOpenclawRuntime(ctx context.Context, oclawBin string, timeoutMs int, gatewayPort int, versions SystemVersions) SystemOpenclaw {
 	return appsystem.CollectOpenclawRuntime(ctx, oclawBin, timeoutMs, gatewayPort, versions)
 }
@@ -44,10 +40,6 @@ func detectGatewayFallback(ctx context.Context, gatewayPort int, timeoutMs int) 
 
 func resolveOpenclawBin() string {
 	return appsystem.ResolveOpenclawBin()
-}
-
-func fetchLatestNpmVersion(ctx context.Context, timeoutMs int) string {
-	return appsystem.FetchLatestNpmVersion(ctx, timeoutMs)
 }
 
 func fetchJSONMap(ctx context.Context, client *http.Client, url string) (map[string]any, error) {

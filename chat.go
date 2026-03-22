@@ -8,8 +8,6 @@ import (
 )
 
 type chatMessage = appchat.Message
-type chatRequest = appchat.Request
-type completionPayload = appchat.CompletionPayload
 type gatewayError = appchat.GatewayError
 
 func buildSystemPrompt(data map[string]any) string {

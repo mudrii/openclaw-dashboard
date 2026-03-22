@@ -43,8 +43,12 @@ labels: bug
 
 <!-- Tick all that apply -->
 
-- [ ] `server.go` — HTTP server, /api/refresh, /api/chat, /api/system
-- [ ] `refresh.go` — data collection logic
+- [ ] `internal/appserver/` — HTTP server, /api/refresh, /api/chat, /api/system
+- [ ] `internal/apprefresh/` — data collection logic
+- [ ] `internal/appconfig/` — configuration loading and defaults
+- [ ] `internal/appchat/` — AI chat gateway communication
+- [ ] `internal/appsystem/` — system metrics (CPU, RAM, disk, gateway probes)
+- [ ] `internal/appruntime/` — runtime directory resolution, version detection
 - [ ] `refresh.sh` — shell wrapper
 - [ ] `index.html` JS — State / DataLayer / DirtyChecker
 - [ ] `index.html` JS — Renderer (specific section: ____________)

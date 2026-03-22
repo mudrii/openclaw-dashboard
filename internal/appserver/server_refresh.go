@@ -44,7 +44,10 @@ func (s *Server) runRefresh(done chan struct{}) {
 
 	openclawPath := os.Getenv("OPENCLAW_HOME")
 	if openclawPath == "" {
-		home, _ := os.UserHomeDir()
+		home, err := os.UserHomeDir()
+		if err != nil {
+			log.Printf("[dashboard] WARNING: UserHomeDir failed: %v", err)
+		}
 		openclawPath = filepath.Join(home, ".openclaw")
 	}
 

@@ -1,3 +1,4 @@
+// Package appruntime handles directory resolution, version detection, and Homebrew runtime seeding.
 package appruntime
 
 import (

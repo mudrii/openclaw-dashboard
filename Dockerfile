@@ -17,15 +17,17 @@ COPY *.go ./
 COPY cmd/ ./cmd/
 COPY internal/ ./internal/
 COPY web/ ./web/
+COPY VERSION ./
 RUN CGO_ENABLED=0 go build -ldflags="-s -w" -o openclaw-dashboard ./cmd/openclaw-dashboard
 
 # --- Stage 2: Runtime ---
 FROM alpine:3.21
 
-RUN apk add --no-cache bash curl jq git
+RUN apk add --no-cache bash git
 
 WORKDIR /app
 COPY --from=builder /build/openclaw-dashboard .
+COPY --from=builder /build/VERSION ./
 COPY assets/runtime ./assets/runtime
 RUN chmod +x assets/runtime/refresh.sh openclaw-dashboard
 

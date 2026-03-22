@@ -1,3 +1,4 @@
+// Package apprefresh collects dashboard data including sessions, tokens, crons, and gateway health.
 package apprefresh
 
 import (
@@ -40,7 +41,7 @@ func RunRefreshCollector(dashboardDir, openclawPath string, cfgOpt ...appconfig.
 		return fmt.Errorf("write data.json.tmp: %w", err)
 	}
 	if err := os.Rename(tmpPath, finalPath); err != nil {
-		os.Remove(tmpPath)
+		_ = os.Remove(tmpPath)
 		return fmt.Errorf("rename data.json.tmp: %w", err)
 	}
 	return nil
@@ -123,7 +124,6 @@ func ModelName(model string) string {
 
 func collectDashboardData(dashboardDir, openclawPath string, cfg appconfig.Config) map[string]any {
 	now := time.Now()
-	todayStr := now.Format("2006-01-02")
 	date7d := now.AddDate(0, 0, -7).Format("2006-01-02")
 	date30d := now.AddDate(0, 0, -30).Format("2006-01-02")
 	tzName := cfg.Timezone
@@ -136,7 +136,7 @@ func collectDashboardData(dashboardDir, openclawPath string, cfg appconfig.Confi
 		fmt.Fprintf(os.Stderr, "[dashboard warn] Unknown timezone '%s', using UTC\n", tzName)
 	}
 	now = now.In(loc)
-	todayStr = now.Format("2006-01-02")
+	todayStr := now.Format("2006-01-02")
 
 	basePath := filepath.Join(openclawPath, "agents")
 	configPath := filepath.Join(openclawPath, "openclaw.json")
@@ -241,7 +241,9 @@ func collectDashboardData(dashboardDir, openclawPath string, cfg appconfig.Confi
 	)
 
 	sort.Slice(subagentRuns, func(i, j int) bool {
-		return subagentRuns[i]["timestamp"].(string) > subagentRuns[j]["timestamp"].(string)
+		ti, _ := subagentRuns[i]["timestamp"].(string)
+		tj, _ := subagentRuns[j]["timestamp"].(string)
+		return ti > tj
 	})
 
 	subagentRunsToday := FilterByDate(subagentRuns, todayStr, "==")
@@ -351,7 +353,10 @@ func collectGatewayHealth() map[string]any {
 		return gw
 	}
 
-	pidInt, _ := strconv.Atoi(pid)
+	pidInt, err := strconv.Atoi(pid)
+	if err != nil {
+		return gw
+	}
 	gw["pid"] = pidInt
 	gw["status"] = "online"
 
@@ -398,9 +403,7 @@ func parseOpenclawConfig(oc map[string]any, basePath string) (
 	modelAliases map[string]string,
 	agentConfig map[string]any,
 ) {
-	compactionMode = "unknown"
 	modelAliases = map[string]string{}
-	agentConfig = defaultAgentConfig()
 
 	agents := jsonObj(oc, "agents")
 	defaults := jsonObj(agents, "defaults")
@@ -964,7 +967,7 @@ func BuildDailyChart(now time.Time, dailyCosts map[string]map[string]float64,
 		var frozen map[string]map[string]any
 		if json.Unmarshal(data, &frozen) == nil {
 			for i, entry := range chart {
-				d := entry["date"].(string)
+				d, _ := entry["date"].(string)
 				if f, ok := frozen[d]; ok {
 					fTotal, _ := f["total"].(float64)
 					eTotal, _ := entry["total"].(float64)
