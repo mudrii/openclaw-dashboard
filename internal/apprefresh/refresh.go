@@ -206,7 +206,8 @@ func collectDashboardData(dashboardDir, openclawPath string, cfg appconfig.Confi
 
 	// Sessions
 	knownSIDs := map[string]string{}
-	sessionsList := collectSessions(sessionStores, basePath, loc, now, todayStr, modelAliases, knownSIDs, gateway)
+	sessionLiveModelTTL := time.Duration(cfg.Refresh.IntervalSeconds) * time.Second
+	sessionsList := collectSessions(sessionStores, basePath, loc, now, todayStr, modelAliases, knownSIDs, gateway, sessionLiveModelTTL)
 
 	// Backfill channel connectivity from recent session activity
 	backfillChannelConnectivity(agentConfig, sessionsList)
@@ -230,7 +231,8 @@ func collectDashboardData(dashboardDir, openclawPath string, cfg appconfig.Confi
 	// Build sessionId → session key map
 	sidToKey := BuildSIDToKeyMap(sessionStores)
 
-	subagentRuns := CollectTokenUsage(
+	subagentRuns := CollectTokenUsageWithCache(
+		filepath.Join(dashboardDir, ".token-usage-cache.json"),
 		basePath, loc, todayStr, date7d, date30d,
 		knownSIDs, sidToKey, modelAliases,
 		modelsAll, modelsToday, models7d, models30d,

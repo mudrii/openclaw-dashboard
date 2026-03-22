@@ -16,6 +16,7 @@ Thumbs.db
 # Generated data (contains local system info)
 data.json
 frozen-daily.json
+.token-usage-cache.json
 
 # Local overrides (users should copy from examples/)
 # config.json is included as example, users can modify

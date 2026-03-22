@@ -1,11 +1,9 @@
 package apprefresh
 
 import (
-	"context"
 	"encoding/json"
 	"math"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -205,42 +203,13 @@ func (s *lineScanner) scan() bool {
 
 func collectSessions(stores []SessionStoreFile, basePath string, loc *time.Location, now time.Time, todayStr string,
 	modelAliases map[string]string, knownSIDs map[string]string,
-	gateway map[string]any) []map[string]any {
+	gateway map[string]any, liveModelTTL time.Duration) []map[string]any {
+	_ = todayStr
+	_ = gateway
 
 	agentDefaults := loadAgentDefaultModels(basePath)
 
-	// Gateway API query for live session model info
-	gatewayModelMap := map[string]string{}
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	out, err := exec.CommandContext(ctx, "openclaw", "sessions", "--json").Output()
-	if err == nil && len(out) > 0 {
-		var sessions any
-		if json.Unmarshal(out, &sessions) == nil {
-			switch s := sessions.(type) {
-			case []any:
-				for _, gs := range s {
-					gm := asObj(gs)
-					key, _ := gm["key"].(string)
-					model, _ := gm["model"].(string)
-					if key != "" && model != "" {
-						gatewayModelMap[key] = model
-					}
-				}
-			case map[string]any:
-				if arr, ok := s["sessions"].([]any); ok {
-					for _, gs := range arr {
-						gm := asObj(gs)
-						key, _ := gm["key"].(string)
-						model, _ := gm["model"].(string)
-						if key != "" && model != "" {
-							gatewayModelMap[key] = model
-						}
-					}
-				}
-			}
-		}
-	}
+	gatewayModelMap := getLiveSessionModels(now, liveModelTTL)
 
 	var sessionsList []map[string]any
 	for _, sf := range stores {

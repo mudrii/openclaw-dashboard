@@ -47,6 +47,8 @@ type SystemService struct {
 	binPath string
 }
 
+var fetchLatestVersion = FetchLatestNpmVersion
+
 func NewSystemService(cfg appconfig.SystemConfig, dashVer string, serverCtx context.Context) *SystemService {
 	return &SystemService{cfg: cfg, dashVer: dashVer, serverCtx: serverCtx}
 }
@@ -272,12 +274,13 @@ func (s *SystemService) getLatestVersionCached() string {
 	s.latestMu.Unlock()
 
 	go func() {
-		latest := FetchLatestNpmVersion(s.serverCtx, s.cfg.GatewayTimeoutMs)
+		latest := fetchLatestVersion(s.serverCtx, s.cfg.GatewayTimeoutMs)
+		now := time.Now()
 		s.latestMu.Lock()
 		if latest != "" {
 			s.latestVer = latest
-			s.latestAt = time.Now()
 		}
+		s.latestAt = now
 		s.latestRefresh = false
 		s.latestMu.Unlock()
 	}()

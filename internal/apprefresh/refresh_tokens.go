@@ -1,12 +1,8 @@
 package apprefresh
 
 import (
-	"bufio"
-	"encoding/json"
 	"fmt"
 	"math"
-	"os"
-	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -126,164 +122,12 @@ func CollectTokenUsage(
 	dailySubagentCosts map[string]float64,
 	dailySubagentCount map[string]int,
 ) []map[string]any {
-	var subagentRuns []map[string]any
-
-	// Collect both active and deleted JSONL files
-	activePattern := filepath.Join(basePath, "*/sessions/*.jsonl")
-	deletedPattern := filepath.Join(basePath, "*/sessions/*.jsonl.deleted.*")
-	activeFiles, _ := filepath.Glob(activePattern)
-	deletedFiles, _ := filepath.Glob(deletedPattern)
-	allFiles := make([]string, 0, len(activeFiles)+len(deletedFiles))
-	allFiles = append(allFiles, activeFiles...)
-	allFiles = append(allFiles, deletedFiles...)
-
-	for _, f := range allFiles {
-		sid := filepath.Base(f)
-		sid = strings.Replace(sid, ".jsonl", "", 1)
-		// Strip .deleted.* suffix
-		if idx := strings.Index(sid, ".deleted."); idx >= 0 {
-			sid = sid[:idx]
-		}
-
-		sessionKey := sidToKey[sid]
-		isSubagent := isSubagentSession(sessionKey, knownSIDs[sid])
-
-		var sessionCost float64
-		var sessionModel string
-		var sessionFirstTs, sessionLastTs time.Time
-		sessionTask := sessionKey
-		if sessionTask == "" && len(sid) > 12 {
-			sessionTask = sid[:12]
-		} else if sessionTask == "" {
-			sessionTask = sid
-		}
-
-		fh, err := os.Open(f)
-		if err != nil {
-			continue
-		}
-		scanner := bufio.NewScanner(fh)
-		scanner.Buffer(make([]byte, 0, 256*1024), 2*1024*1024)
-		for scanner.Scan() {
-			line := scanner.Bytes()
-			if len(line) == 0 {
-				continue
-			}
-			var obj map[string]any
-			if err := json.Unmarshal(line, &obj); err != nil {
-				continue
-			}
-			msg := asObj(obj["message"])
-			if msg == nil {
-				continue
-			}
-			role, _ := msg["role"].(string)
-			if role != "assistant" {
-				continue
-			}
-			usage := asObj(msg["usage"])
-			if usage == nil {
-				continue
-			}
-			tt, _ := usage["totalTokens"].(float64)
-			if tt == 0 {
-				continue
-			}
-			model, _ := msg["model"].(string)
-			if model == "" {
-				model = "unknown"
-			}
-			if strings.Contains(model, "delivery-mirror") {
-				continue
-			}
-
-			name := ModelName(model)
-			var costTotal float64
-			if costObj, ok := usage["cost"].(map[string]any); ok {
-				if t, ok := costObj["total"].(float64); ok {
-					costTotal = t
-				}
-			}
-			if costTotal < 0 {
-				costTotal = 0
-			}
-
-			inp, _ := usage["input"].(float64)
-			out, _ := usage["output"].(float64)
-			cr, _ := usage["cacheRead"].(float64)
-
-			getBucket(modelsAll, name).add(int(inp), int(out), int(cr), int(tt), costTotal)
-
-			if isSubagent {
-				getBucket(subagentAll, name).add(int(inp), int(out), int(cr), int(tt), costTotal)
-				sessionCost += costTotal
-				sessionModel = name
-			}
-
-			ts, _ := obj["timestamp"].(string)
-			var msgDate string
-			if ts != "" {
-				ts = strings.Replace(ts, "Z", "+00:00", 1)
-				if t, err := time.Parse(time.RFC3339, ts); err == nil {
-					t = t.In(loc)
-					msgDate = t.Format("2006-01-02")
-					if sessionFirstTs.IsZero() {
-						sessionFirstTs = t
-					}
-					sessionLastTs = t
-				}
-			}
-
-			if msgDate != "" {
-				ensureMapMap(dailyCosts, msgDate)[name] += costTotal
-				ensureMapMapInt(dailyTokens, msgDate)[name] += int(tt)
-				ensureMapMapInt(dailyCalls, msgDate)[name]++
-				if isSubagent {
-					dailySubagentCosts[msgDate] += costTotal
-				}
-			}
-
-			if msgDate == todayStr {
-				getBucket(modelsToday, name).add(int(inp), int(out), int(cr), int(tt), costTotal)
-				if isSubagent {
-					getBucket(subagentToday, name).add(int(inp), int(out), int(cr), int(tt), costTotal)
-				}
-			}
-			if msgDate >= date7d {
-				getBucket(models7d, name).add(int(inp), int(out), int(cr), int(tt), costTotal)
-				if isSubagent {
-					getBucket(subagent7d, name).add(int(inp), int(out), int(cr), int(tt), costTotal)
-				}
-			}
-			if msgDate >= date30d {
-				getBucket(models30d, name).add(int(inp), int(out), int(cr), int(tt), costTotal)
-				if isSubagent {
-					getBucket(subagent30d, name).add(int(inp), int(out), int(cr), int(tt), costTotal)
-				}
-			}
-		}
-		fh.Close()
-
-		if isSubagent && sessionCost > 0 && !sessionLastTs.IsZero() {
-			var durationSec int
-			if !sessionFirstTs.IsZero() {
-				durationSec = int(sessionLastTs.Sub(sessionFirstTs).Seconds())
-			}
-			task := sessionTask
-			if len(task) > 60 {
-				task = task[:60]
-			}
-			subagentRuns = append(subagentRuns, map[string]any{
-				"task":        task,
-				"model":       sessionModel,
-				"cost":        math.Round(sessionCost*10000) / 10000,
-				"durationSec": durationSec,
-				"status":      "completed",
-				"timestamp":   sessionLastTs.Format("2006-01-02 15:04"),
-				"date":        sessionLastTs.Format("2006-01-02"),
-			})
-		}
-	}
-
-	return subagentRuns
+	return CollectTokenUsageWithCache(
+		"",
+		basePath, loc, todayStr, date7d, date30d,
+		knownSIDs, sidToKey, modelAliases,
+		modelsAll, modelsToday, models7d, models30d,
+		subagentAll, subagentToday, subagent7d, subagent30d,
+		dailyCosts, dailyTokens, dailyCalls, dailySubagentCosts, dailySubagentCount,
+	)
 }

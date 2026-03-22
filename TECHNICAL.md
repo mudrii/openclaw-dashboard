@@ -163,7 +163,7 @@ Sessions with `:run:` in the key are skipped (duplicate cron run sessions).
 
 ### Token Aggregation
 
-For each `.jsonl` file, the collector reads every line, filters for `assistant` role messages with non-zero `usage.totalTokens`, and aggregates into eight `map[string]*tokenBucket` buckets:
+For each `.jsonl` file, the collector reads assistant usage records and aggregates into eight `map[string]*tokenBucket` buckets. Parsed per-file summaries are persisted in `.token-usage-cache.json` in the dashboard runtime directory and reused when a transcript file's size and mtime have not changed, so refresh does not rescan the full transcript history every run:
 
 - **`models_all`** — all-time per-model totals
 - **`models_today`** — today-only per-model totals (compared against `todayStr` in the configured timezone)
