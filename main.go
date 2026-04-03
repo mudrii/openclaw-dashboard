@@ -15,6 +15,13 @@ import (
 	"time"
 )
 
+const (
+	httpReadTimeout  = 30 * time.Second
+	httpWriteTimeout = 90 * time.Second // chat streaming can be slow
+	httpIdleTimeout  = 120 * time.Second
+	shutdownTimeout  = 5 * time.Second
+)
+
 //go:embed index.html
 var indexHTML []byte
 
@@ -78,9 +85,9 @@ func main() {
 	httpSrv := &http.Server{
 		Addr:         addr,
 		Handler:      srv,
-		ReadTimeout:  30 * time.Second,
-		WriteTimeout: 90 * time.Second, // chat streaming can be slow
-		IdleTimeout:  120 * time.Second,
+		ReadTimeout:  httpReadTimeout,
+		WriteTimeout: httpWriteTimeout,
+		IdleTimeout:  httpIdleTimeout,
 	}
 
 	fmt.Printf("[dashboard] v%s\n", version)
@@ -110,7 +117,7 @@ func main() {
 	<-stop
 	serverCancel() // cancel background goroutines (metrics refresh, etc.)
 	fmt.Println("\n[dashboard] shutting down...")
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
 	defer cancel()
 	if err := httpSrv.Shutdown(ctx); err != nil {
 		fmt.Fprintf(os.Stderr, "[dashboard] shutdown error: %v\n", err)

@@ -32,6 +32,7 @@ type AIConfig struct {
 	GatewayPort int    `json:"gatewayPort"`
 	Model       string `json:"model"`
 	MaxHistory  int    `json:"maxHistory"`
+	MaxTokens   int    `json:"maxTokens"`
 	DotenvPath  string `json:"dotenvPath"`
 }
 
@@ -90,6 +91,7 @@ func defaultConfig() Config {
 			GatewayPort: 18789,
 			Model:       "",
 			MaxHistory:  6,
+			MaxTokens:   512,
 			DotenvPath:  "~/.openclaw/.env",
 		},
 		Alerts: AlertsConfig{
@@ -133,6 +135,9 @@ func loadConfig(dir string) Config {
 	}
 	if cfg.AI.GatewayPort <= 0 {
 		cfg.AI.GatewayPort = 18789
+	}
+	if cfg.AI.MaxTokens <= 0 || cfg.AI.MaxTokens > 4096 {
+		cfg.AI.MaxTokens = 512
 	}
 	if cfg.AI.DotenvPath == "" {
 		cfg.AI.DotenvPath = "~/.openclaw/.env"

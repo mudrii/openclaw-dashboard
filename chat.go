@@ -11,89 +11,64 @@ import (
 	"strings"
 )
 
-// buildSystemPrompt ports build_dashboard_prompt() from server.py exactly.
+// Cost formatting helpers for prompt building.
+func fmtCost2(v float64) string { return strconv.FormatFloat(v, 'f', 2, 64) }
+func fmtCost4(v float64) string { return strconv.FormatFloat(v, 'f', 4, 64) }
+func fmtCost0(v float64) string { return strconv.FormatFloat(v, 'f', 0, 64) }
+func fmtPct(v float64) string   { return strconv.FormatFloat(v, 'f', 1, 64) }
+
+// buildSystemPrompt constructs the AI assistant context from dashboard data.
 // Optimised: direct WriteString calls instead of fmt.Sprintf to avoid heap allocs.
 func buildSystemPrompt(data map[string]any) string {
 	var b strings.Builder
 	b.Grow(2048) // typical prompt ~1-2KB; avoids ~4 internal re-allocations
 
-	str := func(m map[string]any, key string) string {
-		v, _ := m[key].(string)
-		return v
-	}
-	flt := func(m map[string]any, key string) float64 {
-		switch v := m[key].(type) {
-		case float64:
-			return v
-		case int:
-			return float64(v)
-		}
-		return 0
-	}
-	fmtCost2 := func(v float64) string {
-		return strconv.FormatFloat(v, 'f', 2, 64)
-	}
-	fmtCost4 := func(v float64) string {
-		return strconv.FormatFloat(v, 'f', 4, 64)
-	}
-	fmtCost0 := func(v float64) string {
-		return strconv.FormatFloat(v, 'f', 0, 64)
-	}
-	fmtPct := func(v float64) string {
-		return strconv.FormatFloat(v, 'f', 1, 64)
-	}
-	fmtAny := func(v any) string {
-		if v == nil {
-			return "<nil>"
-		}
-		switch t := v.(type) {
-		case string:
-			return t
-		case float64:
-			return strconv.FormatFloat(t, 'f', -1, 64)
-		case int:
-			return strconv.Itoa(t)
-		default:
-			return fmt.Sprint(v)
-		}
-	}
-
-	lastRefresh, _ := data["lastRefresh"].(string)
+	lastRefresh := getStr(data, "lastRefresh")
 
 	b.WriteString("You are an AI assistant embedded in the OpenClaw Dashboard.\n")
 	b.WriteString("Answer questions concisely. Use plain text, no markdown.\n")
 	b.WriteString("Data as of: ")
 	b.WriteString(lastRefresh)
 	b.WriteByte('\n')
-	b.WriteString("\n=== GATEWAY ===\n")
 
-	gw, _ := data["gateway"].(map[string]any)
-	if gw == nil {
-		gw = map[string]any{}
-	}
+	appendGatewaySection(&b, data)
+	appendCostsSection(&b, data)
+	appendSessionsSection(&b, data)
+	appendCronsSection(&b, data)
+	appendAlertsSection(&b, data)
+	appendConfigSection(&b, data)
+
+	return b.String()
+}
+
+func appendGatewaySection(b *strings.Builder, data map[string]any) {
+	b.WriteString("\n=== GATEWAY ===\n")
+	gw := getMap(data, "gateway")
 	b.WriteString("Status: ")
-	b.WriteString(str(gw, "status"))
+	b.WriteString(getStr(gw, "status"))
 	b.WriteString(" | PID: ")
 	b.WriteString(fmtAny(gw["pid"]))
 	b.WriteString(" | Uptime: ")
-	b.WriteString(str(gw, "uptime"))
+	b.WriteString(getStr(gw, "uptime"))
 	b.WriteString(" | Memory: ")
-	b.WriteString(str(gw, "memory"))
+	b.WriteString(getStr(gw, "memory"))
 	b.WriteByte('\n')
+}
 
+func appendCostsSection(b *strings.Builder, data map[string]any) {
 	b.WriteString("\n=== COSTS ===\n")
 	b.WriteString("Today: $")
-	b.WriteString(fmtCost4(flt(data, "totalCostToday")))
+	b.WriteString(fmtCost4(getFloat(data, "totalCostToday")))
 	b.WriteString(" (sub-agents: $")
-	b.WriteString(fmtCost4(flt(data, "subagentCostToday")))
+	b.WriteString(fmtCost4(getFloat(data, "subagentCostToday")))
 	b.WriteString(")\n")
 	b.WriteString("All-time: $")
-	b.WriteString(fmtCost2(flt(data, "totalCostAllTime")))
+	b.WriteString(fmtCost2(getFloat(data, "totalCostAllTime")))
 	b.WriteString(" | Projected monthly: $")
-	b.WriteString(fmtCost0(flt(data, "projectedMonthly")))
+	b.WriteString(fmtCost0(getFloat(data, "projectedMonthly")))
 	b.WriteByte('\n')
 
-	if bd, ok := data["costBreakdown"].([]any); ok && len(bd) > 0 {
+	if bd := getSlice(data, "costBreakdown"); len(bd) > 0 {
 		b.WriteString("By model (all-time): ")
 		limit := 5
 		if len(bd) < limit {
@@ -107,16 +82,17 @@ func buildSystemPrompt(data map[string]any) string {
 			if i > 0 {
 				b.WriteString(", ")
 			}
-			model, _ := m["model"].(string)
-			b.WriteString(model)
+			b.WriteString(getStr(m, "model"))
 			b.WriteString(" $")
-			b.WriteString(fmtCost2(flt(m, "cost")))
+			b.WriteString(fmtCost2(getFloat(m, "cost")))
 		}
 		b.WriteByte('\n')
 	}
+}
 
-	sessions, _ := data["sessions"].([]any)
-	sessionCount, _ := data["sessionCount"].(float64)
+func appendSessionsSection(b *strings.Builder, data map[string]any) {
+	sessions := getSlice(data, "sessions")
+	sessionCount := getFloat(data, "sessionCount")
 	if sessionCount == 0 {
 		sessionCount = float64(len(sessions))
 	}
@@ -133,21 +109,23 @@ func buildSystemPrompt(data map[string]any) string {
 			continue
 		}
 		b.WriteString("  ")
-		b.WriteString(str(s, "name"))
+		b.WriteString(getStr(s, "name"))
 		b.WriteString(" | ")
-		b.WriteString(str(s, "model"))
+		b.WriteString(getStr(s, "model"))
 		b.WriteString(" | ")
-		b.WriteString(str(s, "type"))
+		b.WriteString(getStr(s, "type"))
 		b.WriteString(" | context: ")
-		b.WriteString(fmtPct(flt(s, "contextPct")))
+		b.WriteString(fmtPct(getFloat(s, "contextPct")))
 		b.WriteString("%\n")
 	}
+}
 
-	crons, _ := data["crons"].([]any)
+func appendCronsSection(b *strings.Builder, data map[string]any) {
+	crons := getSlice(data, "crons")
 	failed := 0
 	for _, item := range crons {
 		c, _ := item.(map[string]any)
-		if c != nil && str(c, "lastStatus") == "error" {
+		if c != nil && getStr(c, "lastStatus") == "error" {
 			failed++
 		}
 	}
@@ -165,48 +143,49 @@ func buildSystemPrompt(data map[string]any) string {
 		if c == nil {
 			continue
 		}
-		status := str(c, "lastStatus")
+		status := getStr(c, "lastStatus")
 		b.WriteString("  ")
-		b.WriteString(str(c, "name"))
+		b.WriteString(getStr(c, "name"))
 		b.WriteString(" | ")
-		b.WriteString(str(c, "schedule"))
+		b.WriteString(getStr(c, "schedule"))
 		b.WriteString(" | ")
 		b.WriteString(status)
 		if status == "error" {
 			b.WriteString(" ERROR: ")
-			b.WriteString(str(c, "lastError"))
+			b.WriteString(getStr(c, "lastError"))
 		}
 		b.WriteByte('\n')
 	}
+}
 
+func appendAlertsSection(b *strings.Builder, data map[string]any) {
 	b.WriteString("\n=== ALERTS ===\n")
-	alerts, _ := data["alerts"].([]any)
+	alerts := getSlice(data, "alerts")
 	if len(alerts) == 0 {
 		b.WriteString("  None\n")
-	} else {
-		for _, item := range alerts {
-			a, _ := item.(map[string]any)
-			if a == nil {
-				continue
-			}
-			b.WriteString("  [")
-			b.WriteString(strings.ToUpper(str(a, "severity")))
-			b.WriteString("] ")
-			b.WriteString(str(a, "message"))
-			b.WriteByte('\n')
+		return
+	}
+	for _, item := range alerts {
+		a, _ := item.(map[string]any)
+		if a == nil {
+			continue
 		}
+		b.WriteString("  [")
+		b.WriteString(strings.ToUpper(getStr(a, "severity")))
+		b.WriteString("] ")
+		b.WriteString(getStr(a, "message"))
+		b.WriteByte('\n')
 	}
+}
 
+func appendConfigSection(b *strings.Builder, data map[string]any) {
 	b.WriteString("\n=== CONFIGURATION ===\n")
-	ac, _ := data["agentConfig"].(map[string]any)
-	if ac == nil {
-		ac = map[string]any{}
-	}
+	ac := getMap(data, "agentConfig")
 	b.WriteString("Primary model: ")
-	b.WriteString(str(ac, "primaryModel"))
+	b.WriteString(getStr(ac, "primaryModel"))
 	b.WriteByte('\n')
 	fallbacks := ""
-	if fb, ok := ac["fallbacks"].([]any); ok {
+	if fb := getSlice(ac, "fallbacks"); len(fb) > 0 {
 		parts := make([]string, 0, len(fb))
 		for _, f := range fb {
 			s, _ := f.(string)
@@ -222,8 +201,6 @@ func buildSystemPrompt(data map[string]any) string {
 	b.WriteString("Fallbacks: ")
 	b.WriteString(fallbacks)
 	b.WriteByte('\n')
-
-	return b.String()
 }
 
 type chatMessage struct {
@@ -243,7 +220,7 @@ type completionPayload struct {
 	Stream    bool          `json:"stream"`
 }
 
-func callGateway(ctx context.Context, system string, history []chatMessage, question string, port int, token, model string, client *http.Client) (string, error) {
+func callGateway(ctx context.Context, system string, history []chatMessage, question string, port int, token, model string, maxTokens int, client *http.Client) (string, error) {
 	// Pre-allocate messages slice: system + history + user question
 	messages := make([]chatMessage, 0, 2+len(history))
 	messages = append(messages, chatMessage{Role: "system", Content: system})
@@ -253,7 +230,7 @@ func callGateway(ctx context.Context, system string, history []chatMessage, ques
 	payload := completionPayload{
 		Model:     model,
 		Messages:  messages,
-		MaxTokens: 512,
+		MaxTokens: maxTokens,
 		Stream:    false,
 	}
 	body, err := json.Marshal(payload)
@@ -261,7 +238,7 @@ func callGateway(ctx context.Context, system string, history []chatMessage, ques
 		return "", fmt.Errorf("marshal error: %w", err)
 	}
 
-	url := "http://localhost:" + strconv.Itoa(port) + "/v1/chat/completions"
+	url := "http://localhost:" + strconv.Itoa(port) + gatewayAPIPath
 	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(body))
 	if err != nil {
 		return "", fmt.Errorf("request error: %w", err)

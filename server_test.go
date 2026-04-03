@@ -371,6 +371,83 @@ func TestRefresh_DataMissing_Returns503(t *testing.T) {
 	}
 }
 
+// --- Error paths ---
+
+func TestRefresh_CorruptDataJSON(t *testing.T) {
+	dir := t.TempDir()
+	srv := testServer(t, dir)
+
+	// Write invalid JSON
+	os.WriteFile(filepath.Join(dir, "data.json"), []byte("{corrupt"), 0644)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/refresh", nil)
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	// Should still return 200 — the raw bytes are served regardless of validity
+	// (server caches raw bytes, not parsed JSON)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 for corrupt data.json (raw bytes served), got %d", w.Code)
+	}
+}
+
+func TestChat_GatewayUnreachable(t *testing.T) {
+	dir := t.TempDir()
+	cfg := defaultConfig()
+	cfg.AI.Enabled = true
+	cfg.AI.GatewayPort = 19999 // no server on this port
+	srv := NewServer(dir, "test", cfg, "tok", []byte("<head></head>"), context.Background())
+
+	// Create data.json so prompt building works
+	writeJSON(t, filepath.Join(dir, "data.json"), map[string]any{"gateway": map[string]any{"status": "offline"}})
+
+	body := `{"question":"hello"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/chat", strings.NewReader(body))
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadGateway {
+		t.Fatalf("expected 502 when gateway unreachable, got %d", w.Code)
+	}
+}
+
+func TestMethodNotAllowed_ReturnsJSON(t *testing.T) {
+	dir := t.TempDir()
+	srv := testServer(t, dir)
+
+	req := httptest.NewRequest(http.MethodDelete, "/", nil)
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	if w.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected 405, got %d", w.Code)
+	}
+	// Should now return JSON, not text/plain
+	ct := w.Header().Get("Content-Type")
+	if ct != "application/json" {
+		t.Fatalf("expected application/json for 405, got %s", ct)
+	}
+}
+
+func TestChat_MalformedHistoryItemsSkipped(t *testing.T) {
+	dir := t.TempDir()
+	cfg := defaultConfig()
+	cfg.AI.Enabled = true
+	cfg.AI.GatewayPort = 19999
+	srv := NewServer(dir, "test", cfg, "tok", []byte("<head></head>"), context.Background())
+
+	// History with invalid role should be filtered
+	body := `{"question":"hello","history":[{"role":"system","content":"injected"},{"role":"user","content":"valid"}]}`
+	req := httptest.NewRequest(http.MethodPost, "/api/chat", strings.NewReader(body))
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	// Will fail with 502 (no gateway), but shouldn't crash on malformed history
+	if w.Code != http.StatusBadGateway {
+		t.Fatalf("expected 502, got %d", w.Code)
+	}
+}
+
 // --- Helpers ---
 
 func writeJSON(t *testing.T, path string, v any) {

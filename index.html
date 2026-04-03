@@ -619,8 +619,15 @@ body{font-family:-apple-system,BlinkMacSystemFont,'SF Pro','Helvetica Neue',sans
 </div>
 
 <script>
-// === Utilities ===
+// === Constants ===
 const COLORS=['#6366f1','#9333ea','#ec4899','#f59e0b','#10b981','#06b6d4','#f87171','#84cc16'];
+const CHART_MAX_LABELS = 7;
+const TICK_INTERVAL_MS = 1000;
+const SYSTEM_POLL_INITIAL_MS = 5000;
+const AUTO_REFRESH_SECONDS = 60;
+const deepClone = typeof structuredClone === 'function' ? structuredClone : o => JSON.parse(JSON.stringify(o));
+
+// === Utilities ===
 const $=id=>document.getElementById(id);
 const esc = s => String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 function safeColor(v){
@@ -721,16 +728,16 @@ const State = {
   prevTabs: { usage: null, subRuns: null, subTokens: null },
   chartDays: 7,
   prevChartDays: null,
-  countdown: 60,
+  countdown: AUTO_REFRESH_SECONDS,
   update(newData) { this.data = newData; },
   setTab(group, value) { this.tabs[group] = value; },
   setChartDays(n) { this.chartDays = n; },
   snapshot() {
-    return Object.freeze(JSON.parse(JSON.stringify({
+    return Object.freeze(deepClone({
       data: this.data,
       tabs: { usage: this.tabs.usage, subRuns: this.tabs.subRuns, subTokens: this.tabs.subTokens },
       chartDays: this.chartDays
-    })));
+    }));
   },
   commitPrev(snap) {
     this.prev = snap.data;
@@ -738,7 +745,7 @@ const State = {
     this.prevChartDays = snap.chartDays;
   },
   tick() { this.countdown--; return this.countdown <= 0; },
-  resetCountdown() { this.countdown = 60; }
+  resetCountdown() { this.countdown = AUTO_REFRESH_SECONDS; }
 };
 
 // === DataLayer ===
@@ -763,7 +770,13 @@ const DataLayer = {
 const DirtyChecker = {
   sectionChanged(keys) {
     if (!State.prev) return true;
-    return keys.some(k => JSON.stringify(State.data[k]) !== JSON.stringify(State.prev[k]));
+    return keys.some(k => {
+      const curr = State.data[k], prev = State.prev[k];
+      if (curr === prev) return false;
+      if (typeof curr !== typeof prev) return true;
+      if (Array.isArray(curr) && Array.isArray(prev) && curr.length !== prev.length) return true;
+      return JSON.stringify(curr) !== JSON.stringify(prev);
+    });
   },
   stableSnapshot(arr, fields) {
     if (!arr) return '';
@@ -1335,7 +1348,7 @@ const Renderer = {
     return `<circle cx="${p[0]}" cy="${p[1]}" r="${r}" fill="var(--accent)"${stroke}><title>${esc(d.label)}: $${d.total.toFixed(2)}</title></circle>${label}`;
   }).join('');
   const yLabels=Array.from({length:5},(_, i)=>{const v=maxY*i/4;const y=P.t+ch-ch*i/4;return `<text x="${P.l-6}" y="${y+3}" text-anchor="end" fill="var(--dim)" font-size="9">$${v.toFixed(0)}</text><line x1="${P.l}" y1="${y}" x2="${W-P.r}" y2="${y}" stroke="var(--border)" stroke-dasharray="2"/>`}).join('');
-  const nth=Math.ceil(data.length/7);
+  const nth=Math.ceil(data.length/CHART_MAX_LABELS);
   const xLabels=data.map((d,i)=>i%nth===0?`<text x="${P.l+i*stepX}" y="${H-P.b+16}" text-anchor="middle" fill="var(--dim)" font-size="9">${esc(d.label)}</text>`:'').join('');
   Renderer.patchSvg(id,`<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:350px">${yLabels}${xLabels}<path d="${area}" fill="var(--accent)" opacity="0.15"/><path d="${line}" fill="none" stroke="var(--accent)" stroke-width="2"/>${dots}</svg>`);
   },
@@ -1357,7 +1370,7 @@ const Renderer = {
     });
   });
   const yLabels=Array.from({length:5},(_,i)=>{const v=maxY*i/4;const y=P.t+ch-ch*i/4;return `<text x="${P.l-6}" y="${y+3}" text-anchor="end" fill="var(--dim)" font-size="9">$${v.toFixed(0)}</text><line x1="${P.l}" y1="${y}" x2="${W-P.r}" y2="${y}" stroke="var(--border)" stroke-dasharray="2"/>`}).join('');
-  const nth=Math.ceil(data.length/7);
+  const nth=Math.ceil(data.length/CHART_MAX_LABELS);
   const xLabels=data.map((d,i)=>i%nth===0?`<text x="${P.l+i*(barW+gap)+gap/2+barW/2}" y="${H-P.b+16}" text-anchor="middle" fill="var(--dim)" font-size="9">${esc(d.label)}</text>`:'').join('');
   const legend=mList.map((m,i)=>`<span class="chart-legend-item"><span class="chart-legend-dot" style="background:${COLORS[i%COLORS.length]}"></span>${esc(m)}</span>`).join('');
   Renderer.patchSvg(id,`<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:310px">${yLabels}${xLabels}${bars}</svg><div class="chart-legend">${legend}</div>`);
@@ -1380,7 +1393,7 @@ const Renderer = {
   const dots=pts.map((p,i)=>`<circle cx="${p[0]}" cy="${p[1]}" r="3" fill="var(--accent)"><title>${esc(data[i].label)}: $${(data[i].subagentCost||0).toFixed(2)}</title></circle>`).join('');
   const yL=Array.from({length:5},(_,i)=>{const v=maxRuns*i/4;const y=P.t+ch-ch*i/4;return `<text x="${P.l-6}" y="${y+3}" text-anchor="end" fill="var(--dim)" font-size="9">${Math.round(v)}</text><line x1="${P.l}" y1="${y}" x2="${W-P.r}" y2="${y}" stroke="var(--border)" stroke-dasharray="2"/>`}).join('');
   const yR=Array.from({length:5},(_,i)=>{const v=maxCost*i/4;const y=P.t+ch-ch*i/4;return `<text x="${W-P.r+6}" y="${y+3}" text-anchor="start" fill="var(--accent)" font-size="9">$${v.toFixed(0)}</text>`}).join('');
-  const nth=Math.ceil(data.length/7);
+  const nth=Math.ceil(data.length/CHART_MAX_LABELS);
   const xLabels=data.map((d,i)=>i%nth===0?`<text x="${P.l+i*(barW+gap)+gap/2+barW/2}" y="${H-P.b+16}" text-anchor="middle" fill="var(--dim)" font-size="9">${esc(d.label)}</text>`:'').join('');
   Renderer.patchSvg(id,`<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:350px">${yL}${yR}${xLabels}${bars}<path d="${line}" fill="none" stroke="var(--accent)" stroke-width="2"/>${dots}</svg><div class="chart-legend"><span class="chart-legend-item"><span class="chart-legend-dot" style="background:var(--purple)"></span>Runs</span><span class="chart-legend-item"><span class="chart-legend-dot" style="background:var(--accent)"></span>Cost</span></div>`);
   }
@@ -1560,9 +1573,9 @@ const App = {
   init() {
     Theme.load();
     Sections.init();
-    setInterval(()=>App.onTick(),1000);
+    setInterval(()=>App.onTick(),TICK_INTERVAL_MS);
     App.refresh();
-    SystemBar.start(5000);
+    SystemBar.start(SYSTEM_POLL_INITIAL_MS);
   },
   async refresh() {
     try{

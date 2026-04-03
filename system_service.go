@@ -1,8 +1,8 @@
 package main
 
 import (
-	"context"
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -22,9 +22,10 @@ import (
 
 // SystemService collects host metrics and versions with TTL caching.
 type SystemService struct {
-	cfg       SystemConfig
-	dashVer   string
-	serverCtx context.Context // lifecycle context — cancelled on graceful shutdown
+	cfg        SystemConfig
+	dashVer    string
+	serverCtx  context.Context // lifecycle context — cancelled on graceful shutdown
+	httpClient *http.Client    // injectable for testing; used by gateway probe + npm check
 
 	metricsMu      sync.RWMutex
 	metricsPayload []byte
@@ -37,8 +38,11 @@ type SystemService struct {
 	verRefresh bool // true while a goroutine is collecting versions
 }
 
-func NewSystemService(cfg SystemConfig, dashVer string, serverCtx context.Context) *SystemService {
-	return &SystemService{cfg: cfg, dashVer: dashVer, serverCtx: serverCtx}
+func NewSystemService(cfg SystemConfig, dashVer string, serverCtx context.Context, httpClient *http.Client) *SystemService {
+	if httpClient == nil {
+		httpClient = &http.Client{Timeout: httpClientTimeout}
+	}
+	return &SystemService{cfg: cfg, dashVer: dashVer, serverCtx: serverCtx, httpClient: httpClient}
 }
 
 // GetJSON returns (statusCode, jsonBody).
@@ -187,7 +191,7 @@ func (s *SystemService) getVersionsCached(ctx context.Context) SystemVersions {
 	s.verRefresh = true
 	s.verMu.Unlock()
 
-	v := collectVersions(ctx, s.dashVer, s.cfg.GatewayTimeoutMs, s.cfg.GatewayPort)
+	v := collectVersions(ctx, s.dashVer, s.cfg.GatewayTimeoutMs, s.cfg.GatewayPort, s.httpClient)
 	s.verMu.Lock()
 	s.verCached = v
 	s.verAt = time.Now()
@@ -215,7 +219,7 @@ func collectDiskRoot(path string) SystemDisk {
 }
 
 // collectVersions probes openclaw + gateway CLIs.
-func collectVersions(ctx context.Context, dashVer string, timeoutMs int, gatewayPort int) SystemVersions {
+func collectVersions(ctx context.Context, dashVer string, timeoutMs int, gatewayPort int, client *http.Client) SystemVersions {
 	v := SystemVersions{Dashboard: dashVer}
 
 	// OpenClaw version
@@ -233,14 +237,14 @@ func collectVersions(ctx context.Context, dashVer string, timeoutMs int, gateway
 	gwOut, err := runWithTimeout(ctx, timeoutMs, oclawBin, "gateway", "status", "--json")
 	if err != nil {
 		// Fallback: check if gateway process is reachable via HTTP
-		gw = detectGatewayFallback(ctx, gatewayPort, timeoutMs)
+		gw = detectGatewayFallback(ctx, gatewayPort, timeoutMs, client)
 	} else {
 		gw = parseGatewayStatusJSON(ctx, gwOut)
 	}
 	v.Gateway = gw
 
 	// Latest version from npm registry (best-effort, non-blocking)
-	v.Latest = fetchLatestNpmVersion(ctx, timeoutMs)
+	v.Latest = fetchLatestNpmVersion(ctx, client)
 
 	return v
 }
@@ -329,7 +333,7 @@ func getProcessInfo(ctx context.Context, pid int) (uptime string, memory string)
 
 // detectGatewayFallback checks if the gateway HTTP port is responding.
 // timeoutMs controls how long to wait; defaults to 1500ms if <= 0.
-func detectGatewayFallback(ctx context.Context, gatewayPort int, timeoutMs int) SystemGateway {
+func detectGatewayFallback(ctx context.Context, gatewayPort int, timeoutMs int, client *http.Client) SystemGateway {
 	if gatewayPort <= 0 {
 		gatewayPort = 18789
 	}
@@ -343,7 +347,6 @@ func detectGatewayFallback(ctx context.Context, gatewayPort int, timeoutMs int) 
 		e := "probe failed"
 		return SystemGateway{Status: "offline", Error: &e}
 	}
-	client := &http.Client{Timeout: time.Duration(timeoutMs) * time.Millisecond}
 	resp, err := client.Do(req)
 	if err == nil {
 		resp.Body.Close()
@@ -405,12 +408,7 @@ func resolveOpenclawBin() string {
 
 // fetchLatestNpmVersion queries the npm registry for the latest openclaw version.
 // Best-effort: returns "" on any error.
-func fetchLatestNpmVersion(ctx context.Context, timeoutMs int) string {
-	timeout := time.Duration(timeoutMs) * time.Millisecond
-	if timeout <= 0 {
-		timeout = 3 * time.Second
-	}
-	client := &http.Client{Timeout: timeout}
+func fetchLatestNpmVersion(ctx context.Context, client *http.Client) string {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://registry.npmjs.org/openclaw/latest", nil)
 	if err != nil {
 		return ""

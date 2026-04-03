@@ -1,0 +1,32 @@
+run:
+  timeout: 3m
+
+linters:
+  enable:
+    - errcheck
+    - govet
+    - staticcheck
+    - unused
+    - ineffassign
+    - gosimple
+    - gocritic
+    - revive
+    - misspell
+  disable:
+    - exhaustruct # zero-value struct init is idiomatic Go
+
+linters-settings:
+  gocritic:
+    enabled-checks:
+      - dupBranchBody
+      - dupCase
+      - unnecessaryBlock
+  revive:
+    rules:
+      - name: exported
+        disabled: true # single-package binary, no public API docs needed
+
+issues:
+  exclude-use-default: false
+  max-issues-per-linter: 50
+  max-same-issues: 5

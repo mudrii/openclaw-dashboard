@@ -430,7 +430,8 @@ func TestDetectGatewayFallback_UsesTimeoutClient(t *testing.T) {
 
 	ctx := context.Background()
 	start := time.Now()
-	gw := detectGatewayFallback(ctx, port, 200) // 200ms timeout
+	client := &http.Client{Timeout: 200 * time.Millisecond}
+	gw := detectGatewayFallback(ctx, port, 200, client) // 200ms timeout
 	elapsed := time.Since(start)
 
 	// Should timeout quickly, not wait 5 seconds
@@ -452,7 +453,8 @@ func TestDetectGatewayFallback_OnlineWhenResponds(t *testing.T) {
 	port, _ := strconv.Atoi(parts[len(parts)-1])
 
 	ctx := context.Background()
-	gw := detectGatewayFallback(ctx, port, 3000)
+	client := &http.Client{Timeout: 3000 * time.Millisecond}
+	gw := detectGatewayFallback(ctx, port, 3000, client)
 	if gw.Status != "online" {
 		t.Errorf("expected online, got %q", gw.Status)
 	}

@@ -18,11 +18,13 @@ import (
 )
 
 const (
-	maxBodyBytes   = 64 * 1024
-	maxQuestionLen = 2000
-	maxHistoryItem = 4000
-	maxGatewayResp = 1 << 20 // 1MB limit on gateway response
-	refreshTimeout = 15 * time.Second
+	maxBodyBytes      = 64 * 1024
+	maxQuestionLen    = 2000
+	maxHistoryItem    = 4000
+	maxGatewayResp    = 1 << 20 // 1MB limit on gateway response
+	refreshTimeout    = 15 * time.Second
+	httpClientTimeout = 60 * time.Second
+	gatewayAPIPath    = "/v1/chat/completions"
 )
 
 // Pre-defined error JSON responses — avoid map alloc + marshal on hot paths
@@ -33,7 +35,9 @@ var (
 	errEmptyQ       = []byte(`{"error":"question is required and must be non-empty"}`)
 	errBodyTooLarge = []byte(`{"error":"Request body too large (max 65536 bytes)"}`)
 	errQTooLong     = []byte(`{"error":"Question too long (max 2000 chars)"}`)
-	errDataMissing  = []byte(`{"error":"data.json not found — refresh in progress, try again shortly"}`)
+	errDataMissing      = []byte(`{"error":"data.json not found — refresh in progress, try again shortly"}`)
+	errMethodNotAllowed = []byte(`{"error":"method not allowed"}`)
+	errSystemDisabled   = []byte(`{"ok":false,"error":"system metrics disabled"}`)
 )
 
 type Server struct {
@@ -76,8 +80,8 @@ func NewServer(dir, version string, cfg Config, gatewayToken string, indexHTML [
 		indexHTMLRendered:  rendered,
 		indexContentLength: strconv.Itoa(len(rendered)),
 		corsDefault:        "http://localhost:" + strconv.Itoa(cfg.Server.Port),
-		httpClient:         &http.Client{Timeout: 60 * time.Second},
-		systemSvc:          NewSystemService(cfg.System, version, serverCtx),
+		httpClient:         &http.Client{Timeout: httpClientTimeout},
+		systemSvc:          NewSystemService(cfg.System, version, serverCtx, nil),
 	}
 }
 
@@ -127,7 +131,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		http.NotFound(w, r)
 	default:
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		s.sendJSONRaw(w, r, http.StatusMethodNotAllowed, errMethodNotAllowed)
 	}
 }
 
@@ -268,15 +272,8 @@ func (s *Server) handleRefresh(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.setCORSHeaders(w, r)
-	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("Cache-Control", "no-cache")
-	w.Header().Set("Content-Length", strconv.Itoa(len(data)))
 	log.Printf("[dashboard] GET /api/refresh")
-	w.WriteHeader(http.StatusOK)
-	if r.Method != http.MethodHead {
-		_, _ = w.Write(data)
-	}
+	s.sendJSONRaw(w, r, http.StatusOK, data)
 }
 
 // getDataCached returns parsed data.json, cached by file mtime.
@@ -390,6 +387,7 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		s.cfg.AI.GatewayPort,
 		s.gatewayToken,
 		s.cfg.AI.Model,
+		s.cfg.AI.MaxTokens,
 		s.httpClient,
 	)
 	if err != nil {
@@ -423,24 +421,10 @@ func (s *Server) sendJSONRaw(w http.ResponseWriter, r *http.Request, status int,
 
 func (s *Server) handleSystem(w http.ResponseWriter, r *http.Request) {
 	if !s.cfg.System.Enabled {
-		body := []byte(`{"ok":false,"error":"system metrics disabled"}`)
-		s.setCORSHeaders(w, r)
-		w.Header().Set("Content-Type", "application/json")
-		w.Header().Set("Content-Length", strconv.Itoa(len(body)))
-		w.WriteHeader(http.StatusServiceUnavailable)
-		if r.Method != http.MethodHead {
-			_, _ = w.Write(body)
-		}
+		s.sendJSONRaw(w, r, http.StatusServiceUnavailable, errSystemDisabled)
 		return
 	}
 	ctx := r.Context()
 	status, body := s.systemSvc.GetJSON(ctx)
-	s.setCORSHeaders(w, r)
-	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("Cache-Control", "no-cache")
-	w.Header().Set("Content-Length", strconv.Itoa(len(body)))
-	w.WriteHeader(status)
-	if r.Method != http.MethodHead {
-		_, _ = w.Write(body)
-	}
+	s.sendJSONRaw(w, r, status, body)
 }
