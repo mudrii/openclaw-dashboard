@@ -8,8 +8,17 @@ Thanks for your interest in contributing!
 git clone https://github.com/mudrii/openclaw-dashboard.git
 cd openclaw-dashboard
 
-# Run all tests (no server needed for most)
+# Go tests (with race detector)
+go test -race ./...
+
+# Go linting (requires golangci-lint)
+golangci-lint run
+
+# Python tests (no server needed for most)
 .venv/bin/python3 -m pytest tests/ --ignore=tests/test_e2e.py -v
+
+# Python tests with coverage
+.venv/bin/python3 -m pytest tests/ --ignore=tests/test_e2e.py --cov=. -v
 
 # Run the full suite including E2E (requires playwright)
 .venv/bin/python3 -m pytest tests/ -v --timeout=30
@@ -100,6 +109,25 @@ Every test has an AC number. The AC number is the source of truth — it appears
 | AC28 | `test_nix_flake.py` | Nix flake structure |
 | AC-CHAT-1–8 | `test_chat.py` | AI chat endpoint |
 | TC1–TC20 | `test_critical.py` | Mixed static + smoke |
+
+### Go Tests
+
+The Go test suite lives in `*_test.go` files alongside the source. Run with:
+
+```bash
+go test -race -v ./...
+golangci-lint run
+```
+
+| File | Tests | What it covers |
+|------|------:|----------------|
+| `server_test.go` | 24 | Cache coherence, HEAD/GET, static allowlist, CORS, routing, method-not-allowed JSON, runRefresh lifecycle cancellation |
+| `system_test.go` | 31 | System metrics, thresholds, cache, gateway fallback |
+| `chat_test.go` | 8 | Gateway calls, system prompt building, input validation |
+| `config_test.go` | 11 | Defaults, overrides, clamping, dotenv parsing |
+| `typeutil_test.go` | 17 | `getMap`/`getStr`/`getFloat`/`getSlice`/`fmtAny` helpers |
+| `main_test.go` | 4 | `localIP` format, MaxTokens default and clamping |
+| `version_test.go` | 3 | VERSION file, fallback, empty file |
 
 ---
 
@@ -265,8 +293,10 @@ refactor: extract donut chart logic into renderDonut()
 
 Before opening a PR, verify:
 
-- [ ] All tests pass: `.venv/bin/python3 -m pytest tests/ --ignore=tests/test_e2e.py -v`
-- [ ] New behaviour has a test (AC number claimed, registered in `tests/README.md`)
+- [ ] Go tests pass: `go test -race ./...` (all 98 tests green)
+- [ ] Go linting passes: `golangci-lint run`
+- [ ] Python tests pass: `.venv/bin/python3 -m pytest tests/ --ignore=tests/test_e2e.py -v`
+- [ ] New behaviour has a test (AC number claimed for Python; new `*_test.go` for Go)
 - [ ] Any new HTML template literals use `esc()` on every dynamic value
 - [ ] No new globals added outside the 7 module objects + 4 utilities
 - [ ] Tested all 6 themes manually if any CSS was touched

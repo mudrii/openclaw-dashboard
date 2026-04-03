@@ -25,6 +25,7 @@
     "gatewayPort": 18789,
     "model": "",
     "maxHistory": 6,
+    "maxTokens": 512,
     "dotenvPath": "~/.openclaw/.env"
   }
 }

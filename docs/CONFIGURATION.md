@@ -34,6 +34,7 @@ The dashboard is configured via `config.json` in the dashboard directory.
     "gatewayPort": 18789,
     "model": "",
     "maxHistory": 6,
+    "maxTokens": 512,
     "dotenvPath": "~/.openclaw/.env"
   }
 }
@@ -148,6 +149,7 @@ To change the OpenClaw data directory, set the `OPENCLAW_HOME` environment varia
 | `ai.gatewayPort` | number | `18789` | OpenClaw gateway port used for chat completions |
 | `ai.model` | string | `""` | Gateway model ID for chat requests |
 | `ai.maxHistory` | number | `6` | Server-side cap for previous chat messages included in context |
+| `ai.maxTokens` | number | `512` | Maximum tokens in the gateway response (range 1–4096; values outside are clamped to 512) |
 | `ai.dotenvPath` | string | `"~/.openclaw/.env"` | Path to dotenv file containing `OPENCLAW_GATEWAY_TOKEN` |
 
 ### AI Chat Setup

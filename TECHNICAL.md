@@ -1,6 +1,6 @@
 # TECHNICAL.md — OpenClaw Dashboard Internals
 
-> **Version:** 2026.3.3 · **Repo:** [github.com/mudrii/openclaw-dashboard](https://github.com/mudrii/openclaw-dashboard)
+> **Version:** 2026.4.3 · **Repo:** [github.com/mudrii/openclaw-dashboard](https://github.com/mudrii/openclaw-dashboard)
 >
 > This document covers architecture, data flow, and implementation details for developers and contributors. For features and quick start, see [README.md](README.md).
 
@@ -40,7 +40,9 @@
 | `examples/config.full.json` | — | All available config options |
 | `examples/config.minimal.json` | — | Minimal starter config |
 | `tests/*.py` | — | Automated static + integration tests (pytest/unittest compatible) |
-| `*_test.go` | — | Go test suite — 39 tests covering server, chat, config, and version (run with `go test -race ./...`) |
+| `*_test.go` | — | Go test suite — 98 tests covering server, chat, config, version, system, typeutil, and main (run with `go test -race ./...`) |
+| `.golangci.yml` | — | golangci-lint configuration (errcheck, govet, staticcheck, unused, gocritic, revive, misspell) |
+| `typeutil.go` | — | DRY type-assertion helpers: `getMap`, `getStr`, `getFloat`, `getSlice`, `fmtAny` |
 | `screenshots/` | — | Dashboard screenshots for README |
 
 ---
@@ -376,6 +378,7 @@ Each setting resolves through a priority chain (highest wins):
 | Gateway port | — | — | `ai.gatewayPort` | `18789` |
 | Chat model | — | — | `ai.model` | `""` |
 | Max history (server cap) | — | — | `ai.maxHistory` | `6` |
+| Max response tokens | — | — | `ai.maxTokens` | `512` |
 | Dotenv path for gateway token | — | — | `ai.dotenvPath` | `"~/.openclaw/.env"` |
 | Bot name | — | — | `bot.name` | `OpenClaw Dashboard` |
 | Bot emoji | — | — | `bot.emoji` | `⚡` |
@@ -659,14 +662,18 @@ python3 server.py --bind 0.0.0.0 --port 9090
 ### Testing Checklist
 
 ```bash
-# Go tests (39 tests, with race detector)
+# Go tests (98 tests, with race detector)
 go test -race -v ./...
+
+# Go linting
+golangci-lint run
 
 # Python tests
 python3 -m pytest tests/ -v
 ```
 
-- [ ] `go test -race ./...` passes (all 39 tests green)
+- [ ] `go test -race ./...` passes (all 98 tests green)
+- [ ] `golangci-lint run` reports no issues
 - [ ] `bash refresh.sh` produces valid JSON
 - [ ] `data.json` contains expected keys
 - [ ] Dashboard renders on desktop (1440px+)
@@ -681,9 +688,12 @@ python3 -m pytest tests/ -v
 
 | File | Tests | Coverage |
 |------|------:|----------|
-| `server_test.go` | 18 | Cache coherence, HEAD/GET, static allowlist, path traversal, CORS, routing, index rendering, data missing |
+| `server_test.go` | 24 | Cache coherence, HEAD/GET, static allowlist, path traversal, CORS, routing, index rendering, data missing, method-not-allowed JSON, corrupt data, malformed history, runRefresh lifecycle cancellation |
+| `system_test.go` | 31 | System metrics schema, HEAD, CORS, disabled 503, thresholds, cache hit, degraded 200, disk, gateway fallback, process info |
 | `chat_test.go` | 8 | Gateway calls (success, errors, empty, oversized), system prompt building |
 | `config_test.go` | 11 | Config defaults/overrides/clamping, dotenv parsing (quotes, comments, equals), expandHome |
+| `typeutil_test.go` | 17 | `getMap`, `getStr`, `getFloat`, `getSlice`, `fmtAny` — nil, missing, wrong-type edge cases |
+| `main_test.go` | 4 | `localIP` format/determinism, default MaxTokens, MaxTokens clamping (6 subtests) |
 | `version_test.go` | 3 | VERSION file, fallback, empty file |
 
 ### PR Guidelines

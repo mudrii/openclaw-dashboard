@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -22,10 +21,10 @@ import (
 
 // SystemService collects host metrics and versions with TTL caching.
 type SystemService struct {
-	cfg        SystemConfig
-	dashVer    string
-	serverCtx  context.Context // lifecycle context — cancelled on graceful shutdown
-	httpClient *http.Client    // injectable for testing; used by gateway probe + npm check
+	cfg         SystemConfig
+	dashVer     string
+	shutdownCtx context.Context // lifecycle context — cancelled on graceful shutdown; do NOT use for per-request ops
+	httpClient  *http.Client    // injectable for testing; used by gateway probe + npm check
 
 	metricsMu      sync.RWMutex
 	metricsPayload []byte
@@ -42,7 +41,7 @@ func NewSystemService(cfg SystemConfig, dashVer string, serverCtx context.Contex
 	if httpClient == nil {
 		httpClient = &http.Client{Timeout: httpClientTimeout}
 	}
-	return &SystemService{cfg: cfg, dashVer: dashVer, serverCtx: serverCtx, httpClient: httpClient}
+	return &SystemService{cfg: cfg, dashVer: dashVer, shutdownCtx: serverCtx, httpClient: httpClient}
 }
 
 // GetJSON returns (statusCode, jsonBody).
@@ -69,7 +68,7 @@ func (s *SystemService) GetJSON(ctx context.Context) (int, []byte) {
 		if !s.metricsRefresh {
 			s.metricsRefresh = true
 			go func() {
-				data, hardFail := s.refresh(s.serverCtx)
+				data, hardFail := s.refresh(s.shutdownCtx)
 				if data == nil || hardFail {
 					log.Printf("[system] background refresh failed: data=%v hardFail=%v", data == nil, hardFail)
 				}
@@ -81,9 +80,16 @@ func (s *SystemService) GetJSON(ctx context.Context) (int, []byte) {
 		b := s.metricsPayload
 		s.metricsMu.Unlock()
 
-		// Mark stale in response — byte-level replacement avoids unmarshal/remarshal overhead
-		staleBytes := bytes.Replace(b, []byte(`"stale":false`), []byte(`"stale":true`), 1)
-		return http.StatusOK, staleBytes
+		// Mark stale by decoding the cached payload, setting the flag, and re-encoding.
+		// This is safe regardless of future json tag changes (e.g. omitempty on Stale).
+		var resp SystemResponse
+		if err := json.Unmarshal(b, &resp); err == nil {
+			resp.Stale = true
+			if out, err := json.Marshal(resp); err == nil {
+				return http.StatusOK, out
+			}
+		}
+		return http.StatusOK, b // fallback: serve unmarked payload
 	}
 
 	// No cache — collect synchronously
@@ -425,7 +431,7 @@ func fetchLatestNpmVersion(ctx context.Context, client *http.Client) string {
 	var pkg struct {
 		Version string `json:"version"`
 	}
-	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&pkg); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<16)).Decode(&pkg); err != nil {
 		return ""
 	}
 	return pkg.Version

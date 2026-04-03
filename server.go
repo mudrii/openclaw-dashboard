@@ -61,6 +61,10 @@ type Server struct {
 	cachedDataRaw   []byte
 	cachedDataMtime time.Time
 
+	// shutdownCtx is the server lifecycle context — cancelled on SIGTERM/SIGINT.
+	// Do NOT use for per-request operations; use r.Context() instead.
+	shutdownCtx context.Context
+
 	// System metrics service
 	systemSvc *SystemService
 }
@@ -81,6 +85,7 @@ func NewServer(dir, version string, cfg Config, gatewayToken string, indexHTML [
 		indexContentLength: strconv.Itoa(len(rendered)),
 		corsDefault:        "http://localhost:" + strconv.Itoa(cfg.Server.Port),
 		httpClient:         &http.Client{Timeout: httpClientTimeout},
+		shutdownCtx:        serverCtx,
 		systemSvc:          NewSystemService(cfg.System, version, serverCtx, nil),
 	}
 }
@@ -113,7 +118,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		s.handleIndex(w, r)
 	case isRead && r.URL.Path == "/api/system":
 		s.handleSystem(w, r)
-	case isRead && strings.HasPrefix(r.URL.Path, "/api/refresh"):
+	case isRead && r.URL.Path == "/api/refresh":
 		s.handleRefresh(w, r)
 	case r.Method == http.MethodOptions:
 		s.setCORSHeaders(w, r)
@@ -129,7 +134,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			s.handleStaticFile(w, r, r.URL.Path, contentType)
 			return
 		}
-		http.NotFound(w, r)
+		s.notFound(w, r)
 	default:
 		s.sendJSONRaw(w, r, http.StatusMethodNotAllowed, errMethodNotAllowed)
 	}
@@ -140,13 +145,13 @@ func (s *Server) handleStaticFile(w http.ResponseWriter, r *http.Request, path, 
 	// Clean the path to prevent traversal
 	clean := filepath.Clean(path)
 	if clean != path || strings.Contains(clean, "..") {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	fullPath := filepath.Join(s.dir, clean)
 	data, err := os.ReadFile(fullPath)
 	if err != nil {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	w.Header().Set("Content-Type", contentType)
@@ -156,6 +161,13 @@ func (s *Server) handleStaticFile(w http.ResponseWriter, r *http.Request, path, 
 	if r.Method != http.MethodHead {
 		_, _ = w.Write(data)
 	}
+}
+
+// notFound sends a 404 with CORS headers so browsers see the correct status
+// rather than a CORS error masking the real 404.
+func (s *Server) notFound(w http.ResponseWriter, r *http.Request) {
+	s.setCORSHeaders(w, r)
+	http.NotFound(w, r)
 }
 
 func (s *Server) setCORSHeaders(w http.ResponseWriter, r *http.Request) {
@@ -196,7 +208,7 @@ func (s *Server) runRefresh() {
 		s.mu.Unlock()
 	}()
 
-	ctx, cancel := context.WithTimeout(context.Background(), refreshTimeout)
+	ctx, cancel := context.WithTimeout(s.shutdownCtx, refreshTimeout)
 	defer cancel()
 
 	script := filepath.Join(s.dir, "refresh.sh")

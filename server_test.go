@@ -448,6 +448,48 @@ func TestChat_MalformedHistoryItemsSkipped(t *testing.T) {
 	}
 }
 
+// --- runRefresh lifecycle ---
+
+// TestRunRefresh_CancelledContext verifies that when the server's shutdown context
+// is cancelled, runRefresh exits promptly instead of waiting for the full timeout.
+func TestRunRefresh_CancelledContext(t *testing.T) {
+	dir := t.TempDir()
+
+	// Write a refresh.sh that sleeps for 30s — would block the test without the fix.
+	script := filepath.Join(dir, "refresh.sh")
+	if err := os.WriteFile(script, []byte("#!/bin/bash\nsleep 30\n"), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	srv := NewServer(dir, "test", defaultConfig(), "", []byte("<head></head>"), ctx)
+
+	done := make(chan struct{})
+	go func() {
+		srv.runRefresh()
+		close(done)
+	}()
+
+	// Give runRefresh time to start the subprocess, then cancel.
+	time.Sleep(150 * time.Millisecond)
+	cancel()
+
+	select {
+	case <-done:
+		// Good — completed after cancellation.
+	case <-time.After(5 * time.Second):
+		t.Fatal("runRefresh did not complete within 5s of context cancellation")
+	}
+
+	// lastRefresh must NOT be updated when the command was interrupted.
+	srv.mu.Lock()
+	lastRefresh := srv.lastRefresh
+	srv.mu.Unlock()
+	if !lastRefresh.IsZero() {
+		t.Error("lastRefresh should not be updated when context is cancelled")
+	}
+}
+
 // --- Helpers ---
 
 func writeJSON(t *testing.T, path string, v any) {
