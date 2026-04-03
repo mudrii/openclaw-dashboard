@@ -26,7 +26,12 @@ func collectCPU(ctx context.Context) SystemCPU {
 		return SystemCPU{Cores: runtime.NumCPU(), Error: &e}
 	}
 
-	time.Sleep(200 * time.Millisecond)
+	select {
+	case <-time.After(200 * time.Millisecond):
+	case <-ctx.Done():
+		e := "cpu sampling cancelled"
+		return SystemCPU{Cores: runtime.NumCPU(), Error: &e}
+	}
 
 	content2, err := os.ReadFile("/proc/stat")
 	if err != nil {

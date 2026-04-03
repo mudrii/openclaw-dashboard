@@ -1,5 +1,21 @@
 # Changelog
 
+## v2026.4.3 — 2026-04-03
+
+### Fixed
+
+- **M1: Exact path match for `/api/refresh`** — `strings.HasPrefix` replaced with `==`; previously any path beginning with `/api/refresh` (e.g. `/api/refreshXXX`) would incorrectly match the refresh handler
+- **M2: `serverCtx` renamed to `shutdownCtx`** in `SystemService` — clarifies that this context is the server lifecycle context and must not be used for per-request operations
+- **M3: Linux CPU dual-sample sleep is context-aware** — `time.Sleep(200ms)` replaced with `select { case <-time.After: case <-ctx.Done(): }` so graceful shutdown is not blocked by the inter-sample gap
+- **M4: 404 responses include CORS headers** — all `http.NotFound` call sites in `ServeHTTP` and `HandleStaticFile` now go through a new `notFound` helper that sets CORS headers first; browser clients no longer receive a misleading CORS error instead of a clean 404
+- **L3: npm registry response cap tightened** — `io.LimitReader` in `FetchLatestNpmVersion` reduced from 1 MiB to 64 KiB; sufficient for any npm metadata response
+
+### Added
+
+- **v2026.3.7 and v2026.3.6 CHANGELOG entries** — two releases that were missing from the changelog
+
+---
+
 ## v2026.3.23 — Comprehensive Audit & Hardening
 
 ### Error Handling
@@ -126,6 +142,61 @@
 - **56 new frontend tests** in `tests/test_frontend.py` — `TestGatewayPillRemoved`, `TestNoRawPlaceholderTokens`, `TestGatewayRuntimeConfigSplit`, `TestGatewayReadinessAlert`, `_versionsBehind` and `_gatewayState` behavioral tests.
 - **37 new Python tests** in `tests/test_system_metrics.py` — `TestOpenclawRuntime`, `TestStaleInjectionSafe`, `TestVersionCollectionI2`, `TestVersionsCacheThunderingHerd`.
 - **384 new Go tests** in `system_test.go`.
+
+---
+
+## v2026.3.7 — 2026-03-07
+
+### Fixed (Security — P0)
+
+- **Rate limiting** — Token-bucket (10 req/min per IP) on `/api/chat`; returns `429 Too Many Requests` with `Retry-After: 60` header
+- **HTTP server timeouts** — Go server enforces Read 30s / Write 90s / Idle 120s; prevents slow-client and resource exhaustion attacks
+- **Path traversal guard hardened** — Resolved path is checked to remain inside the serve root
+- **Goroutine lifecycle** — Server lifecycle context propagated to all goroutines; all goroutines exit cleanly on SIGTERM
+
+### Fixed (P1 Parity)
+
+- **Python `ThreadingHTTPServer`** — Python server upgraded from single-threaded to `ThreadingHTTPServer`; a long refresh no longer blocks all concurrent clients
+- **CORS on all error paths** — CORS headers now set on 4xx/5xx responses in both servers (previously only on 2xx)
+- **Python gateway timeouts** — Explicit connect + read timeouts on all gateway HTTP calls
+
+### Changed
+
+- **Unified cache layer (Go)** — `loadData()` fills raw bytes + parsed map atomically under one lock; eliminates double-`stat`/double-read on concurrent requests
+- **Mtime-based Python cache** — Python `/api/chat` re-reads `data.json` only when mtime changes (was per-request)
+- **Pre-rendered index (Go)** — `index.html` embed pre-rendered at startup; zero per-request disk reads
+- **Static file allowlist (Python)** — Python server restricts static file serving to an explicit allowlist; was previously serving any file in the repo directory including `.git/config`
+- **Linux CPU sample interval** — Reduced from 200ms to 50ms for faster `/api/system` response time
+
+### Added
+
+- **87 Go tests** pass with `-race` flag
+- **165 Python tests** pass
+
+---
+
+## v2026.3.6 — 2026-03-05
+
+### Added
+
+- **Collapsible sections** — 9 collapsible dashboard sections with right-aligned chevron toggles, localStorage persistence, FOUC prevention, Expand All / Collapse All buttons, and full ARIA keyboard navigation
+- **OpenClaw version freshness** — Version pill in the top metrics bar is colour-coded: green (up to date), yellow (1 release behind), red (2+ releases behind); latest version polled from npm registry
+- **npm latest version check** — `/api/system` now returns `versions.latest` (best-effort, non-blocking)
+
+### Fixed (Multi-Model Audit — 30+ fixes)
+
+- **Python static file allowlist** — Was exposing all repo files; now restricted to explicit list
+- **CORS preflight handlers** — `OPTIONS` handler added to both Go and Python servers
+- **HEAD body suppression** — All endpoints correctly suppress body on HEAD requests
+- **UTF-8 rune-safe truncation** — Chat history truncation now operates on rune boundaries, not bytes
+- **XSS defense** — Theme buttons use data attributes + event delegation instead of inline `onclick`
+- **CSS `--glass` variable** — Properly defined and applied across all 6 built-in themes
+- **`_gwOnlineConfirmed` cleared on fetch failure** — Gateway online state correctly reset when `/api/system` fetch fails
+
+### Changed
+
+- **Layout** — Models, Skills, Git Log panels moved inside Agent Configuration collapsible section
+- **GW pill removed** from Top Metrics Bar — gateway status displayed in System Health panel instead
 
 ---
 

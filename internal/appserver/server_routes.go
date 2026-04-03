@@ -25,7 +25,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		s.handleIndex(w, r)
 	case isRead && r.URL.Path == "/api/system":
 		s.handleSystem(w, r)
-	case isRead && strings.HasPrefix(r.URL.Path, "/api/refresh"):
+	case isRead && r.URL.Path == "/api/refresh":
 		s.handleRefresh(w, r)
 	case r.Method == http.MethodOptions:
 		s.setCORSHeaders(w, r)
@@ -41,7 +41,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			s.HandleStaticFile(w, r, r.URL.Path, contentType)
 			return
 		}
-		http.NotFound(w, r)
+		s.notFound(w, r)
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
@@ -52,7 +52,7 @@ func (s *Server) HandleStaticFile(w http.ResponseWriter, r *http.Request, path, 
 	// Clean the path to prevent traversal
 	clean := filepath.Clean(path)
 	if clean != path {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	fullPath := filepath.Join(s.dir, clean)
@@ -61,7 +61,7 @@ func (s *Server) HandleStaticFile(w http.ResponseWriter, r *http.Request, path, 
 		fallbackPath := filepath.Join(s.dir, "assets", "runtime", strings.TrimPrefix(clean, "/"))
 		data, err = os.ReadFile(fallbackPath)
 		if err != nil {
-			http.NotFound(w, r)
+			s.notFound(w, r)
 			return
 		}
 	}
@@ -72,6 +72,13 @@ func (s *Server) HandleStaticFile(w http.ResponseWriter, r *http.Request, path, 
 	if r.Method != http.MethodHead {
 		_, _ = w.Write(data)
 	}
+}
+
+// notFound sends a 404 response with CORS headers set, so browser clients
+// receive a clean 404 rather than a misleading CORS error.
+func (s *Server) notFound(w http.ResponseWriter, r *http.Request) {
+	s.setCORSHeaders(w, r)
+	http.NotFound(w, r)
 }
 
 func (s *Server) setCORSHeaders(w http.ResponseWriter, r *http.Request) {

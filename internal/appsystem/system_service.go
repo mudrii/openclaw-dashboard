@@ -24,9 +24,9 @@ import (
 
 // SystemService collects host metrics and versions with TTL caching.
 type SystemService struct {
-	cfg       appconfig.SystemConfig
-	dashVer   string
-	serverCtx context.Context // lifecycle context — cancelled on graceful shutdown
+	cfg        appconfig.SystemConfig
+	dashVer    string
+	shutdownCtx context.Context // lifecycle context — cancelled on graceful shutdown; do NOT use for per-request ops
 
 	metricsMu      sync.RWMutex
 	metricsPayload []byte
@@ -50,7 +50,7 @@ type SystemService struct {
 var fetchLatestVersion = FetchLatestNpmVersion
 
 func NewSystemService(cfg appconfig.SystemConfig, dashVer string, serverCtx context.Context) *SystemService {
-	return &SystemService{cfg: cfg, dashVer: dashVer, serverCtx: serverCtx}
+	return &SystemService{cfg: cfg, dashVer: dashVer, shutdownCtx: serverCtx}
 }
 
 func (s *SystemService) SetMetricsTimestampForTest(ts time.Time) {
@@ -88,7 +88,7 @@ func (s *SystemService) GetJSON(ctx context.Context) (int, []byte) {
 		if !s.metricsRefresh {
 			s.metricsRefresh = true
 			go func() {
-				data, hardFail := s.refresh(s.serverCtx)
+				data, hardFail := s.refresh(s.shutdownCtx)
 				if data == nil || hardFail {
 					log.Printf("[system] background refresh failed: data=%v hardFail=%v", data == nil, hardFail)
 				}
@@ -275,7 +275,7 @@ func (s *SystemService) getLatestVersionCached() string {
 	s.latestMu.Unlock()
 
 	go func() {
-		latest := fetchLatestVersion(s.serverCtx, s.cfg.GatewayTimeoutMs)
+		latest := fetchLatestVersion(s.shutdownCtx, s.cfg.GatewayTimeoutMs)
 		now := time.Now()
 		s.latestMu.Lock()
 		if latest != "" {
@@ -787,7 +787,7 @@ func FetchLatestNpmVersion(ctx context.Context, timeoutMs int) string {
 	var pkg struct {
 		Version string `json:"version"`
 	}
-	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&pkg); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<16)).Decode(&pkg); err != nil {
 		log.Printf("[dashboard] FetchLatestNpmVersion: JSON decode failed: %v", err)
 		return ""
 	}
