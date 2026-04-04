@@ -1,5 +1,13 @@
 # Changelog
 
+## v2026.4.4 — 2026-04-04
+
+### Fixed
+
+- **Release packaging broken** — GoReleaser v2 renamed `archives.format` (string) to `archives.formats` (array); the old key was silently ignored, causing GoReleaser to publish raw binaries instead of `.tar.gz` archives. `brew install` and the README tarball install command both 404'd as a result. Fixed by updating `.goreleaser.yml` to use `formats: [tar.gz]`.
+
+---
+
 ## v2026.4.3 — 2026-04-03
 
 ### Fixed
