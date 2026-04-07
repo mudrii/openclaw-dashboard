@@ -1,10 +1,11 @@
 package dashboard
 
 import (
-	"fmt"
+	"errors"
+	"slices"
 	"testing"
 
-	appservice "github.com/mudrii/openclaw-dashboard/internal/appservice"
+	"github.com/mudrii/openclaw-dashboard/internal/appservice"
 )
 
 // fakeBackend records which methods were called and with what args.
@@ -14,6 +15,7 @@ type fakeBackend struct {
 	started       bool
 	stopped       bool
 	restarted     bool
+	statusCalled  bool
 	statusResult  appservice.ServiceStatus
 
 	errInstall   error
@@ -33,6 +35,7 @@ func (f *fakeBackend) Start() error     { f.started = true; return f.errStart }
 func (f *fakeBackend) Stop() error      { f.stopped = true; return f.errStop }
 func (f *fakeBackend) Restart() error   { f.restarted = true; return f.errRestart }
 func (f *fakeBackend) Status() (appservice.ServiceStatus, error) {
+	f.statusCalled = true
 	return f.statusResult, f.errStatus
 }
 
@@ -58,7 +61,7 @@ func TestNormaliseCmd(t *testing.T) {
 			if cmd != tc.wantCmd {
 				t.Errorf("cmd = %q, want %q", cmd, tc.wantCmd)
 			}
-			if tc.wantRest != nil && len(rest) != len(tc.wantRest) {
+			if !slices.Equal(rest, tc.wantRest) {
 				t.Errorf("rest = %v, want %v", rest, tc.wantRest)
 			}
 		})
@@ -141,10 +144,13 @@ func TestRunServiceCmd_status(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("expected exit 0, got %d", code)
 	}
+	if !fb.statusCalled {
+		t.Error("Status was not called")
+	}
 }
 
 func TestRunServiceCmd_errorPropagation(t *testing.T) {
-	fb := &fakeBackend{errStart: fmt.Errorf("launchctl failed")}
+	fb := &fakeBackend{errStart: errors.New("launchctl failed")}
 	code := runServiceCmd("start", "/tmp/dir", "/tmp/bin", "v1.0", fb, nil)
 	if code != 1 {
 		t.Errorf("expected exit 1 on error, got %d", code)
