@@ -52,12 +52,26 @@ func Main() int {
 			if version == "" {
 				version = detectVersion(dir)
 			}
+			cfg := loadConfig(dir)
+
+			// env var overrides
+			envBind := os.Getenv("DASHBOARD_BIND")
+			if envBind == "" {
+				envBind = cfg.Server.Host
+			}
+			envPort := cfg.Server.Port
+			if p := os.Getenv("DASHBOARD_PORT"); p != "" {
+				if n, err := strconv.Atoi(p); err == nil {
+					envPort = n
+				}
+			}
+
 			b, err := appservice.New()
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "[dashboard] service management not available: %v\n", err)
 				return 1
 			}
-			return runServiceCmd(subcmd, dir, exe, version, b, rest)
+			return runServiceCmd(subcmd, dir, exe, version, b, rest, envBind, envPort)
 		}
 	} else if len(os.Args) > 1 && os.Args[1] == "service" {
 		fmt.Fprintln(os.Stderr, "Usage: openclaw-dashboard service install|uninstall|start|stop|restart|status")
@@ -214,20 +228,30 @@ func normaliseCmd(args []string) (string, []string) {
 		if len(args) < 2 {
 			return "", nil
 		}
-		return args[1], args[2:]
+		cmd := args[1]
+		rest := args[2:]
+		if len(rest) == 0 {
+			rest = nil
+		}
+		return cmd, rest
 	}
-	return args[0], args[1:]
+	cmd := args[0]
+	rest := args[1:]
+	if len(rest) == 0 {
+		rest = nil
+	}
+	return cmd, rest
 }
 
 // runServiceCmd executes a service lifecycle subcommand using the given backend.
 // dir is the dashboard runtime directory, binPath is the resolved binary path,
 // version is the current build version, and args are remaining CLI args (for --bind/--port).
-func runServiceCmd(cmd, dir, binPath, version string, b appservice.Backend, args []string) int {
+func runServiceCmd(cmd, dir, binPath, version string, b appservice.Backend, args []string, defaultBind string, defaultPort int) int {
 	fs := flag.NewFlagSet("service", flag.ContinueOnError)
-	bind := fs.String("bind", "127.0.0.1", "Bind address")
-	fs.StringVar(bind, "b", "127.0.0.1", "Bind address")
-	port := fs.Int("port", 8080, "Listen port")
-	fs.IntVar(port, "p", 8080, "Listen port")
+	bind := fs.String("bind", defaultBind, "Bind address")
+	fs.StringVar(bind, "b", defaultBind, "Bind address")
+	port := fs.Int("port", defaultPort, "Listen port")
+	fs.IntVar(port, "p", defaultPort, "Listen port")
 	_ = fs.Parse(args)
 
 	switch cmd {

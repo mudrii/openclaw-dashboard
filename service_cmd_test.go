@@ -70,7 +70,7 @@ func TestNormaliseCmd(t *testing.T) {
 
 func TestRunServiceCmd_install(t *testing.T) {
 	fb := &fakeBackend{}
-	code := runServiceCmd("install", "/tmp/dir", "/tmp/bin", "v1.0", fb, []string{"--port", "9090"})
+	code := runServiceCmd("install", "/tmp/dir", "/tmp/bin", "v1.0", fb, []string{"--port", "9090"}, "127.0.0.1", 8080)
 	if code != 0 {
 		t.Fatalf("expected exit 0, got %d", code)
 	}
@@ -90,7 +90,7 @@ func TestRunServiceCmd_install(t *testing.T) {
 
 func TestRunServiceCmd_start(t *testing.T) {
 	fb := &fakeBackend{}
-	code := runServiceCmd("start", "/tmp/dir", "/tmp/bin", "v1.0", fb, nil)
+	code := runServiceCmd("start", "/tmp/dir", "/tmp/bin", "v1.0", fb, nil, "127.0.0.1", 8080)
 	if code != 0 {
 		t.Fatalf("expected exit 0, got %d", code)
 	}
@@ -101,7 +101,7 @@ func TestRunServiceCmd_start(t *testing.T) {
 
 func TestRunServiceCmd_stop(t *testing.T) {
 	fb := &fakeBackend{}
-	code := runServiceCmd("stop", "/tmp/dir", "/tmp/bin", "v1.0", fb, nil)
+	code := runServiceCmd("stop", "/tmp/dir", "/tmp/bin", "v1.0", fb, nil, "127.0.0.1", 8080)
 	if code != 0 {
 		t.Fatalf("expected exit 0, got %d", code)
 	}
@@ -112,7 +112,7 @@ func TestRunServiceCmd_stop(t *testing.T) {
 
 func TestRunServiceCmd_restart(t *testing.T) {
 	fb := &fakeBackend{}
-	code := runServiceCmd("restart", "/tmp/dir", "/tmp/bin", "v1.0", fb, nil)
+	code := runServiceCmd("restart", "/tmp/dir", "/tmp/bin", "v1.0", fb, nil, "127.0.0.1", 8080)
 	if code != 0 {
 		t.Fatalf("expected exit 0, got %d", code)
 	}
@@ -123,7 +123,7 @@ func TestRunServiceCmd_restart(t *testing.T) {
 
 func TestRunServiceCmd_uninstall(t *testing.T) {
 	fb := &fakeBackend{}
-	code := runServiceCmd("uninstall", "/tmp/dir", "/tmp/bin", "v1.0", fb, nil)
+	code := runServiceCmd("uninstall", "/tmp/dir", "/tmp/bin", "v1.0", fb, nil, "127.0.0.1", 8080)
 	if code != 0 {
 		t.Fatalf("expected exit 0, got %d", code)
 	}
@@ -140,7 +140,7 @@ func TestRunServiceCmd_status(t *testing.T) {
 			Port:    8080,
 		},
 	}
-	code := runServiceCmd("status", "/tmp/dir", "/tmp/bin", "v1.0", fb, nil)
+	code := runServiceCmd("status", "/tmp/dir", "/tmp/bin", "v1.0", fb, nil, "127.0.0.1", 8080)
 	if code != 0 {
 		t.Fatalf("expected exit 0, got %d", code)
 	}
@@ -151,7 +151,7 @@ func TestRunServiceCmd_status(t *testing.T) {
 
 func TestRunServiceCmd_errorPropagation(t *testing.T) {
 	fb := &fakeBackend{errStart: errors.New("launchctl failed")}
-	code := runServiceCmd("start", "/tmp/dir", "/tmp/bin", "v1.0", fb, nil)
+	code := runServiceCmd("start", "/tmp/dir", "/tmp/bin", "v1.0", fb, nil, "127.0.0.1", 8080)
 	if code != 1 {
 		t.Errorf("expected exit 1 on error, got %d", code)
 	}
@@ -159,7 +159,7 @@ func TestRunServiceCmd_errorPropagation(t *testing.T) {
 
 func TestRunServiceCmd_unknownCmd(t *testing.T) {
 	fb := &fakeBackend{}
-	code := runServiceCmd("bogus", "/tmp/dir", "/tmp/bin", "v1.0", fb, nil)
+	code := runServiceCmd("bogus", "/tmp/dir", "/tmp/bin", "v1.0", fb, nil, "127.0.0.1", 8080)
 	if code != 1 {
 		t.Errorf("expected exit 1 for unknown cmd, got %d", code)
 	}
