@@ -116,7 +116,7 @@ func collectCPURAMSwapParallel(ctx context.Context) (SystemCPU, SystemRAM, Syste
 // P1-3: regex handles both "84.21% idle" and "100% idle".
 func parseTopCPU(output string) (float64, error) {
 	var lastMatch string
-	for _, line := range strings.Split(output, "\n") {
+	for line := range strings.SplitSeq(output, "\n") {
 		if strings.Contains(line, "CPU usage") {
 			if reTopIdle.MatchString(line) {
 				lastMatch = line

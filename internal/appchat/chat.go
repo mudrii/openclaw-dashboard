@@ -99,10 +99,7 @@ func BuildSystemPrompt(data map[string]any) string {
 
 	if bd, ok := data["costBreakdown"].([]any); ok && len(bd) > 0 {
 		b.WriteString("By model (all-time): ")
-		limit := 5
-		if len(bd) < limit {
-			limit = len(bd)
-		}
+		limit := min(len(bd), 5)
 		for i, item := range bd[:limit] {
 			m, _ := item.(map[string]any)
 			if m == nil {
@@ -127,10 +124,7 @@ func BuildSystemPrompt(data map[string]any) string {
 	b.WriteString("\n=== SESSIONS (")
 	b.WriteString(fmtCost0(sessionCount))
 	b.WriteString(" total, showing top 3) ===\n")
-	top := 3
-	if len(sessions) < top {
-		top = len(sessions)
-	}
+	top := min(len(sessions), 3)
 	for _, item := range sessions[:top] {
 		s, _ := item.(map[string]any)
 		if s == nil {
@@ -160,10 +154,7 @@ func BuildSystemPrompt(data map[string]any) string {
 	b.WriteString(" total, ")
 	b.WriteString(strconv.Itoa(failed))
 	b.WriteString(" failed) ===\n")
-	cronTop := 5
-	if len(crons) < cronTop {
-		cronTop = len(crons)
-	}
+	cronTop := min(len(crons), 5)
 	for _, item := range crons[:cronTop] {
 		c, _ := item.(map[string]any)
 		if c == nil {

@@ -45,7 +45,7 @@ func findDashboardDir(dir string) (string, bool) {
 		return dir, true
 	}
 	candidate := dir
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		parent := filepath.Dir(candidate)
 		if parent == candidate {
 			break

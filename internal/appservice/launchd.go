@@ -83,7 +83,7 @@ func (lb *launchdBackend) Install(cfg InstallConfig) error {
 	if err != nil {
 		return fmt.Errorf("create plist: %w", err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	data := plistData{
 		Label:   launchdLabel,
 		BinPath: cfg.BinPath,

@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -24,8 +25,8 @@ import (
 
 // SystemService collects host metrics and versions with TTL caching.
 type SystemService struct {
-	cfg        appconfig.SystemConfig
-	dashVer    string
+	cfg         appconfig.SystemConfig
+	dashVer     string
 	shutdownCtx context.Context // lifecycle context — cancelled on graceful shutdown; do NOT use for per-request ops
 
 	metricsMu      sync.RWMutex
@@ -464,13 +465,7 @@ func fetchJSONMapAllowStatus(ctx context.Context, client *http.Client, url strin
 		return nil, err
 	}
 	defer func() { _ = resp.Body.Close() }()
-	allowed := false
-	for _, s := range allowedStatuses {
-		if resp.StatusCode == s {
-			allowed = true
-			break
-		}
-	}
+	allowed := slices.Contains(allowedStatuses, resp.StatusCode)
 	if !allowed {
 		return nil, fmt.Errorf("status %d", resp.StatusCode)
 	}
@@ -702,11 +697,8 @@ var versionishTokenRe = regexp.MustCompile(`[0-9]+|[A-Za-z]+`)
 func versionishGreater(a, b string) bool {
 	ta := versionishTokenRe.FindAllString(strings.ToLower(a), -1)
 	tb := versionishTokenRe.FindAllString(strings.ToLower(b), -1)
-	n := len(ta)
-	if len(tb) < n {
-		n = len(tb)
-	}
-	for i := 0; i < n; i++ {
+	n := min(len(tb), len(ta))
+	for i := range n {
 		ai, aErr := strconv.Atoi(ta[i])
 		bi, bErr := strconv.Atoi(tb[i])
 		switch {

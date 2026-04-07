@@ -480,8 +480,7 @@ func TestDetectGatewayFallback_UsesTimeoutClient(t *testing.T) {
 	// Spin up a server that delays response to verify timeout works.
 	// Handler sleeps 1s (just long enough to exceed 100ms client timeout).
 	// Context cancels handler on test completion to avoid lingering goroutines.
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		select {
