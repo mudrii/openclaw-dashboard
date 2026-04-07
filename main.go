@@ -14,6 +14,8 @@ import (
 	"strconv"
 	"syscall"
 	"time"
+
+	"github.com/mudrii/openclaw-dashboard/internal/appservice"
 )
 
 //go:embed web/index.html
@@ -35,6 +37,32 @@ func Main() int {
 		exe = resolved
 	}
 	binDir := filepath.Dir(exe)
+
+	// Service subcommand dispatch — must happen before flag.Parse so flags
+	// like --bind/--port are not consumed by the default flagset.
+	if subcmd, rest := normaliseCmd(os.Args[1:]); subcmd != "" {
+		switch subcmd {
+		case "install", "uninstall", "start", "stop", "restart", "status":
+			dir, dirErr := resolveDashboardDirWithError(binDir)
+			if dirErr != nil {
+				fmt.Fprintf(os.Stderr, "[dashboard] failed to resolve runtime directory: %v\n", dirErr)
+				return 1
+			}
+			version := BuildVersion
+			if version == "" {
+				version = detectVersion(dir)
+			}
+			b, err := appservice.New()
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "[dashboard] service management not available: %v\n", err)
+				return 1
+			}
+			return runServiceCmd(subcmd, dir, exe, version, b, rest)
+		}
+	} else if len(os.Args) > 1 && os.Args[1] == "service" {
+		fmt.Fprintln(os.Stderr, "Usage: openclaw-dashboard service install|uninstall|start|stop|restart|status")
+		return 1
+	}
 
 	// Resolve the dashboard runtime directory. Source checkouts use the repo root,
 	// release archives use the extracted folder, and Homebrew installs hydrate a
@@ -172,6 +200,92 @@ func Main() int {
 	}
 	fmt.Println("[dashboard] stopped")
 	return 0
+}
+
+// normaliseCmd extracts the service subcommand from args.
+// "service start" → ("start", rest)
+// "start"         → ("start", rest)
+// "service"       → ("", nil)  — caller prints usage
+func normaliseCmd(args []string) (string, []string) {
+	if len(args) == 0 {
+		return "", nil
+	}
+	if args[0] == "service" {
+		if len(args) < 2 {
+			return "", nil
+		}
+		return args[1], args[2:]
+	}
+	return args[0], args[1:]
+}
+
+// runServiceCmd executes a service lifecycle subcommand using the given backend.
+// dir is the dashboard runtime directory, binPath is the resolved binary path,
+// version is the current build version, and args are remaining CLI args (for --bind/--port).
+func runServiceCmd(cmd, dir, binPath, version string, b appservice.Backend, args []string) int {
+	fs := flag.NewFlagSet("service", flag.ContinueOnError)
+	bind := fs.String("bind", "127.0.0.1", "Bind address")
+	fs.StringVar(bind, "b", "127.0.0.1", "Bind address")
+	port := fs.Int("port", 8080, "Listen port")
+	fs.IntVar(port, "p", 8080, "Listen port")
+	_ = fs.Parse(args)
+
+	switch cmd {
+	case "install":
+		cfg := appservice.InstallConfig{
+			BinPath: binPath,
+			WorkDir: dir,
+			LogPath: filepath.Join(dir, "server.log"),
+			Host:    *bind,
+			Port:    *port,
+		}
+		if err := b.Install(cfg); err != nil {
+			fmt.Fprintf(os.Stderr, "[dashboard] install failed: %v\n", err)
+			return 1
+		}
+		fmt.Println("[dashboard] service installed and started")
+		return 0
+	case "uninstall":
+		if err := b.Uninstall(); err != nil {
+			fmt.Fprintf(os.Stderr, "[dashboard] uninstall failed: %v\n", err)
+			return 1
+		}
+		fmt.Println("[dashboard] service stopped and unregistered (config and data preserved)")
+		return 0
+	case "start":
+		if err := b.Start(); err != nil {
+			fmt.Fprintf(os.Stderr, "[dashboard] start failed: %v\n", err)
+			return 1
+		}
+		fmt.Println("[dashboard] service started")
+		return 0
+	case "stop":
+		if err := b.Stop(); err != nil {
+			fmt.Fprintf(os.Stderr, "[dashboard] stop failed: %v\n", err)
+			return 1
+		}
+		fmt.Println("[dashboard] service stopped")
+		return 0
+	case "restart":
+		if err := b.Restart(); err != nil {
+			fmt.Fprintf(os.Stderr, "[dashboard] restart failed: %v\n", err)
+			return 1
+		}
+		fmt.Println("[dashboard] service restarted")
+		return 0
+	case "status":
+		st, err := b.Status()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "[dashboard] status failed: %v\n", err)
+			return 1
+		}
+		fmt.Print(appservice.FormatStatus(version, st))
+		return 0
+	default:
+		fmt.Fprintf(os.Stderr, "[dashboard] unknown service command %q\n", cmd)
+		fmt.Fprintln(os.Stderr, "Usage: openclaw-dashboard [service] install|uninstall|start|stop|restart|status")
+		return 1
+	}
 }
 
 func localIP() string {
