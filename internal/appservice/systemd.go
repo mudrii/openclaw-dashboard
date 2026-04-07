@@ -3,6 +3,7 @@
 package appservice
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -89,7 +90,7 @@ func (sb *systemdBackend) Install(cfg InstallConfig) error {
 
 func (sb *systemdBackend) Uninstall() error {
 	p := sb.unitPath()
-	if _, err := os.Stat(p); os.IsNotExist(err) {
+	if _, err := os.Stat(p); errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("service not installed (unit file not found: %s)", p)
 	}
 	_, _ = sb.ctl("stop", systemdUnitName)

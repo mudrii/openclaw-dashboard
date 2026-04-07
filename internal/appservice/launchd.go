@@ -3,6 +3,7 @@
 package appservice
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -104,7 +105,7 @@ func (lb *launchdBackend) Install(cfg InstallConfig) error {
 
 func (lb *launchdBackend) Uninstall() error {
 	p := lb.plistPath()
-	if _, err := os.Stat(p); os.IsNotExist(err) {
+	if _, err := os.Stat(p); errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("service not installed (plist not found: %s)", p)
 	}
 	out, err := lb.runCmd("launchctl", "unload", p)
@@ -199,11 +200,11 @@ func parseLaunchctlPID(out string) int {
 
 // parsePlistPort reads the --port value from the ProgramArguments in a plist.
 func parsePlistPort(content string) int {
-	idx := strings.Index(content, "--port</string>")
-	if idx < 0 {
+	_, after, ok := strings.Cut(content, "--port</string>")
+	if !ok {
 		return 0
 	}
-	rest := content[idx+len("--port</string>"):]
+	rest := after
 	start := strings.Index(rest, "<string>")
 	end := strings.Index(rest, "</string>")
 	if start < 0 || end < 0 || end <= start+len("<string>") {
@@ -217,11 +218,11 @@ func parsePlistPort(content string) int {
 // parsePlistLogPath reads StandardOutPath from a plist.
 func parsePlistLogPath(content string) string {
 	const key = "<key>StandardOutPath</key>"
-	idx := strings.Index(content, key)
-	if idx < 0 {
+	_, after, ok := strings.Cut(content, key)
+	if !ok {
 		return ""
 	}
-	rest := content[idx+len(key):]
+	rest := after
 	start := strings.Index(rest, "<string>")
 	end := strings.Index(rest, "</string>")
 	if start < 0 || end < 0 || end <= start+len("<string>") {

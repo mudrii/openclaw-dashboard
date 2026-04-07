@@ -97,6 +97,7 @@ func TestSystemd_Uninstall(t *testing.T) {
 			calls = append(calls, strings.Join(append([]string{name}, args...), " "))
 			return nil, nil
 		},
+		probeFunc: func(string) bool { return false },
 	}
 	if err := sb.Uninstall(); err != nil {
 		t.Fatalf("Uninstall: %v", err)
