@@ -67,6 +67,7 @@ func TestSystemd_Install_callsSystemctl(t *testing.T) {
 			calls = append(calls, strings.Join(append([]string{name}, args...), " "))
 			return nil, nil
 		},
+		probeFunc: func(string) bool { return false },
 	}
 	cfg := InstallConfig{BinPath: "/bin/d", WorkDir: "/tmp", LogPath: "/tmp/s.log", Host: "127.0.0.1", Port: 8080}
 	if err := sb.Install(cfg); err != nil {
@@ -239,6 +240,9 @@ func TestSystemd_Status_running(t *testing.T) {
 	}
 	if len(st.LogLines) == 0 {
 		t.Error("expected log lines to be populated")
+	}
+	if !st.AutoStart {
+		t.Error("expected AutoStart=true (unit file exists)")
 	}
 }
 
