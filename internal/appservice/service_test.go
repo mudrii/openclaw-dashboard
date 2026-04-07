@@ -43,11 +43,13 @@ func TestFormatStatus_stopped(t *testing.T) {
 	}
 	got := FormatStatus("v2026.3.23", st)
 
-	if !strings.Contains(got, "Status:     stopped") {
-		t.Errorf("expected 'stopped', got:\n%s", got)
-	}
-	if !strings.Contains(got, "Auto-start: disabled") {
-		t.Errorf("expected 'Auto-start: disabled', got:\n%s", got)
+	for _, want := range []string{
+		"Status:     stopped",
+		"Auto-start: disabled",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("FormatStatus missing %q\ngot:\n%s", want, got)
+		}
 	}
 	if strings.Contains(got, "PID:") {
 		t.Errorf("stopped status should not show PID, got:\n%s", got)
@@ -67,20 +69,23 @@ func TestFormatStatus_noLogLines(t *testing.T) {
 
 func TestFormatUptime(t *testing.T) {
 	tests := []struct {
+		name string
 		d    time.Duration
 		want string
 	}{
-		{3*time.Hour + 12*time.Minute, "3h 12m"},
-		{45 * time.Minute, "45m"},
-		{0, "0s"},
-		{-1 * time.Second, "0s"},
-		{30 * time.Second, "30s"},
-		{1*time.Hour + 0*time.Minute, "1h 0m"},
+		{"hours and minutes", 3*time.Hour + 12*time.Minute, "3h 12m"},
+		{"minutes only", 45 * time.Minute, "45m"},
+		{"zero", 0, "0s"},
+		{"negative", -1 * time.Second, "0s"},
+		{"seconds only", 30 * time.Second, "30s"},
+		{"exact hour", 1 * time.Hour, "1h 0m"},
 	}
 	for _, tc := range tests {
-		got := formatUptime(tc.d)
-		if got != tc.want {
-			t.Errorf("formatUptime(%v) = %q, want %q", tc.d, got, tc.want)
-		}
+		t.Run(tc.name, func(t *testing.T) {
+			got := formatUptime(tc.d)
+			if got != tc.want {
+				t.Errorf("formatUptime(%v) = %q, want %q", tc.d, got, tc.want)
+			}
+		})
 	}
 }
