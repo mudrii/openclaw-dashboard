@@ -234,9 +234,8 @@ func TestLaunchd_Status_runningService(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Status error: %v", err)
 	}
-	if !st.Running {
-		t.Error("expected Running=true")
-	}
+	// Note: Running is false in this test because nothing is listening on port 9090.
+	// The test verifies PID parsing and port parsing work correctly.
 	if st.PID != 48291 {
 		t.Errorf("PID = %d, want 48291", st.PID)
 	}
@@ -248,6 +247,41 @@ func TestLaunchd_Status_runningService(t *testing.T) {
 	}
 	if st.Backend != "LaunchAgent" {
 		t.Errorf("Backend = %q, want LaunchAgent", st.Backend)
+	}
+}
+
+func TestLaunchd_Status_pidButNoHTTP(t *testing.T) {
+	dir := t.TempDir()
+	plistContent := `<?xml version="1.0"?>
+<plist version="1.0"><dict>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/d</string>
+    <string>--port</string>
+    <string>19999</string>
+  </array>
+</dict></plist>`
+	_ = os.WriteFile(filepath.Join(dir, "com.openclaw.dashboard.plist"), []byte(plistContent), 0o644)
+
+	lb := &launchdBackend{
+		plistDir: dir,
+		runCmd: func(name string, args ...string) ([]byte, error) {
+			if strings.Contains(strings.Join(args, " "), "list") {
+				return []byte(`{ "PID" = 99999; "LastExitStatus" = 0; };`), nil
+			}
+			return nil, nil
+		},
+	}
+	st, err := lb.Status()
+	if err != nil {
+		t.Fatalf("Status error: %v", err)
+	}
+	// PID exists but HTTP probe fails (nothing on port 19999) → Running=false
+	if st.Running {
+		t.Error("Running should be false when HTTP probe fails")
+	}
+	if st.PID != 99999 {
+		t.Errorf("PID = %d, want 99999", st.PID)
 	}
 }
 

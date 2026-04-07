@@ -4,6 +4,7 @@ package appservice
 
 import (
 	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -152,10 +153,12 @@ func (lb *launchdBackend) Status() (ServiceStatus, error) {
 		return st, nil
 	}
 	pid := parseLaunchctlPID(string(out))
-	if pid > 0 {
-		st.Running = true
+	if pid > 0 && st.Port > 0 {
 		st.PID = pid
 		st.Uptime = resolveUptime(lb.runCmd, pid)
+		if probeHTTP(fmt.Sprintf("http://127.0.0.1:%d/", st.Port)) {
+			st.Running = true
+		}
 	}
 
 	// Last 20 log lines
@@ -202,7 +205,7 @@ func parsePlistPort(content string) int {
 	rest := content[idx+len("--port</string>"):]
 	start := strings.Index(rest, "<string>")
 	end := strings.Index(rest, "</string>")
-	if start < 0 || end < 0 || end <= start {
+	if start < 0 || end < 0 || end <= start+len("<string>") {
 		return 0
 	}
 	s := rest[start+len("<string>") : end]
@@ -220,10 +223,21 @@ func parsePlistLogPath(content string) string {
 	rest := content[idx+len(key):]
 	start := strings.Index(rest, "<string>")
 	end := strings.Index(rest, "</string>")
-	if start < 0 || end < 0 {
+	if start < 0 || end < 0 || end <= start+len("<string>") {
 		return ""
 	}
 	return strings.TrimSpace(rest[start+len("<string>") : end])
+}
+
+// probeHTTP returns true if the URL responds within 2 seconds.
+func probeHTTP(url string) bool {
+	client := &http.Client{Timeout: 2 * time.Second}
+	resp, err := client.Get(url)
+	if err != nil {
+		return false
+	}
+	resp.Body.Close()
+	return true
 }
 
 // resolveUptime fetches the process start time via ps and computes elapsed duration.
