@@ -46,14 +46,16 @@ func TestNormaliseCmd(t *testing.T) {
 		wantCmd  string
 		wantRest []string
 	}{
-		{"direct start", []string{"start"}, "start", []string{}},
-		{"direct stop", []string{"stop"}, "stop", []string{}},
-		{"service start", []string{"service", "start"}, "start", []string{}},
+		{"direct start", []string{"start"}, "start", nil},
+		{"direct stop", []string{"stop"}, "stop", nil},
+		{"service start", []string{"service", "start"}, "start", nil},
 		{"service install with flags", []string{"service", "install", "--port", "9090"}, "install", []string{"--port", "9090"}},
 		{"bare service", []string{"service"}, "", nil},
 		{"empty args", []string{}, "", nil},
-		{"direct status", []string{"status"}, "status", []string{}},
-		{"service status", []string{"service", "status"}, "status", []string{}},
+		{"direct status", []string{"status"}, "status", nil},
+		{"service status", []string{"service", "status"}, "status", nil},
+		{"flag arg intercepted", []string{"--version"}, "", nil},
+		{"unknown cmd passes through", []string{"bogus"}, "bogus", nil},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -68,99 +70,131 @@ func TestNormaliseCmd(t *testing.T) {
 	}
 }
 
-func TestRunServiceCmd_install(t *testing.T) {
-	fb := &fakeBackend{}
-	code := runServiceCmd("install", "/tmp/dir", "/tmp/bin", "v1.0", fb, []string{"--port", "9090"}, "127.0.0.1", 8080)
-	if code != 0 {
-		t.Fatalf("expected exit 0, got %d", code)
-	}
-	if fb.installedWith == nil {
-		t.Fatal("Install was not called")
-	}
-	if fb.installedWith.Port != 9090 {
-		t.Errorf("port = %d, want 9090", fb.installedWith.Port)
-	}
-	if fb.installedWith.WorkDir != "/tmp/dir" {
-		t.Errorf("WorkDir = %q, want /tmp/dir", fb.installedWith.WorkDir)
-	}
-	if fb.installedWith.BinPath != "/tmp/bin" {
-		t.Errorf("BinPath = %q, want /tmp/bin", fb.installedWith.BinPath)
+func baseOpts(fb *fakeBackend, args []string) serviceCmdOpts {
+	return serviceCmdOpts{
+		dir:         "/tmp/dir",
+		binPath:     "/tmp/bin",
+		version:     "v1.0",
+		backend:     fb,
+		args:        args,
+		defaultBind: "127.0.0.1",
+		defaultPort: 8080,
 	}
 }
 
-func TestRunServiceCmd_start(t *testing.T) {
-	fb := &fakeBackend{}
-	code := runServiceCmd("start", "/tmp/dir", "/tmp/bin", "v1.0", fb, nil, "127.0.0.1", 8080)
-	if code != 0 {
-		t.Fatalf("expected exit 0, got %d", code)
-	}
-	if !fb.started {
-		t.Error("Start was not called")
-	}
-}
-
-func TestRunServiceCmd_stop(t *testing.T) {
-	fb := &fakeBackend{}
-	code := runServiceCmd("stop", "/tmp/dir", "/tmp/bin", "v1.0", fb, nil, "127.0.0.1", 8080)
-	if code != 0 {
-		t.Fatalf("expected exit 0, got %d", code)
-	}
-	if !fb.stopped {
-		t.Error("Stop was not called")
-	}
-}
-
-func TestRunServiceCmd_restart(t *testing.T) {
-	fb := &fakeBackend{}
-	code := runServiceCmd("restart", "/tmp/dir", "/tmp/bin", "v1.0", fb, nil, "127.0.0.1", 8080)
-	if code != 0 {
-		t.Fatalf("expected exit 0, got %d", code)
-	}
-	if !fb.restarted {
-		t.Error("Restart was not called")
-	}
-}
-
-func TestRunServiceCmd_uninstall(t *testing.T) {
-	fb := &fakeBackend{}
-	code := runServiceCmd("uninstall", "/tmp/dir", "/tmp/bin", "v1.0", fb, nil, "127.0.0.1", 8080)
-	if code != 0 {
-		t.Fatalf("expected exit 0, got %d", code)
-	}
-	if !fb.uninstalled {
-		t.Error("Uninstall was not called")
-	}
-}
-
-func TestRunServiceCmd_status(t *testing.T) {
-	fb := &fakeBackend{
-		statusResult: appservice.ServiceStatus{
-			Running: true,
-			PID:     999,
-			Port:    8080,
+func TestRunServiceCmd(t *testing.T) {
+	tests := []struct {
+		name     string
+		cmd      string
+		args     []string
+		setupFb  func(*fakeBackend)
+		wantCode int
+		checkFb  func(*testing.T, *fakeBackend)
+	}{
+		{
+			name:     "install forwards port and paths",
+			cmd:      "install",
+			args:     []string{"--port", "9090"},
+			wantCode: 0,
+			checkFb: func(t *testing.T, fb *fakeBackend) {
+				t.Helper()
+				if fb.installedWith == nil {
+					t.Fatal("Install not called")
+				}
+				if fb.installedWith.Port != 9090 {
+					t.Errorf("port = %d, want 9090", fb.installedWith.Port)
+				}
+				if fb.installedWith.WorkDir != "/tmp/dir" {
+					t.Errorf("WorkDir = %q, want /tmp/dir", fb.installedWith.WorkDir)
+				}
+				if fb.installedWith.BinPath != "/tmp/bin" {
+					t.Errorf("BinPath = %q, want /tmp/bin", fb.installedWith.BinPath)
+				}
+			},
+		},
+		{
+			name:     "start calls Start",
+			cmd:      "start",
+			wantCode: 0,
+			checkFb: func(t *testing.T, fb *fakeBackend) {
+				t.Helper()
+				if !fb.started {
+					t.Error("Start not called")
+				}
+			},
+		},
+		{
+			name:     "stop calls Stop",
+			cmd:      "stop",
+			wantCode: 0,
+			checkFb: func(t *testing.T, fb *fakeBackend) {
+				t.Helper()
+				if !fb.stopped {
+					t.Error("Stop not called")
+				}
+			},
+		},
+		{
+			name:     "restart calls Restart",
+			cmd:      "restart",
+			wantCode: 0,
+			checkFb: func(t *testing.T, fb *fakeBackend) {
+				t.Helper()
+				if !fb.restarted {
+					t.Error("Restart not called")
+				}
+			},
+		},
+		{
+			name:     "uninstall calls Uninstall",
+			cmd:      "uninstall",
+			wantCode: 0,
+			checkFb: func(t *testing.T, fb *fakeBackend) {
+				t.Helper()
+				if !fb.uninstalled {
+					t.Error("Uninstall not called")
+				}
+			},
+		},
+		{
+			name: "status calls Status",
+			cmd:  "status",
+			setupFb: func(fb *fakeBackend) {
+				fb.statusResult = appservice.ServiceStatus{Running: true, PID: 999, Port: 8080}
+			},
+			wantCode: 0,
+			checkFb: func(t *testing.T, fb *fakeBackend) {
+				t.Helper()
+				if !fb.statusCalled {
+					t.Error("Status not called")
+				}
+			},
+		},
+		{
+			name:     "error propagates as exit 1",
+			cmd:      "start",
+			setupFb:  func(fb *fakeBackend) { fb.errStart = errors.New("launchctl failed") },
+			wantCode: 1,
+		},
+		{
+			name:     "unknown cmd returns exit 1",
+			cmd:      "bogus",
+			wantCode: 1,
 		},
 	}
-	code := runServiceCmd("status", "/tmp/dir", "/tmp/bin", "v1.0", fb, nil, "127.0.0.1", 8080)
-	if code != 0 {
-		t.Fatalf("expected exit 0, got %d", code)
-	}
-	if !fb.statusCalled {
-		t.Error("Status was not called")
-	}
-}
-
-func TestRunServiceCmd_errorPropagation(t *testing.T) {
-	fb := &fakeBackend{errStart: errors.New("launchctl failed")}
-	code := runServiceCmd("start", "/tmp/dir", "/tmp/bin", "v1.0", fb, nil, "127.0.0.1", 8080)
-	if code != 1 {
-		t.Errorf("expected exit 1 on error, got %d", code)
-	}
-}
-
-func TestRunServiceCmd_unknownCmd(t *testing.T) {
-	fb := &fakeBackend{}
-	code := runServiceCmd("bogus", "/tmp/dir", "/tmp/bin", "v1.0", fb, nil, "127.0.0.1", 8080)
-	if code != 1 {
-		t.Errorf("expected exit 1 for unknown cmd, got %d", code)
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			fb := &fakeBackend{}
+			if tc.setupFb != nil {
+				tc.setupFb(fb)
+			}
+			code := runServiceCmd(tc.cmd, baseOpts(fb, tc.args))
+			if code != tc.wantCode {
+				t.Fatalf("exit code = %d, want %d", code, tc.wantCode)
+			}
+			if tc.checkFb != nil {
+				tc.checkFb(t, fb)
+			}
+		})
 	}
 }

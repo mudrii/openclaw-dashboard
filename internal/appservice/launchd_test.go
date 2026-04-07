@@ -116,75 +116,54 @@ func TestLaunchd_Uninstall(t *testing.T) {
 	}
 }
 
-func TestLaunchd_Start(t *testing.T) {
-	var calls []string
-	lb := &launchdBackend{
-		plistDir: t.TempDir(),
-		runCmd: func(name string, args ...string) ([]byte, error) {
-			calls = append(calls, strings.Join(append([]string{name}, args...), " "))
-			return nil, nil
+func TestLaunchd_Lifecycle(t *testing.T) {
+	tests := []struct {
+		name        string
+		op          func(*launchdBackend) error
+		wantInCalls []string
+	}{
+		{
+			"Start",
+			(*launchdBackend).Start,
+			[]string{"launchctl start com.openclaw.dashboard"},
+		},
+		{
+			"Stop",
+			(*launchdBackend).Stop,
+			[]string{"launchctl stop com.openclaw.dashboard"},
+		},
+		{
+			"Restart",
+			(*launchdBackend).Restart,
+			[]string{"launchctl stop com.openclaw.dashboard", "launchctl start com.openclaw.dashboard"},
 		},
 	}
-	if err := lb.Start(); err != nil {
-		t.Fatalf("Start: %v", err)
-	}
-	found := false
-	for _, c := range calls {
-		if strings.Contains(c, "launchctl") && strings.Contains(c, "start") && strings.Contains(c, "com.openclaw.dashboard") {
-			found = true
-		}
-	}
-	if !found {
-		t.Errorf("launchctl start not called, got: %v", calls)
-	}
-}
-
-func TestLaunchd_Stop(t *testing.T) {
-	var calls []string
-	lb := &launchdBackend{
-		plistDir: t.TempDir(),
-		runCmd: func(name string, args ...string) ([]byte, error) {
-			calls = append(calls, strings.Join(append([]string{name}, args...), " "))
-			return nil, nil
-		},
-	}
-	if err := lb.Stop(); err != nil {
-		t.Fatalf("Stop: %v", err)
-	}
-	found := false
-	for _, c := range calls {
-		if strings.Contains(c, "launchctl") && strings.Contains(c, "stop") && strings.Contains(c, "com.openclaw.dashboard") {
-			found = true
-		}
-	}
-	if !found {
-		t.Errorf("launchctl stop not called, got: %v", calls)
-	}
-}
-
-func TestLaunchd_Restart(t *testing.T) {
-	var calls []string
-	lb := &launchdBackend{
-		plistDir: t.TempDir(),
-		runCmd: func(name string, args ...string) ([]byte, error) {
-			calls = append(calls, strings.Join(append([]string{name}, args...), " "))
-			return nil, nil
-		},
-	}
-	if err := lb.Restart(); err != nil {
-		t.Fatalf("Restart: %v", err)
-	}
-	stopSeen, startSeen := false, false
-	for _, c := range calls {
-		if strings.Contains(c, "launchctl stop") {
-			stopSeen = true
-		}
-		if strings.Contains(c, "launchctl start") {
-			startSeen = true
-		}
-	}
-	if !stopSeen || !startSeen {
-		t.Errorf("Restart must call both stop and start, got: %v", calls)
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var calls []string
+			lb := &launchdBackend{
+				plistDir: t.TempDir(),
+				runCmd: func(name string, args ...string) ([]byte, error) {
+					calls = append(calls, strings.Join(append([]string{name}, args...), " "))
+					return nil, nil
+				},
+			}
+			if err := tc.op(lb); err != nil {
+				t.Fatalf("%s: %v", tc.name, err)
+			}
+			for _, want := range tc.wantInCalls {
+				found := false
+				for _, c := range calls {
+					if strings.Contains(c, want) {
+						found = true
+						break
+					}
+				}
+				if !found {
+					t.Errorf("%s: %q not in calls: %v", tc.name, want, calls)
+				}
+			}
+		})
 	}
 }
 

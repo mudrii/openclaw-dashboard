@@ -119,72 +119,54 @@ func TestSystemd_Uninstall(t *testing.T) {
 	}
 }
 
-func TestSystemd_Start(t *testing.T) {
-	var calls []string
-	sb := &systemdBackend{
-		unitDir: t.TempDir(),
-		runCmd: func(name string, args ...string) ([]byte, error) {
-			calls = append(calls, strings.Join(append([]string{name}, args...), " "))
-			return nil, nil
+func TestSystemd_Lifecycle(t *testing.T) {
+	tests := []struct {
+		name        string
+		op          func(*systemdBackend) error
+		wantInCalls []string
+	}{
+		{
+			"Start",
+			(*systemdBackend).Start,
+			[]string{"--user start"},
+		},
+		{
+			"Stop",
+			(*systemdBackend).Stop,
+			[]string{"--user stop"},
+		},
+		{
+			"Restart",
+			(*systemdBackend).Restart,
+			[]string{"--user restart"},
 		},
 	}
-	if err := sb.Start(); err != nil {
-		t.Fatalf("Start: %v", err)
-	}
-	found := false
-	for _, c := range calls {
-		if strings.Contains(c, "--user") && strings.Contains(c, "start") {
-			found = true
-		}
-	}
-	if !found {
-		t.Errorf("systemctl --user start not called, got: %v", calls)
-	}
-}
-
-func TestSystemd_Stop(t *testing.T) {
-	var calls []string
-	sb := &systemdBackend{
-		unitDir: t.TempDir(),
-		runCmd: func(name string, args ...string) ([]byte, error) {
-			calls = append(calls, strings.Join(append([]string{name}, args...), " "))
-			return nil, nil
-		},
-	}
-	if err := sb.Stop(); err != nil {
-		t.Fatalf("Stop: %v", err)
-	}
-	found := false
-	for _, c := range calls {
-		if strings.Contains(c, "--user") && strings.Contains(c, "stop") {
-			found = true
-		}
-	}
-	if !found {
-		t.Errorf("systemctl --user stop not called, got: %v", calls)
-	}
-}
-
-func TestSystemd_Restart(t *testing.T) {
-	var calls []string
-	sb := &systemdBackend{
-		unitDir: t.TempDir(),
-		runCmd: func(name string, args ...string) ([]byte, error) {
-			calls = append(calls, strings.Join(append([]string{name}, args...), " "))
-			return nil, nil
-		},
-	}
-	if err := sb.Restart(); err != nil {
-		t.Fatalf("Restart: %v", err)
-	}
-	found := false
-	for _, c := range calls {
-		if strings.Contains(c, "--user") && strings.Contains(c, "restart") {
-			found = true
-		}
-	}
-	if !found {
-		t.Errorf("systemctl --user restart not called, got: %v", calls)
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var calls []string
+			sb := &systemdBackend{
+				unitDir: t.TempDir(),
+				runCmd: func(name string, args ...string) ([]byte, error) {
+					calls = append(calls, strings.Join(append([]string{name}, args...), " "))
+					return nil, nil
+				},
+			}
+			if err := tc.op(sb); err != nil {
+				t.Fatalf("%s: %v", tc.name, err)
+			}
+			for _, want := range tc.wantInCalls {
+				found := false
+				for _, c := range calls {
+					if strings.Contains(c, want) {
+						found = true
+						break
+					}
+				}
+				if !found {
+					t.Errorf("%s: %q not in calls: %v", tc.name, want, calls)
+				}
+			}
+		})
 	}
 }
 

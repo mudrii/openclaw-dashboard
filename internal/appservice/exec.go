@@ -1,15 +1,14 @@
 package appservice
 
 import (
+	"context"
 	"os/exec"
+	"time"
 )
 
-// execRun runs name with args, returns combined output.
+// execRun runs name with args using a 10 s timeout, returns combined output.
 func execRun(name string, args ...string) ([]byte, error) {
-	cmd := exec.Command(name, args...)
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		return out, err
-	}
-	return out, nil
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	return exec.CommandContext(ctx, name, args...).CombinedOutput()
 }

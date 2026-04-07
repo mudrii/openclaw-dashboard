@@ -73,7 +73,15 @@ func Main() int {
 				fmt.Fprintf(os.Stderr, "[dashboard] service management not available: %v\n", err)
 				return 1
 			}
-			return runServiceCmd(subcmd, dir, exe, version, b, rest, envBind, envPort)
+			return runServiceCmd(subcmd, serviceCmdOpts{
+					dir:         dir,
+					binPath:     exe,
+					version:     version,
+					backend:     b,
+					args:        rest,
+					defaultBind: envBind,
+					defaultPort: envPort,
+				})
 		default:
 			fmt.Fprintf(os.Stderr, "[dashboard] unknown command %q\n", subcmd)
 			fmt.Fprintln(os.Stderr, "Usage: openclaw-dashboard [service] install|uninstall|start|stop|restart|status")
@@ -253,67 +261,76 @@ func normaliseCmd(args []string) (string, []string) {
 	return cmd, rest
 }
 
-// runServiceCmd executes a service lifecycle subcommand using the given backend.
-// dir is the dashboard runtime directory, binPath is the resolved binary path,
-// version is the current build version, and args are remaining CLI args (for --bind/--port).
-func runServiceCmd(cmd, dir, binPath, version string, b appservice.Backend, args []string, defaultBind string, defaultPort int) int {
+// serviceCmdOpts holds parameters for runServiceCmd.
+type serviceCmdOpts struct {
+	dir         string
+	binPath     string
+	version     string
+	backend     appservice.Backend
+	args        []string
+	defaultBind string
+	defaultPort int
+}
+
+// runServiceCmd executes a service lifecycle subcommand using the given opts.
+func runServiceCmd(cmd string, opts serviceCmdOpts) int {
 	fs := flag.NewFlagSet("service", flag.ContinueOnError)
-	bind := fs.String("bind", defaultBind, "Bind address")
-	fs.StringVar(bind, "b", defaultBind, "Bind address")
-	port := fs.Int("port", defaultPort, "Listen port")
-	fs.IntVar(port, "p", defaultPort, "Listen port")
-	_ = fs.Parse(args)
+	bind := fs.String("bind", opts.defaultBind, "Bind address")
+	fs.StringVar(bind, "b", opts.defaultBind, "Bind address")
+	port := fs.Int("port", opts.defaultPort, "Listen port")
+	fs.IntVar(port, "p", opts.defaultPort, "Listen port")
+	_ = fs.Parse(opts.args)
 
 	switch cmd {
 	case "install":
 		cfg := appservice.InstallConfig{
-			BinPath: binPath,
-			WorkDir: dir,
-			LogPath: filepath.Join(dir, "server.log"),
+			BinPath: opts.binPath,
+			WorkDir: opts.dir,
+			LogPath: filepath.Join(opts.dir, "server.log"),
 			Host:    *bind,
 			Port:    *port,
 		}
-		if err := b.Install(cfg); err != nil {
+		if err := opts.backend.Install(cfg); err != nil {
 			fmt.Fprintf(os.Stderr, "[dashboard] install failed: %v\n", err)
 			return 1
 		}
 		fmt.Println("[dashboard] service installed and started")
 		return 0
 	case "uninstall":
-		if err := b.Uninstall(); err != nil {
+		if err := opts.backend.Uninstall(); err != nil {
 			fmt.Fprintf(os.Stderr, "[dashboard] uninstall failed: %v\n", err)
 			return 1
 		}
 		fmt.Println("[dashboard] service stopped and unregistered (config and data preserved)")
 		return 0
 	case "start":
-		if err := b.Start(); err != nil {
+		if err := opts.backend.Start(); err != nil {
 			fmt.Fprintf(os.Stderr, "[dashboard] start failed: %v\n", err)
 			return 1
 		}
 		fmt.Println("[dashboard] service started")
 		return 0
 	case "stop":
-		if err := b.Stop(); err != nil {
+		if err := opts.backend.Stop(); err != nil {
 			fmt.Fprintf(os.Stderr, "[dashboard] stop failed: %v\n", err)
 			return 1
 		}
 		fmt.Println("[dashboard] service stopped")
 		return 0
 	case "restart":
-		if err := b.Restart(); err != nil {
+		if err := opts.backend.Restart(); err != nil {
 			fmt.Fprintf(os.Stderr, "[dashboard] restart failed: %v\n", err)
 			return 1
 		}
 		fmt.Println("[dashboard] service restarted")
 		return 0
 	case "status":
-		st, err := b.Status()
+		st, err := opts.backend.Status()
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "[dashboard] status failed: %v\n", err)
 			return 1
 		}
-		fmt.Print(appservice.FormatStatus(version, st))
+		fmt.Print(appservice.FormatStatus(opts.version, st))
 		return 0
 	default:
 		fmt.Fprintf(os.Stderr, "[dashboard] unknown service command %q\n", cmd)

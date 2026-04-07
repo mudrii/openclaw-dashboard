@@ -34,15 +34,30 @@ type ServiceStatus struct {
 	LogLines  []string // last 20 lines of log file
 }
 
-// Backend abstracts service lifecycle operations.
-// Each platform provides one implementation via build tags.
-type Backend interface {
+// Installer manages service registration with the OS init system.
+type Installer interface {
 	Install(cfg InstallConfig) error
 	Uninstall() error
+}
+
+// Controller manages the running state of a registered service.
+type Controller interface {
 	Start() error
 	Stop() error
 	Restart() error
+}
+
+// Statuser reports the current state of a service.
+type Statuser interface {
 	Status() (ServiceStatus, error)
+}
+
+// Backend is the full service management interface, composed from focused sub-interfaces.
+// Each platform provides one implementation via build tags.
+type Backend interface {
+	Installer
+	Controller
+	Statuser
 }
 
 // FormatStatus renders a ServiceStatus as human-readable text for the terminal.

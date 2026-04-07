@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"text/template"
@@ -207,14 +208,15 @@ func parsePlistPort(content string) int {
 	if !ok {
 		return 0
 	}
-	rest := after
-	start := strings.Index(rest, "<string>")
-	end := strings.Index(rest, "</string>")
-	if start < 0 || end < 0 || end <= start+len("<string>") {
+	_, val, ok := strings.Cut(after, "<string>")
+	if !ok {
 		return 0
 	}
-	s := rest[start+len("<string>") : end]
-	n, _ := strconv.Atoi(strings.TrimSpace(s))
+	val, _, ok = strings.Cut(val, "</string>")
+	if !ok {
+		return 0
+	}
+	n, _ := strconv.Atoi(strings.TrimSpace(val))
 	return n
 }
 
@@ -225,13 +227,15 @@ func parsePlistLogPath(content string) string {
 	if !ok {
 		return ""
 	}
-	rest := after
-	start := strings.Index(rest, "<string>")
-	end := strings.Index(rest, "</string>")
-	if start < 0 || end < 0 || end <= start+len("<string>") {
+	_, val, ok := strings.Cut(after, "<string>")
+	if !ok {
 		return ""
 	}
-	return strings.TrimSpace(rest[start+len("<string>") : end])
+	val, _, ok = strings.Cut(val, "</string>")
+	if !ok {
+		return ""
+	}
+	return strings.TrimSpace(val)
 }
 
 // resolveUptime fetches the process start time via ps and computes elapsed duration.
@@ -259,7 +263,7 @@ func tailFile(path string, n int) []string {
 	if err != nil {
 		return nil
 	}
-	lines := strings.Split(strings.TrimRight(string(data), "\n"), "\n")
+	lines := slices.Collect(strings.SplitSeq(strings.TrimRight(string(data), "\n"), "\n"))
 	if len(lines) > n {
 		lines = lines[len(lines)-n:]
 	}
