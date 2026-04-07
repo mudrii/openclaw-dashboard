@@ -1,5 +1,19 @@
 # Changelog
 
+## v2026.4.8 — 2026-04-08
+
+### Added
+
+- **Built-in service management** — `openclaw-dashboard` now ships six service lifecycle subcommands: `install`, `uninstall`, `start`, `stop`, `restart`, and `status`. All commands are available directly and via the `service` alias (`openclaw-dashboard service install`, etc.).
+  - **macOS**: manages a LaunchAgent plist at `~/Library/LaunchAgents/com.openclaw.dashboard.plist` via `launchctl`
+  - **Linux**: manages a systemd user service at `~/.config/systemd/user/openclaw-dashboard.service` via `systemctl --user`
+  - `install` bakes `--bind` and `--port` (from flags, env vars, or `config.json`) into the generated service file
+  - `status` shows version, running state, PID, uptime, port, auto-start, and last 20 log lines
+  - Uninstall preserves all config and data — only the service registration is removed
+  - New package: `internal/appservice/` with `Backend` interface, launchd/systemd/unsupported implementations, shared HTTP liveness probe
+
+---
+
 ## v2026.4.4 — 2026-04-04
 
 ### Fixed
