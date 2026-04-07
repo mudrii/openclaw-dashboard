@@ -18,6 +18,7 @@ func newTestSystemd(t *testing.T) (*systemdBackend, string) {
 		runCmd: func(name string, args ...string) ([]byte, error) {
 			return nil, nil
 		},
+		probeFunc: func(string) bool { return false },
 	}
 	return sb, dir
 }
@@ -186,7 +187,8 @@ func TestSystemd_Restart(t *testing.T) {
 
 func TestSystemd_Status_notInstalled(t *testing.T) {
 	sb := &systemdBackend{
-		unitDir: t.TempDir(),
+		unitDir:   t.TempDir(),
+		probeFunc: func(string) bool { return false },
 		runCmd: func(name string, args ...string) ([]byte, error) {
 			return []byte(""), fmt.Errorf("exit status 4")
 		},
@@ -206,13 +208,14 @@ func TestSystemd_Status_running(t *testing.T) {
 	_ = os.WriteFile(unitPath, []byte("ExecStart=/bin/d --port 9090\n"), 0o644)
 
 	sb := &systemdBackend{
-		unitDir: dir,
+		unitDir:   dir,
+		probeFunc: func(string) bool { return true },
 		runCmd: func(name string, args ...string) ([]byte, error) {
-			joined := strings.Join(args, " ")
+			joined := name + " " + strings.Join(args, " ")
 			if strings.Contains(joined, "show") {
 				return []byte("ActiveState=active\nMainPID=55555\nActiveEnterTimestamp=2026-04-08 10:00:00 UTC\n"), nil
 			}
-			if strings.Contains(joined, "journalctl") {
+			if name == "journalctl" {
 				return []byte("line1\nline2\n"), nil
 			}
 			return nil, nil
@@ -222,6 +225,9 @@ func TestSystemd_Status_running(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Status: %v", err)
 	}
+	if !st.Running {
+		t.Error("expected Running=true")
+	}
 	if st.PID != 55555 {
 		t.Errorf("PID = %d, want 55555", st.PID)
 	}
@@ -230,6 +236,9 @@ func TestSystemd_Status_running(t *testing.T) {
 	}
 	if st.Port != 9090 {
 		t.Errorf("Port = %d, want 9090", st.Port)
+	}
+	if len(st.LogLines) == 0 {
+		t.Error("expected log lines to be populated")
 	}
 }
 

@@ -52,8 +52,9 @@ type plistData struct {
 }
 
 type launchdBackend struct {
-	plistDir string
-	runCmd   runCmdFunc
+	plistDir  string
+	runCmd    runCmdFunc
+	probeFunc func(string) bool
 }
 
 // New returns a launchd Backend for macOS.
@@ -63,8 +64,9 @@ func New() (Backend, error) {
 		return nil, fmt.Errorf("resolve home dir: %w", err)
 	}
 	return &launchdBackend{
-		plistDir: filepath.Join(home, "Library", "LaunchAgents"),
-		runCmd:   execRun,
+		plistDir:  filepath.Join(home, "Library", "LaunchAgents"),
+		runCmd:    execRun,
+		probeFunc: probeHTTP,
 	}, nil
 }
 
@@ -155,7 +157,7 @@ func (lb *launchdBackend) Status() (ServiceStatus, error) {
 	if pid > 0 && st.Port > 0 {
 		st.PID = pid
 		st.Uptime = resolveUptime(lb.runCmd, pid)
-		if probeHTTP(fmt.Sprintf("http://127.0.0.1:%d/", st.Port)) {
+		if lb.probeFunc(fmt.Sprintf("http://127.0.0.1:%d/", st.Port)) {
 			st.Running = true
 		}
 	}

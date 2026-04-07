@@ -37,8 +37,9 @@ type unitData struct {
 }
 
 type systemdBackend struct {
-	unitDir string
-	runCmd  runCmdFunc
+	unitDir   string
+	runCmd    runCmdFunc
+	probeFunc func(string) bool
 }
 
 // New returns a systemd user-service Backend for Linux.
@@ -48,8 +49,9 @@ func New() (Backend, error) {
 		return nil, fmt.Errorf("resolve home dir: %w", err)
 	}
 	return &systemdBackend{
-		unitDir: filepath.Join(home, ".config", "systemd", "user"),
-		runCmd:  execRun,
+		unitDir:   filepath.Join(home, ".config", "systemd", "user"),
+		runCmd:    execRun,
+		probeFunc: probeHTTP,
 	}, nil
 }
 
@@ -154,14 +156,14 @@ func (sb *systemdBackend) Status() (ServiceStatus, error) {
 
 	// Running requires active state + HTTP probe
 	if props["ActiveState"] == "active" && st.Port > 0 {
-		if probeHTTP(fmt.Sprintf("http://127.0.0.1:%d/", st.Port)) {
+		if sb.probeFunc(fmt.Sprintf("http://127.0.0.1:%d/", st.Port)) {
 			st.Running = true
 		}
 	}
 
 	// Last 20 log lines via journalctl (only if process is active)
 	if props["ActiveState"] == "active" {
-		logOut, err := sb.runCmd("journalctl", "--user", "-u", systemdUnitName, "-n", "20", "--no-pager", "--output=short")
+		logOut, err := sb.runCmd("journalctl", "--user", "-u", systemdUnitName, "-n", "20", "--no-pager")
 		if err == nil {
 			lines := strings.Split(strings.TrimRight(string(logOut), "\n"), "\n")
 			if len(lines) > 0 && lines[0] != "" {

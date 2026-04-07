@@ -18,6 +18,7 @@ func newTestLaunchd(t *testing.T) (*launchdBackend, string) {
 		runCmd: func(name string, args ...string) ([]byte, error) {
 			return nil, nil
 		},
+		probeFunc: func(string) bool { return false },
 	}
 	return lb, dir
 }
@@ -188,7 +189,8 @@ func TestLaunchd_Restart(t *testing.T) {
 
 func TestLaunchd_Status_notInstalled(t *testing.T) {
 	lb := &launchdBackend{
-		plistDir: t.TempDir(),
+		plistDir:  t.TempDir(),
+		probeFunc: func(string) bool { return false },
 		runCmd: func(name string, args ...string) ([]byte, error) {
 			return []byte("Could not find service"), fmt.Errorf("exit status 113")
 		},
@@ -219,7 +221,8 @@ func TestLaunchd_Status_runningService(t *testing.T) {
 	_ = os.WriteFile(filepath.Join(dir, "com.openclaw.dashboard.plist"), []byte(plistContent), 0o644)
 
 	lb := &launchdBackend{
-		plistDir: dir,
+		plistDir:  dir,
+		probeFunc: func(string) bool { return true },
 		runCmd: func(name string, args ...string) ([]byte, error) {
 			if strings.Contains(strings.Join(args, " "), "list") {
 				return []byte(`{ "PID" = 48291; "LastExitStatus" = 0; };`), nil
@@ -234,8 +237,9 @@ func TestLaunchd_Status_runningService(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Status error: %v", err)
 	}
-	// Note: Running is false in this test because nothing is listening on port 9090.
-	// The test verifies PID parsing and port parsing work correctly.
+	if !st.Running {
+		t.Error("expected Running=true")
+	}
 	if st.PID != 48291 {
 		t.Errorf("PID = %d, want 48291", st.PID)
 	}
@@ -264,7 +268,8 @@ func TestLaunchd_Status_pidButNoHTTP(t *testing.T) {
 	_ = os.WriteFile(filepath.Join(dir, "com.openclaw.dashboard.plist"), []byte(plistContent), 0o644)
 
 	lb := &launchdBackend{
-		plistDir: dir,
+		plistDir:  dir,
+		probeFunc: func(string) bool { return false },
 		runCmd: func(name string, args ...string) ([]byte, error) {
 			if strings.Contains(strings.Join(args, " "), "list") {
 				return []byte(`{ "PID" = 99999; "LastExitStatus" = 0; };`), nil
@@ -276,7 +281,7 @@ func TestLaunchd_Status_pidButNoHTTP(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Status error: %v", err)
 	}
-	// PID exists but HTTP probe fails (nothing on port 19999) → Running=false
+	// PID exists but HTTP probe fails (stub returns false) → Running=false
 	if st.Running {
 		t.Error("Running should be false when HTTP probe fails")
 	}
