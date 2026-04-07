@@ -4,7 +4,6 @@ package appservice
 
 import (
 	"fmt"
-	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -227,17 +226,6 @@ func parsePlistLogPath(content string) string {
 		return ""
 	}
 	return strings.TrimSpace(rest[start+len("<string>") : end])
-}
-
-// probeHTTP returns true if the URL responds within 2 seconds.
-func probeHTTP(url string) bool {
-	client := &http.Client{Timeout: 2 * time.Second}
-	resp, err := client.Get(url)
-	if err != nil {
-		return false
-	}
-	resp.Body.Close()
-	return true
 }
 
 // resolveUptime fetches the process start time via ps and computes elapsed duration.
