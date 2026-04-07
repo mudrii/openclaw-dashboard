@@ -35,6 +35,7 @@
 | `internal/apprefresh/` | Dashboard data collector and aggregators |
 | `internal/appserver/` | HTTP handlers, refresh coordinator, static serving |
 | `internal/appsystem/` | Host metrics and OpenClaw runtime probes |
+| `internal/appservice/` | Service lifecycle backend — launchd (macOS), systemd (Linux), unsupported stub |
 | `web/index.html` | Embedded single-file frontend |
 | `assets/runtime/` | Runtime defaults (`config.json`, `themes.json`, `refresh.sh`) |
 | `testdata/` | Reusable fixtures for tests |
@@ -544,6 +545,43 @@ Sorted by cost descending.
 
 ## 9. Installation & Service Management
 
+### Binary Service Subcommands
+
+The binary includes built-in service management via the `install`, `uninstall`, `start`, `stop`, `restart`, and `status` subcommands (backed by `internal/appservice/`). All commands are available directly and via the `service` namespace alias:
+
+```bash
+openclaw-dashboard install [--bind HOST] [--port PORT]
+openclaw-dashboard status
+openclaw-dashboard stop
+openclaw-dashboard start
+openclaw-dashboard restart
+openclaw-dashboard uninstall
+# or: openclaw-dashboard service <cmd>
+```
+
+`install` bakes `--bind` and `--port` (defaulting to values from `config.json` and env vars) into the generated plist / unit file. Config and data are never deleted by `uninstall`.
+
+**Implementation:**
+- Platform selection: Go build tags (`//go:build darwin`, `//go:build linux`, `//go:build !darwin && !linux`)
+- macOS backend (`launchd.go`): writes plist to `~/Library/LaunchAgents/com.openclaw.dashboard.plist`, invokes `launchctl load/unload/start/stop/list`
+- Linux backend (`systemd.go`): writes unit to `~/.config/systemd/user/openclaw-dashboard.service`, invokes `systemctl --user daemon-reload/enable/start/stop/disable/restart/show` and `journalctl`
+- All external commands injected via `runCmdFunc` field for testability (no mocking frameworks)
+- HTTP liveness probe (`probe.go`, package-level `http.Client`, 2s timeout) — `Status()` sets `Running=true` only when both PID > 0 AND HTTP probe succeeds
+
+**Status output format:**
+```
+openclaw-dashboard v2026.3.23
+Status:     running
+PID:        48291
+Uptime:     3h 12m
+Port:       8080
+Auto-start: enabled (LaunchAgent)
+
+--- recent log ---
+[dashboard] v2026.3.23
+[dashboard] Serving on http://127.0.0.1:8080/
+```
+
 ### macOS — LaunchAgent
 
 `install.sh` generates a plist at `~/Library/LaunchAgents/com.openclaw.dashboard.plist`:
@@ -559,6 +597,8 @@ launchctl load ~/Library/LaunchAgents/com.openclaw.dashboard.plist
 launchctl unload ~/Library/LaunchAgents/com.openclaw.dashboard.plist
 ```
 
+> Note: these commands are now handled automatically by `openclaw-dashboard install` / `openclaw-dashboard uninstall`.
+
 ### Linux — systemd User Service
 
 `install.sh` generates `~/.config/systemd/user/openclaw-dashboard.service`:
@@ -572,6 +612,8 @@ systemctl --user start openclaw-dashboard
 systemctl --user stop openclaw-dashboard
 systemctl --user status openclaw-dashboard
 ```
+
+> Note: these commands are now handled automatically by `openclaw-dashboard install` / `openclaw-dashboard uninstall`.
 
 ### Install Flow
 

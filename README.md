@@ -124,15 +124,39 @@ This will:
 brew upgrade mudrii/tap/openclaw-dashboard
 ```
 
-### Running as a Background Service (macOS)
+### Running as a Background Service
 
-After installing via Homebrew, you can run the dashboard as a launchd service:
+The binary has built-in service management — no shell scripts needed:
 
 ```bash
-# Start on login
-brew services start mudrii/tap/openclaw-dashboard
+# Install and start as a system service (launchd on macOS, systemd on Linux)
+openclaw-dashboard install
 
-# Or manually create a launchd plist pointing to /opt/homebrew/bin/openclaw-dashboard
+# With custom port and bind address
+openclaw-dashboard install --port 9090 --bind 0.0.0.0
+
+# Check status
+openclaw-dashboard status
+
+# Stop / start / restart
+openclaw-dashboard stop
+openclaw-dashboard start
+openclaw-dashboard restart
+
+# Remove the service (config and data are preserved)
+openclaw-dashboard uninstall
+```
+
+All commands are also available under the `service` namespace:
+```bash
+openclaw-dashboard service install
+openclaw-dashboard service status
+openclaw-dashboard service uninstall
+```
+
+**Homebrew users** can also use:
+```bash
+brew services start mudrii/tap/openclaw-dashboard
 ```
 
 ### Build from Source
@@ -508,18 +532,20 @@ Full agent setup at a glance: model routing chain (primary → fallbacks), sub-a
 ## Uninstall
 
 ```bash
-./uninstall.sh
+openclaw-dashboard uninstall
 ```
 
-Or manually:
-```bash
-# macOS
-launchctl unload ~/Library/LaunchAgents/com.openclaw.dashboard.plist
-rm -rf ~/.openclaw/dashboard
+This stops the service, removes the LaunchAgent (macOS) or systemd unit (Linux), and preserves all config and data at `~/.openclaw/dashboard`.
 
-# Linux
-systemctl --user stop openclaw-dashboard
+To also remove all data:
+```bash
+openclaw-dashboard uninstall
 rm -rf ~/.openclaw/dashboard
+```
+
+Or using the uninstall script:
+```bash
+./uninstall.sh
 ```
 
 ## Requirements
