@@ -72,7 +72,7 @@ func (sb *systemdBackend) Install(cfg InstallConfig) error {
 	if err != nil {
 		return fmt.Errorf("create unit file: %w", err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	if err := unitTmpl.Execute(f, unitData{BinPath: cfg.BinPath, Host: cfg.Host, Port: cfg.Port, WorkDir: cfg.WorkDir}); err != nil {
 		return fmt.Errorf("write unit file: %w", err)
 	}

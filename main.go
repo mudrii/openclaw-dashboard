@@ -12,6 +12,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -217,11 +218,15 @@ func Main() int {
 }
 
 // normaliseCmd extracts the service subcommand from args.
+// Returns ("", nil) for empty input or when args[0] starts with "-" (a flag).
 // "service start" → ("start", rest)
 // "start"         → ("start", rest)
 // "service"       → ("", nil)  — caller prints usage
 func normaliseCmd(args []string) (string, []string) {
 	if len(args) == 0 {
+		return "", nil
+	}
+	if strings.HasPrefix(args[0], "-") {
 		return "", nil
 	}
 	if args[0] == "service" {

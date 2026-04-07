@@ -229,7 +229,7 @@ func TestLaunchd_Status_runningService(t *testing.T) {
 				return []byte(`{ "PID" = 48291; "LastExitStatus" = 0; };`), nil
 			}
 			if name == "ps" {
-				return []byte("Tue Apr  8 10:00:00 2026"), nil
+				return []byte("Tue Apr  7 00:00:00 2026"), nil
 			}
 			return nil, nil
 		},
@@ -252,6 +252,9 @@ func TestLaunchd_Status_runningService(t *testing.T) {
 	}
 	if st.Backend != "LaunchAgent" {
 		t.Errorf("Backend = %q, want LaunchAgent", st.Backend)
+	}
+	if st.Uptime <= 0 {
+		t.Error("expected Uptime > 0 for running service with valid ps output")
 	}
 }
 
