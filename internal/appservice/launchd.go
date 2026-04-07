@@ -112,7 +112,10 @@ func (lb *launchdBackend) Uninstall() error {
 	if err != nil {
 		return fmt.Errorf("launchctl unload: %s: %w", strings.TrimSpace(string(out)), err)
 	}
-	return os.Remove(p)
+	if err := os.Remove(p); err != nil {
+		return fmt.Errorf("remove plist: %w", err)
+	}
+	return nil
 }
 
 func (lb *launchdBackend) Start() error {

@@ -3,6 +3,7 @@ package dashboard
 import (
 	"context"
 	_ "embed"
+	"errors"
 	"flag"
 	"fmt"
 	"log"
@@ -73,6 +74,10 @@ func Main() int {
 				return 1
 			}
 			return runServiceCmd(subcmd, dir, exe, version, b, rest, envBind, envPort)
+		default:
+			fmt.Fprintf(os.Stderr, "[dashboard] unknown command %q\n", subcmd)
+			fmt.Fprintln(os.Stderr, "Usage: openclaw-dashboard [service] install|uninstall|start|stop|restart|status")
+			return 1
 		}
 	} else if len(os.Args) > 1 && os.Args[1] == "service" {
 		fmt.Fprintln(os.Stderr, "Usage: openclaw-dashboard service install|uninstall|start|stop|restart|status")
@@ -134,7 +139,7 @@ func Main() int {
 			}
 			openclawPath = filepath.Join(home, ".openclaw")
 		}
-		if _, err := os.Stat(openclawPath); os.IsNotExist(err) {
+		if _, err := os.Stat(openclawPath); errors.Is(err, os.ErrNotExist) {
 			fmt.Fprintf(os.Stderr, "OpenClaw not found at %s\n", openclawPath)
 			return 1
 		}
