@@ -3,6 +3,7 @@
 package appservice
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -102,7 +103,7 @@ func TestSystemd_Uninstall(t *testing.T) {
 	if err := sb.Uninstall(); err != nil {
 		t.Fatalf("Uninstall: %v", err)
 	}
-	if _, err := os.Stat(unitPath); !os.IsNotExist(err) {
+	if _, err := os.Stat(unitPath); !errors.Is(err, os.ErrNotExist) {
 		t.Error("unit file should be removed")
 	}
 	for _, w := range []string{"stop", "disable", "daemon-reload"} {

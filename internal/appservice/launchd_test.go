@@ -3,6 +3,7 @@
 package appservice
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -101,7 +102,7 @@ func TestLaunchd_Uninstall(t *testing.T) {
 	if err := lb.Uninstall(); err != nil {
 		t.Fatalf("Uninstall: %v", err)
 	}
-	if _, err := os.Stat(plistPath); !os.IsNotExist(err) {
+	if _, err := os.Stat(plistPath); !errors.Is(err, os.ErrNotExist) {
 		t.Error("plist file should be removed after Uninstall")
 	}
 	found := false
