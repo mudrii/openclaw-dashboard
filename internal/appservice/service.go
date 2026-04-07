@@ -1,13 +1,14 @@
 package appservice
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"time"
 )
 
 // ErrUnsupported is returned on platforms without a service backend.
-var ErrUnsupported = fmt.Errorf("service management not supported on this platform")
+var ErrUnsupported = errors.New("service management not supported on this platform")
 
 // runCmdFunc is the signature for running an external command.
 // Injected into backends so tests can intercept exec calls.
@@ -80,10 +81,16 @@ func FormatStatus(version string, st ServiceStatus) string {
 }
 
 func formatUptime(d time.Duration) string {
+	if d <= 0 {
+		return "0s"
+	}
 	h := int(d.Hours())
 	m := int(d.Minutes()) % 60
 	if h > 0 {
 		return fmt.Sprintf("%dh %dm", h, m)
 	}
-	return fmt.Sprintf("%dm", m)
+	if m > 0 {
+		return fmt.Sprintf("%dm", m)
+	}
+	return fmt.Sprintf("%ds", int(d.Seconds()))
 }
