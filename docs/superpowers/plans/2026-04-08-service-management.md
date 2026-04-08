@@ -187,10 +187,10 @@ func TestFormatStatus_running(t *testing.T) {
 		Backend:   "LaunchAgent",
 		LogLines:  []string{"[dashboard] started", "[dashboard] ready"},
 	}
-	got := FormatStatus("v2026.3.23", st)
+	got := FormatStatus("v2026.4.8", st)
 
 	for _, want := range []string{
-		"openclaw-dashboard v2026.3.23",
+		"openclaw-dashboard v2026.4.8",
 		"Status:     running",
 		"PID:        12345",
 		"Uptime:     3h 12m",
@@ -212,7 +212,7 @@ func TestFormatStatus_stopped(t *testing.T) {
 		AutoStart: false,
 		Backend:   "LaunchAgent",
 	}
-	got := FormatStatus("v2026.3.23", st)
+	got := FormatStatus("v2026.4.8", st)
 
 	if !strings.Contains(got, "Status:     stopped") {
 		t.Errorf("expected 'stopped', got:\n%s", got)
@@ -454,7 +454,7 @@ func TestRunServiceCmd_statusContainsVersion(t *testing.T) {
 	fb := &fakeBackend{}
 	// capture stdout — use a strings.Builder via os.Stdout redirect is complex;
 	// instead verify FormatStatus is called by checking non-error exit
-	code := runServiceCmd("status", "/tmp/dir", "/tmp/bin", "v2026.3.23", fb, nil)
+	code := runServiceCmd("status", "/tmp/dir", "/tmp/bin", "v2026.4.8", fb, nil)
 	if code != 0 {
 		t.Fatalf("expected exit 0, got %d", code)
 	}

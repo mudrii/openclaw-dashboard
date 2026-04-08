@@ -1,11 +1,11 @@
 ---
-name: go-rigor
+name: go-rig
 description: Use this skill when building, reviewing, or refactoring Go code that must follow strict design discipline — ATDD/TDD workflow, explicit dependency injection, package-boundary discipline, and structured code review. Complements CLAUDE.md by focusing on process and design judgment rather than version-specific Go features.
 metadata:
   short-description: Go design, workflow, and review discipline
 ---
 
-# Go Rigor
+# Go Rig
 
 Strict design and testing discipline for Go projects.
 

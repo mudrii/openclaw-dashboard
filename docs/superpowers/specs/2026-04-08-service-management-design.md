@@ -38,7 +38,7 @@ openclaw-dashboard service status
 ### Status output format
 
 ```
-openclaw-dashboard v2026.3.23
+openclaw-dashboard v2026.4.8
 Status:     running
 PID:        48291
 Uptime:     3h 12m
@@ -46,7 +46,7 @@ Port:       8080
 Auto-start: enabled (LaunchAgent)
 
 --- recent log ---
-[dashboard] v2026.3.23
+[dashboard] v2026.4.8
 [dashboard] Serving on http://127.0.0.1:8080/
 [dashboard] Refresh endpoint: /api/refresh (debounce: 30s)
 ```
@@ -168,7 +168,7 @@ The implementation kept `install.sh` / `uninstall.sh` as the curl-pipe installat
 | Status output renderer | Table-driven tests over `ServiceStatus` values |
 | Integration tests | Skipped unless `INTEGRATION=1` env var is set; avoids CI dependency on launchctl/systemctl |
 
-No mocking frameworks. Fakes and injected functions only (go-rigor).
+No mocking frameworks. Fakes and injected functions only (go-rig).
 
 ---
 

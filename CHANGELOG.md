@@ -12,6 +12,14 @@
   - Uninstall preserves all config and data — only the service registration is removed
   - New package: `internal/appservice/` with `Backend` interface, launchd/systemd/unsupported implementations, shared HTTP liveness probe
 
+### Fixed
+
+- **Homebrew upgrade version drift** — Homebrew runtime seeding now refreshes `~/.openclaw/dashboard/VERSION` on startup so `openclaw-dashboard --version` stays aligned with the installed package after upgrades. Existing user-owned runtime files such as `config.json` remain untouched.
+
+### Documentation
+
+- **Release/install docs refreshed** — README, TECHNICAL.md, configuration docs, and Nix package metadata now reflect the 2026.4.8 release and the current Homebrew/download/install behavior.
+
 ---
 
 ## v2026.4.4 — 2026-04-04

@@ -69,6 +69,10 @@ brew install mudrii/tap/openclaw-dashboard
 The Homebrew formula installs the binary and seeds a writable runtime directory at
 `~/.openclaw/dashboard` on first run.
 
+Homebrew upgrades preserve existing `config.json` and runtime `themes.json`, and
+refresh the package-managed `VERSION` file automatically so `openclaw-dashboard
+--version` stays in sync with the installed formula.
+
 Then run:
 
 ```bash
@@ -122,6 +126,12 @@ This will:
 
 ```bash
 brew upgrade mudrii/tap/openclaw-dashboard
+```
+
+After upgrading, verify the installed release with:
+
+```bash
+openclaw-dashboard --version
 ```
 
 ### Running as a Background Service

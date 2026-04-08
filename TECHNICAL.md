@@ -1,6 +1,6 @@
 # TECHNICAL.md — OpenClaw Dashboard Internals
 
-> **Version:** 2026.3.23 · **Repo:** [github.com/mudrii/openclaw-dashboard](https://github.com/mudrii/openclaw-dashboard)
+> **Version:** 2026.4.8 · **Repo:** [github.com/mudrii/openclaw-dashboard](https://github.com/mudrii/openclaw-dashboard)
 >
 > This document covers architecture, data flow, and implementation details for developers and contributors. For features and quick start, see [README.md](README.md).
 
@@ -567,10 +567,11 @@ openclaw-dashboard uninstall
 - Linux backend (`systemd.go`): writes unit to `~/.config/systemd/user/openclaw-dashboard.service`, invokes `systemctl --user daemon-reload/enable/start/stop/disable/restart/show` and `journalctl`
 - All external commands injected via `runCmdFunc` field for testability (no mocking frameworks)
 - HTTP liveness probe (`probe.go`, package-level `http.Client`, 2s timeout) — `Status()` sets `Running=true` only when both PID > 0 AND HTTP probe succeeds
+- Homebrew runtime seeding preserves existing `config.json` and `themes.json`, while syncing the package-managed `VERSION` file on startup so the reported version matches the installed formula
 
 **Status output format:**
 ```
-openclaw-dashboard v2026.3.23
+openclaw-dashboard v2026.4.8
 Status:     running
 PID:        48291
 Uptime:     3h 12m
@@ -578,7 +579,7 @@ Port:       8080
 Auto-start: enabled (LaunchAgent)
 
 --- recent log ---
-[dashboard] v2026.3.23
+[dashboard] v2026.4.8
 [dashboard] Serving on http://127.0.0.1:8080/
 ```
 
