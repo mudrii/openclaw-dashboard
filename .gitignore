@@ -32,3 +32,6 @@ dashboard-go-*
 dist/
 promo-*.png
 dashboard-server
+
+# Local Claude settings
+.claude/settings.local.json
