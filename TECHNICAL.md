@@ -559,7 +559,7 @@ openclaw-dashboard uninstall
 # or: openclaw-dashboard service <cmd>
 ```
 
-`install` bakes `--bind` and `--port` (defaulting to values from `config.json` and env vars) into the generated plist / unit file. Config and data are never deleted by `uninstall`.
+`install` bakes `--bind` and `--port` (defaulting to values from `config.json` and env vars) into the generated plist / unit file. `openclaw-dashboard uninstall` preserves config and data; `uninstall.sh` removes the runtime directory after deregistering the service.
 
 **Implementation:**
 - Platform selection: Go build tags (`//go:build darwin`, `//go:build linux`, `//go:build !darwin && !linux`)
@@ -584,7 +584,7 @@ Auto-start: enabled (LaunchAgent)
 
 ### macOS — LaunchAgent
 
-`install.sh` generates a plist at `~/Library/LaunchAgents/com.openclaw.dashboard.plist`:
+`openclaw-dashboard install` writes a plist at `~/Library/LaunchAgents/com.openclaw.dashboard.plist`:
 
 - **RunAtLoad:** `true` — starts on login
 - **KeepAlive:** `true` — restarts on crash
@@ -601,7 +601,7 @@ launchctl unload ~/Library/LaunchAgents/com.openclaw.dashboard.plist
 
 ### Linux — systemd User Service
 
-`install.sh` generates `~/.config/systemd/user/openclaw-dashboard.service`:
+`openclaw-dashboard install` writes `~/.config/systemd/user/openclaw-dashboard.service`:
 
 - **Restart:** `always` (5s delay)
 - **WantedBy:** `default.target`
@@ -618,18 +618,18 @@ systemctl --user status openclaw-dashboard
 ### Install Flow
 
 1. Check prerequisites (OpenClaw directory at `OPENCLAW_HOME` or `~/.openclaw`)
-2. Clone repo (or `git pull` if exists, or `curl` tarball if no git)
-3. `chmod +x` scripts
-4. Copy `examples/config.minimal.json` → `config.json` (if not exists)
-5. Run initial data generation: `./openclaw-dashboard --refresh` (or `bash refresh.sh`, which invokes the same flag)
-6. Create and load OS-specific service
-7. Print URLs
+2. Create `${OPENCLAW_HOME:-~/.openclaw}/dashboard`
+3. Download the latest release archive for the current OS/arch, or fall back to `main.tar.gz` + `go build`
+4. Seed `refresh.sh` and copy `assets/runtime/config.json` to `config.json` if missing
+5. Run initial data generation: `./openclaw-dashboard --refresh`
+6. Register and start the OS-specific service via `./openclaw-dashboard install`
+7. Print URLs and local file paths
 
 ### Uninstall Flow
 
-1. Stop and remove service (LaunchAgent or systemd)
-2. Kill any running `openclaw-dashboard` processes
-3. `rm -rf` the install directory
+1. `openclaw-dashboard uninstall` stops and removes the service but preserves runtime files
+2. `uninstall.sh` additionally removes `${OPENCLAW_HOME:-~/.openclaw}/dashboard`
+3. Fallback cleanup removes any remaining plist / user unit and matching processes
 
 ---
 

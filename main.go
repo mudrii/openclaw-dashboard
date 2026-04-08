@@ -74,14 +74,14 @@ func Main() int {
 				return 1
 			}
 			return runServiceCmd(subcmd, serviceCmdOpts{
-					dir:         dir,
-					binPath:     exe,
-					version:     version,
-					backend:     b,
-					args:        rest,
-					defaultBind: envBind,
-					defaultPort: envPort,
-				})
+				dir:         dir,
+				binPath:     exe,
+				version:     version,
+				backend:     b,
+				args:        rest,
+				defaultBind: envBind,
+				defaultPort: envPort,
+			})
 		default:
 			fmt.Fprintf(os.Stderr, "[dashboard] unknown command %q\n", subcmd)
 			fmt.Fprintln(os.Stderr, "Usage: openclaw-dashboard [service] install|uninstall|start|stop|restart|status")
@@ -279,7 +279,9 @@ func runServiceCmd(cmd string, opts serviceCmdOpts) int {
 	fs.StringVar(bind, "b", opts.defaultBind, "Bind address")
 	port := fs.Int("port", opts.defaultPort, "Listen port")
 	fs.IntVar(port, "p", opts.defaultPort, "Listen port")
-	_ = fs.Parse(opts.args)
+	if err := fs.Parse(opts.args); err != nil {
+		return 1
+	}
 
 	switch cmd {
 	case "install":

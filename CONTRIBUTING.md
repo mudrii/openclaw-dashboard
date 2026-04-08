@@ -44,7 +44,8 @@ Before writing a line of code, understand these non-negotiable constraints:
 
 ## Test Suite Overview
 
-All automated tests are Go tests in the repository root (`package dashboard`). Run the full suite before every commit:
+Automated tests live in both the repository root (`package dashboard`) and the
+internal packages. Run the full suite before every commit:
 
 ```bash
 go test -race ./...

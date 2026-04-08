@@ -177,6 +177,18 @@ func TestRunServiceCmd(t *testing.T) {
 			wantCode: 1,
 		},
 		{
+			name:     "invalid flag returns exit 1 without executing command",
+			cmd:      "status",
+			args:     []string{"--port", "nope"},
+			wantCode: 1,
+			checkFb: func(t *testing.T, fb *fakeBackend) {
+				t.Helper()
+				if fb.statusCalled {
+					t.Fatal("Status should not be called when flag parsing fails")
+				}
+			},
+		},
+		{
 			name:     "unknown cmd returns exit 1",
 			cmd:      "bogus",
 			wantCode: 1,

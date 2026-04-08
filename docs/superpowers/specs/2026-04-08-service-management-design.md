@@ -1,14 +1,14 @@
 # Service Management Design
 
 **Date:** 2026-04-08  
-**Status:** Approved  
+**Status:** Implemented (historical design record)  
 **Scope:** Add `start`, `stop`, `restart`, `install`, `uninstall`, `status` subcommands to `openclaw-dashboard`
 
 ---
 
 ## Problem
 
-`openclaw-dashboard` has no built-in service management. Users must rely on `install.sh` / `uninstall.sh` shell scripts to register, start, and stop the service. There is no way to check service state from the binary. The goal is to make the binary self-sufficient for the full service lifecycle.
+At the time this design was written, `openclaw-dashboard` had no built-in service management. Users relied on `install.sh` / `uninstall.sh` shell scripts to register, start, and stop the service, and there was no way to check service state from the binary. The goal was to make the binary self-sufficient for the full service lifecycle.
 
 ---
 
@@ -154,7 +154,7 @@ case "install", "uninstall", "start", "stop", "restart", "status":
 
 ## Relationship to install.sh / uninstall.sh
 
-`install.sh` and `uninstall.sh` are unchanged. They remain the curl-pipe installation path. The binary subcommands are an additive surface for users who already have the binary and want to manage the service without shell scripts.
+The implementation kept `install.sh` / `uninstall.sh` as the curl-pipe installation path, but they were updated to delegate service registration and removal to the new binary subcommands. The binary is now the source of truth for service lifecycle operations.
 
 ---
 

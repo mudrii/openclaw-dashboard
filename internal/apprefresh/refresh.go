@@ -418,7 +418,8 @@ func parseOpenclawConfig(oc map[string]any, basePath string) (
 
 	// Skills
 	skillEntries := jsonObj(jsonObj(oc, "skills"), "entries")
-	for name, conf := range skillEntries {
+	for _, name := range sortedJSONKeys(skillEntries) {
+		conf := skillEntries[name]
 		enabled := true
 		if cm, ok := conf.(map[string]any); ok {
 			if e, ok := cm["enabled"].(bool); ok {
@@ -441,7 +442,8 @@ func parseOpenclawConfig(oc map[string]any, basePath string) (
 	imageModel := jsonStr(jsonObj(defaults, "imageModel"), "primary")
 
 	models := jsonObj(defaults, "models")
-	for mid, mconf := range models {
+	for _, mid := range sortedJSONKeys(models) {
+		mconf := models[mid]
 		mc := asObj(mconf)
 		alias := jsonStr(mc, "alias")
 		if alias == "" {
@@ -466,7 +468,8 @@ func parseOpenclawConfig(oc map[string]any, basePath string) (
 	tgCfg := jsonObj(channelsCfg, "telegram")
 	var channelsEnabled []string
 	channelStatus := map[string]any{}
-	for chName, conf := range channelsCfg {
+	for _, chName := range sortedJSONKeys(channelsCfg) {
+		conf := channelsCfg[chName]
 		cm := asObj(conf)
 		if cm == nil {
 			continue
@@ -537,7 +540,8 @@ func parseOpenclawConfig(oc map[string]any, basePath string) (
 	// Hooks
 	hookEntries := jsonObj(jsonObj(jsonObj(oc, "hooks"), "internal"), "entries")
 	var hooksList []any
-	for n, v := range hookEntries {
+	for _, n := range sortedJSONKeys(hookEntries) {
+		v := hookEntries[n]
 		hm := asObj(v)
 		enabled := true
 		if hm != nil {
@@ -550,15 +554,13 @@ func parseOpenclawConfig(oc map[string]any, basePath string) (
 
 	// Plugins
 	pluginEntries := jsonObj(jsonObj(oc, "plugins"), "entries")
-	var pluginsList []string
-	for name := range pluginEntries {
-		pluginsList = append(pluginsList, name)
-	}
+	pluginsList := append([]string(nil), sortedJSONKeys(pluginEntries)...)
 
 	// Skills config
 	skillEntriesCfg := jsonObj(jsonObj(oc, "skills"), "entries")
 	var skillsCfg []any
-	for n, v := range skillEntriesCfg {
+	for _, n := range sortedJSONKeys(skillEntriesCfg) {
+		v := skillEntriesCfg[n]
 		sm := asObj(v)
 		enabled := true
 		if sm != nil {
@@ -617,7 +619,8 @@ func parseOpenclawConfig(oc map[string]any, basePath string) (
 
 	// Model params
 	modelParams := map[string]map[string]any{}
-	for mid, mconf := range models {
+	for _, mid := range sortedJSONKeys(models) {
+		mconf := models[mid]
 		mc := asObj(mconf)
 		if mc != nil {
 			if p, ok := mc["params"].(map[string]any); ok {
@@ -628,7 +631,8 @@ func parseOpenclawConfig(oc map[string]any, basePath string) (
 
 	// Build available models list
 	var availModels []any
-	for mid, mconf := range models {
+	for _, mid := range sortedJSONKeys(models) {
+		mconf := models[mid]
 		mc := asObj(mconf)
 		alias := jsonStr(mc, "alias")
 		if alias == "" {
@@ -1219,4 +1223,13 @@ func ensureMapMapInt(m map[string]map[string]int, key string) map[string]int {
 		m[key] = map[string]int{}
 	}
 	return m[key]
+}
+
+func sortedJSONKeys(m map[string]any) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
 }

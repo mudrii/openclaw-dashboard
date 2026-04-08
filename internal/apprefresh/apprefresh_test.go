@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -164,5 +165,117 @@ func TestCollectSessions_CachesLiveModelLookup(t *testing.T) {
 	}
 	if gotA[0]["model"] != "GPT-5" || gotB[0]["model"] != "GPT-5" {
 		t.Fatalf("expected cached live model mapping to apply, got %v and %v", gotA[0]["model"], gotB[0]["model"])
+	}
+}
+
+func TestGetSessionModel_UsesLastModelChange(t *testing.T) {
+	basePath := filepath.Join(t.TempDir(), "agents")
+	sessionDir := filepath.Join(basePath, "main", "sessions")
+	if err := os.MkdirAll(sessionDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	lines := []string{
+		`{"type":"model_change","provider":"openai","modelId":"gpt-4o"}`,
+		`{"type":"message","message":{"role":"user","content":"hello"}}`,
+		`{"type":"model_change","provider":"openai","modelId":"gpt-5"}`,
+	}
+	content := strings.Join(lines, "\n") + "\n"
+	if err := os.WriteFile(filepath.Join(sessionDir, "session-1.jsonl"), []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	got := getSessionModel(basePath, "main", "session-1", map[string]string{"main": "anthropic/claude-sonnet"})
+	if got != "openai/gpt-5" {
+		t.Fatalf("expected last model change to win, got %q", got)
+	}
+}
+
+func TestGetSessionModel_FindsLateModelChangeInLargeFile(t *testing.T) {
+	basePath := filepath.Join(t.TempDir(), "agents")
+	sessionDir := filepath.Join(basePath, "main", "sessions")
+	if err := os.MkdirAll(sessionDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	largeMessage := `{"type":"message","message":{"role":"assistant","content":"` + strings.Repeat("x", 128*1024) + `"}}`
+	content := strings.Join([]string{
+		largeMessage,
+		`{"type":"model_change","provider":"openai","modelId":"gpt-5"}`,
+	}, "\n")
+	if err := os.WriteFile(filepath.Join(sessionDir, "session-large.jsonl"), []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	got := getSessionModel(basePath, "main", "session-large", map[string]string{"main": "anthropic/claude-sonnet"})
+	if got != "openai/gpt-5" {
+		t.Fatalf("expected late model change from large file, got %q", got)
+	}
+}
+
+func TestParseOpenclawConfig_SortsMapBackedLists(t *testing.T) {
+	oc := map[string]any{
+		"skills": map[string]any{
+			"entries": map[string]any{
+				"zeta":  map[string]any{"enabled": true},
+				"alpha": map[string]any{"enabled": false},
+			},
+		},
+		"plugins": map[string]any{
+			"entries": map[string]any{
+				"plugin-b": map[string]any{},
+				"plugin-a": map[string]any{},
+			},
+		},
+		"hooks": map[string]any{
+			"internal": map[string]any{
+				"entries": map[string]any{
+					"hook-z": map[string]any{"enabled": true},
+					"hook-a": map[string]any{"enabled": true},
+				},
+			},
+		},
+		"agents": map[string]any{
+			"defaults": map[string]any{
+				"model": map[string]any{
+					"primary":   "openai/gpt-5",
+					"fallbacks": []any{},
+				},
+				"models": map[string]any{
+					"openai/gpt-5": map[string]any{"alias": "GPT-5"},
+					"anthropic/claude-sonnet": map[string]any{
+						"alias": "Claude Sonnet",
+					},
+				},
+			},
+		},
+	}
+
+	_, skills, availableModels, _, agentConfig := parseOpenclawConfig(oc, t.TempDir())
+
+	var skillNames []string
+	for _, entry := range skills {
+		skillNames = append(skillNames, entry["name"].(string))
+	}
+	if !slices.Equal(skillNames, []string{"alpha", "zeta"}) {
+		t.Fatalf("skills order = %v, want alphabetical", skillNames)
+	}
+
+	var modelIDs []string
+	for _, entry := range availableModels {
+		modelIDs = append(modelIDs, entry["id"].(string))
+	}
+	if !slices.Equal(modelIDs, []string{"anthropic/claude-sonnet", "openai/gpt-5"}) {
+		t.Fatalf("available model order = %v, want alphabetical", modelIDs)
+	}
+
+	hooks := agentConfig["hooks"].([]any)
+	if hooks[0].(map[string]any)["name"] != "hook-a" || hooks[1].(map[string]any)["name"] != "hook-z" {
+		t.Fatalf("hook order = %#v, want alphabetical", hooks)
+	}
+
+	plugins := agentConfig["plugins"].([]string)
+	if !slices.Equal(plugins, []string{"plugin-a", "plugin-b"}) {
+		t.Fatalf("plugin order = %v, want alphabetical", plugins)
 	}
 }

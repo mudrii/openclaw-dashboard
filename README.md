@@ -112,11 +112,11 @@ curl -fsSL https://raw.githubusercontent.com/mudrii/openclaw-dashboard/main/inst
 
 This will:
 1. Install to `~/.openclaw/dashboard`
-2. Download the pre-built Go binary for your platform
+2. Download the latest release archive for your platform
 3. Create a default config
 4. Run initial data refresh
-5. Start the server as a system service
-6. Open http://127.0.0.1:8080
+5. Attempt to install and start the dashboard as a background service
+6. Print the local dashboard URL
 
 ### Upgrading via Homebrew
 
@@ -154,10 +154,8 @@ openclaw-dashboard service status
 openclaw-dashboard service uninstall
 ```
 
-**Homebrew users** can also use:
-```bash
-brew services start mudrii/tap/openclaw-dashboard
-```
+**Homebrew users** should use the built-in service commands above. The current tap
+does not define a `brew services` formula service.
 
 ### Build from Source
 
@@ -318,8 +316,9 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for the full specification.
 
 ## Configuration
 
-Edit `config.json` in your dashboard runtime directory. In a source checkout or
-`install.sh` install this is the project/install folder; with Homebrew it is
+Edit `config.json` in your dashboard runtime directory. In a source checkout this
+is usually the repo root. For `install.sh` installs it is
+`${OPENCLAW_HOME:-~/.openclaw}/dashboard/config.json`; with Homebrew it is
 `~/.openclaw/dashboard/config.json`.
 
 ```json
@@ -381,7 +380,7 @@ Edit `config.json` in your dashboard runtime directory. In a source checkout or
 | `system.pollSeconds` | `10` | How often the browser polls `/api/system` (seconds, 2–60) |
 | `system.metricsTtlSeconds` | `10` | Server-side metrics cache TTL (seconds) |
 | `system.versionsTtlSeconds` | `300` | Version/gateway probe cache TTL (seconds) |
-| `system.gatewayTimeoutMs` | `1500` | Timeout for gateway liveness probe (ms) |
+| `system.gatewayTimeoutMs` | `5000` | Timeout for gateway liveness probe (ms) |
 | `system.diskPath` | `"/"` | Filesystem path to report disk usage for |
 | `system.warnPercent` | `70` | Global warn threshold (% used) — overridden by per-metric values |
 | `system.criticalPercent` | `85` | Global critical threshold (% used) — overridden by per-metric values |
@@ -543,7 +542,7 @@ openclaw-dashboard uninstall
 rm -rf ~/.openclaw/dashboard
 ```
 
-Or using the uninstall script:
+Or using the uninstall script to remove the runtime directory as well:
 ```bash
 ./uninstall.sh
 ```

@@ -154,9 +154,8 @@ func TestReadDotenv_ExportPrefix(t *testing.T) {
 		t.Fatal(err)
 	}
 	m := ReadDotenv(path)
-	// ReadDotenv does not strip "export " prefix; the key includes it
-	if v, ok := m["export FOO"]; !ok || v != "bar" {
-		t.Errorf("expected key 'export FOO'=bar, got map %v", m)
+	if v, ok := m["FOO"]; !ok || v != "bar" {
+		t.Errorf("expected key 'FOO'=bar, got map %v", m)
 	}
 }
 

@@ -218,6 +218,12 @@ func ReadDotenv(path string) map[string]string {
 			continue
 		}
 		key := strings.TrimSpace(before)
+		if after0, ok0 := strings.CutPrefix(key, "export "); ok0 {
+			key = strings.TrimSpace(after0)
+		}
+		if key == "" {
+			continue
+		}
 		val := strings.TrimSpace(after)
 		if len(val) >= 2 {
 			if (val[0] == '"' && val[len(val)-1] == '"') ||

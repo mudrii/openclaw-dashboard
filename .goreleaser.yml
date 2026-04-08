@@ -28,6 +28,7 @@ archives:
       - README.md
       - LICENSE
       - VERSION
+      - docs/CONFIGURATION.md
       - assets/runtime/refresh.sh
       - install.sh
       - uninstall.sh
@@ -65,6 +66,7 @@ brews:
       pkgshare.install "assets/runtime/themes.json"
       pkgshare.install "assets/runtime/config.json"
       pkgshare.install "VERSION"
+      pkgshare.install "docs/CONFIGURATION.md"
       pkgshare.install "install.sh"
       pkgshare.install "uninstall.sh"
       pkgshare.install "web/index.html"
