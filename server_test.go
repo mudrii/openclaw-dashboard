@@ -524,7 +524,7 @@ func TestChat_RateLimitExceeded(t *testing.T) {
 	srv := NewServer(dir, "test", cfg, "tok", []byte("<head></head>"), context.Background())
 
 	// Send chatRateLimit requests — all should be accepted (400 because no gateway, but not 429)
-	for i := 0; i < chatRateLimit; i++ {
+	for i := range chatRateLimit {
 		body := `{"question":"hello"}`
 		req := httptest.NewRequest(http.MethodPost, "/api/chat", strings.NewReader(body))
 		req.RemoteAddr = "192.168.1.1:12345"
@@ -557,7 +557,7 @@ func TestChat_RateLimitPerIP(t *testing.T) {
 	srv := NewServer(dir, "test", cfg, "tok", []byte("<head></head>"), context.Background())
 
 	// Exhaust rate limit for IP A
-	for i := 0; i < chatRateLimit; i++ {
+	for range chatRateLimit {
 		req := httptest.NewRequest(http.MethodPost, "/api/chat", strings.NewReader(`{"question":"hi"}`))
 		req.RemoteAddr = "10.0.0.1:1111"
 		w := httptest.NewRecorder()

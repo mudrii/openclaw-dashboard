@@ -62,10 +62,7 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 	// Validate + sanitise history — inline switch avoids per-request map alloc
 	maxHist := s.cfg.AI.MaxHistory
 	history := make([]appchat.Message, 0, maxHist)
-	start := len(req.History) - maxHist
-	if start < 0 {
-		start = 0
-	}
+	start := max(len(req.History)-maxHist, 0)
 	for _, msg := range req.History[start:] {
 		switch msg.Role {
 		case "user", "assistant":

@@ -7,6 +7,10 @@ In a source checkout that is usually the repo root. In Homebrew installs it is
 `~/.openclaw/dashboard/config.json`. Default runtime files in this repo live in
 `assets/runtime/`.
 
+In Homebrew installs, upgrades preserve existing `config.json` and runtime
+`themes.json`. The package-managed `VERSION` file is refreshed automatically so
+the binary reports the installed release version correctly after upgrades.
+
 ### Full Example
 
 ```json

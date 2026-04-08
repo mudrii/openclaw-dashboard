@@ -16,6 +16,7 @@ internal/appchat/            chat prompt + gateway client
 internal/apprefresh/         dashboard data collector
 internal/appserver/          HTTP server, handlers, refresh orchestration
 internal/appsystem/          system metrics and OpenClaw runtime probes
+internal/appservice/         service lifecycle backend (launchd/systemd)
 web/                         embedded frontend assets
 assets/runtime/              runtime defaults (config, themes, refresh script)
 testdata/                    reusable fixtures for tests
@@ -61,5 +62,6 @@ Browser
 - `appsystem` owns live host metrics and gateway/runtime probes.
 - `appchat` owns prompt construction and OpenAI-compatible gateway requests.
 - `appserver` owns HTTP routing, caching, rate limiting, and refresh coordination.
+- `appservice` owns service lifecycle management: install, uninstall, start, stop, restart, and status via launchd (macOS) or systemd (Linux).
 
 The root `dashboard` package now exists mainly as a compatibility layer for tests and the exported `Main()` entry used by `cmd/openclaw-dashboard`.

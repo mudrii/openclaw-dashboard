@@ -147,7 +147,7 @@ func TestSendJSON_MarshalError(t *testing.T) {
 
 func TestChatRateLimiter_Allow(t *testing.T) {
 	rl := &chatRateLimiter{}
-	for i := 0; i < chatRateLimit; i++ {
+	for i := range chatRateLimit {
 		if !rl.allow("1.2.3.4") {
 			t.Fatalf("request %d should be allowed", i+1)
 		}
@@ -156,7 +156,7 @@ func TestChatRateLimiter_Allow(t *testing.T) {
 
 func TestChatRateLimiter_Block(t *testing.T) {
 	rl := &chatRateLimiter{}
-	for i := 0; i < chatRateLimit; i++ {
+	for range chatRateLimit {
 		rl.allow("1.2.3.4")
 	}
 	if rl.allow("1.2.3.4") {

@@ -61,6 +61,18 @@ func TestLoad_ValidJSON(t *testing.T) {
 	}
 }
 
+func TestLoad_EmptyHostFallsBackToDefault(t *testing.T) {
+	dir := t.TempDir()
+	data := `{"server":{"host":"","port":9090}}`
+	if err := os.WriteFile(filepath.Join(dir, "config.json"), []byte(data), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg := Load(dir)
+	if cfg.Server.Host != "127.0.0.1" {
+		t.Errorf("expected default host 127.0.0.1, got %q", cfg.Server.Host)
+	}
+}
+
 func TestLoad_PartialJSON(t *testing.T) {
 	dir := t.TempDir()
 	data := `{"timezone":"Asia/Tokyo"}`
@@ -154,9 +166,8 @@ func TestReadDotenv_ExportPrefix(t *testing.T) {
 		t.Fatal(err)
 	}
 	m := ReadDotenv(path)
-	// ReadDotenv does not strip "export " prefix; the key includes it
-	if v, ok := m["export FOO"]; !ok || v != "bar" {
-		t.Errorf("expected key 'export FOO'=bar, got map %v", m)
+	if v, ok := m["FOO"]; !ok || v != "bar" {
+		t.Errorf("expected key 'FOO'=bar, got map %v", m)
 	}
 }
 

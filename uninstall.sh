@@ -1,38 +1,34 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # OpenClaw Dashboard Uninstaller
 
-set -e
+set -euo pipefail
 
 INSTALL_DIR="${OPENCLAW_HOME:-$HOME/.openclaw}/dashboard"
 
 echo "🦞 OpenClaw Dashboard Uninstaller"
 echo ""
 
-# Stop and remove LaunchAgent (macOS)
-if [ "$(uname)" = "Darwin" ]; then
-  PLIST_FILE="$HOME/Library/LaunchAgents/com.openclaw.dashboard.plist"
-  if [ -f "$PLIST_FILE" ]; then
-    echo "🛑 Stopping server..."
-    launchctl unload "$PLIST_FILE" 2>/dev/null || true
-    rm -f "$PLIST_FILE"
-    echo "✅ LaunchAgent removed"
+if [ -x "$INSTALL_DIR/openclaw-dashboard" ]; then
+  echo "🛑 Stopping and unregistering service..."
+  "$INSTALL_DIR/openclaw-dashboard" uninstall || true
+else
+  if [ "$(uname)" = "Darwin" ]; then
+    PLIST_FILE="$HOME/Library/LaunchAgents/com.openclaw.dashboard.plist"
+    if [ -f "$PLIST_FILE" ]; then
+      launchctl unload "$PLIST_FILE" 2>/dev/null || true
+      rm -f "$PLIST_FILE"
+    fi
   fi
-fi
 
-# Stop systemd service (Linux)
-if [ "$(uname)" = "Linux" ] && command -v systemctl >/dev/null 2>&1; then
-  if systemctl --user is-active openclaw-dashboard >/dev/null 2>&1; then
-    echo "🛑 Stopping service..."
-    systemctl --user stop openclaw-dashboard
-    systemctl --user disable openclaw-dashboard
+  if [ "$(uname)" = "Linux" ] && command -v systemctl >/dev/null 2>&1; then
+    systemctl --user stop openclaw-dashboard 2>/dev/null || true
+    systemctl --user disable openclaw-dashboard 2>/dev/null || true
     rm -f "$HOME/.config/systemd/user/openclaw-dashboard.service"
-    systemctl --user daemon-reload
-    echo "✅ Systemd service removed"
+    systemctl --user daemon-reload 2>/dev/null || true
   fi
-fi
 
-# Kill any running openclaw-dashboard processes for this install
-pkill -f "${INSTALL_DIR}/openclaw-dashboard" 2>/dev/null || true
+  pkill -f "${INSTALL_DIR}/openclaw-dashboard" 2>/dev/null || true
+fi
 
 # Remove installation
 if [ -d "$INSTALL_DIR" ]; then

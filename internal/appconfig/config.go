@@ -143,6 +143,9 @@ func Load(dir string) Config {
 	if cfg.Server.Port <= 0 {
 		cfg.Server.Port = 8080
 	}
+	if strings.TrimSpace(cfg.Server.Host) == "" {
+		cfg.Server.Host = "127.0.0.1"
+	}
 	if cfg.System.PollSeconds < 2 || cfg.System.PollSeconds > 60 {
 		cfg.System.PollSeconds = 10
 	}
@@ -213,12 +216,18 @@ func ReadDotenv(path string) map[string]string {
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
 		}
-		idx := strings.Index(line, "=")
-		if idx < 0 {
+		before, after, ok := strings.Cut(line, "=")
+		if !ok {
 			continue
 		}
-		key := strings.TrimSpace(line[:idx])
-		val := strings.TrimSpace(line[idx+1:])
+		key := strings.TrimSpace(before)
+		if after0, ok0 := strings.CutPrefix(key, "export "); ok0 {
+			key = strings.TrimSpace(after0)
+		}
+		if key == "" {
+			continue
+		}
+		val := strings.TrimSpace(after)
 		if len(val) >= 2 {
 			if (val[0] == '"' && val[len(val)-1] == '"') ||
 				(val[0] == '\'' && val[len(val)-1] == '\'') {

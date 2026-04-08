@@ -95,7 +95,7 @@ func TestCallGateway_ResponseTooLarge(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 		// Write 2MB of data — should be rejected by the 1MB limit
 		w.Write([]byte(`{"choices":[{"message":{"content":"`))
-		for i := 0; i < 2*1024*1024; i++ {
+		for range 2 * 1024 * 1024 {
 			w.Write([]byte("a"))
 		}
 		w.Write([]byte(`"}}]}`))

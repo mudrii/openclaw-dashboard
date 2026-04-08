@@ -1,6 +1,6 @@
 # TECHNICAL.md — OpenClaw Dashboard Internals
 
-> **Version:** 2026.3.23 · **Repo:** [github.com/mudrii/openclaw-dashboard](https://github.com/mudrii/openclaw-dashboard)
+> **Version:** 2026.4.8 · **Repo:** [github.com/mudrii/openclaw-dashboard](https://github.com/mudrii/openclaw-dashboard)
 >
 > This document covers architecture, data flow, and implementation details for developers and contributors. For features and quick start, see [README.md](README.md).
 
@@ -35,6 +35,7 @@
 | `internal/apprefresh/` | Dashboard data collector and aggregators |
 | `internal/appserver/` | HTTP handlers, refresh coordinator, static serving |
 | `internal/appsystem/` | Host metrics and OpenClaw runtime probes |
+| `internal/appservice/` | Service lifecycle backend — launchd (macOS), systemd (Linux), unsupported stub |
 | `web/index.html` | Embedded single-file frontend |
 | `assets/runtime/` | Runtime defaults (`config.json`, `themes.json`, `refresh.sh`) |
 | `testdata/` | Reusable fixtures for tests |
@@ -544,9 +545,47 @@ Sorted by cost descending.
 
 ## 9. Installation & Service Management
 
+### Binary Service Subcommands
+
+The binary includes built-in service management via the `install`, `uninstall`, `start`, `stop`, `restart`, and `status` subcommands (backed by `internal/appservice/`). All commands are available directly and via the `service` namespace alias:
+
+```bash
+openclaw-dashboard install [--bind HOST] [--port PORT]
+openclaw-dashboard status
+openclaw-dashboard stop
+openclaw-dashboard start
+openclaw-dashboard restart
+openclaw-dashboard uninstall
+# or: openclaw-dashboard service <cmd>
+```
+
+`install` bakes `--bind` and `--port` (defaulting to values from `config.json` and env vars) into the generated plist / unit file. `openclaw-dashboard uninstall` preserves config and data; `uninstall.sh` removes the runtime directory after deregistering the service.
+
+**Implementation:**
+- Platform selection: Go build tags (`//go:build darwin`, `//go:build linux`, `//go:build !darwin && !linux`)
+- macOS backend (`launchd.go`): writes plist to `~/Library/LaunchAgents/com.openclaw.dashboard.plist`, invokes `launchctl load/unload/start/stop/list`
+- Linux backend (`systemd.go`): writes unit to `~/.config/systemd/user/openclaw-dashboard.service`, invokes `systemctl --user daemon-reload/enable/start/stop/disable/restart/show` and `journalctl`
+- All external commands injected via `runCmdFunc` field for testability (no mocking frameworks)
+- HTTP liveness probe (`probe.go`, package-level `http.Client`, 2s timeout) — `Status()` sets `Running=true` only when both PID > 0 AND HTTP probe succeeds
+- Homebrew runtime seeding preserves existing `config.json` and `themes.json`, while syncing the package-managed `VERSION` file on startup so the reported version matches the installed formula
+
+**Status output format:**
+```
+openclaw-dashboard v2026.4.8
+Status:     running
+PID:        48291
+Uptime:     3h 12m
+Port:       8080
+Auto-start: enabled (LaunchAgent)
+
+--- recent log ---
+[dashboard] v2026.4.8
+[dashboard] Serving on http://127.0.0.1:8080/
+```
+
 ### macOS — LaunchAgent
 
-`install.sh` generates a plist at `~/Library/LaunchAgents/com.openclaw.dashboard.plist`:
+`openclaw-dashboard install` writes a plist at `~/Library/LaunchAgents/com.openclaw.dashboard.plist`:
 
 - **RunAtLoad:** `true` — starts on login
 - **KeepAlive:** `true` — restarts on crash
@@ -559,9 +598,11 @@ launchctl load ~/Library/LaunchAgents/com.openclaw.dashboard.plist
 launchctl unload ~/Library/LaunchAgents/com.openclaw.dashboard.plist
 ```
 
+> Note: these commands are now handled automatically by `openclaw-dashboard install` / `openclaw-dashboard uninstall`.
+
 ### Linux — systemd User Service
 
-`install.sh` generates `~/.config/systemd/user/openclaw-dashboard.service`:
+`openclaw-dashboard install` writes `~/.config/systemd/user/openclaw-dashboard.service`:
 
 - **Restart:** `always` (5s delay)
 - **WantedBy:** `default.target`
@@ -573,21 +614,23 @@ systemctl --user stop openclaw-dashboard
 systemctl --user status openclaw-dashboard
 ```
 
+> Note: these commands are now handled automatically by `openclaw-dashboard install` / `openclaw-dashboard uninstall`.
+
 ### Install Flow
 
 1. Check prerequisites (OpenClaw directory at `OPENCLAW_HOME` or `~/.openclaw`)
-2. Clone repo (or `git pull` if exists, or `curl` tarball if no git)
-3. `chmod +x` scripts
-4. Copy `examples/config.minimal.json` → `config.json` (if not exists)
-5. Run initial data generation: `./openclaw-dashboard --refresh` (or `bash refresh.sh`, which invokes the same flag)
-6. Create and load OS-specific service
-7. Print URLs
+2. Create `${OPENCLAW_HOME:-~/.openclaw}/dashboard`
+3. Download the latest release archive for the current OS/arch, or fall back to `main.tar.gz` + `go build`
+4. Seed `refresh.sh` and copy `assets/runtime/config.json` to `config.json` if missing
+5. Run initial data generation: `./openclaw-dashboard --refresh`
+6. Register and start the OS-specific service via `./openclaw-dashboard install`
+7. Print URLs and local file paths
 
 ### Uninstall Flow
 
-1. Stop and remove service (LaunchAgent or systemd)
-2. Kill any running `openclaw-dashboard` processes
-3. `rm -rf` the install directory
+1. `openclaw-dashboard uninstall` stops and removes the service but preserves runtime files
+2. `uninstall.sh` additionally removes `${OPENCLAW_HOME:-~/.openclaw}/dashboard`
+3. Fallback cleanup removes any remaining plist / user unit and matching processes
 
 ---
 

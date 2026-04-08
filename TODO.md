@@ -2,6 +2,7 @@
 
 ## ✅ Released
 
+- Built-in service management (`install`/`uninstall`/`start`/`stop`/`restart`/`status`) via launchd (macOS) and systemd (Linux)
 - Security hardening (XSS, CORS, O(N²), shell safety, file handles)
 - Performance, dirty-checking & test suite (initial 44 ACs, rAF, scroll preserve, tab fix)
 - AI chat integration (`/api/chat`, chat panel UI, `ai` config block, chat test suite)

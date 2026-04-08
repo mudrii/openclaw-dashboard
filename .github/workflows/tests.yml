@@ -39,7 +39,7 @@ jobs:
         run: shellcheck --severity=warning assets/runtime/refresh.sh
 
       - name: Check install.sh
-        run: shellcheck --severity=warning install.sh || true
+        run: shellcheck --severity=warning install.sh
 
       - name: Check uninstall.sh
-        run: shellcheck --severity=warning uninstall.sh || true
+        run: shellcheck --severity=warning uninstall.sh

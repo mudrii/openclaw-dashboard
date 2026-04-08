@@ -126,23 +126,8 @@ func loadAgentDefaultModels(basePath string) map[string]string {
 func getSessionModel(basePath, agentName, sessionID string, agentDefaults map[string]string) string {
 	if sessionID != "" {
 		jsonlPath := filepath.Join(basePath, agentName, "sessions", sessionID+".jsonl")
-		f, err := os.Open(jsonlPath)
-		if err == nil {
-			defer func() { _ = f.Close() }()
-			scanner := newLimitedScanner(f, 10)
-			for scanner.Scan() {
-				var obj map[string]any
-				if err := json.Unmarshal(scanner.Bytes(), &obj); err != nil {
-					continue
-				}
-				if obj["type"] == "model_change" {
-					provider, _ := obj["provider"].(string)
-					modelID, _ := obj["modelId"].(string)
-					if provider != "" && modelID != "" {
-						return provider + "/" + modelID
-					}
-				}
-			}
+		if model, ok := readLastSessionModel(jsonlPath); ok {
+			return model
 		}
 	}
 	if m, ok := agentDefaults[agentName]; ok {
@@ -151,57 +136,65 @@ func getSessionModel(basePath, agentName, sessionID string, agentDefaults map[st
 	return "unknown"
 }
 
-type limitedScanner struct {
-	scanner *lineScanner
-	max     int
-	count   int
-}
+func readLastSessionModel(path string) (string, bool) {
+	f, err := os.Open(path)
+	if err != nil {
+		return "", false
+	}
+	defer func() { _ = f.Close() }()
 
-type lineScanner struct {
-	data   []byte
-	offset int
-	line   []byte
-}
+	info, err := f.Stat()
+	if err != nil {
+		return "", false
+	}
 
-func newLimitedScanner(f *os.File, maxLines int) *limitedScanner {
-	data := make([]byte, 0, 16*1024)
-	buf := make([]byte, 4096)
-	for {
-		n, err := f.Read(buf)
-		data = append(data, buf[:n]...)
-		if err != nil || len(data) > 64*1024 {
-			break
+	const chunkSize int64 = 64 * 1024
+	var tail string
+	for end := info.Size(); end > 0; {
+		start := max(end-chunkSize, 0)
+		buf := make([]byte, end-start)
+		if _, err := f.ReadAt(buf, start); err != nil {
+			return "", false
 		}
+
+		chunk := string(buf) + tail
+		lines := strings.Split(chunk, "\n")
+		if start > 0 {
+			tail = lines[0]
+			lines = lines[1:]
+		} else {
+			tail = ""
+		}
+
+		for i := len(lines) - 1; i >= 0; i-- {
+			if model, ok := sessionModelFromLine(lines[i]); ok {
+				return model, true
+			}
+		}
+		end = start
 	}
-	return &limitedScanner{
-		scanner: &lineScanner{data: data},
-		max:     maxLines,
+
+	if model, ok := sessionModelFromLine(tail); ok {
+		return model, true
 	}
+	return "", false
 }
 
-func (ls *limitedScanner) Scan() bool {
-	if ls.count >= ls.max {
-		return false
+func sessionModelFromLine(line string) (string, bool) {
+	text := strings.TrimSpace(line)
+	if text == "" {
+		return "", false
 	}
-	ls.count++
-	return ls.scanner.scan()
-}
-
-func (ls *limitedScanner) Bytes() []byte {
-	return ls.scanner.line
-}
-
-func (s *lineScanner) scan() bool {
-	if s.offset >= len(s.data) {
-		return false
+	var obj map[string]any
+	if err := json.Unmarshal([]byte(text), &obj); err != nil || obj["type"] != "model_change" {
+		return "", false
 	}
-	end := s.offset
-	for end < len(s.data) && s.data[end] != '\n' {
-		end++
+	provider, _ := obj["provider"].(string)
+	modelID, _ := obj["modelId"].(string)
+	if provider == "" || modelID == "" {
+		return "", false
 	}
-	s.line = s.data[s.offset:end]
-	s.offset = end + 1
-	return true
+	return provider + "/" + modelID, true
 }
 
 func collectSessions(stores []SessionStoreFile, basePath string, loc *time.Location, now time.Time, todayStr string,

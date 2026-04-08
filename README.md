@@ -69,6 +69,10 @@ brew install mudrii/tap/openclaw-dashboard
 The Homebrew formula installs the binary and seeds a writable runtime directory at
 `~/.openclaw/dashboard` on first run.
 
+Homebrew upgrades preserve existing `config.json` and runtime `themes.json`, and
+refresh the package-managed `VERSION` file automatically so `openclaw-dashboard
+--version` stays in sync with the installed formula.
+
 Then run:
 
 ```bash
@@ -112,11 +116,11 @@ curl -fsSL https://raw.githubusercontent.com/mudrii/openclaw-dashboard/main/inst
 
 This will:
 1. Install to `~/.openclaw/dashboard`
-2. Download the pre-built Go binary for your platform
+2. Download the latest release archive for your platform
 3. Create a default config
 4. Run initial data refresh
-5. Start the server as a system service
-6. Open http://127.0.0.1:8080
+5. Attempt to install and start the dashboard as a background service
+6. Print the local dashboard URL
 
 ### Upgrading via Homebrew
 
@@ -124,16 +128,44 @@ This will:
 brew upgrade mudrii/tap/openclaw-dashboard
 ```
 
-### Running as a Background Service (macOS)
-
-After installing via Homebrew, you can run the dashboard as a launchd service:
+After upgrading, verify the installed release with:
 
 ```bash
-# Start on login
-brew services start mudrii/tap/openclaw-dashboard
-
-# Or manually create a launchd plist pointing to /opt/homebrew/bin/openclaw-dashboard
+openclaw-dashboard --version
 ```
+
+### Running as a Background Service
+
+The binary has built-in service management — no shell scripts needed:
+
+```bash
+# Install and start as a system service (launchd on macOS, systemd on Linux)
+openclaw-dashboard install
+
+# With custom port and bind address
+openclaw-dashboard install --port 9090 --bind 0.0.0.0
+
+# Check status
+openclaw-dashboard status
+
+# Stop / start / restart
+openclaw-dashboard stop
+openclaw-dashboard start
+openclaw-dashboard restart
+
+# Remove the service (config and data are preserved)
+openclaw-dashboard uninstall
+```
+
+All commands are also available under the `service` namespace:
+```bash
+openclaw-dashboard service install
+openclaw-dashboard service status
+openclaw-dashboard service uninstall
+```
+
+**Homebrew users** should use the built-in service commands above. The current tap
+does not define a `brew services` formula service.
 
 ### Build from Source
 
@@ -294,8 +326,9 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for the full specification.
 
 ## Configuration
 
-Edit `config.json` in your dashboard runtime directory. In a source checkout or
-`install.sh` install this is the project/install folder; with Homebrew it is
+Edit `config.json` in your dashboard runtime directory. In a source checkout this
+is usually the repo root. For `install.sh` installs it is
+`${OPENCLAW_HOME:-~/.openclaw}/dashboard/config.json`; with Homebrew it is
 `~/.openclaw/dashboard/config.json`.
 
 ```json
@@ -357,7 +390,7 @@ Edit `config.json` in your dashboard runtime directory. In a source checkout or
 | `system.pollSeconds` | `10` | How often the browser polls `/api/system` (seconds, 2–60) |
 | `system.metricsTtlSeconds` | `10` | Server-side metrics cache TTL (seconds) |
 | `system.versionsTtlSeconds` | `300` | Version/gateway probe cache TTL (seconds) |
-| `system.gatewayTimeoutMs` | `1500` | Timeout for gateway liveness probe (ms) |
+| `system.gatewayTimeoutMs` | `5000` | Timeout for gateway liveness probe (ms) |
 | `system.diskPath` | `"/"` | Filesystem path to report disk usage for |
 | `system.warnPercent` | `70` | Global warn threshold (% used) — overridden by per-metric values |
 | `system.criticalPercent` | `85` | Global critical threshold (% used) — overridden by per-metric values |
@@ -508,18 +541,20 @@ Full agent setup at a glance: model routing chain (primary → fallbacks), sub-a
 ## Uninstall
 
 ```bash
-./uninstall.sh
+openclaw-dashboard uninstall
 ```
 
-Or manually:
-```bash
-# macOS
-launchctl unload ~/Library/LaunchAgents/com.openclaw.dashboard.plist
-rm -rf ~/.openclaw/dashboard
+This stops the service, removes the LaunchAgent (macOS) or systemd unit (Linux), and preserves all config and data at `~/.openclaw/dashboard`.
 
-# Linux
-systemctl --user stop openclaw-dashboard
+To also remove all data:
+```bash
+openclaw-dashboard uninstall
 rm -rf ~/.openclaw/dashboard
+```
+
+Or using the uninstall script to remove the runtime directory as well:
+```bash
+./uninstall.sh
 ```
 
 ## Requirements

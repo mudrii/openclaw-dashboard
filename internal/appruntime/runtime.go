@@ -45,7 +45,7 @@ func findDashboardDir(dir string) (string, bool) {
 		return dir, true
 	}
 	candidate := dir
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		parent := filepath.Dir(candidate)
 		if parent == candidate {
 			break
@@ -89,6 +89,13 @@ func SeedHomebrewRuntimeDir(binDir string) (string, bool, error) {
 			return "", false, fmt.Errorf("seed %s: %w", f.name, err)
 		}
 	}
+	if err := CopyFile(
+		filepath.Join(shareDir, "VERSION"),
+		filepath.Join(runtimeDir, "VERSION"),
+		0o644,
+	); err != nil {
+		return "", false, fmt.Errorf("sync VERSION: %w", err)
+	}
 	if err := CopyIfMissing(
 		filepath.Join(shareDir, "examples", "config.minimal.json"),
 		filepath.Join(runtimeDir, "examples", "config.minimal.json"),
@@ -109,6 +116,10 @@ func CopyIfMissing(src, dst string, mode os.FileMode) error {
 	if _, err := os.Stat(dst); err == nil {
 		return nil
 	}
+	return CopyFile(src, dst, mode)
+}
+
+func CopyFile(src, dst string, mode os.FileMode) error {
 	data, err := os.ReadFile(src)
 	if err != nil {
 		return err
