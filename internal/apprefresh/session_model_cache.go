@@ -8,9 +8,13 @@ import (
 	"os/exec"
 	"sync"
 	"time"
+
+	appsystem "github.com/mudrii/openclaw-dashboard/internal/appsystem"
 )
 
 var fetchLiveSessionModels = fetchLiveSessionModelsCLI
+var resolveOpenclawBin = appsystem.ResolveOpenclawBin
+var execCommandContext = exec.CommandContext
 
 type liveSessionModelCache struct {
 	mu        sync.Mutex
@@ -47,7 +51,7 @@ func fetchLiveSessionModelsCLI() map[string]string {
 	models := map[string]string{}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	out, err := exec.CommandContext(ctx, "openclaw", "sessions", "--json").Output()
+	out, err := execCommandContext(ctx, resolveOpenclawBin(), "sessions", "--json").Output()
 	if err != nil {
 		log.Printf("[dashboard] fetchLiveSessionModelsCLI: command failed: %v", err)
 		return models

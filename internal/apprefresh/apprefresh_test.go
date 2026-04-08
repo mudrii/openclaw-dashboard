@@ -1,8 +1,10 @@
 package apprefresh
 
 import (
+	"context"
 	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -165,6 +167,35 @@ func TestCollectSessions_CachesLiveModelLookup(t *testing.T) {
 	}
 	if gotA[0]["model"] != "GPT-5" || gotB[0]["model"] != "GPT-5" {
 		t.Fatalf("expected cached live model mapping to apply, got %v and %v", gotA[0]["model"], gotB[0]["model"])
+	}
+}
+
+func TestFetchLiveSessionModelsCLI_UsesResolvedOpenclawBin(t *testing.T) {
+	prevResolve := resolveOpenclawBin
+	prevExec := execCommandContext
+	defer func() {
+		resolveOpenclawBin = prevResolve
+		execCommandContext = prevExec
+	}()
+
+	var gotName string
+	var gotArgs []string
+	resolveOpenclawBin = func() string { return "/resolved/openclaw" }
+	execCommandContext = func(ctx context.Context, name string, args ...string) *exec.Cmd {
+		gotName = name
+		gotArgs = append([]string(nil), args...)
+		return exec.CommandContext(ctx, "sh", "-c", `printf '[]'`)
+	}
+
+	models := fetchLiveSessionModelsCLI()
+	if len(models) != 0 {
+		t.Fatalf("expected empty models from empty JSON array, got %+v", models)
+	}
+	if gotName != "/resolved/openclaw" {
+		t.Fatalf("expected resolved openclaw path, got %q", gotName)
+	}
+	if !slices.Equal(gotArgs, []string{"sessions", "--json"}) {
+		t.Fatalf("unexpected args: got %v", gotArgs)
 	}
 }
 

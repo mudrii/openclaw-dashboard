@@ -26,6 +26,9 @@ func newTestLaunchd(t *testing.T) (*launchdBackend, string) {
 
 func TestLaunchd_Install_writesPlist(t *testing.T) {
 	lb, dir := newTestLaunchd(t)
+	t.Setenv("HOME", "/home/user")
+	t.Setenv("PATH", "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin")
+	t.Setenv("OPENCLAW_HOME", "/srv/openclaw")
 	cfg := InstallConfig{
 		BinPath: "/usr/local/bin/openclaw-dashboard",
 		WorkDir: "/home/user/.openclaw/dashboard",
@@ -53,6 +56,13 @@ func TestLaunchd_Install_writesPlist(t *testing.T) {
 		"9090",
 		"/home/user/.openclaw/dashboard",
 		"/home/user/.openclaw/dashboard/server.log",
+		"<key>EnvironmentVariables</key>",
+		"<key>HOME</key>",
+		"<string>/home/user</string>",
+		"<key>PATH</key>",
+		"<string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>",
+		"<key>OPENCLAW_HOME</key>",
+		"<string>/srv/openclaw</string>",
 		"<true/>", // RunAtLoad
 	} {
 		if !strings.Contains(content, want) {

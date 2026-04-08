@@ -32,6 +32,15 @@ var plistTmpl = template.Must(template.New("plist").Parse(`<?xml version="1.0" e
   </array>
   <key>WorkingDirectory</key>
   <string>{{.WorkDir}}</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>HOME</key>
+    <string>{{.HomeDir}}</string>
+    <key>PATH</key>
+    <string>{{.PathEnv}}</string>
+    <key>OPENCLAW_HOME</key>
+    <string>{{.OpenclawHome}}</string>
+  </dict>
   <key>RunAtLoad</key>
   <true/>
   <key>KeepAlive</key>
@@ -45,12 +54,15 @@ var plistTmpl = template.Must(template.New("plist").Parse(`<?xml version="1.0" e
 `))
 
 type plistData struct {
-	Label   string
-	BinPath string
-	Host    string
-	Port    int
-	WorkDir string
-	LogPath string
+	Label        string
+	BinPath      string
+	Host         string
+	Port         int
+	WorkDir      string
+	LogPath      string
+	HomeDir      string
+	PathEnv      string
+	OpenclawHome string
 }
 
 type launchdBackend struct {
@@ -86,12 +98,15 @@ func (lb *launchdBackend) Install(cfg InstallConfig) error {
 	}
 	defer func() { _ = f.Close() }()
 	data := plistData{
-		Label:   launchdLabel,
-		BinPath: cfg.BinPath,
-		Host:    cfg.Host,
-		Port:    cfg.Port,
-		WorkDir: cfg.WorkDir,
-		LogPath: cfg.LogPath,
+		Label:        launchdLabel,
+		BinPath:      cfg.BinPath,
+		Host:         cfg.Host,
+		Port:         cfg.Port,
+		WorkDir:      cfg.WorkDir,
+		LogPath:      cfg.LogPath,
+		HomeDir:      userHomeDir(),
+		PathEnv:      launchdPathEnv(),
+		OpenclawHome: launchdOpenclawHome(),
 	}
 	if err := plistTmpl.Execute(f, data); err != nil {
 		return fmt.Errorf("write plist: %w", err)
@@ -102,6 +117,54 @@ func (lb *launchdBackend) Install(cfg InstallConfig) error {
 		return fmt.Errorf("launchctl load: %s: %w", strings.TrimSpace(string(out)), err)
 	}
 	return nil
+}
+
+func userHomeDir() string {
+	if home, err := os.UserHomeDir(); err == nil && home != "" {
+		return home
+	}
+	return os.Getenv("HOME")
+}
+
+func launchdPathEnv() string {
+	seen := make(map[string]struct{})
+	var paths []string
+
+	add := func(entries ...string) {
+		for _, entry := range entries {
+			entry = strings.TrimSpace(entry)
+			if entry == "" {
+				continue
+			}
+			if _, ok := seen[entry]; ok {
+				continue
+			}
+			seen[entry] = struct{}{}
+			paths = append(paths, entry)
+		}
+	}
+
+	add(strings.Split(os.Getenv("PATH"), ":")...)
+	add(
+		"/opt/homebrew/bin",
+		"/usr/local/bin",
+		"/usr/bin",
+		"/bin",
+		"/usr/sbin",
+		"/sbin",
+	)
+
+	return strings.Join(paths, ":")
+}
+
+func launchdOpenclawHome() string {
+	if path := strings.TrimSpace(os.Getenv("OPENCLAW_HOME")); path != "" {
+		return path
+	}
+	if home := userHomeDir(); home != "" {
+		return filepath.Join(home, ".openclaw")
+	}
+	return ""
 }
 
 func (lb *launchdBackend) Uninstall() error {

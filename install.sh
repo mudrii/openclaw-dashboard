@@ -90,7 +90,16 @@ echo "🔄 Running initial data refresh..."
 # Setup auto-start using the binary's built-in service management
 echo ""
 if ./openclaw-dashboard install; then
-  echo "🚀 Server installed and started as a background service"
+  sleep 2
+  status_output="$(./openclaw-dashboard status || true)"
+  if printf '%s\n' "$status_output" | grep -q '^Status:     running$'; then
+    echo "🚀 Server installed and started as a background service"
+  else
+    echo "⚠️  Service was installed but is not healthy yet:"
+    printf '%s\n' "$status_output"
+    echo ""
+    echo "   Check ~/.openclaw/dashboard/server.log for details."
+  fi
 else
   echo "⚠️  Automatic service installation failed. Start manually:"
   echo "   cd $INSTALL_DIR && ./openclaw-dashboard --port 8080"
