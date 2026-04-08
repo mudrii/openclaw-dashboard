@@ -143,6 +143,9 @@ func Load(dir string) Config {
 	if cfg.Server.Port <= 0 {
 		cfg.Server.Port = 8080
 	}
+	if strings.TrimSpace(cfg.Server.Host) == "" {
+		cfg.Server.Host = "127.0.0.1"
+	}
 	if cfg.System.PollSeconds < 2 || cfg.System.PollSeconds > 60 {
 		cfg.System.PollSeconds = 10
 	}

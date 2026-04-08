@@ -189,6 +189,18 @@ func TestRunServiceCmd(t *testing.T) {
 			},
 		},
 		{
+			name:     "unexpected positional args return exit 1 without executing command",
+			cmd:      "status",
+			args:     []string{"extra"},
+			wantCode: 1,
+			checkFb: func(t *testing.T, fb *fakeBackend) {
+				t.Helper()
+				if fb.statusCalled {
+					t.Fatal("Status should not be called when unexpected args are present")
+				}
+			},
+		},
+		{
 			name:     "unknown cmd returns exit 1",
 			cmd:      "bogus",
 			wantCode: 1,

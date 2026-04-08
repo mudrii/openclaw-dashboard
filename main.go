@@ -282,6 +282,10 @@ func runServiceCmd(cmd string, opts serviceCmdOpts) int {
 	if err := fs.Parse(opts.args); err != nil {
 		return 1
 	}
+	if fs.NArg() != 0 {
+		fmt.Fprintf(os.Stderr, "[dashboard] unexpected arguments for %s: %s\n", cmd, strings.Join(fs.Args(), " "))
+		return 1
+	}
 
 	switch cmd {
 	case "install":

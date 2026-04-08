@@ -61,6 +61,18 @@ func TestLoad_ValidJSON(t *testing.T) {
 	}
 }
 
+func TestLoad_EmptyHostFallsBackToDefault(t *testing.T) {
+	dir := t.TempDir()
+	data := `{"server":{"host":"","port":9090}}`
+	if err := os.WriteFile(filepath.Join(dir, "config.json"), []byte(data), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg := Load(dir)
+	if cfg.Server.Host != "127.0.0.1" {
+		t.Errorf("expected default host 127.0.0.1, got %q", cfg.Server.Host)
+	}
+}
+
 func TestLoad_PartialJSON(t *testing.T) {
 	dir := t.TempDir()
 	data := `{"timezone":"Asia/Tokyo"}`

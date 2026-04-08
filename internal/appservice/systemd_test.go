@@ -59,6 +59,32 @@ func TestSystemd_Install_writesUnitFile(t *testing.T) {
 	}
 }
 
+func TestSystemd_Install_quotesPathsWithSpaces(t *testing.T) {
+	sb, dir := newTestSystemd(t)
+	cfg := InstallConfig{
+		BinPath: "/home/test user/bin/openclaw-dashboard",
+		WorkDir: "/home/test user/.openclaw/dashboard",
+		Host:    "127.0.0.1",
+		Port:    8080,
+	}
+	if err := sb.Install(cfg); err != nil {
+		t.Fatalf("Install: %v", err)
+	}
+
+	unitPath := filepath.Join(dir, "openclaw-dashboard.service")
+	data, err := os.ReadFile(unitPath)
+	if err != nil {
+		t.Fatalf("unit file not written: %v", err)
+	}
+	content := string(data)
+	if !strings.Contains(content, `WorkingDirectory="/home/test user/.openclaw/dashboard"`) {
+		t.Fatalf("expected quoted working directory, got:\n%s", content)
+	}
+	if !strings.Contains(content, `ExecStart="/home/test user/bin/openclaw-dashboard" --bind "127.0.0.1" --port 8080`) {
+		t.Fatalf("expected quoted ExecStart path, got:\n%s", content)
+	}
+}
+
 func TestSystemd_Install_callsSystemctl(t *testing.T) {
 	var calls []string
 	dir := t.TempDir()

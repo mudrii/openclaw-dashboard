@@ -15,14 +15,16 @@ import (
 
 const systemdUnitName = "openclaw-dashboard"
 
-var unitTmpl = template.Must(template.New("unit").Parse(`[Unit]
+var unitTmpl = template.Must(template.New("unit").Funcs(template.FuncMap{
+	"systemdQuote": strconv.Quote,
+}).Parse(`[Unit]
 Description=OpenClaw Dashboard Server
 After=network.target
 
 [Service]
 Type=simple
-WorkingDirectory={{.WorkDir}}
-ExecStart={{.BinPath}} --bind {{.Host}} --port {{.Port}}
+WorkingDirectory={{systemdQuote .WorkDir}}
+ExecStart={{systemdQuote .BinPath}} --bind {{systemdQuote .Host}} --port {{.Port}}
 Restart=always
 RestartSec=5
 
