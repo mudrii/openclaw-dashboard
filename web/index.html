@@ -631,7 +631,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'SF Pro','Helvetica Neue',sans
 // === Utilities ===
 const COLORS=['#6366f1','#9333ea','#ec4899','#f59e0b','#10b981','#06b6d4','#f87171','#84cc16'];
 const $=id=>document.getElementById(id);
-const esc = s => String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+const esc = s => String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;').replace(/\//g,'&#x2F;');
 function safeColor(v){
   return /^#[0-9a-fA-F]{3,8}$/.test(v||'') ? v : '#888888';
 }
@@ -639,7 +639,8 @@ function relTime(ts){
   if(!ts)return'—';
   let d;
   if(typeof ts==='number')d=new Date(ts);
-  else{d=new Date(ts);if(isNaN(d))return ts}
+  else d=new Date(ts);
+  if(isNaN(d.getTime()))return'—';
   const diff=Math.floor((Date.now()-d)/1000);
   if(diff<60)return diff+'s ago';
   if(diff<3600)return Math.floor(diff/60)+'m ago';
@@ -1584,7 +1585,7 @@ const SystemBar = {
     // Gateway Runtime card — populated from live /api/system data
     const gwRtEl=$('gatewayRuntimePanelInner');
     if(gwRtEl){
-      const esc2=s=>String(s??'—').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      const esc2=s=>String(s??'—').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\//g,'&#x2F;');
       const kvR=(k,v,c='var(--text)')=>`<div style="display:flex;justify-content:space-between;margin-bottom:4px"><span style="font-size:12px;color:var(--muted)">${esc2(k)}</span><span style="font-size:12px;color:${c};font-weight:600">${esc2(v)}</span></div>`;
       const stateLabel=gwState.source==='runtime'
         ?(gwLive?'Online':'Offline')
