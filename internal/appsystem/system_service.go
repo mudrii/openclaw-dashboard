@@ -258,7 +258,6 @@ func (s *SystemService) getLatestVersionCached() string {
 		s.latestMu.RUnlock()
 		return v
 	}
-	cached := s.latestVer
 	s.latestMu.RUnlock()
 
 	s.latestMu.Lock()
@@ -279,15 +278,27 @@ func (s *SystemService) getLatestVersionCached() string {
 		latest := fetchLatestVersion(s.shutdownCtx, s.cfg.GatewayTimeoutMs)
 		now := time.Now()
 		s.latestMu.Lock()
-		if latest != "" {
+		// Re-check s.latestAt under the lock — if a concurrent goroutine wrote a
+		// fresher timestamp while we were fetching, don't clobber it. Only update
+		// if our result is genuinely newer or there is no existing data.
+		if latest != "" && (s.latestAt.IsZero() || now.After(s.latestAt)) {
 			s.latestVer = latest
 		}
-		s.latestAt = now
+		// Always advance latestAt so negative caching prevents thundering herd on
+		// repeated network failures — but only if we didn't just get clobbered.
+		if s.latestAt.IsZero() || now.After(s.latestAt) {
+			s.latestAt = now
+		}
 		s.latestRefresh = false
 		s.latestMu.Unlock()
 	}()
 
-	return cached
+	// Return whatever is currently cached (may be stale); it will be replaced
+	// asynchronously when the goroutine completes.
+	s.latestMu.RLock()
+	v := s.latestVer
+	s.latestMu.RUnlock()
+	return v
 }
 
 // collectDiskRoot uses syscall.Statfs — works on both darwin and linux.
