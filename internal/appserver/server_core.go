@@ -127,6 +127,13 @@ type Server struct {
 }
 
 func NewServer(dir, version string, cfg appconfig.Config, gatewayToken string, indexHTML []byte, serverCtx context.Context, refreshFn func(string, string, ...appconfig.Config) error) *Server {
+	// Defensive nil check — prevents panic if caller passes nil context.
+	// Logs a warning so misconfiguration is visible; graceful-shutdown cancellation
+	// will be disabled for this server instance since context.Background() never cancels.
+	if serverCtx == nil {
+		log.Printf("[dashboard] WARNING: NewServer called with nil serverCtx — graceful shutdown cancellation is disabled; using context.Background()")
+		serverCtx = context.Background()
+	}
 	content := string(indexHTML)
 	preset := html.EscapeString(cfg.Theme.Preset)
 	meta := "<head>\n<meta name=\"oc-theme\" content=\"" + preset + "\">"
