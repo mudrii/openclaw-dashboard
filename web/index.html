@@ -637,9 +637,7 @@ function safeColor(v){
 }
 function relTime(ts){
   if(!ts)return'—';
-  let d;
-  if(typeof ts==='number')d=new Date(ts);
-  else d=new Date(ts);
+  const d=new Date(ts);
   if(isNaN(d.getTime()))return'—';
   const diff=Math.floor((Date.now()-d)/1000);
   if(diff<60)return diff+'s ago';
