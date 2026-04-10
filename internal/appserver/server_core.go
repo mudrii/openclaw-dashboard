@@ -124,6 +124,9 @@ type Server struct {
 
 	// Chat rate limiter (10 req/min per IP)
 	chatLimiter chatRateLimiter
+
+	// Server lifecycle context — used by runRefresh to abort on shutdown.
+	serverCtx context.Context
 }
 
 func NewServer(dir, version string, cfg appconfig.Config, gatewayToken string, indexHTML []byte, serverCtx context.Context, refreshFn func(string, string, ...appconfig.Config) error) *Server {
@@ -152,6 +155,7 @@ func NewServer(dir, version string, cfg appconfig.Config, gatewayToken string, i
 		httpClient:         &http.Client{Timeout: 60 * time.Second},
 		systemSvc:          appsystem.NewSystemService(cfg.System, version, serverCtx),
 		refreshFn:          refreshFn,
+		serverCtx:          serverCtx,
 	}
 	// Start periodic cleanup of stale rate-limit entries
 	go func() {
