@@ -13,7 +13,27 @@ import (
 
 // startRefresh launches at most one refresh worker and returns a channel that
 // closes when the current refresh attempt completes.
+//
+// Each call gets the SAME channel for the current in-flight goroutine, preventing
+// the orphaned-channel issue where a late caller receives a channel that will be
+// closed and replaced before its goroutine even starts.
+//
+// If the server is shutting down, skips the goroutine entirely and returns a
+// dummy closed channel so callers don't treat it as "no channel" and wait
+// indefinitely.
 func (s *Server) startRefresh() chan struct{} {
+	// Abort before even starting a goroutine if the server is already shutting down.
+	// This avoids unnecessary goroutine churn during graceful shutdown.
+	select {
+	case <-s.serverCtx.Done():
+		// Return a dummy closed channel — callers check waitCh != nil before waiting,
+		// so this signals "no wait needed" without triggering a nil-pointer wait.
+		done := make(chan struct{})
+		close(done)
+		return done
+	default:
+	}
+
 	s.mu.Lock()
 	if s.refreshRunning {
 		ch := s.refreshDone
