@@ -122,8 +122,8 @@ type Server struct {
 	// Refresh collector function (injected at construction, not a global)
 	refreshFn func(string, string, ...appconfig.Config) error
 
-	// Lifecycle context — cancelled on graceful shutdown
-	serverCtx context.Context
+	// Lifecycle done channel — closed on graceful shutdown; nil channel in select never fires
+	done <-chan struct{}
 
 	// Chat rate limiter (10 req/min per IP)
 	chatLimiter chatRateLimiter
@@ -148,7 +148,7 @@ func NewServer(dir, version string, cfg appconfig.Config, gatewayToken string, i
 		httpClient:         &http.Client{Timeout: 60 * time.Second},
 		systemSvc:          appsystem.NewSystemService(cfg.System, version, serverCtx),
 		refreshFn:          refreshFn,
-		serverCtx:          serverCtx,
+		done:               serverCtx.Done(),
 	}
 	// Start periodic cleanup of stale rate-limit entries
 	go func() {
