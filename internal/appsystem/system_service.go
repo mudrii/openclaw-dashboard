@@ -271,6 +271,7 @@ func (s *SystemService) getLatestVersionCached() string {
 		s.latestMu.Unlock()
 		return v
 	}
+	v := s.latestVer // capture before goroutine mutates
 	s.latestRefresh = true
 	s.latestMu.Unlock()
 
@@ -286,11 +287,6 @@ func (s *SystemService) getLatestVersionCached() string {
 		s.latestMu.Unlock()
 	}()
 
-	// Re-read under RLock so we always return the freshest cached value,
-	// even if the goroutine completed between our unlock and this return.
-	s.latestMu.RLock()
-	v := s.latestVer
-	s.latestMu.RUnlock()
 	return v
 }
 
