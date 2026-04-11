@@ -1584,8 +1584,6 @@ const SystemBar = {
     // Gateway Runtime card — populated from live /api/system data
     const gwRtEl=$('gatewayRuntimePanelInner');
     if(gwRtEl){
-      const esc2=s=>String(s??'—').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-      const kvR=(k,v,c='var(--text)')=>`<div style="display:flex;justify-content:space-between;margin-bottom:4px"><span style="font-size:12px;color:var(--muted)">${esc2(k)}</span><span style="font-size:12px;color:${c};font-weight:600">${esc2(v)}</span></div>`;
       const stateLabel=gwState.source==='runtime'
         ?(gwLive?'Online':'Offline')
         :(gwok?'Online':'Offline');
@@ -1595,12 +1593,12 @@ const SystemBar = {
       const upTxt=gwState.source==='runtime'?this.fmtDurationMs(gwRuntime.uptimeMs)||gwVersion.uptime||'—':gwVersion.uptime||'—';
       const probeSource=gwState.source==='runtime'?'live probes':'status fallback';
       gwRtEl.innerHTML=[
-        kvR('State', stateLabel, stateColor),
-        kvR('Version', gwVersion.version||'—'),
-        kvR('PID', gwVersion.pid||'—'),
-        kvR('Uptime', upTxt),
-        kvR('Memory', gwVersion.memory||'—'),
-        kvR('Source', probeSource, 'var(--muted)'),
+        kv('State', stateLabel, stateColor),
+        kv('Version', gwVersion.version||'—'),
+        kv('PID', gwVersion.pid||'—'),
+        kv('Uptime', upTxt),
+        kv('Memory', gwVersion.memory||'—'),
+        kv('Source', probeSource, 'var(--muted)'),
       ].join('');
     }
 
