@@ -1584,8 +1584,7 @@ const SystemBar = {
     // Gateway Runtime card — populated from live /api/system data
     const gwRtEl=$('gatewayRuntimePanelInner');
     if(gwRtEl){
-      const esc2=s=>String(s??'—').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-      const kvR=(k,v,c='var(--text)')=>`<div style="display:flex;justify-content:space-between;margin-bottom:4px"><span style="font-size:12px;color:var(--muted)">${esc2(k)}</span><span style="font-size:12px;color:${c};font-weight:600">${esc2(v)}</span></div>`;
+      const kvR=(k,v,c='var(--text)')=>`<div style="display:flex;justify-content:space-between;margin-bottom:4px"><span style="font-size:12px;color:var(--muted)">${esc(k)}</span><span style="font-size:12px;color:${c};font-weight:600">${esc(v)}</span></div>`;
       const stateLabel=gwState.source==='runtime'
         ?(gwLive?'Online':'Offline')
         :(gwok?'Online':'Offline');
