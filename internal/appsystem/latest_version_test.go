@@ -21,9 +21,8 @@ func TestGetLatestVersionCached_ConcurrentCalls_NoRace(t *testing.T) {
 
 	var fetchCount atomic.Int32
 	original := fetchLatestVersion
+	t.Cleanup(func() { fetchLatestVersion = original })
 
-	// Use a channel to block mock goroutines until we're done with the test,
-	// preventing races on the fetchLatestVersion global.
 	fetchLatestVersion = func(_ context.Context, _ int) string {
 		fetchCount.Add(1)
 		return "2026.4.11"
@@ -43,14 +42,8 @@ func TestGetLatestVersionCached_ConcurrentCalls_NoRace(t *testing.T) {
 	}
 	wg.Wait()
 
-	// Let the background goroutine finish
-	svc.latestMu.RLock()
-	for svc.latestRefresh {
-		svc.latestMu.RUnlock()
-		time.Sleep(10 * time.Millisecond)
-		svc.latestMu.RLock()
-	}
-	svc.latestMu.RUnlock()
+	// Poll until the background goroutine finishes
+	waitForLatestRefreshDone(t, svc)
 
 	if got := fetchCount.Load(); got != 1 {
 		t.Errorf("expected exactly 1 fetch, got %d", got)
@@ -70,22 +63,11 @@ func TestGetLatestVersionCached_ConcurrentCalls_NoRace(t *testing.T) {
 		}()
 	}
 	wg.Wait()
-
-	// Let background goroutine finish
-	svc.latestMu.RLock()
-	for svc.latestRefresh {
-		svc.latestMu.RUnlock()
-		time.Sleep(10 * time.Millisecond)
-		svc.latestMu.RLock()
-	}
-	svc.latestMu.RUnlock()
+	waitForLatestRefreshDone(t, svc)
 
 	if got := fetchCount.Load(); got != 1 {
 		t.Errorf("expected exactly 1 fetch after cache expiry, got %d", got)
 	}
-
-	// Restore after all goroutines complete
-	fetchLatestVersion = original
 }
 
 func TestGetLatestVersionCached_ReturnsCachedValueWhileRefreshing(t *testing.T) {
@@ -98,6 +80,8 @@ func TestGetLatestVersionCached_ReturnsCachedValueWhileRefreshing(t *testing.T) 
 	}
 
 	original := fetchLatestVersion
+	t.Cleanup(func() { fetchLatestVersion = original })
+
 	fetched := make(chan struct{})
 	fetchLatestVersion = func(_ context.Context, _ int) string {
 		<-fetched
@@ -118,7 +102,7 @@ func TestGetLatestVersionCached_ReturnsCachedValueWhileRefreshing(t *testing.T) 
 	}
 
 	close(fetched)
-	time.Sleep(50 * time.Millisecond)
+	waitForLatestRefreshDone(t, svc)
 
 	svc.latestMu.RLock()
 	v = svc.latestVer
@@ -126,8 +110,6 @@ func TestGetLatestVersionCached_ReturnsCachedValueWhileRefreshing(t *testing.T) 
 	if v != "2026.4.11-new" {
 		t.Errorf("expected updated value '2026.4.11-new', got %q", v)
 	}
-
-	fetchLatestVersion = original
 }
 
 func TestGetLatestVersionCached_NegativeCaching(t *testing.T) {
@@ -140,6 +122,8 @@ func TestGetLatestVersionCached_NegativeCaching(t *testing.T) {
 	}
 
 	original := fetchLatestVersion
+	t.Cleanup(func() { fetchLatestVersion = original })
+
 	fetchLatestVersion = func(_ context.Context, _ int) string {
 		return "" // simulate failure
 	}
@@ -147,15 +131,7 @@ func TestGetLatestVersionCached_NegativeCaching(t *testing.T) {
 	svc := NewSystemService(cfg, "test", context.Background())
 
 	svc.getLatestVersionCached()
-
-	// Wait for goroutine to finish
-	svc.latestMu.RLock()
-	for svc.latestRefresh {
-		svc.latestMu.RUnlock()
-		time.Sleep(10 * time.Millisecond)
-		svc.latestMu.RLock()
-	}
-	svc.latestMu.RUnlock()
+	waitForLatestRefreshDone(t, svc)
 
 	svc.latestMu.RLock()
 	at := svc.latestAt
@@ -164,6 +140,22 @@ func TestGetLatestVersionCached_NegativeCaching(t *testing.T) {
 	if at.IsZero() {
 		t.Error("expected latestAt to be set even on fetch failure (negative caching)")
 	}
+}
 
-	fetchLatestVersion = original
+// waitForLatestRefreshDone polls until the background goroutine finishes.
+func waitForLatestRefreshDone(t *testing.T, svc *SystemService) {
+	t.Helper()
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		svc.latestMu.RLock()
+		running := svc.latestRefresh
+		svc.latestMu.RUnlock()
+		if !running {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("timed out waiting for background refresh to complete")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
 }
