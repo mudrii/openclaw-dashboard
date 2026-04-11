@@ -121,3 +121,42 @@ func TestStartRefresh_ReturnsInFlightChannelDuringShutdown(t *testing.T) {
 		t.Fatal("in-flight refresh didn't complete")
 	}
 }
+
+func TestStartRefresh_SkipsAfterShutdown_NoInFlight(t *testing.T) {
+	// Deterministic version: no HTTP layer, no debounce confusion.
+	// Explicitly test startRefresh() called after shutdown when no refresh is in-flight.
+	dir := t.TempDir()
+	ctx, cancel := context.WithCancel(context.Background())
+
+	blockRefresh := make(chan struct{})
+	cfg := appconfig.Config{
+		Refresh: appconfig.RefreshConfig{IntervalSeconds: 1},
+		AI:      appconfig.AIConfig{Enabled: false},
+		System:  appconfig.SystemConfig{Enabled: false},
+	}
+
+	slowRefresh := func(dir, home string, cfg ...appconfig.Config) error {
+		<-blockRefresh
+		return nil
+	}
+	srv := NewServer(dir, "test", cfg, "", []byte("<head><body>__VERSION__</body>"), ctx, slowRefresh)
+
+	// Ensure refreshRunning is false and lastRefresh is old — bypass all guards
+	// except the shutdown check, which is what we're testing.
+	srv.refreshRunning = false
+	srv.lastRefresh = time.Now().Add(-time.Hour)
+
+	// Cancel context (simulate shutdown) before calling startRefresh
+	cancel()
+	time.Sleep(10 * time.Millisecond) // ensure s.done fires
+
+	// startRefresh must return nil immediately — s.done check must fire,
+	// not block, not spawn a goroutine.
+	ch := srv.startRefresh()
+	if ch != nil {
+		t.Fatal("expected nil channel when startRefresh is called after shutdown with no in-flight refresh")
+	}
+
+	// Clean up any refresh that might have snuck through
+	close(blockRefresh)
+}
