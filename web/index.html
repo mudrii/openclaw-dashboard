@@ -735,17 +735,14 @@ const State = {
   setTab(group, value) { this.tabs[group] = value; },
   setChartDays(n) { this.chartDays = n; },
   snapshot() {
+    const snapshotData = {
+      data: this.data,
+      tabs: { usage: this.tabs.usage, subRuns: this.tabs.subRuns, subTokens: this.tabs.subTokens },
+      chartDays: this.chartDays
+    };
     const clone = typeof structuredClone === 'function'
-      ? structuredClone({
-          data: this.data,
-          tabs: { usage: this.tabs.usage, subRuns: this.tabs.subRuns, subTokens: this.tabs.subTokens },
-          chartDays: this.chartDays
-        })
-      : JSON.parse(JSON.stringify({
-          data: this.data,
-          tabs: { usage: this.tabs.usage, subRuns: this.tabs.subRuns, subTokens: this.tabs.subTokens },
-          chartDays: this.chartDays
-        }));
+      ? structuredClone(snapshotData)
+      : JSON.parse(JSON.stringify(snapshotData));
     return Object.freeze(clone);
   },
   commitPrev(snap) {
