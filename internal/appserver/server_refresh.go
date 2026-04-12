@@ -20,6 +20,15 @@ func (s *Server) startRefresh() chan struct{} {
 		s.mu.Unlock()
 		return ch
 	}
+	// If shutdown is already in progress, skip spawning a new goroutine.
+	// A nil channel in a select case never fires, so this correctly prevents
+	// new refreshes after shutdown without blocking the caller.
+	select {
+	case <-s.done:
+		s.mu.Unlock()
+		return nil
+	default:
+	}
 	s.refreshRunning = true
 	ch := make(chan struct{})
 	s.refreshDone = ch
