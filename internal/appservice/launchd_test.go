@@ -3,6 +3,7 @@
 package appservice
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -16,7 +17,7 @@ func newTestLaunchd(t *testing.T) (*launchdBackend, string) {
 	dir := t.TempDir()
 	lb := &launchdBackend{
 		plistDir: dir,
-		runCmd: func(name string, args ...string) ([]byte, error) {
+		runCmd: func(context.Context, string, ...string) ([]byte, error) {
 			return nil, nil
 		},
 		probeFunc: func(string) bool { return false },
@@ -76,7 +77,7 @@ func TestLaunchd_Install_callsLaunchctl(t *testing.T) {
 	dir := t.TempDir()
 	lb := &launchdBackend{
 		plistDir: dir,
-		runCmd: func(name string, args ...string) ([]byte, error) {
+		runCmd: func(_ context.Context, name string, args ...string) ([]byte, error) {
 			calls = append(calls, strings.Join(append([]string{name}, args...), " "))
 			return nil, nil
 		},
@@ -104,7 +105,7 @@ func TestLaunchd_Uninstall(t *testing.T) {
 
 	lb := &launchdBackend{
 		plistDir: dir,
-		runCmd: func(name string, args ...string) ([]byte, error) {
+		runCmd: func(_ context.Context, name string, args ...string) ([]byte, error) {
 			calls = append(calls, strings.Join(append([]string{name}, args...), " "))
 			return nil, nil
 		},
@@ -153,7 +154,7 @@ func TestLaunchd_Lifecycle(t *testing.T) {
 			var calls []string
 			lb := &launchdBackend{
 				plistDir: t.TempDir(),
-				runCmd: func(name string, args ...string) ([]byte, error) {
+				runCmd: func(_ context.Context, name string, args ...string) ([]byte, error) {
 					calls = append(calls, strings.Join(append([]string{name}, args...), " "))
 					return nil, nil
 				},
@@ -181,7 +182,7 @@ func TestLaunchd_Status_notInstalled(t *testing.T) {
 	lb := &launchdBackend{
 		plistDir:  t.TempDir(),
 		probeFunc: func(string) bool { return false },
-		runCmd: func(name string, args ...string) ([]byte, error) {
+		runCmd: func(context.Context, string, ...string) ([]byte, error) {
 			return []byte("Could not find service"), fmt.Errorf("exit status 113")
 		},
 	}
@@ -213,7 +214,7 @@ func TestLaunchd_Status_runningService(t *testing.T) {
 	lb := &launchdBackend{
 		plistDir:  dir,
 		probeFunc: func(string) bool { return true },
-		runCmd: func(name string, args ...string) ([]byte, error) {
+		runCmd: func(_ context.Context, name string, args ...string) ([]byte, error) {
 			if strings.Contains(strings.Join(args, " "), "list") {
 				return []byte(`{ "PID" = 48291; "LastExitStatus" = 0; };`), nil
 			}
@@ -263,7 +264,7 @@ func TestLaunchd_Status_pidButNoHTTP(t *testing.T) {
 	lb := &launchdBackend{
 		plistDir:  dir,
 		probeFunc: func(string) bool { return false },
-		runCmd: func(name string, args ...string) ([]byte, error) {
+		runCmd: func(_ context.Context, name string, args ...string) ([]byte, error) {
 			if strings.Contains(strings.Join(args, " "), "list") {
 				return []byte(`{ "PID" = 99999; "LastExitStatus" = 0; };`), nil
 			}

@@ -143,7 +143,7 @@ func ResolveOpenclawPath() string {
 	return filepath.Join(home, ".openclaw")
 }
 
-func DetectVersion(dir string) string {
+func DetectVersion(ctx context.Context, dir string) string {
 	for _, base := range []string{dir, filepath.Dir(dir)} {
 		vf := filepath.Join(base, "VERSION")
 		data, err := os.ReadFile(vf)
@@ -154,7 +154,10 @@ func DetectVersion(dir string) string {
 			}
 		}
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "git", "describe", "--tags", "--abbrev=0")
 	cmd.Dir = dir

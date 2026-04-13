@@ -1,6 +1,8 @@
 package dashboard
 
 import (
+	"context"
+
 	appruntime "github.com/mudrii/openclaw-dashboard/internal/appruntime"
 )
 
@@ -16,6 +18,6 @@ func resolveRepoRoot(dir string) string {
 	return appruntime.ResolveRepoRoot(dir)
 }
 
-func detectVersion(dir string) string {
-	return appruntime.DetectVersion(dir)
+func detectVersion(ctx context.Context, dir string) string {
+	return appruntime.DetectVersion(ctx, dir)
 }

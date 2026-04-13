@@ -17,9 +17,11 @@ var resolveOpenclawBin = appsystem.ResolveOpenclawBin
 var execCommandContext = exec.CommandContext
 
 type liveSessionModelCache struct {
-	mu        sync.Mutex
-	expiresAt time.Time
-	models    map[string]string
+	mu         sync.Mutex
+	cond       *sync.Cond
+	expiresAt  time.Time
+	models     map[string]string
+	refreshing bool
 }
 
 var sessionModelCache liveSessionModelCache
@@ -30,10 +32,20 @@ func getLiveSessionModels(now time.Time, ttl time.Duration) map[string]string {
 	}
 
 	sessionModelCache.mu.Lock()
-	if now.Before(sessionModelCache.expiresAt) {
-		models := maps.Clone(sessionModelCache.models)
-		sessionModelCache.mu.Unlock()
-		return models
+	if sessionModelCache.cond == nil {
+		sessionModelCache.cond = sync.NewCond(&sessionModelCache.mu)
+	}
+	for {
+		if now.Before(sessionModelCache.expiresAt) {
+			models := maps.Clone(sessionModelCache.models)
+			sessionModelCache.mu.Unlock()
+			return models
+		}
+		if !sessionModelCache.refreshing {
+			sessionModelCache.refreshing = true
+			break
+		}
+		sessionModelCache.cond.Wait()
 	}
 	sessionModelCache.mu.Unlock()
 
@@ -42,9 +54,20 @@ func getLiveSessionModels(now time.Time, ttl time.Duration) map[string]string {
 	sessionModelCache.mu.Lock()
 	sessionModelCache.models = maps.Clone(models)
 	sessionModelCache.expiresAt = now.Add(ttl)
+	sessionModelCache.refreshing = false
+	sessionModelCache.cond.Broadcast()
 	cached := maps.Clone(sessionModelCache.models)
 	sessionModelCache.mu.Unlock()
 	return cached
+}
+
+func resetLiveSessionModelCacheForTest() {
+	sessionModelCache.mu.Lock()
+	sessionModelCache.expiresAt = time.Time{}
+	sessionModelCache.models = nil
+	sessionModelCache.refreshing = false
+	sessionModelCache.cond = nil
+	sessionModelCache.mu.Unlock()
 }
 
 func fetchLiveSessionModelsCLI() map[string]string {
@@ -89,4 +112,3 @@ func fetchLiveSessionModelsCLI() map[string]string {
 	}
 	return models
 }
-

@@ -63,6 +63,12 @@ func collectMeminfo() (map[string]uint64, error) {
 }
 
 func collectRAM(ctx context.Context) SystemRAM {
+	select {
+	case <-ctx.Done():
+		e := "ram collection cancelled"
+		return SystemRAM{Error: &e}
+	default:
+	}
 	info, err := collectMeminfo()
 	if err != nil {
 		e := err.Error()
@@ -72,6 +78,12 @@ func collectRAM(ctx context.Context) SystemRAM {
 }
 
 func collectSwap(ctx context.Context) SystemSwap {
+	select {
+	case <-ctx.Done():
+		e := "swap collection cancelled"
+		return SystemSwap{Error: &e}
+	default:
+	}
 	info, err := collectMeminfo()
 	if err != nil {
 		e := err.Error()

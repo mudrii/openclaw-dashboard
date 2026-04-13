@@ -7,6 +7,20 @@ on:
     branches: [main]
 
 jobs:
+  lint:
+    name: GolangCI-Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - uses: golangci/golangci-lint-action@v8
+        with:
+          version: latest
+
   test:
     name: Go test suite
     runs-on: ubuntu-latest

@@ -29,6 +29,9 @@ var BuildVersion string
 
 // Main runs the dashboard CLI and returns a process exit code.
 func Main() int {
+	cmdCtx, stopSignals := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stopSignals()
+
 	// Resolve binary directory (follows symlinks)
 	exe, err := os.Executable()
 	if err != nil {
@@ -53,7 +56,7 @@ func Main() int {
 			}
 			version := BuildVersion
 			if version == "" {
-				version = detectVersion(dir)
+				version = detectVersion(cmdCtx, dir)
 			}
 			cfg := loadConfig(dir)
 
@@ -66,10 +69,12 @@ func Main() int {
 			if p := os.Getenv("DASHBOARD_PORT"); p != "" {
 				if n, err := strconv.Atoi(p); err == nil {
 					envPort = n
+				} else {
+					log.Printf("[dashboard] WARNING: invalid DASHBOARD_PORT %q, using default %d", p, envPort)
 				}
 			}
 
-			b, err := appservice.New()
+			b, err := appservice.NewWithContext(cmdCtx)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "[dashboard] service management not available: %v\n", err)
 				return 1
@@ -104,7 +109,7 @@ func Main() int {
 
 	version := BuildVersion
 	if version == "" {
-		version = detectVersion(dir)
+		version = detectVersion(cmdCtx, dir)
 	}
 	cfg := loadConfig(dir)
 

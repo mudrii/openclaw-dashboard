@@ -3,6 +3,7 @@ package apprefresh
 
 import (
 	"bytes"
+	"cmp"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -10,7 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -19,14 +20,14 @@ import (
 )
 
 type LogRecord struct {
-	Source      string
-	SeenAt      string
-	TimestampMs int64
-	Severity    string
-	Message     string
-	Line        string
-	Raw         string
-	Timestamp   time.Time
+	Source      string    `json:"source,omitempty"`
+	SeenAt      string    `json:"seenAt,omitempty"`
+	TimestampMs int64     `json:"timestamp,omitempty"`
+	Severity    string    `json:"severity,omitempty"`
+	Message     string    `json:"message,omitempty"`
+	Line        string    `json:"line,omitempty"`
+	Raw         string    `json:"raw,omitempty"`
+	Timestamp   time.Time `json:"timestampTime,omitzero"`
 }
 
 var (
@@ -88,26 +89,7 @@ func ReadMergedLogs(openclawPath string, sources []string, globalLimit int) ([]L
 		}
 	}
 
-	sort.Slice(records, func(i, j int) bool {
-		a := records[i]
-		b := records[j]
-		if a.Timestamp.IsZero() {
-			if b.Timestamp.IsZero() {
-				return a.Source < b.Source || (a.Source == b.Source && a.Raw < b.Raw)
-			}
-			return true
-		}
-		if b.Timestamp.IsZero() {
-			return false
-		}
-		if !a.Timestamp.Equal(b.Timestamp) {
-			return a.Timestamp.Before(b.Timestamp)
-		}
-		if a.Source != b.Source {
-			return a.Source < b.Source
-		}
-		return a.Raw < b.Raw
-	})
+	slices.SortStableFunc(records, compareLogRecords)
 
 	if len(records) <= globalLimit {
 		return records, nil
@@ -122,16 +104,25 @@ func parseLogLine(line string, path string, fallback time.Time) (LogRecord, bool
 	}
 
 	ext := strings.ToLower(filepath.Ext(path))
+	var record LogRecord
 	if ext == ".jsonl" {
-		return parseJSONLLine(trimmed, fallback)
-	}
-	record := parsePlainLine(trimmed, fallback)
-	record.Timestamp = fallbackIfMissing(record.Timestamp, fallback)
-	if record.Timestamp.IsZero() {
-		record.Timestamp = fallback
-		if !fallback.IsZero() {
-			record.SeenAt = fallback.Format(time.RFC3339Nano)
+		var ok bool
+		record, ok = parseJSONLLine(trimmed, fallback)
+		if !ok {
+			return LogRecord{}, false
 		}
+	} else {
+		record = parsePlainLine(trimmed, fallback)
+		record.Timestamp = fallbackIfMissing(record.Timestamp, fallback)
+		if record.Timestamp.IsZero() {
+			record.Timestamp = fallback
+			if !fallback.IsZero() {
+				record.SeenAt = fallback.Format(time.RFC3339Nano)
+			}
+		}
+	}
+	if record.TimestampMs == 0 && !record.Timestamp.IsZero() {
+		record.TimestampMs = record.Timestamp.UnixMilli()
 	}
 	return record, true
 }
@@ -305,6 +296,8 @@ func getString(v any) string {
 	switch value := v.(type) {
 	case string:
 		return strings.TrimSpace(value)
+	case json.Number:
+		return value.String()
 	case fmt.Stringer:
 		return strings.TrimSpace(value.String())
 	case float64:
@@ -315,8 +308,6 @@ func getString(v any) string {
 		return strconv.Itoa(value)
 	case int64:
 		return strconv.FormatInt(value, 10)
-	case json.Number:
-		return value.String()
 	}
 	return ""
 }
@@ -381,8 +372,11 @@ func readTailLines(path string, limit int) ([]string, error) {
 				break
 			}
 			raw := strings.TrimSuffix(string(accum[nl+1:]), "\r")
-			lines = append(lines, raw)
 			accum = accum[:nl]
+			if raw == "" {
+				continue
+			}
+			lines = append(lines, raw)
 		}
 		if len(accum) > readTailMaxFallback {
 			accum = accum[len(accum)-readTailMaxFallback:]
@@ -441,4 +435,29 @@ func fallbackIfMissing(ts time.Time, fallback time.Time) time.Time {
 		return fallback
 	}
 	return ts
+}
+
+func compareLogRecords(a, b LogRecord) int {
+	if a.Timestamp.IsZero() {
+		if b.Timestamp.IsZero() {
+			if c := cmp.Compare(a.Source, b.Source); c != 0 {
+				return c
+			}
+			return cmp.Compare(a.Raw, b.Raw)
+		}
+		return -1
+	}
+	if b.Timestamp.IsZero() {
+		return 1
+	}
+	if !a.Timestamp.Equal(b.Timestamp) {
+		if a.Timestamp.Before(b.Timestamp) {
+			return -1
+		}
+		return 1
+	}
+	if c := cmp.Compare(a.Source, b.Source); c != 0 {
+		return c
+	}
+	return cmp.Compare(a.Raw, b.Raw)
 }

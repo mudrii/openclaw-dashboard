@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 )
@@ -58,7 +59,7 @@ func TestBuildSystemPrompt_WithData(t *testing.T) {
 		"=== CONFIGURATION ===",
 		"opus-4",
 	} {
-		if !contains(prompt, want) {
+		if !strings.Contains(prompt, want) {
 			t.Errorf("prompt missing %q", want)
 		}
 	}
@@ -184,19 +185,6 @@ func TestGatewayError_Error(t *testing.T) {
 	if ge.Error() != "gateway down" {
 		t.Errorf("expected 'gateway down', got %q", ge.Error())
 	}
-}
-
-func contains(s, substr string) bool {
-	return len(s) >= len(substr) && containsStr(s, substr)
-}
-
-func containsStr(s, sub string) bool {
-	for i := 0; i <= len(s)-len(sub); i++ {
-		if s[i:i+len(sub)] == sub {
-			return true
-		}
-	}
-	return false
 }
 
 func getPort(t *testing.T, url string) int {

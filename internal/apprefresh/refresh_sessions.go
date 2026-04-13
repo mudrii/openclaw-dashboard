@@ -198,12 +198,8 @@ func sessionModelFromLine(line string) (string, bool) {
 	return provider + "/" + modelID, true
 }
 
-func collectSessions(stores []SessionStoreFile, basePath string, loc *time.Location, now time.Time, todayStr string,
-	modelAliases map[string]string, knownSIDs map[string]string,
-	gateway map[string]any, liveModelTTL time.Duration) []map[string]any {
-	_ = todayStr
-	_ = gateway
-
+func collectSessions(stores []SessionStoreFile, basePath string, loc *time.Location, now time.Time,
+	modelAliases map[string]string, knownSIDs map[string]string, liveModelTTL time.Duration) []map[string]any {
 	agentDefaults := loadAgentDefaultModels(basePath)
 
 	gatewayModelMap := getLiveSessionModels(now, liveModelTTL)

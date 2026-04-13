@@ -1,6 +1,7 @@
 package appservice
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"strings"
@@ -12,7 +13,7 @@ var ErrUnsupported = errors.New("service management not supported on this platfo
 
 // runCmdFunc is the signature for running an external command.
 // Injected into backends so tests can intercept exec calls.
-type runCmdFunc func(name string, args ...string) ([]byte, error)
+type runCmdFunc func(ctx context.Context, name string, args ...string) ([]byte, error)
 
 // InstallConfig holds parameters baked into the service unit file at install time.
 type InstallConfig struct {

@@ -1,10 +1,10 @@
 package appserver
 
 import (
-	"encoding/json"
+	"cmp"
 	"fmt"
 	"net/http"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -90,7 +90,6 @@ func (s *Server) handleLogs(w http.ResponseWriter, r *http.Request) {
 
 	entries, err := s.readMergedLogs(sources, limit)
 	if err != nil {
-		s.setCORSHeaders(w, r)
 		s.sendJSONRaw(w, r, http.StatusInternalServerError, []byte(`{"error":"failed to read logs"}`))
 		return
 	}
@@ -149,7 +148,6 @@ func (s *Server) handleErrors(w http.ResponseWriter, r *http.Request) {
 
 	entries, err := s.readMergedLogs(sources, errorLimitDefault)
 	if err != nil {
-		s.setCORSHeaders(w, r)
 		s.sendJSONRaw(w, r, http.StatusInternalServerError, []byte(`{"error":"failed to read logs"}`))
 		return
 	}
@@ -208,15 +206,15 @@ func (s *Server) handleErrors(w http.ResponseWriter, r *http.Request) {
 
 	switch sortMode {
 	case "count":
-		sort.Slice(items, func(i, j int) bool {
-			if items[i].Count != items[j].Count {
-				return items[i].Count > items[j].Count
+		slices.SortFunc(items, func(a, b errorFeedItem) int {
+			if a.Count != b.Count {
+				return cmp.Compare(b.Count, a.Count)
 			}
-			return items[i].LastSeen > items[j].LastSeen
+			return cmp.Compare(b.LastSeen, a.LastSeen)
 		})
 	default:
-		sort.Slice(items, func(i, j int) bool {
-			return items[i].LastSeen > items[j].LastSeen
+		slices.SortFunc(items, func(a, b errorFeedItem) int {
+			return cmp.Compare(b.LastSeen, a.LastSeen)
 		})
 	}
 
@@ -311,10 +309,6 @@ func configuredByContains(configured []string, token string) []string {
 		}
 	}
 	return matches
-}
-
-func parseLogTimestamp(raw string) (time.Time, string) {
-	return apprefresh.ParseLogTimestamp(raw)
 }
 
 func parseSince(raw string, fallback int64) (int64, error) {

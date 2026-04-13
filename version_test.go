@@ -1,6 +1,7 @@
 package dashboard
 
 import (
+	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -33,7 +34,7 @@ func TestDetectVersion_VersionFile(t *testing.T) {
 	dir := t.TempDir()
 	os.WriteFile(filepath.Join(dir, "VERSION"), []byte("2.5.0\n"), 0644)
 
-	v := detectVersion(dir)
+	v := detectVersion(context.Background(), dir)
 
 	// In a temp dir there's no git repo, so it should fall back to VERSION file
 	if v != "2.5.0" {
@@ -45,7 +46,7 @@ func TestDetectVersion_Fallback(t *testing.T) {
 	dir := t.TempDir()
 	// No git, no VERSION file
 
-	v := detectVersion(dir)
+	v := detectVersion(context.Background(), dir)
 
 	if v != "dev" {
 		t.Fatalf("expected dev, got %s", v)
@@ -56,7 +57,7 @@ func TestDetectVersion_EmptyVersionFile(t *testing.T) {
 	dir := t.TempDir()
 	os.WriteFile(filepath.Join(dir, "VERSION"), []byte("  \n"), 0644)
 
-	v := detectVersion(dir)
+	v := detectVersion(context.Background(), dir)
 
 	if v != "dev" {
 		t.Fatalf("expected dev for empty VERSION file, got %s", v)
@@ -78,7 +79,7 @@ func TestDetectVersion_VersionFilePrecedesGitTag(t *testing.T) {
 	mustRun(t, dir, "git", "commit", "-m", "init")
 	mustRun(t, dir, "git", "tag", "v9999.1.1")
 
-	v := detectVersion(dir)
+	v := detectVersion(context.Background(), dir)
 
 	if v != "2026.3.5-beta-runtime-observability" {
 		t.Fatalf("expected VERSION file to take precedence over git tag, got %s", v)
@@ -95,7 +96,7 @@ func TestDetectVersion_ParentDirectoryVersionFile(t *testing.T) {
 		t.Fatalf("write VERSION: %v", err)
 	}
 
-	v := detectVersion(binDir)
+	v := detectVersion(context.Background(), binDir)
 
 	if v != "2026.3.5-beta-runtime-observability" {
 		t.Fatalf("expected parent VERSION file to be used for dist binary, got %s", v)

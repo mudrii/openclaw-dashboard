@@ -414,12 +414,8 @@ func probeOpenclawGatewayEndpoints(ctx context.Context, gatewayPort int, timeout
 	if gatewayPort <= 0 {
 		gatewayPort = 18789
 	}
-	if timeoutMs <= 0 {
-		timeoutMs = 1500
-	}
 	base := fmt.Sprintf("http://127.0.0.1:%d", gatewayPort)
-	timeout := time.Duration(timeoutMs) * time.Millisecond
-	client := &http.Client{Timeout: timeout}
+	client := &http.Client{}
 	gw := SystemOpenclawGateway{}
 	var errs []string
 
@@ -666,7 +662,7 @@ func DetectGatewayFallback(ctx context.Context, gatewayPort int, timeoutMs int) 
 		e := "probe failed"
 		return SystemGateway{Status: "offline", Error: &e}
 	}
-	client := &http.Client{Timeout: time.Duration(timeoutMs) * time.Millisecond}
+	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err == nil {
 		_ = resp.Body.Close()
@@ -679,6 +675,9 @@ func DetectGatewayFallback(ctx context.Context, gatewayPort int, timeoutMs int) 
 // runWithTimeout runs an external command with a context deadline.
 // On failure, stderr is appended to the error message for better diagnostics.
 func runWithTimeout(ctx context.Context, timeoutMs int, name string, args ...string) (string, error) {
+	if timeoutMs <= 0 {
+		timeoutMs = 5000
+	}
 	tctx, cancel := context.WithTimeout(ctx, time.Duration(timeoutMs)*time.Millisecond)
 	defer cancel()
 	cmd := exec.CommandContext(tctx, name, args...)
@@ -767,8 +766,10 @@ func FetchLatestNpmVersion(ctx context.Context, timeoutMs int) string {
 	if timeout <= 0 {
 		timeout = 3 * time.Second
 	}
-	client := &http.Client{Timeout: timeout}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://registry.npmjs.org/openclaw/latest", nil)
+	tctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	client := &http.Client{}
+	req, err := http.NewRequestWithContext(tctx, http.MethodGet, "https://registry.npmjs.org/openclaw/latest", nil)
 	if err != nil {
 		log.Printf("[dashboard] FetchLatestNpmVersion: request creation failed: %v", err)
 		return ""

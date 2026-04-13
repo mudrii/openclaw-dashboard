@@ -65,8 +65,8 @@
 - **Zero lint issues** — All `errcheck`, `ineffassign`, `staticcheck`, `govet`, `gocritic`, and `unused` checks pass clean.
 - **Added `.golangci.yml`** — Project-wide linter configuration with `errcheck`, `govet`, `ineffassign`, `staticcheck`, `unused`, `gocritic` enabled. Test files excluded from errcheck.
 - **Added `Makefile`** — Build automation with `make build`, `make test`, `make lint`, `make vet`, `make cover`, and `make check` targets.
-- **CI linting** — Added `golangci-lint` step to `.github/workflows/tests.yml` using `golangci/golangci-lint-action@v6`.
-- **Dead code removed** — Empty `refresh_sessions.go`, unused constants (`maxBodyBytes`, `maxQuestionLen`, `chatRateLimit`, `maxGatewayResp`), unused type aliases (`chatRequest`, `completionPayload`), unused functions (`collectVersionsLocal`, `fetchLatestNpmVersion`, `seedHomebrewRuntimeDir`, `copyIfMissing`).
+- **CI linting** — Added `golangci-lint` support to the repo command surface and CI workflow.
+- **Dead code removed** — Removed stale unused aliases, legacy helpers, and unreachable branches left behind by the Go-only migration.
 - **Unreachable code removed** — `strings.Contains(clean, "..")` after `filepath.Clean` (which never leaves `..`).
 - **Ineffectual assignments fixed** — Removed dead `todayStr`, `compactionMode`, `agentConfig` assignments in refresh pipeline.
 - **Errcheck compliance** — All `defer f.Close()` / `defer resp.Body.Close()` patterns wrapped properly. `os.Remove` cleanup errors explicitly discarded with `_ =`.

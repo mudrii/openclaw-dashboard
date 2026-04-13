@@ -54,6 +54,14 @@ fi
 
 if curl -fsSL "$ARCHIVE_URL" -o "$tmp_archive" 2>/dev/null; then
   tar -xzf "$tmp_archive" -C "$INSTALL_DIR"
+  if [ ! -f "openclaw-dashboard" ]; then
+    echo "❌ Release archive did not contain openclaw-dashboard"
+    exit 1
+  fi
+  if [ ! -f "assets/runtime/refresh.sh" ]; then
+    echo "❌ Release archive did not contain assets/runtime/refresh.sh"
+    exit 1
+  fi
   chmod +x openclaw-dashboard assets/runtime/refresh.sh
   echo "✅ Release archive downloaded"
 elif command -v go >/dev/null 2>&1; then
@@ -67,6 +75,10 @@ else
 fi
 
 # Seed runtime assets into the install root
+if [ ! -f "assets/runtime/refresh.sh" ]; then
+  echo "❌ Missing runtime asset: assets/runtime/refresh.sh"
+  exit 1
+fi
 cp assets/runtime/refresh.sh ./refresh.sh
 chmod +x refresh.sh
 

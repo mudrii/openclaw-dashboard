@@ -6,15 +6,15 @@ import (
 	"encoding/json"
 	"errors"
 	"html"
-	"log"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/mudrii/openclaw-dashboard/internal/appruntime"
 	appconfig "github.com/mudrii/openclaw-dashboard/internal/appconfig"
+	"github.com/mudrii/openclaw-dashboard/internal/appruntime"
 	appsystem "github.com/mudrii/openclaw-dashboard/internal/appsystem"
 )
 
@@ -173,7 +173,7 @@ func NewServer(dir, version string, cfg appconfig.Config, gatewayToken string, i
 // PreWarm runs refresh.sh once in the background at startup so data.json
 // is ready before the first browser request arrives.
 func (s *Server) PreWarm() {
-	log.Printf("[dashboard] pre-warming data.json...")
+	slog.Info("[dashboard] pre-warming data.json...")
 	s.startRefresh()
 }
 
@@ -185,7 +185,7 @@ func (s *Server) SystemService() *appsystem.SystemService {
 func (s *Server) sendJSON(w http.ResponseWriter, r *http.Request, status int, v any) {
 	body, err := json.Marshal(v)
 	if err != nil {
-		log.Printf("[dashboard] sendJSON: json.Marshal failed: %v", err)
+		slog.Error("[dashboard] sendJSON: json.Marshal failed", "error", err)
 		body = []byte(`{"error":"internal server error"}`)
 		status = http.StatusInternalServerError
 	}

@@ -208,7 +208,7 @@ func collectDashboardData(dashboardDir, openclawPath string, cfg appconfig.Confi
 	// Sessions
 	knownSIDs := map[string]string{}
 	sessionLiveModelTTL := time.Duration(cfg.Refresh.IntervalSeconds) * time.Second
-	sessionsList := collectSessions(sessionStores, basePath, loc, now, todayStr, modelAliases, knownSIDs, gateway, sessionLiveModelTTL)
+	sessionsList := collectSessions(sessionStores, basePath, loc, now, modelAliases, knownSIDs, sessionLiveModelTTL)
 
 	// Backfill channel connectivity from recent session activity
 	backfillChannelConnectivity(agentConfig, sessionsList)
@@ -250,14 +250,6 @@ func collectDashboardData(dashboardDir, openclawPath string, cfg appconfig.Confi
 	subagentRunsToday := FilterByDate(subagentRuns, todayStr, "==")
 	subagentRuns7d := FilterByDate(subagentRuns, date7d, ">=")
 	subagentRuns30d := FilterByDate(subagentRuns, date30d, ">=")
-
-	// Count subagent runs per day
-	for _, r := range subagentRuns {
-		d, _ := r["date"].(string)
-		if d != "" {
-			dailySubagentCount[d]++
-		}
-	}
 
 	// Build daily chart data (last 30 days)
 	dailyChart := BuildDailyChart(now, dailyCosts, dailyTokens, dailyCalls,
@@ -335,10 +327,10 @@ func collectGatewayHealth() map[string]any {
 		"memory": "",
 		"rss":    0,
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
+	pgrepCtx, pgrepCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer pgrepCancel()
 
-	out, err := exec.CommandContext(ctx, "pgrep", "-f", "openclaw-gateway").Output()
+	out, err := exec.CommandContext(pgrepCtx, "pgrep", "-f", "openclaw-gateway").Output()
 	if err != nil {
 		return gw
 	}
@@ -362,7 +354,9 @@ func collectGatewayHealth() map[string]any {
 	gw["pid"] = pidInt
 	gw["status"] = "online"
 
-	psOut, err := exec.CommandContext(ctx, "ps", "-p", pid, "-o", "etime=,rss=").Output()
+	psCtx, psCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer psCancel()
+	psOut, err := exec.CommandContext(psCtx, "ps", "-p", pid, "-o", "etime=,rss=").Output()
 	if err != nil {
 		return gw
 	}

@@ -132,7 +132,7 @@ func TestCollectTokenUsageWithCache_ReusesUnchangedFileSummary(t *testing.T) {
 func TestCollectSessions_CachesLiveModelLookup(t *testing.T) {
 	prevFetcher := fetchLiveSessionModels
 	defer func() { fetchLiveSessionModels = prevFetcher }()
-	sessionModelCache = liveSessionModelCache{}
+	resetLiveSessionModelCacheForTest()
 
 	calls := 0
 	fetchLiveSessionModels = func() map[string]string {
@@ -155,9 +155,9 @@ func TestCollectSessions_CachesLiveModelLookup(t *testing.T) {
 	}}
 
 	knownA := map[string]string{}
-	gotA := collectSessions(stores, t.TempDir(), time.UTC, now, "2026-03-23", modelAliases, knownA, nil, 30*time.Second)
+	gotA := collectSessions(stores, t.TempDir(), time.UTC, now, modelAliases, knownA, 30*time.Second)
 	knownB := map[string]string{}
-	gotB := collectSessions(stores, t.TempDir(), time.UTC, now.Add(5*time.Second), "2026-03-23", modelAliases, knownB, nil, 30*time.Second)
+	gotB := collectSessions(stores, t.TempDir(), time.UTC, now.Add(5*time.Second), modelAliases, knownB, 30*time.Second)
 
 	if calls != 1 {
 		t.Fatalf("expected one live model fetch within TTL, got %d", calls)

@@ -61,7 +61,7 @@ Browser
 - `apprefresh` owns data collection from OpenClaw sessions, crons, git history, and token logs.
 - `appsystem` owns live host metrics and gateway/runtime probes.
 - `appchat` owns prompt construction and OpenAI-compatible gateway requests.
-- `appserver` owns HTTP routing, caching, rate limiting, and refresh coordination.
+- `appserver` owns HTTP routing, caching, rate limiting, refresh coordination, and log/error feed endpoints.
 - `appservice` owns service lifecycle management: install, uninstall, start, stop, restart, and status via launchd (macOS) or systemd (Linux).
 
 The root `dashboard` package now exists mainly as a compatibility layer for tests and the exported `Main()` entry used by `cmd/openclaw-dashboard`.

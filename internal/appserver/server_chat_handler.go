@@ -3,7 +3,7 @@ package appserver
 import (
 	"encoding/json"
 	"io"
-	"log"
+	"log/slog"
 	"net"
 	"net/http"
 	"os"
@@ -27,6 +27,7 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 	}
 	if !s.chatLimiter.allow(ip) {
 		w.Header().Set("Retry-After", "60")
+		w.Header().Set("Access-Control-Expose-Headers", "Retry-After")
 		s.sendJSONRaw(w, r, http.StatusTooManyRequests, errChatRateLimit)
 		return
 	}
@@ -104,7 +105,7 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		s.httpClient,
 	)
 	if err != nil {
-		log.Printf("[dashboard] POST /api/chat error: %v", err)
+		slog.Error("[dashboard] POST /api/chat error", "error", err)
 		status := http.StatusBadGateway
 		if ge, ok := err.(*appchat.GatewayError); ok {
 			status = ge.Status
@@ -113,6 +114,6 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	log.Printf("[dashboard] POST /api/chat")
+	slog.Info("[dashboard] POST /api/chat")
 	s.sendJSON(w, r, http.StatusOK, map[string]string{"answer": answer})
 }
