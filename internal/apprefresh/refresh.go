@@ -316,6 +316,7 @@ func collectDashboardData(dashboardDir, openclawPath string, cfg appconfig.Confi
 		"subagentUsage30d":   BucketsToList(subagent30d),
 
 		"dailyChart": dailyChart,
+		"logConfig":  GetLogRuntimeConfig(cfg),
 
 		"availableModels": availableModels,
 		"agentConfig":     agentConfig,

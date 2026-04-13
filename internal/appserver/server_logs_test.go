@@ -20,12 +20,13 @@ func TestResolveSources_AliasAndExactMatch(t *testing.T) {
 		"logs/gateway.err.log",
 		"logs/cron.log",
 		"logs/session.log",
+		"logs/subagent.log",
 	}
 
 	tests := []struct {
-		name  string
-		raw   string
-		want  []string
+		name string
+		raw  string
+		want []string
 	}{
 		{
 			name: "gateway alias expands both gateway sources",
@@ -36,6 +37,16 @@ func TestResolveSources_AliasAndExactMatch(t *testing.T) {
 			name: "cron alias filters cron source",
 			raw:  "cron",
 			want: []string{"logs/cron.log"},
+		},
+		{
+			name: "session alias filters session source",
+			raw:  "session",
+			want: []string{"logs/session.log"},
+		},
+		{
+			name: "subagent alias filters subagent source",
+			raw:  "subagent",
+			want: []string{"logs/subagent.log"},
 		},
 		{
 			name: "exact configured source still works",

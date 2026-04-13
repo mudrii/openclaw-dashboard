@@ -1,32 +1,16 @@
 package appserver
 
 import (
-	"bufio"
 	"encoding/json"
 	"fmt"
-	"math"
 	"net/http"
-	"os"
-	"path/filepath"
-	"regexp"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
 
-	appconfig "github.com/mudrii/openclaw-dashboard/internal/appconfig"
+	"github.com/mudrii/openclaw-dashboard/internal/apprefresh"
 )
-
-type logRecord struct {
-	Source      string
-	SeenAt      string
-	TimestampMs int64
-	Severity    string
-	Message     string
-	Line        string
-	order       int
-	timestamp   time.Time
-}
 
 type logEntry struct {
 	Source   string `json:"source"`
@@ -75,23 +59,14 @@ type errorsResponse struct {
 	Sources []string        `json:"sources"`
 }
 
-var (
-	reLogPrefixTs = regexp.MustCompile(`^\s*([0-9]{4}-[0-9]{2}-[0-9]{2}[T ][0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]{1,9})?(?:Z|[+\-][0-9]{2}:[0-9]{2})?)`)
-	reUUID       = regexp.MustCompile(`\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b`)
-	reIDTokens   = regexp.MustCompile(`\b(?:id|session|task|job|trace|request|pid)[:=]?\s*[0-9a-f-]+\b`)
-	reNumeric    = regexp.MustCompile(`\b\d+\b`)
-)
-
 const (
-	logLimitDefault        = 200
-	logLimitMax            = 1000
-	logFastRefreshDefaultMs = 3000
-	errorLimitDefault      = 1000
+	logLimitDefault         = 200
+	logLimitMax             = 1000
+	errorLimitDefault       = 1000
 	errorWindowHoursDefault = 24
 	errorWindowHoursMax     = 168
 )
 
-// handleLogs serves merged and sorted tail lines across configured log sources.
 func (s *Server) handleLogs(w http.ResponseWriter, r *http.Request) {
 	if !s.cfg.Logs.Enabled {
 		s.sendJSONRaw(w, r, http.StatusServiceUnavailable, []byte(`{"error":"logs disabled"}`))
@@ -99,8 +74,8 @@ func (s *Server) handleLogs(w http.ResponseWriter, r *http.Request) {
 	}
 
 	query := r.URL.Query()
-	limit := clampInt(query.Get("limit"), logLimitDefault, 1, logLimitMax)
-	sources := resolveSources(query.Get("source"), s.cfg.Logs.Sources)
+	limit := clampInt(query.Get("limit"), s.defaultLogLimit(), 1, logLimitMax)
+	sources := resolveSources(query.Get("source"), apprefresh.GetEffectiveLogSources(s.cfg))
 	sourceList := append([]string(nil), sources...)
 	sinceRaw := query.Get("since")
 	sinceMs := int64(0)
@@ -120,38 +95,35 @@ func (s *Server) handleLogs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	filtered := make([]apprefresh.LogRecord, 0, len(entries))
 	if sinceMs > 0 {
 		threshold := time.UnixMilli(sinceMs)
-		filtered := make([]logRecord, 0, len(entries))
 		for _, entry := range entries {
-			if entry.timestamp.IsZero() || !entry.timestamp.Before(threshold) {
+			if entry.Timestamp.IsZero() || !entry.Timestamp.Before(threshold) {
 				filtered = append(filtered, entry)
 			}
 		}
-		entries = filtered
-	}
-
-	if len(entries) > limit {
-		entries = entries[len(entries)-limit:]
+	} else {
+		filtered = entries
 	}
 
 	payload := logsResponse{
 		OK:       true,
 		Limit:    limit,
-		Count:    len(entries),
+		Count:    len(filtered),
 		Sources:  sourceList,
 		SinceMs:  sinceMs,
-		FastMode: logFastRefreshDefaultMs,
-		Entries:  make([]logEntry, 0, len(entries)),
+		FastMode: s.cfg.Logs.FastRefreshMs,
+		Entries:  make([]logEntry, 0, len(filtered)),
 	}
-	for _, entry := range entries {
+	for _, entry := range filtered {
 		payload.Entries = append(payload.Entries, logEntry{
 			Source:   entry.Source,
 			SeenAt:   entry.SeenAt,
 			Severity: entry.Severity,
 			Line:     entry.Line,
 			Message:  entry.Message,
-			Raw:      entry.Line,
+			Raw:      entry.Raw,
 			Ts:       entry.TimestampMs,
 		})
 	}
@@ -159,7 +131,6 @@ func (s *Server) handleLogs(w http.ResponseWriter, r *http.Request) {
 	s.sendJSON(w, r, http.StatusOK, payload)
 }
 
-// handleErrors returns deduplicated warning/error signatures from recent logs.
 func (s *Server) handleErrors(w http.ResponseWriter, r *http.Request) {
 	if !s.cfg.Logs.Enabled {
 		s.sendJSONRaw(w, r, http.StatusServiceUnavailable, []byte(`{"error":"logs disabled"}`))
@@ -172,8 +143,8 @@ func (s *Server) handleErrors(w http.ResponseWriter, r *http.Request) {
 		sortMode = "count"
 	}
 	limit := clampInt(query.Get("limit"), errorLimitDefault, 1, errorLimitDefault)
-	windowHours := clampInt(query.Get("windowHours"), errorWindowHoursDefault, 1, errorWindowHoursMax)
-	sources := resolveSources(query.Get("source"), s.cfg.Logs.Sources)
+	windowHours := clampInt(query.Get("windowHours"), s.defaultErrorWindowHours(), 1, errorWindowHoursMax)
+	sources := resolveSources(query.Get("source"), apprefresh.GetEffectiveLogSources(s.cfg))
 	rawSourceList := append([]string(nil), sources...)
 
 	entries, err := s.readMergedLogs(sources, errorLimitDefault)
@@ -186,14 +157,14 @@ func (s *Server) handleErrors(w http.ResponseWriter, r *http.Request) {
 	windowStart := time.Now().Add(-time.Duration(windowHours) * time.Hour)
 	itemsBySig := make(map[string]*errorFeedItem, s.cfg.Logs.MaxErrorSignatures)
 	for _, entry := range entries {
-		if entry.timestamp.IsZero() || entry.timestamp.Before(windowStart) {
+		if entry.Timestamp.IsZero() || entry.Timestamp.Before(windowStart) {
 			continue
 		}
 		if entry.Severity != "warn" && entry.Severity != "error" {
 			continue
 		}
 
-		sig := entry.Source + "|" + normalizeErrorSignature(entry.Message)
+		sig := entry.Source + "|" + apprefresh.NormalizeErrorSignature(entry.Message)
 		if len(itemsBySig) >= s.cfg.Logs.MaxErrorSignatures {
 			if _, exists := itemsBySig[sig]; !exists {
 				continue
@@ -264,58 +235,22 @@ func (s *Server) handleErrors(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func (s *Server) readMergedLogs(sources []string, globalLimit int) ([]logRecord, error) {
-	if len(sources) == 0 {
-		return nil, nil
-	}
-	perSourceLimit := clampInt(fmt.Sprintf("%d", clampIntToSources(globalLimit, len(sources))), 1, 1, logLimitMax)
-	records := make([]logRecord, 0)
-	order := 0
+func (s *Server) readMergedLogs(sources []string, globalLimit int) ([]apprefresh.LogRecord, error) {
+	return apprefresh.ReadMergedLogs(s.openclawPath, sources, globalLimit)
+}
 
-	for _, source := range sources {
-		path, ok := resolveLogPath(s.openclawPath, source)
-		if !ok {
-			continue
-		}
-		lines, err := readTail(path, perSourceLimit)
-		if err != nil {
-			continue
-		}
-		for _, line := range lines {
-			order++
-			ts, seenAt := parseLogTimestamp(line)
-			records = append(records, logRecord{
-				Source:      source,
-				SeenAt:      seenAt,
-				TimestampMs: ts.UnixMilli(),
-				Severity:    classifySeverity(line, source),
-				Message:     strings.TrimSpace(line),
-				Line:        line,
-				order:       order,
-				timestamp:   ts,
-			})
-		}
+func (s *Server) defaultLogLimit() int {
+	if s.cfg.Logs.TailLines > 0 {
+		return s.cfg.Logs.TailLines
 	}
+	return logLimitDefault
+}
 
-	sort.SliceStable(records, func(i, j int) bool {
-		ti := records[i].timestamp
-		tj := records[j].timestamp
-		if !ti.Equal(tj) {
-			if ti.IsZero() {
-				return true
-			}
-			if tj.IsZero() {
-				return false
-			}
-			return ti.Before(tj)
-		}
-		return records[i].order < records[j].order
-	})
-
-	if len(records) > globalLimit {
-		records = records[len(records)-globalLimit:]
+func (s *Server) defaultErrorWindowHours() int {
+	if s.cfg.Logs.ErrorWindowHours > 0 {
+		return s.cfg.Logs.ErrorWindowHours
 	}
-	return records, nil
+	return errorWindowHoursDefault
 }
 
 func resolveSources(raw string, configured []string) []string {
@@ -353,6 +288,10 @@ func resolveSourceToken(raw string, configured []string) []string {
 		return configuredByContains(configured, "gateway")
 	case "cron":
 		return configuredByContains(configured, "cron")
+	case "session":
+		return configuredByContains(configured, "session")
+	case "subagent", "sub-agent":
+		return configuredByContains(configured, "subagent")
 	}
 
 	matches := make([]string, 0, 1)
@@ -374,100 +313,8 @@ func configuredByContains(configured []string, token string) []string {
 	return matches
 }
 
-func resolveLogPath(openclawPath, source string) (string, bool) {
-	clean := filepath.Clean(filepath.FromSlash(strings.TrimSpace(source)))
-	if clean == "" || clean == "." || strings.HasPrefix(clean, "../") || strings.HasPrefix(clean, "..") || filepath.IsAbs(clean) {
-		return "", false
-	}
-	return filepath.Join(openclawPath, clean), true
-}
-
-func readTail(path string, limit int) ([]string, error) {
-	if limit <= 0 {
-		return nil, nil
-	}
-	f, err := os.Open(path)
-	if err != nil {
-		return nil, err
-	}
-	defer f.Close()
-
-	sc := bufio.NewScanner(f)
-	sc.Buffer(make([]byte, 0, 64*1024), 1024*1024)
-	out := make([]string, 0, limit)
-	for sc.Scan() {
-		out = append(out, sc.Text())
-		if len(out) > limit {
-			out = out[1:]
-		}
-	}
-	if err := sc.Err(); err != nil {
-		return nil, fmt.Errorf("scan log file %s: %w", path, err)
-	}
-	return out, nil
-}
-
-func parseLogTimestamp(line string) (time.Time, string) {
-	match := reLogPrefixTs.FindStringSubmatch(line)
-	if len(match) < 2 {
-		return time.Time{}, ""
-	}
-	candidate := match[1]
-	if parsed, err := time.Parse(time.RFC3339Nano, candidate); err == nil {
-		return parsed, candidate
-	}
-	if parsed, err := time.Parse(time.RFC3339, candidate); err == nil {
-		return parsed, candidate
-	}
-	if parsed, err := time.Parse("2006-01-02 15:04:05.999999999", candidate); err == nil {
-		return parsed, candidate
-	}
-	if parsed, err := time.Parse("2006-01-02 15:04:05", candidate); err == nil {
-		return parsed, candidate
-	}
-	return time.Time{}, candidate
-}
-
-func classifySeverity(line, source string) string {
-	if strings.Contains(strings.ToLower(source), "err") {
-		return "error"
-	}
-	lower := strings.ToLower(line)
-	switch {
-	case strings.Contains(lower, "error") || strings.Contains(lower, "panic") || strings.Contains(lower, "fatal") || strings.Contains(lower, "segfault"):
-		return "error"
-	case strings.Contains(lower, "warn") || strings.Contains(lower, "warning"):
-		return "warn"
-	case strings.Contains(lower, "debug"):
-		return "debug"
-	default:
-		return "info"
-	}
-}
-
-func normalizeErrorSignature(msg string) string {
-	v := strings.ToLower(msg)
-	v = reUUID.ReplaceAllString(v, "<uuid>")
-	v = reIDTokens.ReplaceAllString(v, "<id>")
-	v = reNumeric.ReplaceAllString(v, "<n>")
-	v = reLogPrefixTs.ReplaceAllString(v, "<ts>")
-	v = strings.ReplaceAll(v, "\t", " ")
-	v = strings.TrimSpace(v)
-	for strings.Contains(v, "  ") {
-		v = strings.ReplaceAll(v, "  ", " ")
-	}
-	return v
-}
-
-func clampInt(raw string, def, min, max int) int {
-	v, err := strconv.Atoi(strings.TrimSpace(raw))
-	if err != nil || v < min {
-		return def
-	}
-	if v > max {
-		return max
-	}
-	return v
+func parseLogTimestamp(raw string) (time.Time, string) {
+	return apprefresh.ParseLogTimestamp(raw)
 }
 
 func parseSince(raw string, fallback int64) (int64, error) {
@@ -485,13 +332,13 @@ func parseSince(raw string, fallback int64) (int64, error) {
 	return fallback, fmt.Errorf("invalid since value %q", raw)
 }
 
-func clampIntToSources(globalLimit, sourceCount int) int {
-	if sourceCount <= 0 {
-		return 0
+func clampInt(raw string, def, min, max int) int {
+	v, err := strconv.Atoi(strings.TrimSpace(raw))
+	if err != nil || v < min {
+		return def
 	}
-	perSource := int(math.Ceil(float64(globalLimit) / float64(sourceCount)))
-	if perSource < 1 {
-		perSource = 1
+	if v > max {
+		return max
 	}
-	return perSource
+	return v
 }

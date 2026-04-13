@@ -533,6 +533,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'SF Pro','Helvetica Neue',sans
         <button class="tab-btn active" id="logSourceAll" onclick="OCUI.setLogSource('all')">All</button>
         <button class="tab-btn" id="logSourceGateway" onclick="OCUI.setLogSource('gateway')">Gateway</button>
         <button class="tab-btn" id="logSourceCron" onclick="OCUI.setLogSource('cron')">Cron</button>
+        <button class="tab-btn" id="logSourceSession" onclick="OCUI.setLogSource('session')">Session</button>
+        <button class="tab-btn" id="logSourceSubagent" onclick="OCUI.setLogSource('subagent')">Subagent</button>
       </div>
       <div class="tab-group" id="logSeverityGroup">
         <button class="tab-btn active" id="logSevAll" onclick="OCUI.setLogSeverity('all')">All</button>
@@ -873,6 +875,7 @@ const LogTail = {
   _hoverPause: false,
   _lastRegexError: '',
   _compiledRegex: null,
+  _maxLimit: 1000,
 
   _normalizeSource(v) {
     const value = String(v || 'all').trim().toLowerCase();
@@ -1007,10 +1010,12 @@ const LogTail = {
     const fastBtn = $('logFastBtn');
     if (pauseBtn) pauseBtn.textContent = this._paused ? '▶ Resume' : '⏸ Pause';
     if (fastBtn) {
-      fastBtn.textContent = this._fast ? '⚡ Normal' : '🐢 Fast (3s)';
-      fastBtn.title = this._fast ? 'Switch to normal interval' : 'Switch to fast mode';
+      const fastLabel = this.fastMs > 0 ? Math.round(this.fastMs / 1000) + 's' : 'fast';
+      const normalLabel = this.normalMs > 0 ? Math.round(this.normalMs / 1000) + 's' : 'normal';
+      fastBtn.textContent = this._fast ? '⚡ Normal (' + normalLabel + ')' : '🐢 Fast (' + fastLabel + ')';
+      fastBtn.title = this._fast ? 'Switch to normal interval (' + normalLabel + ')' : 'Switch to fast interval (' + fastLabel + ')';
     }
-    const sourceIds = {all:'logSourceAll', gateway:'logSourceGateway', cron:'logSourceCron'};
+    const sourceIds = {all:'logSourceAll', gateway:'logSourceGateway', cron:'logSourceCron', session:'logSourceSession', subagent:'logSourceSubagent'};
     const severityIds = {all:'logSevAll', info:'logSevInfo', warn:'logSevWarn', error:'logSevError'};
     Object.keys(sourceIds).forEach((k) => {
       const b = $(sourceIds[k]);
@@ -1061,6 +1066,26 @@ const LogTail = {
     if (shouldStickBottom) list.scrollTop = list.scrollHeight;
   },
 
+  applyRuntimeConfig(cfg) {
+    if (!cfg || typeof cfg !== 'object') {
+      return;
+    }
+    const logTailLines = Number(cfg.logTailLines);
+    if (Number.isFinite(logTailLines) && logTailLines > 0) {
+      this.limit = Math.min(Math.max(logTailLines, 1), this._maxLimit);
+    }
+    const fastRefresh = Number(cfg.logFastRefreshMs);
+    if (Number.isFinite(fastRefresh) && fastRefresh > 0) {
+      this.fastMs = fastRefresh;
+    }
+    const normalRefresh = Number(cfg.logRefreshIntervalMs);
+    if (Number.isFinite(normalRefresh) && normalRefresh > 0) {
+      this.normalMs = normalRefresh;
+    }
+    this._startPoll();
+    this._renderControls();
+  },
+
   _filtered(entries) {
     const source = this._normalizeSource(this._source);
     return entries.filter((e) => {
@@ -1095,6 +1120,7 @@ const ErrorFeed = {
   _sort: 'count',
   _items: [],
   _expanded: {},
+  _windowHours: 24,
 
   init() {
     this.fetch();
@@ -1118,6 +1144,9 @@ const ErrorFeed = {
     const qs = new URLSearchParams();
     qs.set('sort', this._sort);
     qs.set('limit', '80');
+    if (Number.isFinite(this._windowHours) && this._windowHours > 0) {
+      qs.set('windowHours', String(this._windowHours));
+    }
     try {
       const r = await fetch('/api/errors?' + qs.toString());
       if (id !== this._reqId) return;
@@ -1151,6 +1180,14 @@ const ErrorFeed = {
     const lastBtn = $('errSortLast');
     if (countBtn) countBtn.className = 'tab-btn' + (this._sort === 'count' ? ' active' : '');
     if (lastBtn) lastBtn.className = 'tab-btn' + (this._sort === 'last_seen' ? ' active' : '');
+  },
+
+  applyRuntimeConfig(cfg) {
+    if (!cfg || typeof cfg !== 'object') return;
+    const windowHours = Number(cfg.errorWindowHours);
+    if (Number.isFinite(windowHours) && windowHours > 0) {
+      this._windowHours = windowHours;
+    }
   },
 
   _normalizeItem(rawItem) {
@@ -2168,6 +2205,11 @@ const App = {
       const json=await DataLayer.fetch();
       if(json===null)return;
       State.update(json);
+      const runtimeLogConfig = json && typeof json === 'object' ? json.logConfig : null;
+      if (runtimeLogConfig && typeof runtimeLogConfig === 'object') {
+        LogTail.applyRuntimeConfig(runtimeLogConfig);
+        ErrorFeed.applyRuntimeConfig(runtimeLogConfig);
+      }
       App.renderNow();
       LogTail.fetch().catch(()=>{});
       ErrorFeed.fetch().catch(()=>{});
