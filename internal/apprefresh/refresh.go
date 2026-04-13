@@ -20,15 +20,15 @@ import (
 	appconfig "github.com/mudrii/openclaw-dashboard/internal/appconfig"
 )
 
-// runRefreshCollector generates data.json from OpenClaw's filesystem data.
-func RunRefreshCollector(dashboardDir, openclawPath string, cfgOpt ...appconfig.Config) error {
+// RunRefreshCollector generates data.json from OpenClaw's filesystem data.
+func RunRefreshCollector(ctx context.Context, dashboardDir, openclawPath string, cfgOpt ...appconfig.Config) error {
 	var cfg appconfig.Config
 	if len(cfgOpt) > 0 {
 		cfg = cfgOpt[0]
 	} else {
 		cfg = appconfig.Load(dashboardDir)
 	}
-	data := collectDashboardData(dashboardDir, openclawPath, cfg)
+	data := collectDashboardData(ctx, dashboardDir, openclawPath, cfg)
 
 	out, err := json.MarshalIndent(data, "", "  ")
 	if err != nil {
@@ -123,7 +123,7 @@ func ModelName(model string) string {
 	}
 }
 
-func collectDashboardData(dashboardDir, openclawPath string, cfg appconfig.Config) map[string]any {
+func collectDashboardData(ctx context.Context, dashboardDir, openclawPath string, cfg appconfig.Config) map[string]any {
 	now := time.Now()
 	date7d := now.AddDate(0, 0, -7).Format("2006-01-02")
 	date30d := now.AddDate(0, 0, -30).Format("2006-01-02")
@@ -177,9 +177,9 @@ func collectDashboardData(dashboardDir, openclawPath string, cfg appconfig.Confi
 	var gitLog []map[string]any
 	var cwg sync.WaitGroup
 	cwg.Add(3)
-	go func() { defer cwg.Done(); gateway = collectGatewayHealth() }()
+	go func() { defer cwg.Done(); gateway = collectGatewayHealth(ctx) }()
 	go func() { defer cwg.Done(); crons = CollectCrons(cronPath, loc) }()
-	go func() { defer cwg.Done(); gitLog = collectGitLog(openclawPath) }()
+	go func() { defer cwg.Done(); gitLog = collectGitLog(ctx, openclawPath) }()
 
 	// OpenClaw config (file I/O — runs while subprocesses are in flight)
 	compactionMode := "unknown"
@@ -208,7 +208,7 @@ func collectDashboardData(dashboardDir, openclawPath string, cfg appconfig.Confi
 	// Sessions
 	knownSIDs := map[string]string{}
 	sessionLiveModelTTL := time.Duration(cfg.Refresh.IntervalSeconds) * time.Second
-	sessionsList := collectSessions(sessionStores, basePath, loc, now, modelAliases, knownSIDs, sessionLiveModelTTL)
+	sessionsList := collectSessions(ctx, sessionStores, basePath, loc, now, modelAliases, knownSIDs, sessionLiveModelTTL)
 
 	// Backfill channel connectivity from recent session activity
 	backfillChannelConnectivity(agentConfig, sessionsList)
@@ -319,7 +319,7 @@ func collectDashboardData(dashboardDir, openclawPath string, cfg appconfig.Confi
 	}
 }
 
-func collectGatewayHealth() map[string]any {
+func collectGatewayHealth(ctx context.Context) map[string]any {
 	gw := map[string]any{
 		"status": "offline",
 		"pid":    nil,
@@ -327,7 +327,10 @@ func collectGatewayHealth() map[string]any {
 		"memory": "",
 		"rss":    0,
 	}
-	pgrepCtx, pgrepCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	pgrepCtx, pgrepCancel := context.WithTimeout(ctx, 5*time.Second)
 	defer pgrepCancel()
 
 	out, err := exec.CommandContext(pgrepCtx, "pgrep", "-f", "openclaw-gateway").Output()
@@ -354,7 +357,7 @@ func collectGatewayHealth() map[string]any {
 	gw["pid"] = pidInt
 	gw["status"] = "online"
 
-	psCtx, psCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	psCtx, psCancel := context.WithTimeout(ctx, 5*time.Second)
 	defer psCancel()
 	psOut, err := exec.CommandContext(psCtx, "ps", "-p", pid, "-o", "etime=,rss=").Output()
 	if err != nil {
@@ -1000,9 +1003,12 @@ func BuildDailyChart(now time.Time, dailyCosts map[string]map[string]float64,
 	return chart
 }
 
-func collectGitLog(openclawPath string) []map[string]any {
+func collectGitLog(ctx context.Context, openclawPath string) []map[string]any {
 	var gitLog []map[string]any
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	out, err := exec.CommandContext(ctx, "git", "-C", openclawPath, "log",
 		"--oneline", "-5", "--format=%h|%s|%ar").Output()

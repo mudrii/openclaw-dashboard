@@ -3,7 +3,7 @@ package apprefresh
 import (
 	"context"
 	"encoding/json"
-	"log"
+	"log/slog"
 	"maps"
 	"os/exec"
 	"sync"
@@ -26,7 +26,7 @@ type liveSessionModelCache struct {
 
 var sessionModelCache liveSessionModelCache
 
-func getLiveSessionModels(now time.Time, ttl time.Duration) map[string]string {
+func getLiveSessionModels(ctx context.Context, now time.Time, ttl time.Duration) map[string]string {
 	if ttl <= 0 {
 		ttl = 30 * time.Second
 	}
@@ -49,7 +49,7 @@ func getLiveSessionModels(now time.Time, ttl time.Duration) map[string]string {
 	}
 	sessionModelCache.mu.Unlock()
 
-	models := fetchLiveSessionModels()
+	models := fetchLiveSessionModels(ctx)
 
 	sessionModelCache.mu.Lock()
 	sessionModelCache.models = maps.Clone(models)
@@ -70,13 +70,16 @@ func resetLiveSessionModelCacheForTest() {
 	sessionModelCache.mu.Unlock()
 }
 
-func fetchLiveSessionModelsCLI() map[string]string {
+func fetchLiveSessionModelsCLI(ctx context.Context) map[string]string {
 	models := map[string]string{}
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 	out, err := execCommandContext(ctx, resolveOpenclawBin(), "sessions", "--json").Output()
 	if err != nil {
-		log.Printf("[dashboard] fetchLiveSessionModelsCLI: command failed: %v", err)
+		slog.Warn("[dashboard] fetchLiveSessionModelsCLI: command failed", "error", err)
 		return models
 	}
 	if len(out) == 0 {
@@ -85,7 +88,7 @@ func fetchLiveSessionModelsCLI() map[string]string {
 
 	var sessions any
 	if err := json.Unmarshal(out, &sessions); err != nil {
-		log.Printf("[dashboard] fetchLiveSessionModelsCLI: JSON parse failed: %v", err)
+		slog.Warn("[dashboard] fetchLiveSessionModelsCLI: JSON parse failed", "error", err)
 		return models
 	}
 	switch s := sessions.(type) {

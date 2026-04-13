@@ -51,7 +51,7 @@ func (s *Server) runRefresh(done chan struct{}) {
 		close(done)
 	}()
 
-	if err := s.refreshFn(s.dir, s.openclawPath, s.cfg); err != nil {
+	if err := s.refreshFn(s.ctx, s.dir, s.openclawPath, s.cfg); err != nil {
 		slog.Error("[dashboard] refresh failed", "error", err)
 		return
 	}

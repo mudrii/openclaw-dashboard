@@ -690,6 +690,9 @@ systemctl --user status openclaw-dashboard
 ```bash
 cd ~/src/openclaw-dashboard
 
+# Build the binary
+make build
+
 # Test data refresh
 ./openclaw-dashboard --refresh
 # or: bash assets/runtime/refresh.sh
@@ -712,11 +715,11 @@ cat data.json | jq . | head -50
 ### Testing Checklist
 
 ```bash
-# Go tests (run with race detector)
-go test -race -v ./...
+# Preferred repo check surface
+make check
 ```
 
-- [ ] `go test -race ./...` passes (all tests green)
+- [ ] `make check` passes (vet, lint, race tests)
 - [ ] `./openclaw-dashboard --refresh` (or `bash refresh.sh`) produces valid JSON
 - [ ] `data.json` contains expected keys
 - [ ] Dashboard renders on desktop (1440px+)
@@ -745,7 +748,7 @@ go test -race -v ./...
 2. **Single-file frontend** — CSS and JS stay embedded in `web/index.html`
 3. **Go stdlib only** — no third-party imports in Go source
 4. **Test mobile + desktop** — check both responsive breakpoints
-5. **Run automated tests** — `go test -race ./...` before submitting changes
+5. **Run automated checks** — `make check` before submitting changes
 
 ### Adding a New Dashboard Panel
 

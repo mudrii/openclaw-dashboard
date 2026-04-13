@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"math"
 	"net/http"
 	"os"
@@ -49,6 +49,7 @@ type SystemService struct {
 }
 
 var fetchLatestVersion = FetchLatestNpmVersion
+var sharedSystemHTTPClient = &http.Client{}
 
 func NewSystemService(cfg appconfig.SystemConfig, dashVer string, serverCtx context.Context) *SystemService {
 	return &SystemService{cfg: cfg, dashVer: dashVer, shutdownCtx: serverCtx}
@@ -91,7 +92,7 @@ func (s *SystemService) GetJSON(ctx context.Context) (int, []byte) {
 			go func() {
 				data, hardFail := s.refresh(s.shutdownCtx)
 				if data == nil || hardFail {
-					log.Printf("[system] background refresh failed: data=%v hardFail=%v", data == nil, hardFail)
+					slog.Warn("[system] background refresh failed", "data_nil", data == nil, "hard_fail", hardFail)
 				}
 				s.metricsMu.Lock()
 				s.metricsRefresh = false
@@ -195,7 +196,7 @@ func (s *SystemService) refresh(ctx context.Context) ([]byte, bool) {
 
 	b, err := json.Marshal(resp)
 	if err != nil {
-		log.Printf("[dashboard] collectMetrics: json.Marshal failed: %v", err)
+		slog.Error("[dashboard] collectMetrics: json.Marshal failed", "error", err)
 		return nil, true
 	}
 
@@ -414,12 +415,17 @@ func probeOpenclawGatewayEndpoints(ctx context.Context, gatewayPort int, timeout
 	if gatewayPort <= 0 {
 		gatewayPort = 18789
 	}
+	if timeoutMs <= 0 {
+		timeoutMs = 1500
+	}
+	tctx, cancel := context.WithTimeout(ctx, time.Duration(timeoutMs)*time.Millisecond)
+	defer cancel()
 	base := fmt.Sprintf("http://127.0.0.1:%d", gatewayPort)
-	client := &http.Client{}
+	client := sharedSystemHTTPClient
 	gw := SystemOpenclawGateway{}
 	var errs []string
 
-	if m, err := FetchJSONMap(ctx, client, base+"/healthz"); err != nil {
+	if m, err := FetchJSONMap(tctx, client, base+"/healthz"); err != nil {
 		errs = append(errs, "gateway /healthz: "+err.Error())
 	} else {
 		gw.HealthEndpointOk = true
@@ -433,7 +439,7 @@ func probeOpenclawGatewayEndpoints(ctx context.Context, gatewayPort int, timeout
 
 	// readyz returns 503 when not ready — but the body still contains useful JSON
 	// (ready, failing, uptimeMs). Parse it on both 200 and 503.
-	if m, err := fetchJSONMapAllowStatus(ctx, client, base+"/readyz", 200, 503); err != nil {
+	if m, err := fetchJSONMapAllowStatus(tctx, client, base+"/readyz", 200, 503); err != nil {
 		errs = append(errs, "gateway /readyz: "+err.Error())
 	} else {
 		gw.ReadyEndpointOk = true
@@ -662,7 +668,7 @@ func DetectGatewayFallback(ctx context.Context, gatewayPort int, timeoutMs int) 
 		e := "probe failed"
 		return SystemGateway{Status: "offline", Error: &e}
 	}
-	client := &http.Client{}
+	client := sharedSystemHTTPClient
 	resp, err := client.Do(req)
 	if err == nil {
 		_ = resp.Body.Close()
@@ -768,28 +774,28 @@ func FetchLatestNpmVersion(ctx context.Context, timeoutMs int) string {
 	}
 	tctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	client := &http.Client{}
+	client := sharedSystemHTTPClient
 	req, err := http.NewRequestWithContext(tctx, http.MethodGet, "https://registry.npmjs.org/openclaw/latest", nil)
 	if err != nil {
-		log.Printf("[dashboard] FetchLatestNpmVersion: request creation failed: %v", err)
+		slog.Warn("[dashboard] FetchLatestNpmVersion: request creation failed", "error", err)
 		return ""
 	}
 	req.Header.Set("Accept", "application/json")
 	resp, err := client.Do(req)
 	if err != nil {
-		log.Printf("[dashboard] FetchLatestNpmVersion: request failed: %v", err)
+		slog.Warn("[dashboard] FetchLatestNpmVersion: request failed", "error", err)
 		return ""
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
-		log.Printf("[dashboard] FetchLatestNpmVersion: unexpected status %d", resp.StatusCode)
+		slog.Warn("[dashboard] FetchLatestNpmVersion: unexpected status", "status", resp.StatusCode)
 		return ""
 	}
 	var pkg struct {
 		Version string `json:"version"`
 	}
 	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<16)).Decode(&pkg); err != nil {
-		log.Printf("[dashboard] FetchLatestNpmVersion: JSON decode failed: %v", err)
+		slog.Warn("[dashboard] FetchLatestNpmVersion: JSON decode failed", "error", err)
 		return ""
 	}
 	return pkg.Version

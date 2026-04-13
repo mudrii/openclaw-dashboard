@@ -168,6 +168,37 @@ func TestReadMergedLogs_MergesAndSorts(t *testing.T) {
 	}
 }
 
+func TestReadMergedLogs_PrefersNewestEntriesAcrossSkewedSources(t *testing.T) {
+	dir := t.TempDir()
+	_ = os.MkdirAll(filepath.Join(dir, "logs"), 0o755)
+	writeLines(t, filepath.Join(dir, "logs", "gateway.log"),
+		"2026-04-13T10:00:00Z gateway old",
+		"2026-04-13T10:00:01Z gateway still old",
+		"2026-04-13T10:00:02Z gateway mid",
+		"2026-04-13T10:00:03Z gateway newer",
+		"2026-04-13T10:00:04Z gateway newest",
+	)
+	writeLines(t, filepath.Join(dir, "logs", "cron.log"),
+		"2026-04-13T09:59:59Z cron old",
+	)
+
+	s := &Server{openclawPath: dir}
+	records, err := s.readMergedLogs([]string{"logs/gateway.log", "logs/cron.log"}, 3)
+	if err != nil {
+		t.Fatalf("readMergedLogs failed: %v", err)
+	}
+	if len(records) != 3 {
+		t.Fatalf("expected 3 records after limit, got %d", len(records))
+	}
+
+	wantMessages := []string{"gateway mid", "gateway newer", "gateway newest"}
+	for i, record := range records {
+		if record.Message != wantMessages[i] {
+			t.Fatalf("record[%d].Message = %q, want %q", i, record.Message, wantMessages[i])
+		}
+	}
+}
+
 func TestHandleLogs_SourceAlias(t *testing.T) {
 	openclawDir := t.TempDir()
 	writeLines(t, filepath.Join(openclawDir, "logs", "gateway.log"),
@@ -271,7 +302,7 @@ func newTestServerWithOpenclawHome(t *testing.T, cfg appconfig.Config, openclawD
 
 	t.Setenv("OPENCLAW_HOME", openclawDir)
 
-	refreshFn := func(d, o string, c ...appconfig.Config) error { return nil }
+	refreshFn := func(ctx context.Context, d, o string, c ...appconfig.Config) error { return nil }
 	return NewServer(dir, "1.0.0", cfg, "", []byte("<html><body>__VERSION__ __RUNTIME__</body></html>"), ctx, refreshFn)
 }
 

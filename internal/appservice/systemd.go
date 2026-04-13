@@ -180,7 +180,7 @@ func (sb *systemdBackend) Status() (ServiceStatus, error) {
 
 	// Last 20 log lines via journalctl (only if process is active)
 	if props["ActiveState"] == "active" {
-		logOut, err := sb.runCmd("journalctl", "--user", "-u", systemdUnitName, "-n", "20", "--no-pager")
+		logOut, err := sb.runCmd(sb.ctx, "journalctl", "--user", "-u", systemdUnitName, "-n", "20", "--no-pager")
 		if err == nil {
 			lines := strings.Split(strings.TrimRight(string(logOut), "\n"), "\n")
 			if len(lines) > 0 && lines[0] != "" {

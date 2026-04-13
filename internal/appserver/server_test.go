@@ -22,7 +22,7 @@ func newTestServer(t *testing.T) *Server {
 	indexHTML := []byte("<html><head></head><body>__VERSION__ __RUNTIME__</body></html>")
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
-	refreshFn := func(dir, openclawPath string, cfgs ...appconfig.Config) error { return nil }
+	refreshFn := func(ctx context.Context, dir, openclawPath string, cfgs ...appconfig.Config) error { return nil }
 	return NewServer(dir, "1.0.0-test", cfg, "test-token", indexHTML, ctx, refreshFn)
 }
 
@@ -33,7 +33,7 @@ func TestHandleStaticFile_Allowlisted(t *testing.T) {
 	indexHTML := []byte("<html><head></head><body></body></html>")
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
-	refreshFn := func(d, o string, c ...appconfig.Config) error { return nil }
+	refreshFn := func(ctx context.Context, d, o string, c ...appconfig.Config) error { return nil }
 	s := NewServer(dir, "1.0.0", cfg, "", indexHTML, ctx, refreshFn)
 
 	// Create themes.json in dir
@@ -95,6 +95,23 @@ func TestServeHTTP_CORS(t *testing.T) {
 	acao := w.Header().Get("Access-Control-Allow-Origin")
 	if acao != "http://localhost:3000" {
 		t.Errorf("expected CORS origin http://localhost:3000, got %q", acao)
+	}
+	if vary := w.Header().Get("Vary"); vary != "Origin" {
+		t.Errorf("expected Vary=Origin, got %q", vary)
+	}
+}
+
+func TestServeHTTP_CORS_IPv6Loopback(t *testing.T) {
+	s := newTestServer(t)
+	req := httptest.NewRequest(http.MethodOptions, "/api/chat", nil)
+	req.Header.Set("Origin", "http://[::1]:3000")
+	w := httptest.NewRecorder()
+	s.ServeHTTP(w, req)
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("expected 204, got %d", w.Code)
+	}
+	if acao := w.Header().Get("Access-Control-Allow-Origin"); acao != "http://[::1]:3000" {
+		t.Fatalf("expected IPv6 loopback origin to be reflected, got %q", acao)
 	}
 }
 

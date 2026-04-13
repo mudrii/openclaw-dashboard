@@ -4,7 +4,7 @@ package appconfig
 import (
 	"bufio"
 	"encoding/json"
-	"log"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -147,23 +147,23 @@ func Load(dir string) Config {
 		f, err = os.Open(filepath.Join(dir, "assets", "runtime", "config.json"))
 	}
 	if err != nil {
-		log.Printf("[dashboard] config: no config.json found, using defaults")
+		slog.Warn("[dashboard] config: no config.json found, using defaults")
 		return cfg
 	}
 	defer func() { _ = f.Close() }()
 	if err := json.NewDecoder(f).Decode(&cfg); err != nil {
-		log.Printf("[dashboard] WARNING: invalid config.json, using defaults for missing/invalid fields: %v", err)
+		slog.Warn("[dashboard] invalid config.json, using defaults for missing/invalid fields", "error", err)
 	}
-	if len(cfg.Logs.LogSources) > 0 {
+	if len(cfg.Logs.Sources) == 0 && len(cfg.Logs.LogSources) > 0 {
 		cfg.Logs.Sources = append([]string{}, cfg.Logs.LogSources...)
 	}
-	if cfg.Logs.LogTailLines > 0 {
+	if cfg.Logs.TailLines <= 0 && cfg.Logs.LogTailLines > 0 {
 		cfg.Logs.TailLines = cfg.Logs.LogTailLines
 	}
-	if cfg.Logs.LogFastRefreshMs > 0 {
+	if cfg.Logs.FastRefreshMs <= 0 && cfg.Logs.LogFastRefreshMs > 0 {
 		cfg.Logs.FastRefreshMs = cfg.Logs.LogFastRefreshMs
 	}
-	if cfg.Logs.ErrorFeedWindowHours > 0 {
+	if cfg.Logs.ErrorWindowHours <= 0 && cfg.Logs.ErrorFeedWindowHours > 0 {
 		cfg.Logs.ErrorWindowHours = cfg.Logs.ErrorFeedWindowHours
 	}
 	if cfg.AI.MaxHistory <= 0 {
@@ -287,7 +287,7 @@ func ReadDotenv(path string) map[string]string {
 		result[key] = val
 	}
 	if err := scanner.Err(); err != nil {
-		log.Printf("[dashboard] dotenv: scanner error reading %s: %v", expanded, err)
+		slog.Warn("[dashboard] dotenv: scanner error", "path", expanded, "error", err)
 	}
 	return result
 }
@@ -296,7 +296,7 @@ func ExpandHome(path string) string {
 	if strings.HasPrefix(path, "~/") {
 		home, err := os.UserHomeDir()
 		if err != nil {
-			log.Printf("[dashboard] WARNING: UserHomeDir failed, cannot expand ~: %v", err)
+			slog.Warn("[dashboard] UserHomeDir failed, cannot expand ~", "error", err)
 			return path
 		}
 		return filepath.Join(home, path[2:])

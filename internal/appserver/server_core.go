@@ -122,16 +122,17 @@ type Server struct {
 	systemSvc *appsystem.SystemService
 
 	// Refresh collector function (injected at construction, not a global)
-	refreshFn func(string, string, ...appconfig.Config) error
+	refreshFn func(context.Context, string, string, ...appconfig.Config) error
 
 	// Lifecycle done channel — closed on graceful shutdown; nil channel in select never fires
+	ctx  context.Context
 	done <-chan struct{}
 
 	// Chat rate limiter (10 req/min per IP)
 	chatLimiter chatRateLimiter
 }
 
-func NewServer(dir, version string, cfg appconfig.Config, gatewayToken string, indexHTML []byte, serverCtx context.Context, refreshFn func(string, string, ...appconfig.Config) error) *Server {
+func NewServer(dir, version string, cfg appconfig.Config, gatewayToken string, indexHTML []byte, serverCtx context.Context, refreshFn func(context.Context, string, string, ...appconfig.Config) error) *Server {
 	openclawPath := appruntime.ResolveOpenclawPath()
 	content := string(indexHTML)
 	preset := html.EscapeString(cfg.Theme.Preset)
@@ -152,6 +153,7 @@ func NewServer(dir, version string, cfg appconfig.Config, gatewayToken string, i
 		httpClient:         &http.Client{Timeout: 60 * time.Second},
 		systemSvc:          appsystem.NewSystemService(cfg.System, version, serverCtx),
 		refreshFn:          refreshFn,
+		ctx:                serverCtx,
 		done:               serverCtx.Done(),
 	}
 	// Start periodic cleanup of stale rate-limit entries

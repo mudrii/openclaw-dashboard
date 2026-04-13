@@ -21,7 +21,7 @@ func testServerWithCtxAndMockRefresh(t *testing.T, dir string, ctx context.Conte
 	}
 
 	// No-op refresh to avoid real CLI calls
-	mockRefresh := func(dir, home string, cfg ...appconfig.Config) error {
+	mockRefresh := func(ctx context.Context, dir, home string, cfg ...appconfig.Config) error {
 		return nil
 	}
 	return NewServer(dir, "test", cfg, "", []byte("<head><body>__VERSION__</body>"), ctx, mockRefresh)
@@ -90,7 +90,7 @@ func TestStartRefresh_ReturnsInFlightChannelDuringShutdown(t *testing.T) {
 		System:  appconfig.SystemConfig{Enabled: false},
 	}
 
-	slowRefresh := func(dir, home string, cfg ...appconfig.Config) error {
+	slowRefresh := func(ctx context.Context, dir, home string, cfg ...appconfig.Config) error {
 		<-blockRefresh // block until test releases
 		return nil
 	}
@@ -135,7 +135,7 @@ func TestStartRefresh_SkipsAfterShutdown_NoInFlight(t *testing.T) {
 		System:  appconfig.SystemConfig{Enabled: false},
 	}
 
-	slowRefresh := func(dir, home string, cfg ...appconfig.Config) error {
+	slowRefresh := func(ctx context.Context, dir, home string, cfg ...appconfig.Config) error {
 		<-blockRefresh
 		return nil
 	}
@@ -143,8 +143,10 @@ func TestStartRefresh_SkipsAfterShutdown_NoInFlight(t *testing.T) {
 
 	// Ensure refreshRunning is false and lastRefresh is old — bypass all guards
 	// except the shutdown check, which is what we're testing.
+	srv.mu.Lock()
 	srv.refreshRunning = false
 	srv.lastRefresh = time.Now().Add(-time.Hour)
+	srv.mu.Unlock()
 
 	// Cancel context (simulate shutdown) before calling startRefresh
 	cancel()

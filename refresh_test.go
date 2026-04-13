@@ -1,6 +1,7 @@
 package dashboard
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -104,6 +105,54 @@ func TestCollectTokenUsage_ExplicitSubagentSessionCountsAsSubagent(t *testing.T)
 	}
 	if len(subagentAll) == 0 {
 		t.Fatal("expected explicit subagent session to count toward subagent usage")
+	}
+}
+
+func TestCollectTokenUsage_ZeroCostSubagentStillCountsRun(t *testing.T) {
+	basePath := filepath.Join(t.TempDir(), "agents")
+	sessionDir := filepath.Join(basePath, "main", "sessions")
+	if err := os.MkdirAll(sessionDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	jsonl := `{"timestamp":"2026-03-22T10:00:00Z","message":{"role":"assistant","model":"openai/gpt-5","usage":{"totalTokens":100,"input":60,"output":40,"cacheRead":0,"cost":{"total":0}}}}` + "\n"
+	if err := os.WriteFile(filepath.Join(sessionDir, "sub-zero.jsonl"), []byte(jsonl), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	modelsAll := map[string]*tokenBucket{}
+	modelsToday := map[string]*tokenBucket{}
+	models7d := map[string]*tokenBucket{}
+	models30d := map[string]*tokenBucket{}
+	subagentAll := map[string]*tokenBucket{}
+	subagentToday := map[string]*tokenBucket{}
+	subagent7d := map[string]*tokenBucket{}
+	subagent30d := map[string]*tokenBucket{}
+	dailyCosts := map[string]map[string]float64{}
+	dailyTokens := map[string]map[string]int{}
+	dailyCalls := map[string]map[string]int{}
+	dailySubagentCosts := map[string]float64{}
+	dailySubagentCount := map[string]int{}
+
+	runs := collectTokenUsage(
+		basePath,
+		time.UTC,
+		"2026-03-22",
+		"2026-03-15",
+		"2026-02-20",
+		map[string]string{"sub-zero": "subagent"},
+		map[string]string{"sub-zero": "agent:main:subagent:abc"},
+		map[string]string{},
+		modelsAll, modelsToday, models7d, models30d,
+		subagentAll, subagentToday, subagent7d, subagent30d,
+		dailyCosts, dailyTokens, dailyCalls, dailySubagentCosts, dailySubagentCount,
+	)
+
+	if len(runs) != 1 {
+		t.Fatalf("expected one zero-cost subagent run, got %+v", runs)
+	}
+	if got := dailySubagentCount["2026-03-22"]; got != 1 {
+		t.Fatalf("expected daily subagent count to include zero-cost run, got %d", got)
 	}
 }
 
@@ -526,7 +575,7 @@ func TestRunRefreshCollector_AcceptsConfig(t *testing.T) {
 	os.MkdirAll(agentsDir, 0o755)
 
 	cfg := Config{Timezone: "UTC"}
-	err := runRefreshCollector(dir, openclawPath, cfg)
+	err := runRefreshCollectorWithContext(context.Background(), dir, openclawPath, cfg)
 	if err != nil {
 		t.Fatalf("runRefreshCollector with config: %v", err)
 	}
@@ -542,7 +591,7 @@ func TestRunRefreshCollector_WithoutConfig(t *testing.T) {
 	agentsDir := filepath.Join(openclawPath, "agents", "main", "sessions")
 	os.MkdirAll(agentsDir, 0o755)
 
-	err := runRefreshCollector(dir, openclawPath)
+	err := runRefreshCollectorWithContext(context.Background(), dir, openclawPath)
 	if err != nil {
 		t.Fatalf("runRefreshCollector without config: %v", err)
 	}

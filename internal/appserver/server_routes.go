@@ -86,8 +86,17 @@ func (s *Server) notFound(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) setCORSHeaders(w http.ResponseWriter, r *http.Request) {
+	vary := w.Header().Get("Vary")
+	switch {
+	case vary == "":
+		w.Header().Set("Vary", "Origin")
+	case !strings.Contains(vary, "Origin"):
+		w.Header().Set("Vary", vary+", Origin")
+	}
 	origin := r.Header.Get("Origin")
-	if strings.HasPrefix(origin, "http://localhost:") || strings.HasPrefix(origin, "http://127.0.0.1:") {
+	if strings.HasPrefix(origin, "http://localhost:") ||
+		strings.HasPrefix(origin, "http://127.0.0.1:") ||
+		strings.HasPrefix(origin, "http://[::1]:") {
 		w.Header().Set("Access-Control-Allow-Origin", origin)
 	} else {
 		w.Header().Set("Access-Control-Allow-Origin", s.corsDefault)

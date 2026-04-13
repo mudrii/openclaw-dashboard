@@ -6,7 +6,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"log"
+	"log/slog"
 	"net"
 	"net/http"
 	"os"
@@ -70,7 +70,7 @@ func Main() int {
 				if n, err := strconv.Atoi(p); err == nil {
 					envPort = n
 				} else {
-					log.Printf("[dashboard] WARNING: invalid DASHBOARD_PORT %q, using default %d", p, envPort)
+					slog.Warn("[dashboard] invalid DASHBOARD_PORT, using default", "value", p, "default", envPort)
 				}
 			}
 
@@ -125,7 +125,7 @@ func Main() int {
 		if p, err := strconv.Atoi(envPort); err == nil {
 			envPortInt = p
 		} else {
-			log.Printf("[dashboard] WARNING: invalid DASHBOARD_PORT %q, using default %d", envPort, envPortInt)
+			slog.Warn("[dashboard] invalid DASHBOARD_PORT, using default", "value", envPort, "default", envPortInt)
 		}
 	}
 
@@ -152,7 +152,7 @@ func Main() int {
 		}
 		fmt.Printf("Dashboard dir: %s\n", dir)
 		fmt.Printf("OpenClaw path: %s\n", openclawPath)
-		if err := refreshCollectorFunc(dir, openclawPath, cfg); err != nil {
+		if err := refreshCollectorFunc(cmdCtx, dir, openclawPath, cfg); err != nil {
 			fmt.Fprintf(os.Stderr, "refresh failed: %v\n", err)
 			return 1
 		}
@@ -164,11 +164,11 @@ func Main() int {
 	env := readDotenv(cfg.AI.DotenvPath)
 	gatewayToken := env["OPENCLAW_GATEWAY_TOKEN"]
 	if cfg.AI.Enabled && gatewayToken == "" {
-		fmt.Println("[dashboard] WARNING: ai.enabled=true but OPENCLAW_GATEWAY_TOKEN not found in dotenv")
+		slog.Warn("[dashboard] ai.enabled=true but OPENCLAW_GATEWAY_TOKEN not found in dotenv")
 	}
 
-	// Server lifecycle context — cancelled on SIGINT/SIGTERM for clean goroutine shutdown
-	serverCtx, serverCancel := context.WithCancel(context.Background())
+	// Server lifecycle context — follows the top-level CLI lifecycle.
+	serverCtx, serverCancel := context.WithCancel(cmdCtx)
 	defer serverCancel()
 
 	srv := NewServer(dir, version, cfg, gatewayToken, indexHTML, serverCtx)
@@ -198,10 +198,6 @@ func Main() int {
 		}
 	}
 
-	// Graceful shutdown on SIGINT/SIGTERM
-	stop := make(chan os.Signal, 1)
-	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
-	defer signal.Stop(stop)
 	serverErr := make(chan error, 1)
 
 	go func() {
@@ -211,7 +207,7 @@ func Main() int {
 	}()
 
 	select {
-	case <-stop:
+	case <-cmdCtx.Done():
 	case err := <-serverErr:
 		serverCancel()
 		fmt.Fprintf(os.Stderr, "[dashboard] fatal: %v\n", err)

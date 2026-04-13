@@ -6,7 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
-	"log"
+	"log/slog"
 	"math"
 	"os"
 	"path/filepath"
@@ -47,8 +47,6 @@ func CollectTokenUsageWithCache(
 	dailySubagentCosts map[string]float64,
 	dailySubagentCount map[string]int,
 ) []map[string]any {
-	_ = modelAliases
-
 	activePattern := filepath.Join(basePath, "*/sessions/*.jsonl")
 	deletedPattern := filepath.Join(basePath, "*/sessions/*.jsonl.deleted.*")
 	activeFiles, _ := filepath.Glob(activePattern)
@@ -75,7 +73,7 @@ func CollectTokenUsageWithCache(
 		if !ok || summary.Size != info.Size() || summary.ModTimeUnixNano != info.ModTime().UnixNano() {
 			summary, err = parseTokenUsageFile(path, info, loc)
 			if err != nil {
-				log.Printf("[dashboard] token usage parse skipped for %s: %v", path, err)
+				slog.Warn("[dashboard] token usage parse skipped", "path", path, "error", err)
 				continue
 			}
 		}
@@ -114,16 +112,16 @@ func saveTokenUsageCache(path string, cache tokenUsageCache) {
 	}
 	data, err := json.Marshal(cache)
 	if err != nil {
-		log.Printf("[dashboard] saveTokenUsageCache: marshal failed: %v", err)
+		slog.Error("[dashboard] saveTokenUsageCache: marshal failed", "error", err)
 		return
 	}
 	tmp := path + ".tmp"
 	if err := os.WriteFile(tmp, data, 0o644); err != nil {
-		log.Printf("[dashboard] saveTokenUsageCache: write failed: %v", err)
+		slog.Error("[dashboard] saveTokenUsageCache: write failed", "path", tmp, "error", err)
 		return
 	}
 	if err := os.Rename(tmp, path); err != nil {
-		log.Printf("[dashboard] saveTokenUsageCache: rename failed: %v", err)
+		slog.Error("[dashboard] saveTokenUsageCache: rename failed", "from", tmp, "to", path, "error", err)
 		_ = os.Remove(tmp)
 	}
 }
@@ -287,7 +285,7 @@ func applyTokenUsageSummary(
 		}
 	}
 
-	if !isSubagent || summary.SessionCost <= 0 || summary.SessionLastUnixMs == 0 {
+	if !isSubagent || summary.SessionLastUnixMs == 0 {
 		return
 	}
 

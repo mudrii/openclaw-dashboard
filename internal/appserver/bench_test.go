@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	appconfig "github.com/mudrii/openclaw-dashboard/internal/appconfig"
 )
@@ -50,7 +51,7 @@ func BenchmarkLoadData_CacheMiss(b *testing.B) {
 	for b.Loop() {
 		// Invalidate cache by resetting mtime tracker
 		s.dataMu.Lock()
-		s.cachedDataMtime = s.cachedDataMtime.Add(-1)
+		s.cachedDataMtime = time.Time{}
 		s.dataMu.Unlock()
 
 		_, _, _ = s.loadData()

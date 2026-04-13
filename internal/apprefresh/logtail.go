@@ -4,10 +4,10 @@ package apprefresh
 import (
 	"bytes"
 	"cmp"
+	"container/heap"
 	"encoding/json"
 	"fmt"
 	"io"
-	"math"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -53,12 +53,7 @@ func ReadMergedLogs(openclawPath string, sources []string, globalLimit int) ([]L
 		return nil, nil
 	}
 
-	perSourceLimit := int(math.Ceil(float64(globalLimit) / float64(len(sources))))
-	if perSourceLimit < 1 {
-		perSourceLimit = 1
-	}
-
-	records := make([]LogRecord, 0, globalLimit)
+	perSourceRecords := make([][]LogRecord, 0, len(sources))
 	for _, source := range sources {
 		path, ok := resolveLogPath(openclawPath, source)
 		if !ok {
@@ -70,11 +65,12 @@ func ReadMergedLogs(openclawPath string, sources []string, globalLimit int) ([]L
 			continue
 		}
 
-		lines, err := readTailLines(path, perSourceLimit)
+		lines, err := readTailLines(path, globalLimit)
 		if err != nil {
 			continue
 		}
 
+		sourceRecords := make([]LogRecord, 0, len(lines))
 		for _, line := range lines {
 			record, ok := parseLogLine(line, path, stat.ModTime())
 			if !ok {
@@ -85,16 +81,78 @@ func ReadMergedLogs(openclawPath string, sources []string, globalLimit int) ([]L
 			if record.TimestampMs == 0 {
 				record.TimestampMs = stat.ModTime().UnixMilli()
 			}
-			records = append(records, record)
+			sourceRecords = append(sourceRecords, record)
+		}
+		if len(sourceRecords) > 0 {
+			perSourceRecords = append(perSourceRecords, sourceRecords)
 		}
 	}
 
-	slices.SortStableFunc(records, compareLogRecords)
+	return mergeLatestRecords(perSourceRecords, globalLimit), nil
+}
 
-	if len(records) <= globalLimit {
-		return records, nil
+func mergeLatestRecords(perSourceRecords [][]LogRecord, globalLimit int) []LogRecord {
+	if len(perSourceRecords) == 0 || globalLimit <= 0 {
+		return nil
 	}
-	return records[len(records)-globalLimit:], nil
+
+	h := make(logRecordCursorHeap, 0, len(perSourceRecords))
+	for sourceIdx, records := range perSourceRecords {
+		last := len(records) - 1
+		if last >= 0 {
+			h = append(h, logRecordCursor{
+				sourceIdx: sourceIdx,
+				recordIdx: last,
+				record:    records[last],
+			})
+		}
+	}
+	heap.Init(&h)
+
+	out := make([]LogRecord, 0, min(globalLimit, len(perSourceRecords)))
+	for len(out) < globalLimit && h.Len() > 0 {
+		cursor := heap.Pop(&h).(logRecordCursor)
+		out = append(out, cursor.record)
+		if nextIdx := cursor.recordIdx - 1; nextIdx >= 0 {
+			nextRecord := perSourceRecords[cursor.sourceIdx][nextIdx]
+			heap.Push(&h, logRecordCursor{
+				sourceIdx: cursor.sourceIdx,
+				recordIdx: nextIdx,
+				record:    nextRecord,
+			})
+		}
+	}
+
+	slices.Reverse(out)
+	return out
+}
+
+type logRecordCursor struct {
+	sourceIdx int
+	recordIdx int
+	record    LogRecord
+}
+
+type logRecordCursorHeap []logRecordCursor
+
+func (h logRecordCursorHeap) Len() int { return len(h) }
+
+func (h logRecordCursorHeap) Less(i, j int) bool {
+	return compareLogRecords(h[i].record, h[j].record) > 0
+}
+
+func (h logRecordCursorHeap) Swap(i, j int) { h[i], h[j] = h[j], h[i] }
+
+func (h *logRecordCursorHeap) Push(x any) {
+	*h = append(*h, x.(logRecordCursor))
+}
+
+func (h *logRecordCursorHeap) Pop() any {
+	old := *h
+	n := len(old)
+	item := old[n-1]
+	*h = old[:n-1]
+	return item
 }
 
 func parseLogLine(line string, path string, fallback time.Time) (LogRecord, bool) {

@@ -135,7 +135,7 @@ func TestCollectSessions_CachesLiveModelLookup(t *testing.T) {
 	resetLiveSessionModelCacheForTest()
 
 	calls := 0
-	fetchLiveSessionModels = func() map[string]string {
+	fetchLiveSessionModels = func(ctx context.Context) map[string]string {
 		calls++
 		return map[string]string{"agent:main:chat": "openai/gpt-5"}
 	}
@@ -155,9 +155,9 @@ func TestCollectSessions_CachesLiveModelLookup(t *testing.T) {
 	}}
 
 	knownA := map[string]string{}
-	gotA := collectSessions(stores, t.TempDir(), time.UTC, now, modelAliases, knownA, 30*time.Second)
+	gotA := collectSessions(context.Background(), stores, t.TempDir(), time.UTC, now, modelAliases, knownA, 30*time.Second)
 	knownB := map[string]string{}
-	gotB := collectSessions(stores, t.TempDir(), time.UTC, now.Add(5*time.Second), modelAliases, knownB, 30*time.Second)
+	gotB := collectSessions(context.Background(), stores, t.TempDir(), time.UTC, now.Add(5*time.Second), modelAliases, knownB, 30*time.Second)
 
 	if calls != 1 {
 		t.Fatalf("expected one live model fetch within TTL, got %d", calls)
@@ -187,7 +187,7 @@ func TestFetchLiveSessionModelsCLI_UsesResolvedOpenclawBin(t *testing.T) {
 		return exec.CommandContext(ctx, "sh", "-c", `printf '[]'`)
 	}
 
-	models := fetchLiveSessionModelsCLI()
+	models := fetchLiveSessionModelsCLI(context.Background())
 	if len(models) != 0 {
 		t.Fatalf("expected empty models from empty JSON array, got %+v", models)
 	}

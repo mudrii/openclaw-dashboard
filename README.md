@@ -41,7 +41,7 @@ It's not trying to replace the OpenClaw CLI or Telegram interface. It's the at-a
 
 ### Key Features
 
-- 🔄 **On-Demand Refresh** — Refreshes data when you open the dashboard (no stale data)
+- 🔄 **On-Demand Refresh** — `GET /api/refresh` serves cached `data.json` immediately and triggers a debounced background refresh when needed
 - ⏱️ **Auto-Refresh** — Page auto-refreshes every 60 seconds with countdown timer
 - 🎨 **6 Built-in Themes** — 3 dark (Midnight, Nord, Catppuccin Mocha) + 3 light (GitHub, Solarized, Catppuccin Latte), switchable from the UI
 - 🖌️ **Glass Morphism UI** — Subtle transparency and hover effects
@@ -172,7 +172,7 @@ does not define a `brew services` formula service.
 ```bash
 git clone https://github.com/mudrii/openclaw-dashboard.git
 cd openclaw-dashboard
-go build -ldflags="-s -w" -o openclaw-dashboard ./cmd/openclaw-dashboard
+make build
 ./openclaw-dashboard --port 8080
 ```
 
@@ -265,6 +265,8 @@ data.json                   generated dashboard data
 | `/api/refresh` | GET | Stale-while-revalidate data.json (instant response, background refresh) |
 | `/api/chat` | POST | AI chat via OpenClaw gateway (10 req/min rate limit) |
 | `/api/system` | GET | Live host metrics (CPU/RAM/Swap/Disk) + gateway status |
+| `/api/logs` | GET | Merged tail view of configured dashboard log sources |
+| `/api/errors` | GET | Aggregated warning/error signatures for the dashboard error feed |
 
 | Feature | Details |
 |---|---|
@@ -280,7 +282,7 @@ data.json                   generated dashboard data
 | Gateway limit | 1MB response cap |
 | Tests | `go test -race` |
 
-When you open the dashboard, the embedded frontend calls `/api/refresh`. The server runs `--refresh` (with 30s debounce) to collect fresh data from your OpenClaw installation, then returns the JSON. No cron jobs needed.
+When you open the dashboard, the embedded frontend calls `/api/refresh`. The server returns the current `data.json` immediately, and if the refresh debounce window has expired it starts a background refresh to rebuild the file from your OpenClaw installation. If `data.json` does not exist yet, the handler waits briefly for the first refresh before returning. No cron jobs are required.
 
 The `/api/chat` endpoint accepts `{"question": "...", "history": [...]}` and forwards a stateless request to the OpenClaw gateway's OpenAI-compatible `/v1/chat/completions` endpoint, with a system prompt built from live `data.json`.
 

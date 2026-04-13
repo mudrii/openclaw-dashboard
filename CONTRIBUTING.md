@@ -8,11 +8,11 @@ Thanks for your interest in contributing!
 git clone https://github.com/mudrii/openclaw-dashboard.git
 cd openclaw-dashboard
 
-# Go tests (with race detector)
-go test -race ./...
-
-# Build the dashboard binary
-go build ./cmd/openclaw-dashboard
+# Preferred repo commands
+make build
+make test
+make lint
+make check
 ```
 
 ---
@@ -48,9 +48,10 @@ Automated tests live in both the repository root (`package dashboard`) and the
 internal packages. Run the full suite before every commit:
 
 ```bash
-go test -race ./...
+make check
 ```
 
+`make check` runs `go vet ./...`, `golangci-lint run ./...`, and `go test -race -count=1 ./...`.
 The race detector is part of the expected workflow; do not skip it for local runs.
 
 ### What the Go tests cover
@@ -137,7 +138,7 @@ Always cover where it matters:
 
 There is no automated visual regression suite. Required manual checks:
 
-1. Build and run: `./openclaw-dashboard --port 8080` (after `go build -o openclaw-dashboard .` if needed), then open `http://127.0.0.1:8080` (or your configured bind/port).
+1. Build and run: `make build && ./openclaw-dashboard --port 8080`, then open `http://127.0.0.1:8080` (or your configured bind/port).
 2. Switch through all 6 themes via the 🎨 button — verify nothing breaks.
 3. Resize to a narrow viewport (under 768px width) — verify layout adapts.
 4. Ensure new colors use the theme variable system (`var(--accent)`, not hardcoded hex) where appropriate.
@@ -249,7 +250,7 @@ refactor: extract donut chart logic into renderDonut()
 
 Before opening a PR, verify:
 
-- [ ] All Go tests pass: `go test -race ./...`
+- [ ] All repo checks pass: `make check`
 - [ ] New behaviour has a Go test in the appropriate `*_test.go` file (or a justified reason in the PR if not feasible)
 - [ ] Any new HTML template literals use `esc()` on every dynamic value
 - [ ] No new globals added outside the 7 module objects + 4 utilities
