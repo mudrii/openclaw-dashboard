@@ -275,7 +275,9 @@ func CallGateway(ctx context.Context, system string, history []Message, question
 
 	resp, err := client.Do(req)
 	if err != nil {
-		if ctx.Err() == context.DeadlineExceeded || errors.Is(err, context.DeadlineExceeded) {
+		if ctx.Err() == context.DeadlineExceeded ||
+			errors.Is(err, context.DeadlineExceeded) ||
+			errors.Is(err, context.Canceled) {
 			return "", &GatewayError{Status: http.StatusGatewayTimeout, Msg: "Gateway timed out — model took too long to respond"}
 		}
 		return "", &GatewayError{Status: http.StatusBadGateway, Msg: fmt.Sprintf("gateway unreachable: %v", err)}

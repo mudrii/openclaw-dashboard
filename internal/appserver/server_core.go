@@ -6,7 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"html"
-	"log"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
@@ -14,6 +14,7 @@ import (
 	"time"
 
 	appconfig "github.com/mudrii/openclaw-dashboard/internal/appconfig"
+	"github.com/mudrii/openclaw-dashboard/internal/appruntime"
 	appsystem "github.com/mudrii/openclaw-dashboard/internal/appsystem"
 )
 
@@ -99,6 +100,7 @@ type Server struct {
 	version      string
 	cfg          appconfig.Config
 	gatewayToken string
+	openclawPath string
 
 	indexHTMLRendered  []byte
 	indexContentLength string // pre-computed strconv.Itoa(len(indexHTMLRendered))
@@ -120,16 +122,18 @@ type Server struct {
 	systemSvc *appsystem.SystemService
 
 	// Refresh collector function (injected at construction, not a global)
-	refreshFn func(string, string, ...appconfig.Config) error
+	refreshFn func(context.Context, string, string, ...appconfig.Config) error
 
 	// Lifecycle done channel — closed on graceful shutdown; nil channel in select never fires
+	ctx  context.Context
 	done <-chan struct{}
 
 	// Chat rate limiter (10 req/min per IP)
 	chatLimiter chatRateLimiter
 }
 
-func NewServer(dir, version string, cfg appconfig.Config, gatewayToken string, indexHTML []byte, serverCtx context.Context, refreshFn func(string, string, ...appconfig.Config) error) *Server {
+func NewServer(dir, version string, cfg appconfig.Config, gatewayToken string, indexHTML []byte, serverCtx context.Context, refreshFn func(context.Context, string, string, ...appconfig.Config) error) *Server {
+	openclawPath := appruntime.ResolveOpenclawPath()
 	content := string(indexHTML)
 	preset := html.EscapeString(cfg.Theme.Preset)
 	meta := "<head>\n<meta name=\"oc-theme\" content=\"" + preset + "\">"
@@ -142,12 +146,14 @@ func NewServer(dir, version string, cfg appconfig.Config, gatewayToken string, i
 		version:            version,
 		cfg:                cfg,
 		gatewayToken:       gatewayToken,
+		openclawPath:       openclawPath,
 		indexHTMLRendered:  rendered,
 		indexContentLength: strconv.Itoa(len(rendered)),
 		corsDefault:        "http://localhost:" + strconv.Itoa(cfg.Server.Port),
 		httpClient:         &http.Client{Timeout: 60 * time.Second},
 		systemSvc:          appsystem.NewSystemService(cfg.System, version, serverCtx),
 		refreshFn:          refreshFn,
+		ctx:                serverCtx,
 		done:               serverCtx.Done(),
 	}
 	// Start periodic cleanup of stale rate-limit entries
@@ -169,7 +175,7 @@ func NewServer(dir, version string, cfg appconfig.Config, gatewayToken string, i
 // PreWarm runs refresh.sh once in the background at startup so data.json
 // is ready before the first browser request arrives.
 func (s *Server) PreWarm() {
-	log.Printf("[dashboard] pre-warming data.json...")
+	slog.Info("[dashboard] pre-warming data.json...")
 	s.startRefresh()
 }
 
@@ -181,7 +187,7 @@ func (s *Server) SystemService() *appsystem.SystemService {
 func (s *Server) sendJSON(w http.ResponseWriter, r *http.Request, status int, v any) {
 	body, err := json.Marshal(v)
 	if err != nil {
-		log.Printf("[dashboard] sendJSON: json.Marshal failed: %v", err)
+		slog.Error("[dashboard] sendJSON: json.Marshal failed", "error", err)
 		body = []byte(`{"error":"internal server error"}`)
 		status = http.StatusInternalServerError
 	}

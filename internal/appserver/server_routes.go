@@ -27,6 +27,10 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		s.handleSystem(w, r)
 	case isRead && r.URL.Path == "/api/refresh":
 		s.handleRefresh(w, r)
+	case isRead && r.URL.Path == "/api/logs":
+		s.handleLogs(w, r)
+	case isRead && r.URL.Path == "/api/errors":
+		s.handleErrors(w, r)
 	case r.Method == http.MethodOptions:
 		s.setCORSHeaders(w, r)
 		w.Header().Set("Access-Control-Allow-Methods", "GET, HEAD, POST, OPTIONS")
@@ -82,8 +86,17 @@ func (s *Server) notFound(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) setCORSHeaders(w http.ResponseWriter, r *http.Request) {
+	vary := w.Header().Get("Vary")
+	switch {
+	case vary == "":
+		w.Header().Set("Vary", "Origin")
+	case !strings.Contains(vary, "Origin"):
+		w.Header().Set("Vary", vary+", Origin")
+	}
 	origin := r.Header.Get("Origin")
-	if strings.HasPrefix(origin, "http://localhost:") || strings.HasPrefix(origin, "http://127.0.0.1:") {
+	if strings.HasPrefix(origin, "http://localhost:") ||
+		strings.HasPrefix(origin, "http://127.0.0.1:") ||
+		strings.HasPrefix(origin, "http://[::1]:") {
 		w.Header().Set("Access-Control-Allow-Origin", origin)
 	} else {
 		w.Header().Set("Access-Control-Allow-Origin", s.corsDefault)

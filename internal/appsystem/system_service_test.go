@@ -2,6 +2,10 @@ package appsystem
 
 import (
 	"context"
+	"net/http"
+	"net/http/httptest"
+	"strconv"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -150,5 +154,31 @@ func TestGetLatestVersionCached_FailureIsNegativelyCached(t *testing.T) {
 	time.Sleep(50 * time.Millisecond)
 	if got := calls.Load(); got != 1 {
 		t.Fatalf("expected failed fetch to be cached within TTL, got %d calls", got)
+	}
+}
+
+func TestProbeOpenclawGatewayEndpoints_RespectsTimeout(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(200 * time.Millisecond)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"ok":true,"ready":true}`))
+	}))
+	defer srv.Close()
+
+	parts := strings.Split(srv.URL, ":")
+	port, err := strconv.Atoi(parts[len(parts)-1])
+	if err != nil {
+		t.Fatalf("parse port: %v", err)
+	}
+
+	start := time.Now()
+	_, errs := probeOpenclawGatewayEndpoints(context.Background(), port, 20)
+	elapsed := time.Since(start)
+
+	if len(errs) == 0 {
+		t.Fatal("expected timeout-related probe errors")
+	}
+	if elapsed > 150*time.Millisecond {
+		t.Fatalf("expected timeout-bounded probe, took %v", elapsed)
 	}
 }

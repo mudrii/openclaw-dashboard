@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"math"
 	"net/http"
 	"os"
@@ -13,7 +13,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
-	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -29,10 +28,11 @@ type SystemService struct {
 	dashVer     string
 	shutdownCtx context.Context // lifecycle context — cancelled on graceful shutdown; do NOT use for per-request ops
 
-	metricsMu      sync.RWMutex
-	metricsPayload []byte
-	metricsAt      time.Time
-	metricsRefresh bool
+	metricsMu           sync.RWMutex
+	metricsPayload      []byte
+	metricsStalePayload []byte // pre-computed version with "stale":true
+	metricsAt           time.Time
+	metricsRefresh      bool
 
 	verMu      sync.RWMutex
 	verCached  SystemVersions
@@ -49,6 +49,7 @@ type SystemService struct {
 }
 
 var fetchLatestVersion = FetchLatestNpmVersion
+var sharedSystemHTTPClient = &http.Client{}
 
 func NewSystemService(cfg appconfig.SystemConfig, dashVer string, serverCtx context.Context) *SystemService {
 	return &SystemService{cfg: cfg, dashVer: dashVer, shutdownCtx: serverCtx}
@@ -91,27 +92,18 @@ func (s *SystemService) GetJSON(ctx context.Context) (int, []byte) {
 			go func() {
 				data, hardFail := s.refresh(s.shutdownCtx)
 				if data == nil || hardFail {
-					log.Printf("[system] background refresh failed: data=%v hardFail=%v", data == nil, hardFail)
+					slog.Warn("[system] background refresh failed", "data_nil", data == nil, "hard_fail", hardFail)
 				}
 				s.metricsMu.Lock()
 				s.metricsRefresh = false
 				s.metricsMu.Unlock()
 			}()
 		}
-		b := s.metricsPayload
-		s.metricsMu.Unlock()
-
-		// Mark stale in response — use JSON round-trip for safety instead of fragile byte
-		// replacement. Byte-level replace silently fails if JSON ordering/spacing differs (B2 fix).
-		var sr SystemResponse
-		if err := json.Unmarshal(b, &sr); err == nil {
-			sr.Stale = true
-			if sb, err := json.Marshal(sr); err == nil {
-				return http.StatusOK, sb
-			}
+		b := s.metricsStalePayload
+		if b == nil {
+			b = s.metricsPayload
 		}
-		// Fallback: serve original payload (stale field inaccurate but data still useful)
-		log.Printf("[system] stale injection: could not round-trip JSON, serving original")
+		s.metricsMu.Unlock()
 		return http.StatusOK, b
 	}
 
@@ -204,11 +196,20 @@ func (s *SystemService) refresh(ctx context.Context) ([]byte, bool) {
 
 	b, err := json.Marshal(resp)
 	if err != nil {
-		log.Printf("[dashboard] collectMetrics: json.Marshal failed: %v", err)
+		slog.Error("[dashboard] collectMetrics: json.Marshal failed", "error", err)
 		return nil, true
 	}
+
+	// Pre-compute stale payload to avoid JSON round-trip on every stale hit
+	resp.Stale = true
+	staleB, staleErr := json.Marshal(resp)
+	if staleErr != nil {
+		staleB = b
+	}
+
 	s.metricsMu.Lock()
 	s.metricsPayload = b
+	s.metricsStalePayload = staleB
 	s.metricsAt = time.Now()
 	s.metricsMu.Unlock()
 	return b, allFailed
@@ -417,13 +418,14 @@ func probeOpenclawGatewayEndpoints(ctx context.Context, gatewayPort int, timeout
 	if timeoutMs <= 0 {
 		timeoutMs = 1500
 	}
+	tctx, cancel := context.WithTimeout(ctx, time.Duration(timeoutMs)*time.Millisecond)
+	defer cancel()
 	base := fmt.Sprintf("http://127.0.0.1:%d", gatewayPort)
-	timeout := time.Duration(timeoutMs) * time.Millisecond
-	client := &http.Client{Timeout: timeout}
+	client := sharedSystemHTTPClient
 	gw := SystemOpenclawGateway{}
 	var errs []string
 
-	if m, err := FetchJSONMap(ctx, client, base+"/healthz"); err != nil {
+	if m, err := FetchJSONMap(tctx, client, base+"/healthz"); err != nil {
 		errs = append(errs, "gateway /healthz: "+err.Error())
 	} else {
 		gw.HealthEndpointOk = true
@@ -437,7 +439,7 @@ func probeOpenclawGatewayEndpoints(ctx context.Context, gatewayPort int, timeout
 
 	// readyz returns 503 when not ready — but the body still contains useful JSON
 	// (ready, failing, uptimeMs). Parse it on both 200 and 503.
-	if m, err := fetchJSONMapAllowStatus(ctx, client, base+"/readyz", 200, 503); err != nil {
+	if m, err := fetchJSONMapAllowStatus(tctx, client, base+"/readyz", 200, 503); err != nil {
 		errs = append(errs, "gateway /readyz: "+err.Error())
 	} else {
 		gw.ReadyEndpointOk = true
@@ -666,7 +668,7 @@ func DetectGatewayFallback(ctx context.Context, gatewayPort int, timeoutMs int) 
 		e := "probe failed"
 		return SystemGateway{Status: "offline", Error: &e}
 	}
-	client := &http.Client{Timeout: time.Duration(timeoutMs) * time.Millisecond}
+	client := sharedSystemHTTPClient
 	resp, err := client.Do(req)
 	if err == nil {
 		_ = resp.Body.Close()
@@ -679,6 +681,9 @@ func DetectGatewayFallback(ctx context.Context, gatewayPort int, timeoutMs int) 
 // runWithTimeout runs an external command with a context deadline.
 // On failure, stderr is appended to the error message for better diagnostics.
 func runWithTimeout(ctx context.Context, timeoutMs int, name string, args ...string) (string, error) {
+	if timeoutMs <= 0 {
+		timeoutMs = 5000
+	}
 	tctx, cancel := context.WithTimeout(ctx, time.Duration(timeoutMs)*time.Millisecond)
 	defer cancel()
 	cmd := exec.CommandContext(tctx, name, args...)
@@ -732,7 +737,15 @@ func ResolveOpenclawBin() string {
 	// Also probe asdf nodejs installs — sort newest-first using version-aware comparison.
 	if nodeDir := filepath.Join(home, ".asdf", "installs", "nodejs"); nodeDir != "" {
 		if entries, err := os.ReadDir(nodeDir); err == nil {
-			sort.Slice(entries, func(i, j int) bool { return versionishGreater(entries[i].Name(), entries[j].Name()) })
+			slices.SortFunc(entries, func(a, b os.DirEntry) int {
+				if versionishGreater(a.Name(), b.Name()) {
+					return -1
+				}
+				if versionishGreater(b.Name(), a.Name()) {
+					return 1
+				}
+				return 0
+			})
 			for _, e := range entries {
 				if e.IsDir() {
 					candidates = append(candidates, filepath.Join(nodeDir, e.Name(), "bin", "openclaw"))
@@ -759,28 +772,30 @@ func FetchLatestNpmVersion(ctx context.Context, timeoutMs int) string {
 	if timeout <= 0 {
 		timeout = 3 * time.Second
 	}
-	client := &http.Client{Timeout: timeout}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://registry.npmjs.org/openclaw/latest", nil)
+	tctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	client := sharedSystemHTTPClient
+	req, err := http.NewRequestWithContext(tctx, http.MethodGet, "https://registry.npmjs.org/openclaw/latest", nil)
 	if err != nil {
-		log.Printf("[dashboard] FetchLatestNpmVersion: request creation failed: %v", err)
+		slog.Warn("[dashboard] FetchLatestNpmVersion: request creation failed", "error", err)
 		return ""
 	}
 	req.Header.Set("Accept", "application/json")
 	resp, err := client.Do(req)
 	if err != nil {
-		log.Printf("[dashboard] FetchLatestNpmVersion: request failed: %v", err)
+		slog.Warn("[dashboard] FetchLatestNpmVersion: request failed", "error", err)
 		return ""
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
-		log.Printf("[dashboard] FetchLatestNpmVersion: unexpected status %d", resp.StatusCode)
+		slog.Warn("[dashboard] FetchLatestNpmVersion: unexpected status", "status", resp.StatusCode)
 		return ""
 	}
 	var pkg struct {
 		Version string `json:"version"`
 	}
 	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<16)).Decode(&pkg); err != nil {
-		log.Printf("[dashboard] FetchLatestNpmVersion: JSON decode failed: %v", err)
+		slog.Warn("[dashboard] FetchLatestNpmVersion: JSON decode failed", "error", err)
 		return ""
 	}
 	return pkg.Version

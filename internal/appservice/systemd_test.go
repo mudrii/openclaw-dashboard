@@ -3,6 +3,7 @@
 package appservice
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -16,7 +17,7 @@ func newTestSystemd(t *testing.T) (*systemdBackend, string) {
 	dir := t.TempDir()
 	sb := &systemdBackend{
 		unitDir: dir,
-		runCmd: func(name string, args ...string) ([]byte, error) {
+		runCmd: func(context.Context, string, ...string) ([]byte, error) {
 			return nil, nil
 		},
 		probeFunc: func(string) bool { return false },
@@ -90,7 +91,7 @@ func TestSystemd_Install_callsSystemctl(t *testing.T) {
 	dir := t.TempDir()
 	sb := &systemdBackend{
 		unitDir: dir,
-		runCmd: func(name string, args ...string) ([]byte, error) {
+		runCmd: func(_ context.Context, name string, args ...string) ([]byte, error) {
 			calls = append(calls, strings.Join(append([]string{name}, args...), " "))
 			return nil, nil
 		},
@@ -120,7 +121,7 @@ func TestSystemd_Uninstall(t *testing.T) {
 	_ = os.WriteFile(unitPath, []byte("[Unit]\n"), 0o644)
 	sb := &systemdBackend{
 		unitDir: dir,
-		runCmd: func(name string, args ...string) ([]byte, error) {
+		runCmd: func(_ context.Context, name string, args ...string) ([]byte, error) {
 			calls = append(calls, strings.Join(append([]string{name}, args...), " "))
 			return nil, nil
 		},
@@ -172,7 +173,7 @@ func TestSystemd_Lifecycle(t *testing.T) {
 			var calls []string
 			sb := &systemdBackend{
 				unitDir: t.TempDir(),
-				runCmd: func(name string, args ...string) ([]byte, error) {
+				runCmd: func(_ context.Context, name string, args ...string) ([]byte, error) {
 					calls = append(calls, strings.Join(append([]string{name}, args...), " "))
 					return nil, nil
 				},
@@ -200,7 +201,7 @@ func TestSystemd_Status_notInstalled(t *testing.T) {
 	sb := &systemdBackend{
 		unitDir:   t.TempDir(),
 		probeFunc: func(string) bool { return false },
-		runCmd: func(name string, args ...string) ([]byte, error) {
+		runCmd: func(context.Context, string, ...string) ([]byte, error) {
 			return []byte(""), fmt.Errorf("exit status 4")
 		},
 	}
@@ -221,7 +222,7 @@ func TestSystemd_Status_running(t *testing.T) {
 	sb := &systemdBackend{
 		unitDir:   dir,
 		probeFunc: func(string) bool { return true },
-		runCmd: func(name string, args ...string) ([]byte, error) {
+		runCmd: func(_ context.Context, name string, args ...string) ([]byte, error) {
 			joined := name + " " + strings.Join(args, " ")
 			if strings.Contains(joined, "show") {
 				return []byte("ActiveState=active\nMainPID=55555\nActiveEnterTimestamp=2026-04-08 10:00:00 UTC\n"), nil

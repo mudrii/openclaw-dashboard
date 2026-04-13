@@ -1,5 +1,46 @@
 # Changelog
 
+## v2026.4.13 — 2026-04-13
+
+### Added
+
+- **Diagnostics delivery for issue [#14](https://github.com/mudrii/openclaw-dashboard/issues/14)** — implemented the diagnostics and log visibility work requested by [@agrr971](https://github.com/agrr971), including the API surface and release hardening needed to ship it safely.
+
+### Fixed
+
+- **Release hardening pass** — closed the remaining pre-release correctness, lifecycle, and packaging issues identified during final audit and validation.
+- **Linux service backend compile fix** — fixed the `systemd` service path so Linux builds and status log collection use the backend lifecycle context correctly.
+- **Shutdown and refresh lifecycle cleanup** — refresh-side subprocesses and refresh orchestration now follow cancellation more consistently.
+- **Gateway probe timeout enforcement** — runtime gateway endpoint probes now consistently honor configured timeouts.
+- **CORS and local development compatibility** — reflected CORS responses now emit `Vary: Origin`, and IPv6 loopback origins are accepted for local browser testing.
+- **Sub-agent accounting consistency** — zero-cost subagent runs are still counted, and token usage aggregation keeps display-name normalization consistent.
+- **Log feed correctness** — merged log selection now preserves the globally newest entries across skewed sources and uses a bounded merge strategy.
+
+### Changed
+
+- **Structured logging cleanup** — production logging paths in config, refresh, system, and startup flows were aligned further toward `slog`.
+- **Logs config precedence tightened** — canonical `logs.*` fields now win, while legacy compatibility fields only backfill when canonical values are unset.
+- **System probe transport reuse** — system runtime/version HTTP calls now reuse a shared client instead of creating short-lived clients repeatedly.
+- **Main process lifecycle simplified** — the CLI now uses one signal-driven lifecycle path for startup and graceful shutdown.
+
+### Documentation
+
+- **Release docs refreshed** — README, TECHNICAL.md, CONTRIBUTING.md, and installer messaging now match the current refresh model, command surface, and published endpoints.
+
+### Merged pull requests
+
+- [#19](https://github.com/mudrii/openclaw-dashboard/pull/19) by [@SweetSophia](https://github.com/SweetSophia) — consolidate escaping helpers for consistent HTML escaping
+- [#20](https://github.com/mudrii/openclaw-dashboard/pull/20) by [@SweetSophia](https://github.com/SweetSophia) — use `structuredClone` for state snapshots with safe fallback
+- [#21](https://github.com/mudrii/openclaw-dashboard/pull/21) by [@SweetSophia](https://github.com/SweetSophia) — reduce lock churn in latest-version cache refresh
+- [#22](https://github.com/mudrii/openclaw-dashboard/pull/22) by [@SweetSophia](https://github.com/SweetSophia) — preserve refresh shutdown semantics safely
+
+### Thanks
+
+- Thanks [@SweetSophia](https://github.com/SweetSophia) for the merged improvements in [#19](https://github.com/mudrii/openclaw-dashboard/pull/19), [#20](https://github.com/mudrii/openclaw-dashboard/pull/20), [#21](https://github.com/mudrii/openclaw-dashboard/pull/21), and [#22](https://github.com/mudrii/openclaw-dashboard/pull/22).
+- Thanks [@agrr971](https://github.com/agrr971) for opening [#14](https://github.com/mudrii/openclaw-dashboard/issues/14) and documenting the diagnostics use case clearly enough to drive implementation.
+
+---
+
 ## v2026.4.8 — 2026-04-08
 
 ### Added
@@ -65,8 +106,8 @@
 - **Zero lint issues** — All `errcheck`, `ineffassign`, `staticcheck`, `govet`, `gocritic`, and `unused` checks pass clean.
 - **Added `.golangci.yml`** — Project-wide linter configuration with `errcheck`, `govet`, `ineffassign`, `staticcheck`, `unused`, `gocritic` enabled. Test files excluded from errcheck.
 - **Added `Makefile`** — Build automation with `make build`, `make test`, `make lint`, `make vet`, `make cover`, and `make check` targets.
-- **CI linting** — Added `golangci-lint` step to `.github/workflows/tests.yml` using `golangci/golangci-lint-action@v6`.
-- **Dead code removed** — Empty `refresh_sessions.go`, unused constants (`maxBodyBytes`, `maxQuestionLen`, `chatRateLimit`, `maxGatewayResp`), unused type aliases (`chatRequest`, `completionPayload`), unused functions (`collectVersionsLocal`, `fetchLatestNpmVersion`, `seedHomebrewRuntimeDir`, `copyIfMissing`).
+- **CI linting** — Added `golangci-lint` support to the repo command surface and CI workflow.
+- **Dead code removed** — Removed stale unused aliases, legacy helpers, and unreachable branches left behind by the Go-only migration.
 - **Unreachable code removed** — `strings.Contains(clean, "..")` after `filepath.Clean` (which never leaves `..`).
 - **Ineffectual assignments fixed** — Removed dead `todayStr`, `compactionMode`, `agentConfig` assignments in refresh pipeline.
 - **Errcheck compliance** — All `defer f.Close()` / `defer resp.Body.Close()` patterns wrapped properly. `os.Remove` cleanup errors explicitly discarded with `_ =`.

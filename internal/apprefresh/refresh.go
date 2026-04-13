@@ -2,6 +2,7 @@
 package apprefresh
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -10,7 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -19,15 +20,15 @@ import (
 	appconfig "github.com/mudrii/openclaw-dashboard/internal/appconfig"
 )
 
-// runRefreshCollector generates data.json from OpenClaw's filesystem data.
-func RunRefreshCollector(dashboardDir, openclawPath string, cfgOpt ...appconfig.Config) error {
+// RunRefreshCollector generates data.json from OpenClaw's filesystem data.
+func RunRefreshCollector(ctx context.Context, dashboardDir, openclawPath string, cfgOpt ...appconfig.Config) error {
 	var cfg appconfig.Config
 	if len(cfgOpt) > 0 {
 		cfg = cfgOpt[0]
 	} else {
 		cfg = appconfig.Load(dashboardDir)
 	}
-	data := collectDashboardData(dashboardDir, openclawPath, cfg)
+	data := collectDashboardData(ctx, dashboardDir, openclawPath, cfg)
 
 	out, err := json.MarshalIndent(data, "", "  ")
 	if err != nil {
@@ -122,7 +123,7 @@ func ModelName(model string) string {
 	}
 }
 
-func collectDashboardData(dashboardDir, openclawPath string, cfg appconfig.Config) map[string]any {
+func collectDashboardData(ctx context.Context, dashboardDir, openclawPath string, cfg appconfig.Config) map[string]any {
 	now := time.Now()
 	date7d := now.AddDate(0, 0, -7).Format("2006-01-02")
 	date30d := now.AddDate(0, 0, -30).Format("2006-01-02")
@@ -176,9 +177,9 @@ func collectDashboardData(dashboardDir, openclawPath string, cfg appconfig.Confi
 	var gitLog []map[string]any
 	var cwg sync.WaitGroup
 	cwg.Add(3)
-	go func() { defer cwg.Done(); gateway = collectGatewayHealth() }()
+	go func() { defer cwg.Done(); gateway = collectGatewayHealth(ctx) }()
 	go func() { defer cwg.Done(); crons = CollectCrons(cronPath, loc) }()
-	go func() { defer cwg.Done(); gitLog = collectGitLog(openclawPath) }()
+	go func() { defer cwg.Done(); gitLog = collectGitLog(ctx, openclawPath) }()
 
 	// OpenClaw config (file I/O — runs while subprocesses are in flight)
 	compactionMode := "unknown"
@@ -207,7 +208,7 @@ func collectDashboardData(dashboardDir, openclawPath string, cfg appconfig.Confi
 	// Sessions
 	knownSIDs := map[string]string{}
 	sessionLiveModelTTL := time.Duration(cfg.Refresh.IntervalSeconds) * time.Second
-	sessionsList := collectSessions(sessionStores, basePath, loc, now, todayStr, modelAliases, knownSIDs, gateway, sessionLiveModelTTL)
+	sessionsList := collectSessions(ctx, sessionStores, basePath, loc, now, modelAliases, knownSIDs, sessionLiveModelTTL)
 
 	// Backfill channel connectivity from recent session activity
 	backfillChannelConnectivity(agentConfig, sessionsList)
@@ -240,23 +241,15 @@ func collectDashboardData(dashboardDir, openclawPath string, cfg appconfig.Confi
 		dailyCosts, dailyTokens, dailyCalls, dailySubagentCosts, dailySubagentCount,
 	)
 
-	sort.Slice(subagentRuns, func(i, j int) bool {
-		ti, _ := subagentRuns[i]["timestamp"].(string)
-		tj, _ := subagentRuns[j]["timestamp"].(string)
-		return ti > tj
+	slices.SortFunc(subagentRuns, func(a, b map[string]any) int {
+		ta, _ := a["timestamp"].(string)
+		tb, _ := b["timestamp"].(string)
+		return cmp.Compare(tb, ta)
 	})
 
 	subagentRunsToday := FilterByDate(subagentRuns, todayStr, "==")
 	subagentRuns7d := FilterByDate(subagentRuns, date7d, ">=")
 	subagentRuns30d := FilterByDate(subagentRuns, date30d, ">=")
-
-	// Count subagent runs per day
-	for _, r := range subagentRuns {
-		d, _ := r["date"].(string)
-		if d != "" {
-			dailySubagentCount[d]++
-		}
-	}
 
 	// Build daily chart data (last 30 days)
 	dailyChart := BuildDailyChart(now, dailyCosts, dailyTokens, dailyCalls,
@@ -315,6 +308,7 @@ func collectDashboardData(dashboardDir, openclawPath string, cfg appconfig.Confi
 		"subagentUsage30d":   BucketsToList(subagent30d),
 
 		"dailyChart": dailyChart,
+		"logConfig":  GetLogRuntimeConfig(cfg),
 
 		"availableModels": availableModels,
 		"agentConfig":     agentConfig,
@@ -325,7 +319,7 @@ func collectDashboardData(dashboardDir, openclawPath string, cfg appconfig.Confi
 	}
 }
 
-func collectGatewayHealth() map[string]any {
+func collectGatewayHealth(ctx context.Context) map[string]any {
 	gw := map[string]any{
 		"status": "offline",
 		"pid":    nil,
@@ -333,10 +327,13 @@ func collectGatewayHealth() map[string]any {
 		"memory": "",
 		"rss":    0,
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	pgrepCtx, pgrepCancel := context.WithTimeout(ctx, 5*time.Second)
+	defer pgrepCancel()
 
-	out, err := exec.CommandContext(ctx, "pgrep", "-f", "openclaw-gateway").Output()
+	out, err := exec.CommandContext(pgrepCtx, "pgrep", "-f", "openclaw-gateway").Output()
 	if err != nil {
 		return gw
 	}
@@ -360,7 +357,9 @@ func collectGatewayHealth() map[string]any {
 	gw["pid"] = pidInt
 	gw["status"] = "online"
 
-	psOut, err := exec.CommandContext(ctx, "ps", "-p", pid, "-o", "etime=,rss=").Output()
+	psCtx, psCancel := context.WithTimeout(ctx, 5*time.Second)
+	defer psCancel()
+	psOut, err := exec.CommandContext(psCtx, "ps", "-p", pid, "-o", "etime=,rss=").Output()
 	if err != nil {
 		return gw
 	}
@@ -912,7 +911,7 @@ func BuildDailyChart(now time.Time, dailyCosts map[string]map[string]float64,
 	for m, c := range modelTotals {
 		sorted = append(sorted, modelCost{m, c})
 	}
-	sort.Slice(sorted, func(i, j int) bool { return sorted[i].cost > sorted[j].cost })
+	slices.SortFunc(sorted, func(a, b modelCost) int { return cmp.Compare(b.cost, a.cost) })
 	topModels := map[string]bool{}
 	for i, mc := range sorted {
 		if i >= 6 {
@@ -1004,9 +1003,12 @@ func BuildDailyChart(now time.Time, dailyCosts map[string]map[string]float64,
 	return chart
 }
 
-func collectGitLog(openclawPath string) []map[string]any {
+func collectGitLog(ctx context.Context, openclawPath string) []map[string]any {
 	var gitLog []map[string]any
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	out, err := exec.CommandContext(ctx, "git", "-C", openclawPath, "log",
 		"--oneline", "-5", "--format=%h|%s|%ar").Output()
@@ -1106,7 +1108,7 @@ func BuildCostBreakdown(m map[string]*TokenBucket) []map[string]any {
 			pairs = append(pairs, kv{k, v.Cost})
 		}
 	}
-	sort.Slice(pairs, func(i, j int) bool { return pairs[i].cost > pairs[j].cost })
+	slices.SortFunc(pairs, func(a, b kv) int { return cmp.Compare(b.cost, a.cost) })
 	var out []map[string]any
 	for _, p := range pairs {
 		out = append(out, map[string]any{
@@ -1230,6 +1232,6 @@ func sortedJSONKeys(m map[string]any) []string {
 	for k := range m {
 		keys = append(keys, k)
 	}
-	sort.Strings(keys)
+	slices.Sort(keys)
 	return keys
 }

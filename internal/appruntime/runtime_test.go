@@ -1,6 +1,7 @@
 package appruntime
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -11,7 +12,7 @@ func TestDetectVersion_FromFile(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "VERSION"), []byte("v2.3.4\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	v := DetectVersion(dir)
+	v := DetectVersion(context.Background(), dir)
 	if v != "2.3.4" {
 		t.Errorf("expected 2.3.4, got %q", v)
 	}
@@ -19,7 +20,7 @@ func TestDetectVersion_FromFile(t *testing.T) {
 
 func TestDetectVersion_Fallback(t *testing.T) {
 	dir := t.TempDir()
-	v := DetectVersion(dir)
+	v := DetectVersion(context.Background(), dir)
 	if v != "dev" {
 		t.Errorf("expected dev fallback, got %q", v)
 	}

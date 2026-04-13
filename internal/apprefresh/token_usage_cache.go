@@ -6,16 +6,16 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
-	"log"
+	"log/slog"
 	"math"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
 	"time"
 )
 
-const tokenUsageCacheVersion = 1
+const tokenUsageCacheVersion = 2
 
 type tokenUsageCache struct {
 	Version int                              `json:"version"`
@@ -47,8 +47,6 @@ func CollectTokenUsageWithCache(
 	dailySubagentCosts map[string]float64,
 	dailySubagentCount map[string]int,
 ) []map[string]any {
-	_ = modelAliases
-
 	activePattern := filepath.Join(basePath, "*/sessions/*.jsonl")
 	deletedPattern := filepath.Join(basePath, "*/sessions/*.jsonl.deleted.*")
 	activeFiles, _ := filepath.Glob(activePattern)
@@ -56,7 +54,7 @@ func CollectTokenUsageWithCache(
 	allFiles := make([]string, 0, len(activeFiles)+len(deletedFiles))
 	allFiles = append(allFiles, activeFiles...)
 	allFiles = append(allFiles, deletedFiles...)
-	sort.Strings(allFiles)
+	slices.Sort(allFiles)
 
 	cache := loadTokenUsageCache(cachePath)
 	nextCache := tokenUsageCache{
@@ -75,12 +73,13 @@ func CollectTokenUsageWithCache(
 		if !ok || summary.Size != info.Size() || summary.ModTimeUnixNano != info.ModTime().UnixNano() {
 			summary, err = parseTokenUsageFile(path, info, loc)
 			if err != nil {
-				log.Printf("[dashboard] token usage parse skipped for %s: %v", path, err)
+				slog.Warn("[dashboard] token usage parse skipped", "path", path, "error", err)
 				continue
 			}
 		}
 		nextCache.Files[path] = summary
 		applyTokenUsageSummary(path, summary, loc, todayStr, date7d, date30d, knownSIDs, sidToKey,
+			modelAliases,
 			modelsAll, modelsToday, models7d, models30d,
 			subagentAll, subagentToday, subagent7d, subagent30d,
 			dailyCosts, dailyTokens, dailyCalls, dailySubagentCosts, dailySubagentCount,
@@ -113,16 +112,16 @@ func saveTokenUsageCache(path string, cache tokenUsageCache) {
 	}
 	data, err := json.Marshal(cache)
 	if err != nil {
-		log.Printf("[dashboard] saveTokenUsageCache: marshal failed: %v", err)
+		slog.Error("[dashboard] saveTokenUsageCache: marshal failed", "error", err)
 		return
 	}
 	tmp := path + ".tmp"
 	if err := os.WriteFile(tmp, data, 0o644); err != nil {
-		log.Printf("[dashboard] saveTokenUsageCache: write failed: %v", err)
+		slog.Error("[dashboard] saveTokenUsageCache: write failed", "path", tmp, "error", err)
 		return
 	}
 	if err := os.Rename(tmp, path); err != nil {
-		log.Printf("[dashboard] saveTokenUsageCache: rename failed: %v", err)
+		slog.Error("[dashboard] saveTokenUsageCache: rename failed", "from", tmp, "to", path, "error", err)
 		_ = os.Remove(tmp)
 	}
 }
@@ -162,7 +161,6 @@ func parseTokenUsageFile(path string, info os.FileInfo, loc *time.Location) (tok
 									model = "unknown"
 								}
 								if !strings.Contains(model, "delivery-mirror") {
-									name := ModelName(model)
 									var costTotal float64
 									if costObj, ok := usage["cost"].(map[string]any); ok {
 										if t, ok := costObj["total"].(float64); ok {
@@ -177,24 +175,23 @@ func parseTokenUsageFile(path string, info os.FileInfo, loc *time.Location) (tok
 									out, _ := usage["output"].(float64)
 									cr, _ := usage["cacheRead"].(float64)
 
-									modelBucket := summary.Models[name]
+									modelBucket := summary.Models[model]
 									modelBucket.add(int(inp), int(out), int(cr), int(tt), costTotal)
-									summary.Models[name] = modelBucket
+									summary.Models[model] = modelBucket
 									summary.SessionCost += costTotal
-									summary.SessionModel = name
+									summary.SessionModel = model
 
 									ts, _ := obj["timestamp"].(string)
 									if ts != "" {
-										ts = strings.Replace(ts, "Z", "+00:00", 1)
-										if t, err := time.Parse(time.RFC3339, ts); err == nil {
+										if t, err := time.Parse(time.RFC3339Nano, ts); err == nil {
 											t = t.In(loc)
 											msgDate := t.Format("2006-01-02")
 											if summary.Daily[msgDate] == nil {
 												summary.Daily[msgDate] = map[string]TokenBucket{}
 											}
-											dailyBucket := summary.Daily[msgDate][name]
+											dailyBucket := summary.Daily[msgDate][model]
 											dailyBucket.add(int(inp), int(out), int(cr), int(tt), costTotal)
-											summary.Daily[msgDate][name] = dailyBucket
+											summary.Daily[msgDate][model] = dailyBucket
 											if sessionFirstTs.IsZero() {
 												sessionFirstTs = t
 											}
@@ -232,6 +229,7 @@ func applyTokenUsageSummary(
 	todayStr, date7d, date30d string,
 	knownSIDs map[string]string,
 	sidToKey map[string]string,
+	modelAliases map[string]string,
 	modelsAll, modelsToday, models7d, models30d map[string]*TokenBucket,
 	subagentAll, subagentToday, subagent7d, subagent30d map[string]*TokenBucket,
 	dailyCosts map[string]map[string]float64,
@@ -241,10 +239,8 @@ func applyTokenUsageSummary(
 	dailySubagentCount map[string]int,
 	subagentRuns *[]map[string]any,
 ) {
-	_ = dailySubagentCount
-
 	sid := filepath.Base(path)
-	sid = strings.Replace(sid, ".jsonl", "", 1)
+	sid = strings.TrimSuffix(sid, ".jsonl")
 	if idx := strings.Index(sid, ".deleted."); idx >= 0 {
 		sid = sid[:idx]
 	}
@@ -252,33 +248,35 @@ func applyTokenUsageSummary(
 	isSubagent := isSubagentSession(sessionKey, knownSIDs[sid])
 
 	for model, bucket := range summary.Models {
-		getBucket(modelsAll, model).add(bucket.Input, bucket.Output, bucket.CacheRead, bucket.Total, bucket.Cost)
+		displayModel := resolveUsageModel(model, modelAliases)
+		getBucket(modelsAll, displayModel).add(bucket.Input, bucket.Output, bucket.CacheRead, bucket.Total, bucket.Cost)
 		if isSubagent {
-			getBucket(subagentAll, model).add(bucket.Input, bucket.Output, bucket.CacheRead, bucket.Total, bucket.Cost)
+			getBucket(subagentAll, displayModel).add(bucket.Input, bucket.Output, bucket.CacheRead, bucket.Total, bucket.Cost)
 		}
 	}
 
 	for date, perModel := range summary.Daily {
 		for model, bucket := range perModel {
-			ensureMapMap(dailyCosts, date)[model] += bucket.Cost
-			ensureMapMapInt(dailyTokens, date)[model] += bucket.Total
-			ensureMapMapInt(dailyCalls, date)[model] += bucket.Calls
+			displayModel := resolveUsageModel(model, modelAliases)
+			ensureMapMap(dailyCosts, date)[displayModel] += bucket.Cost
+			ensureMapMapInt(dailyTokens, date)[displayModel] += bucket.Total
+			ensureMapMapInt(dailyCalls, date)[displayModel] += bucket.Calls
 			if date == todayStr {
-				getBucket(modelsToday, model).add(bucket.Input, bucket.Output, bucket.CacheRead, bucket.Total, bucket.Cost)
+				getBucket(modelsToday, displayModel).add(bucket.Input, bucket.Output, bucket.CacheRead, bucket.Total, bucket.Cost)
 				if isSubagent {
-					getBucket(subagentToday, model).add(bucket.Input, bucket.Output, bucket.CacheRead, bucket.Total, bucket.Cost)
+					getBucket(subagentToday, displayModel).add(bucket.Input, bucket.Output, bucket.CacheRead, bucket.Total, bucket.Cost)
 				}
 			}
 			if date >= date7d {
-				getBucket(models7d, model).add(bucket.Input, bucket.Output, bucket.CacheRead, bucket.Total, bucket.Cost)
+				getBucket(models7d, displayModel).add(bucket.Input, bucket.Output, bucket.CacheRead, bucket.Total, bucket.Cost)
 				if isSubagent {
-					getBucket(subagent7d, model).add(bucket.Input, bucket.Output, bucket.CacheRead, bucket.Total, bucket.Cost)
+					getBucket(subagent7d, displayModel).add(bucket.Input, bucket.Output, bucket.CacheRead, bucket.Total, bucket.Cost)
 				}
 			}
 			if date >= date30d {
-				getBucket(models30d, model).add(bucket.Input, bucket.Output, bucket.CacheRead, bucket.Total, bucket.Cost)
+				getBucket(models30d, displayModel).add(bucket.Input, bucket.Output, bucket.CacheRead, bucket.Total, bucket.Cost)
 				if isSubagent {
-					getBucket(subagent30d, model).add(bucket.Input, bucket.Output, bucket.CacheRead, bucket.Total, bucket.Cost)
+					getBucket(subagent30d, displayModel).add(bucket.Input, bucket.Output, bucket.CacheRead, bucket.Total, bucket.Cost)
 				}
 			}
 			if isSubagent {
@@ -287,7 +285,7 @@ func applyTokenUsageSummary(
 		}
 	}
 
-	if !isSubagent || summary.SessionCost <= 0 || summary.SessionLastUnixMs == 0 {
+	if !isSubagent || summary.SessionLastUnixMs == 0 {
 		return
 	}
 
@@ -302,17 +300,27 @@ func applyTokenUsageSummary(
 	}
 
 	lastTs := time.UnixMilli(summary.SessionLastUnixMs).In(loc)
+	lastDate := lastTs.Format("2006-01-02")
+	dailySubagentCount[lastDate]++
 	durationSec := 0
 	if summary.SessionFirstUnixMs > 0 {
 		durationSec = int(time.UnixMilli(summary.SessionLastUnixMs).Sub(time.UnixMilli(summary.SessionFirstUnixMs)).Seconds())
 	}
 	*subagentRuns = append(*subagentRuns, map[string]any{
 		"task":        sessionTask,
-		"model":       summary.SessionModel,
+		"model":       resolveUsageModel(summary.SessionModel, modelAliases),
 		"cost":        math.Round(summary.SessionCost*10000) / 10000,
 		"durationSec": durationSec,
 		"status":      "completed",
 		"timestamp":   lastTs.Format("2006-01-02 15:04"),
-		"date":        lastTs.Format("2006-01-02"),
+		"date":        lastDate,
 	})
+}
+
+func resolveUsageModel(model string, modelAliases map[string]string) string {
+	displayModel := aliasOrID(modelAliases, model)
+	if displayModel == model {
+		return ModelName(model)
+	}
+	return displayModel
 }

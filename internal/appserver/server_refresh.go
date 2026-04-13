@@ -3,7 +3,7 @@ package appserver
 import (
 	"context"
 	"encoding/json"
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -51,17 +51,8 @@ func (s *Server) runRefresh(done chan struct{}) {
 		close(done)
 	}()
 
-	openclawPath := os.Getenv("OPENCLAW_HOME")
-	if openclawPath == "" {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			log.Printf("[dashboard] WARNING: UserHomeDir failed: %v", err)
-		}
-		openclawPath = filepath.Join(home, ".openclaw")
-	}
-
-	if err := s.refreshFn(s.dir, openclawPath, s.cfg); err != nil {
-		log.Printf("[dashboard] refresh failed: %v", err)
+	if err := s.refreshFn(s.ctx, s.dir, s.openclawPath, s.cfg); err != nil {
+		slog.Error("[dashboard] refresh failed", "error", err)
 		return
 	}
 
@@ -153,7 +144,8 @@ func (s *Server) handleRefresh(w http.ResponseWriter, r *http.Request) {
 			}
 			data, err = s.GetDataRawCached()
 			if err == nil {
-				goto respond
+				s.writeRefreshResponse(w, r, data)
+				return
 			}
 			if !os.IsNotExist(err) {
 				s.sendJSON(w, r, http.StatusInternalServerError, map[string]string{"error": "failed to read dashboard data"})
@@ -164,12 +156,15 @@ func (s *Server) handleRefresh(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-respond:
+	s.writeRefreshResponse(w, r, data)
+}
+
+func (s *Server) writeRefreshResponse(w http.ResponseWriter, r *http.Request, data []byte) {
 	s.setCORSHeaders(w, r)
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Content-Length", strconv.Itoa(len(data)))
-	log.Printf("[dashboard] GET /api/refresh")
+	slog.Info("[dashboard] GET /api/refresh")
 	w.WriteHeader(http.StatusOK)
 	if r.Method != http.MethodHead {
 		_, _ = w.Write(data)

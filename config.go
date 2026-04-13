@@ -7,6 +7,7 @@ type ThemeConfig = appconfig.ThemeConfig
 type RefreshConfig = appconfig.RefreshConfig
 type ServerConfig = appconfig.ServerConfig
 type AIConfig = appconfig.AIConfig
+type LogsConfig = appconfig.LogsConfig
 type AlertsConfig = appconfig.AlertsConfig
 type MetricThreshold = appconfig.MetricThreshold
 type SystemConfig = appconfig.SystemConfig

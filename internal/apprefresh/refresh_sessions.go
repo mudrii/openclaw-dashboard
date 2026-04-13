@@ -1,12 +1,14 @@
 package apprefresh
 
 import (
+	"cmp"
+	"context"
 	"encoding/json"
-	"log"
+	"log/slog"
 	"math"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
 	"time"
 )
@@ -23,12 +25,12 @@ func loadSessionStores(basePath string) []SessionStoreFile {
 	for _, f := range files {
 		data, err := os.ReadFile(f)
 		if err != nil {
-			log.Printf("[dashboard] loadSessionStores: skipping unreadable file %s: %v", f, err)
+			slog.Warn("[dashboard] loadSessionStores: skipping unreadable file", "path", f, "error", err)
 			continue
 		}
 		var store map[string]map[string]any
 		if err := json.Unmarshal(data, &store); err != nil {
-			log.Printf("[dashboard] loadSessionStores: skipping invalid JSON in %s: %v", f, err)
+			slog.Warn("[dashboard] loadSessionStores: skipping invalid JSON", "path", f, "error", err)
 			continue
 		}
 		rel, _ := filepath.Rel(basePath, f)
@@ -197,15 +199,11 @@ func sessionModelFromLine(line string) (string, bool) {
 	return provider + "/" + modelID, true
 }
 
-func collectSessions(stores []SessionStoreFile, basePath string, loc *time.Location, now time.Time, todayStr string,
-	modelAliases map[string]string, knownSIDs map[string]string,
-	gateway map[string]any, liveModelTTL time.Duration) []map[string]any {
-	_ = todayStr
-	_ = gateway
-
+func collectSessions(ctx context.Context, stores []SessionStoreFile, basePath string, loc *time.Location, now time.Time,
+	modelAliases map[string]string, knownSIDs map[string]string, liveModelTTL time.Duration) []map[string]any {
 	agentDefaults := loadAgentDefaultModels(basePath)
 
-	gatewayModelMap := getLiveSessionModels(now, liveModelTTL)
+	gatewayModelMap := getLiveSessionModels(ctx, now, liveModelTTL)
 
 	var sessionsList []map[string]any
 	for _, sf := range stores {
@@ -344,10 +342,10 @@ func collectSessions(stores []SessionStoreFile, basePath string, loc *time.Locat
 		}
 	}
 
-	sort.Slice(sessionsList, func(i, j int) bool {
-		ui, _ := sessionsList[i]["updatedAt"].(float64)
-		uj, _ := sessionsList[j]["updatedAt"].(float64)
-		return ui > uj
+	slices.SortFunc(sessionsList, func(a, b map[string]any) int {
+		ua, _ := a["updatedAt"].(float64)
+		ub, _ := b["updatedAt"].(float64)
+		return cmp.Compare(ub, ua)
 	})
 	return sessionsList
 }

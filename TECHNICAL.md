@@ -324,7 +324,7 @@ The `openclaw-dashboard` binary embeds `web/index.html` via `//go:embed` and imp
 
 - Single binary with static assets embedded from `web/` and runtime defaults loaded from the resolved dashboard directory with fallback to `assets/runtime/`
 - Concurrent request handling (Go's `net/http` goroutine-per-request model)
-- Routes: `GET|HEAD /`, `GET|HEAD /api/refresh`, `GET|HEAD /api/system`, `POST /api/chat`, allowlisted static files (`/themes.json`, `/favicon.ico`, `/favicon.png`)
+- Routes: `GET|HEAD /`, `GET|HEAD /api/refresh`, `GET|HEAD /api/system`, `GET|HEAD /api/logs`, `GET|HEAD /api/errors`, `POST /api/chat`, allowlisted static files (`/themes.json`, `/favicon.ico`, `/favicon.png`)
 - All other paths return 404; non-GET/HEAD/POST (except `OPTIONS`) returns 405
 - **Graceful shutdown**: handles SIGINT/SIGTERM, drains in-flight requests (5s timeout)
 - **Pre-warm**: runs `runRefresh()` once in the background at startup so the first browser hit is fast
@@ -360,7 +360,9 @@ The `openclaw-dashboard` binary embeds `web/index.html` via `//go:embed` and imp
 
 ### Quiet Logging
 
-Uses `log.Printf` for `/api/refresh`, `/api/chat`, and errors. Static file requests are not logged.
+Uses structured logging for `/api/refresh`, `/api/chat`, and error paths. Static file requests are not logged.
+
+The server also exposes log and error feed endpoints. `/api/logs` returns merged tail output from the configured log sources, and `/api/errors` groups warning/error signatures over a rolling time window for the dashboard error feed.
 
 ### LAN Mode
 
@@ -688,6 +690,9 @@ systemctl --user status openclaw-dashboard
 ```bash
 cd ~/src/openclaw-dashboard
 
+# Build the binary
+make build
+
 # Test data refresh
 ./openclaw-dashboard --refresh
 # or: bash assets/runtime/refresh.sh
@@ -710,11 +715,11 @@ cat data.json | jq . | head -50
 ### Testing Checklist
 
 ```bash
-# Go tests (run with race detector)
-go test -race -v ./...
+# Preferred repo check surface
+make check
 ```
 
-- [ ] `go test -race ./...` passes (all tests green)
+- [ ] `make check` passes (vet, lint, race tests)
 - [ ] `./openclaw-dashboard --refresh` (or `bash refresh.sh`) produces valid JSON
 - [ ] `data.json` contains expected keys
 - [ ] Dashboard renders on desktop (1440px+)
@@ -743,7 +748,7 @@ go test -race -v ./...
 2. **Single-file frontend** — CSS and JS stay embedded in `web/index.html`
 3. **Go stdlib only** — no third-party imports in Go source
 4. **Test mobile + desktop** — check both responsive breakpoints
-5. **Run automated tests** — `go test -race ./...` before submitting changes
+5. **Run automated checks** — `make check` before submitting changes
 
 ### Adding a New Dashboard Panel
 

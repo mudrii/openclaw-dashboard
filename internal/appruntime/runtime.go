@@ -130,7 +130,20 @@ func CopyFile(src, dst string, mode os.FileMode) error {
 	return os.WriteFile(dst, data, mode)
 }
 
-func DetectVersion(dir string) string {
+// ResolveOpenclawPath returns the OpenClaw root directory used by dashboard collectors.
+// It honors OPENCLAW_HOME and falls back to ~/.openclaw.
+func ResolveOpenclawPath() string {
+	if override := strings.TrimSpace(os.Getenv("OPENCLAW_HOME")); override != "" {
+		return appconfig.ExpandHome(override)
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ".openclaw"
+	}
+	return filepath.Join(home, ".openclaw")
+}
+
+func DetectVersion(ctx context.Context, dir string) string {
 	for _, base := range []string{dir, filepath.Dir(dir)} {
 		vf := filepath.Join(base, "VERSION")
 		data, err := os.ReadFile(vf)
@@ -141,7 +154,10 @@ func DetectVersion(dir string) string {
 			}
 		}
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "git", "describe", "--tags", "--abbrev=0")
 	cmd.Dir = dir

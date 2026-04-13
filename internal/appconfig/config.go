@@ -4,7 +4,7 @@ package appconfig
 import (
 	"bufio"
 	"encoding/json"
-	"log"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -34,6 +34,19 @@ type AIConfig struct {
 	Model       string `json:"model"`
 	MaxHistory  int    `json:"maxHistory"`
 	DotenvPath  string `json:"dotenvPath"`
+}
+
+type LogsConfig struct {
+	Enabled              bool     `json:"enabled"`
+	TailLines            int      `json:"tailLines"`
+	FastRefreshMs        int      `json:"fastRefreshMs"`
+	ErrorWindowHours     int      `json:"errorWindowHours"`
+	MaxErrorSignatures   int      `json:"maxErrorSignatures"`
+	Sources              []string `json:"sources"`
+	LogSources           []string `json:"log_sources"`
+	LogTailLines         int      `json:"log_tail_lines"`
+	LogFastRefreshMs     int      `json:"log_fast_refresh_ms"`
+	ErrorFeedWindowHours int      `json:"error_feed_window_hours"`
 }
 
 type AlertsConfig struct {
@@ -71,6 +84,7 @@ type Config struct {
 	Refresh  RefreshConfig `json:"refresh"`
 	Server   ServerConfig  `json:"server"`
 	AI       AIConfig      `json:"ai"`
+	Logs     LogsConfig    `json:"logs"`
 	Alerts   AlertsConfig  `json:"alerts"`
 	System   SystemConfig  `json:"system"`
 }
@@ -88,6 +102,18 @@ func Default() Config {
 			Model:       "",
 			MaxHistory:  6,
 			DotenvPath:  "~/.openclaw/.env",
+		},
+		Logs: LogsConfig{
+			Enabled:              true,
+			TailLines:            200,
+			FastRefreshMs:        3000,
+			ErrorWindowHours:     24,
+			MaxErrorSignatures:   1000,
+			Sources:              []string{"logs/gateway.log", "logs/gateway.err.log"},
+			LogSources:           nil,
+			LogTailLines:         0,
+			LogFastRefreshMs:     0,
+			ErrorFeedWindowHours: 0,
 		},
 		Alerts: AlertsConfig{
 			DailyCostHigh: 50,
@@ -121,12 +147,24 @@ func Load(dir string) Config {
 		f, err = os.Open(filepath.Join(dir, "assets", "runtime", "config.json"))
 	}
 	if err != nil {
-		log.Printf("[dashboard] config: no config.json found, using defaults")
+		slog.Warn("[dashboard] config: no config.json found, using defaults")
 		return cfg
 	}
 	defer func() { _ = f.Close() }()
 	if err := json.NewDecoder(f).Decode(&cfg); err != nil {
-		log.Printf("[dashboard] WARNING: invalid config.json, using defaults for missing/invalid fields: %v", err)
+		slog.Warn("[dashboard] invalid config.json, using defaults for missing/invalid fields", "error", err)
+	}
+	if len(cfg.Logs.Sources) == 0 && len(cfg.Logs.LogSources) > 0 {
+		cfg.Logs.Sources = append([]string{}, cfg.Logs.LogSources...)
+	}
+	if cfg.Logs.TailLines <= 0 && cfg.Logs.LogTailLines > 0 {
+		cfg.Logs.TailLines = cfg.Logs.LogTailLines
+	}
+	if cfg.Logs.FastRefreshMs <= 0 && cfg.Logs.LogFastRefreshMs > 0 {
+		cfg.Logs.FastRefreshMs = cfg.Logs.LogFastRefreshMs
+	}
+	if cfg.Logs.ErrorWindowHours <= 0 && cfg.Logs.ErrorFeedWindowHours > 0 {
+		cfg.Logs.ErrorWindowHours = cfg.Logs.ErrorFeedWindowHours
 	}
 	if cfg.AI.MaxHistory <= 0 {
 		cfg.AI.MaxHistory = 6
@@ -154,6 +192,18 @@ func Load(dir string) Config {
 	}
 	if cfg.System.VersionsTTLSeconds < 30 || cfg.System.VersionsTTLSeconds > 3600 {
 		cfg.System.VersionsTTLSeconds = 300
+	}
+	if cfg.Logs.TailLines <= 0 || cfg.Logs.TailLines > 1000 {
+		cfg.Logs.TailLines = 200
+	}
+	if cfg.Logs.FastRefreshMs < 1000 || cfg.Logs.FastRefreshMs > 30000 {
+		cfg.Logs.FastRefreshMs = 3000
+	}
+	if cfg.Logs.ErrorWindowHours <= 0 || cfg.Logs.ErrorWindowHours > 168 {
+		cfg.Logs.ErrorWindowHours = 24
+	}
+	if cfg.Logs.MaxErrorSignatures <= 0 || cfg.Logs.MaxErrorSignatures > 10000 {
+		cfg.Logs.MaxErrorSignatures = 1000
 	}
 	if cfg.System.GatewayTimeoutMs < 200 || cfg.System.GatewayTimeoutMs > 15000 {
 		cfg.System.GatewayTimeoutMs = 5000
@@ -237,7 +287,7 @@ func ReadDotenv(path string) map[string]string {
 		result[key] = val
 	}
 	if err := scanner.Err(); err != nil {
-		log.Printf("[dashboard] dotenv: scanner error reading %s: %v", expanded, err)
+		slog.Warn("[dashboard] dotenv: scanner error", "path", expanded, "error", err)
 	}
 	return result
 }
@@ -246,7 +296,7 @@ func ExpandHome(path string) string {
 	if strings.HasPrefix(path, "~/") {
 		home, err := os.UserHomeDir()
 		if err != nil {
-			log.Printf("[dashboard] WARNING: UserHomeDir failed, cannot expand ~: %v", err)
+			slog.Warn("[dashboard] UserHomeDir failed, cannot expand ~", "error", err)
 			return path
 		}
 		return filepath.Join(home, path[2:])

@@ -54,6 +54,14 @@ fi
 
 if curl -fsSL "$ARCHIVE_URL" -o "$tmp_archive" 2>/dev/null; then
   tar -xzf "$tmp_archive" -C "$INSTALL_DIR"
+  if [ ! -f "openclaw-dashboard" ]; then
+    echo "❌ Release archive did not contain openclaw-dashboard"
+    exit 1
+  fi
+  if [ ! -f "assets/runtime/refresh.sh" ]; then
+    echo "❌ Release archive did not contain assets/runtime/refresh.sh"
+    exit 1
+  fi
   chmod +x openclaw-dashboard assets/runtime/refresh.sh
   echo "✅ Release archive downloaded"
 elif command -v go >/dev/null 2>&1; then
@@ -67,6 +75,10 @@ else
 fi
 
 # Seed runtime assets into the install root
+if [ ! -f "assets/runtime/refresh.sh" ]; then
+  echo "❌ Missing runtime asset: assets/runtime/refresh.sh"
+  exit 1
+fi
 cp assets/runtime/refresh.sh ./refresh.sh
 chmod +x refresh.sh
 
@@ -109,9 +121,10 @@ echo ""
 echo "✅ Installation complete!"
 echo ""
 echo "📊 Dashboard: http://127.0.0.1:8080"
-echo "🔄 API:       http://127.0.0.1:8080/api/refresh (on-demand refresh)"
+echo "🔄 API:       http://127.0.0.1:8080/api/refresh (cached response + debounced background refresh)"
 echo "⚙️  Config:    $INSTALL_DIR/config.json"
 echo "📚 Docs:      $INSTALL_DIR/README.md"
 echo ""
-echo "The Go binary serves the dashboard AND refreshes data on-demand"
-echo "when you open the page. No separate cron job needed!"
+echo "The Go binary serves the dashboard and refreshes data through"
+echo "a debounced stale-while-revalidate /api/refresh flow."
+echo "No separate cron job is required."

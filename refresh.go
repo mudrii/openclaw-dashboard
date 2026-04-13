@@ -1,6 +1,7 @@
 package dashboard
 
 import (
+	"context"
 	"time"
 
 	apprefresh "github.com/mudrii/openclaw-dashboard/internal/apprefresh"
@@ -10,10 +11,10 @@ type tokenBucket = apprefresh.TokenBucket
 type tokenUsageEntry = apprefresh.TokenUsageEntry
 type sessionStoreFile = apprefresh.SessionStoreFile
 
-var refreshCollectorFunc = runRefreshCollector
+var refreshCollectorFunc = runRefreshCollectorWithContext
 
-func runRefreshCollector(dashboardDir, openclawPath string, cfgOpt ...Config) error {
-	return apprefresh.RunRefreshCollector(dashboardDir, openclawPath, cfgOpt...)
+func runRefreshCollectorWithContext(ctx context.Context, dashboardDir, openclawPath string, cfgOpt ...Config) error {
+	return apprefresh.RunRefreshCollector(ctx, dashboardDir, openclawPath, cfgOpt...)
 }
 
 func titleCase(s string) string {

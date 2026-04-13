@@ -3,7 +3,7 @@ package apprefresh
 import (
 	"context"
 	"encoding/json"
-	"log"
+	"log/slog"
 	"maps"
 	"os/exec"
 	"sync"
@@ -17,43 +17,69 @@ var resolveOpenclawBin = appsystem.ResolveOpenclawBin
 var execCommandContext = exec.CommandContext
 
 type liveSessionModelCache struct {
-	mu        sync.Mutex
-	expiresAt time.Time
-	models    map[string]string
+	mu         sync.Mutex
+	cond       *sync.Cond
+	expiresAt  time.Time
+	models     map[string]string
+	refreshing bool
 }
 
 var sessionModelCache liveSessionModelCache
 
-func getLiveSessionModels(now time.Time, ttl time.Duration) map[string]string {
+func getLiveSessionModels(ctx context.Context, now time.Time, ttl time.Duration) map[string]string {
 	if ttl <= 0 {
 		ttl = 30 * time.Second
 	}
 
 	sessionModelCache.mu.Lock()
-	if now.Before(sessionModelCache.expiresAt) {
-		models := cloneStringMap(sessionModelCache.models)
-		sessionModelCache.mu.Unlock()
-		return models
+	if sessionModelCache.cond == nil {
+		sessionModelCache.cond = sync.NewCond(&sessionModelCache.mu)
+	}
+	for {
+		if now.Before(sessionModelCache.expiresAt) {
+			models := maps.Clone(sessionModelCache.models)
+			sessionModelCache.mu.Unlock()
+			return models
+		}
+		if !sessionModelCache.refreshing {
+			sessionModelCache.refreshing = true
+			break
+		}
+		sessionModelCache.cond.Wait()
 	}
 	sessionModelCache.mu.Unlock()
 
-	models := fetchLiveSessionModels()
+	models := fetchLiveSessionModels(ctx)
 
 	sessionModelCache.mu.Lock()
-	sessionModelCache.models = cloneStringMap(models)
+	sessionModelCache.models = maps.Clone(models)
 	sessionModelCache.expiresAt = now.Add(ttl)
-	cached := cloneStringMap(sessionModelCache.models)
+	sessionModelCache.refreshing = false
+	sessionModelCache.cond.Broadcast()
+	cached := maps.Clone(sessionModelCache.models)
 	sessionModelCache.mu.Unlock()
 	return cached
 }
 
-func fetchLiveSessionModelsCLI() map[string]string {
+func resetLiveSessionModelCacheForTest() {
+	sessionModelCache.mu.Lock()
+	sessionModelCache.expiresAt = time.Time{}
+	sessionModelCache.models = nil
+	sessionModelCache.refreshing = false
+	sessionModelCache.cond = nil
+	sessionModelCache.mu.Unlock()
+}
+
+func fetchLiveSessionModelsCLI(ctx context.Context) map[string]string {
 	models := map[string]string{}
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 	out, err := execCommandContext(ctx, resolveOpenclawBin(), "sessions", "--json").Output()
 	if err != nil {
-		log.Printf("[dashboard] fetchLiveSessionModelsCLI: command failed: %v", err)
+		slog.Warn("[dashboard] fetchLiveSessionModelsCLI: command failed", "error", err)
 		return models
 	}
 	if len(out) == 0 {
@@ -62,7 +88,7 @@ func fetchLiveSessionModelsCLI() map[string]string {
 
 	var sessions any
 	if err := json.Unmarshal(out, &sessions); err != nil {
-		log.Printf("[dashboard] fetchLiveSessionModelsCLI: JSON parse failed: %v", err)
+		slog.Warn("[dashboard] fetchLiveSessionModelsCLI: JSON parse failed", "error", err)
 		return models
 	}
 	switch s := sessions.(type) {
@@ -88,13 +114,4 @@ func fetchLiveSessionModelsCLI() map[string]string {
 		}
 	}
 	return models
-}
-
-func cloneStringMap(in map[string]string) map[string]string {
-	if len(in) == 0 {
-		return map[string]string{}
-	}
-	out := make(map[string]string, len(in))
-	maps.Copy(out, in)
-	return out
 }

@@ -3,10 +3,12 @@
 package appservice
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"text/template"
@@ -39,7 +41,10 @@ type unitData struct {
 	WorkDir string
 }
 
+var unitPortRe = regexp.MustCompile(`(?:^|\s)--port\s+"?([0-9]+)"?`)
+
 type systemdBackend struct {
+	ctx       context.Context
 	unitDir   string
 	runCmd    runCmdFunc
 	probeFunc func(string) bool
@@ -47,11 +52,20 @@ type systemdBackend struct {
 
 // New returns a systemd user-service Backend for Linux.
 func New() (Backend, error) {
+	return NewWithContext(context.Background())
+}
+
+// NewWithContext returns a systemd user-service Backend for Linux bound to a caller context.
+func NewWithContext(ctx context.Context) (Backend, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return nil, fmt.Errorf("resolve home dir: %w", err)
 	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	return &systemdBackend{
+		ctx:       ctx,
 		unitDir:   filepath.Join(home, ".config", "systemd", "user"),
 		runCmd:    execRun,
 		probeFunc: probeHTTP,
@@ -63,7 +77,7 @@ func (sb *systemdBackend) unitPath() string {
 }
 
 func (sb *systemdBackend) ctl(args ...string) ([]byte, error) {
-	return sb.runCmd("systemctl", append([]string{"--user"}, args...)...)
+	return sb.runCmd(sb.ctx, "systemctl", append([]string{"--user"}, args...)...)
 }
 
 func (sb *systemdBackend) Install(cfg InstallConfig) error {
@@ -166,7 +180,7 @@ func (sb *systemdBackend) Status() (ServiceStatus, error) {
 
 	// Last 20 log lines via journalctl (only if process is active)
 	if props["ActiveState"] == "active" {
-		logOut, err := sb.runCmd("journalctl", "--user", "-u", systemdUnitName, "-n", "20", "--no-pager")
+		logOut, err := sb.runCmd(sb.ctx, "journalctl", "--user", "-u", systemdUnitName, "-n", "20", "--no-pager")
 		if err == nil {
 			lines := strings.Split(strings.TrimRight(string(logOut), "\n"), "\n")
 			if len(lines) > 0 && lines[0] != "" {
@@ -191,15 +205,13 @@ func parseSystemctlProps(out string) map[string]string {
 // parseUnitPort extracts the --port value from an ExecStart line.
 func parseUnitPort(content string) int {
 	for _, line := range strings.Split(content, "\n") {
-		if !strings.HasPrefix(strings.TrimSpace(line), "ExecStart=") {
+		line = strings.TrimSpace(line)
+		if !strings.HasPrefix(line, "ExecStart=") {
 			continue
 		}
-		parts := strings.Fields(line)
-		for i, p := range parts {
-			if p == "--port" && i+1 < len(parts) {
-				n, _ := strconv.Atoi(parts[i+1])
-				return n
-			}
+		if match := unitPortRe.FindStringSubmatch(line); len(match) == 2 {
+			n, _ := strconv.Atoi(match[1])
+			return n
 		}
 	}
 	return 0
