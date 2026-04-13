@@ -2,6 +2,7 @@
 package apprefresh
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -10,7 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -240,10 +241,10 @@ func collectDashboardData(dashboardDir, openclawPath string, cfg appconfig.Confi
 		dailyCosts, dailyTokens, dailyCalls, dailySubagentCosts, dailySubagentCount,
 	)
 
-	sort.Slice(subagentRuns, func(i, j int) bool {
-		ti, _ := subagentRuns[i]["timestamp"].(string)
-		tj, _ := subagentRuns[j]["timestamp"].(string)
-		return ti > tj
+	slices.SortFunc(subagentRuns, func(a, b map[string]any) int {
+		ta, _ := a["timestamp"].(string)
+		tb, _ := b["timestamp"].(string)
+		return cmp.Compare(tb, ta)
 	})
 
 	subagentRunsToday := FilterByDate(subagentRuns, todayStr, "==")
@@ -912,7 +913,7 @@ func BuildDailyChart(now time.Time, dailyCosts map[string]map[string]float64,
 	for m, c := range modelTotals {
 		sorted = append(sorted, modelCost{m, c})
 	}
-	sort.Slice(sorted, func(i, j int) bool { return sorted[i].cost > sorted[j].cost })
+	slices.SortFunc(sorted, func(a, b modelCost) int { return cmp.Compare(b.cost, a.cost) })
 	topModels := map[string]bool{}
 	for i, mc := range sorted {
 		if i >= 6 {
@@ -1106,7 +1107,7 @@ func BuildCostBreakdown(m map[string]*TokenBucket) []map[string]any {
 			pairs = append(pairs, kv{k, v.Cost})
 		}
 	}
-	sort.Slice(pairs, func(i, j int) bool { return pairs[i].cost > pairs[j].cost })
+	slices.SortFunc(pairs, func(a, b kv) int { return cmp.Compare(b.cost, a.cost) })
 	var out []map[string]any
 	for _, p := range pairs {
 		out = append(out, map[string]any{
@@ -1230,6 +1231,6 @@ func sortedJSONKeys(m map[string]any) []string {
 	for k := range m {
 		keys = append(keys, k)
 	}
-	sort.Strings(keys)
+	slices.Sort(keys)
 	return keys
 }

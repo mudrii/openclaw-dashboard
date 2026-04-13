@@ -1,9 +1,10 @@
 package apprefresh
 
 import (
+	"cmp"
 	"fmt"
 	"math"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -50,7 +51,7 @@ func BucketsToList(m map[string]*TokenBucket) []TokenUsageEntry {
 	for k, v := range m {
 		pairs = append(pairs, kv{k, v})
 	}
-	sort.Slice(pairs, func(i, j int) bool { return pairs[i].v.Cost > pairs[j].v.Cost })
+	slices.SortFunc(pairs, func(a, b kv) int { return cmp.Compare(b.v.Cost, a.v.Cost) })
 
 	out := make([]TokenUsageEntry, 0, len(pairs))
 	for _, p := range pairs {

@@ -5,10 +5,10 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
-	"os"
-	"path/filepath"
 	"strconv"
 	"time"
+	"os"
+	"path/filepath"
 )
 
 // startRefresh launches at most one refresh worker and returns a channel that
@@ -51,16 +51,7 @@ func (s *Server) runRefresh(done chan struct{}) {
 		close(done)
 	}()
 
-	openclawPath := os.Getenv("OPENCLAW_HOME")
-	if openclawPath == "" {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			log.Printf("[dashboard] WARNING: UserHomeDir failed: %v", err)
-		}
-		openclawPath = filepath.Join(home, ".openclaw")
-	}
-
-	if err := s.refreshFn(s.dir, openclawPath, s.cfg); err != nil {
+	if err := s.refreshFn(s.dir, s.openclawPath, s.cfg); err != nil {
 		log.Printf("[dashboard] refresh failed: %v", err)
 		return
 	}

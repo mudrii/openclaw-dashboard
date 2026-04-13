@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/mudrii/openclaw-dashboard/internal/appruntime"
 	appconfig "github.com/mudrii/openclaw-dashboard/internal/appconfig"
 	appsystem "github.com/mudrii/openclaw-dashboard/internal/appsystem"
 )
@@ -99,6 +100,7 @@ type Server struct {
 	version      string
 	cfg          appconfig.Config
 	gatewayToken string
+	openclawPath string
 
 	indexHTMLRendered  []byte
 	indexContentLength string // pre-computed strconv.Itoa(len(indexHTMLRendered))
@@ -130,6 +132,7 @@ type Server struct {
 }
 
 func NewServer(dir, version string, cfg appconfig.Config, gatewayToken string, indexHTML []byte, serverCtx context.Context, refreshFn func(string, string, ...appconfig.Config) error) *Server {
+	openclawPath := appruntime.ResolveOpenclawPath()
 	content := string(indexHTML)
 	preset := html.EscapeString(cfg.Theme.Preset)
 	meta := "<head>\n<meta name=\"oc-theme\" content=\"" + preset + "\">"
@@ -142,6 +145,7 @@ func NewServer(dir, version string, cfg appconfig.Config, gatewayToken string, i
 		version:            version,
 		cfg:                cfg,
 		gatewayToken:       gatewayToken,
+		openclawPath:       openclawPath,
 		indexHTMLRendered:  rendered,
 		indexContentLength: strconv.Itoa(len(rendered)),
 		corsDefault:        "http://localhost:" + strconv.Itoa(cfg.Server.Port),

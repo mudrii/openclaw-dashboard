@@ -36,6 +36,19 @@ type AIConfig struct {
 	DotenvPath  string `json:"dotenvPath"`
 }
 
+type LogsConfig struct {
+	Enabled              bool     `json:"enabled"`
+	TailLines            int      `json:"tailLines"`
+	FastRefreshMs        int      `json:"fastRefreshMs"`
+	ErrorWindowHours     int      `json:"errorWindowHours"`
+	MaxErrorSignatures   int      `json:"maxErrorSignatures"`
+	Sources              []string `json:"sources"`
+	LogSources           []string `json:"log_sources"`
+	LogTailLines         int      `json:"log_tail_lines"`
+	LogFastRefreshMs     int      `json:"log_fast_refresh_ms"`
+	ErrorFeedWindowHours int      `json:"error_feed_window_hours"`
+}
+
 type AlertsConfig struct {
 	DailyCostHigh float64 `json:"dailyCostHigh"`
 	DailyCostWarn float64 `json:"dailyCostWarn"`
@@ -71,6 +84,7 @@ type Config struct {
 	Refresh  RefreshConfig `json:"refresh"`
 	Server   ServerConfig  `json:"server"`
 	AI       AIConfig      `json:"ai"`
+	Logs     LogsConfig    `json:"logs"`
 	Alerts   AlertsConfig  `json:"alerts"`
 	System   SystemConfig  `json:"system"`
 }
@@ -88,6 +102,18 @@ func Default() Config {
 			Model:       "",
 			MaxHistory:  6,
 			DotenvPath:  "~/.openclaw/.env",
+		},
+		Logs: LogsConfig{
+			Enabled:              true,
+			TailLines:            200,
+			FastRefreshMs:        3000,
+			ErrorWindowHours:     24,
+			MaxErrorSignatures:   1000,
+			Sources:              []string{"logs/gateway.log", "logs/gateway.err.log"},
+			LogSources:           nil,
+			LogTailLines:         0,
+			LogFastRefreshMs:     0,
+			ErrorFeedWindowHours: 0,
 		},
 		Alerts: AlertsConfig{
 			DailyCostHigh: 50,
@@ -128,6 +154,18 @@ func Load(dir string) Config {
 	if err := json.NewDecoder(f).Decode(&cfg); err != nil {
 		log.Printf("[dashboard] WARNING: invalid config.json, using defaults for missing/invalid fields: %v", err)
 	}
+	if len(cfg.Logs.LogSources) > 0 {
+		cfg.Logs.Sources = append([]string{}, cfg.Logs.LogSources...)
+	}
+	if cfg.Logs.LogTailLines > 0 {
+		cfg.Logs.TailLines = cfg.Logs.LogTailLines
+	}
+	if cfg.Logs.LogFastRefreshMs > 0 {
+		cfg.Logs.FastRefreshMs = cfg.Logs.LogFastRefreshMs
+	}
+	if cfg.Logs.ErrorFeedWindowHours > 0 {
+		cfg.Logs.ErrorWindowHours = cfg.Logs.ErrorFeedWindowHours
+	}
 	if cfg.AI.MaxHistory <= 0 {
 		cfg.AI.MaxHistory = 6
 	}
@@ -154,6 +192,18 @@ func Load(dir string) Config {
 	}
 	if cfg.System.VersionsTTLSeconds < 30 || cfg.System.VersionsTTLSeconds > 3600 {
 		cfg.System.VersionsTTLSeconds = 300
+	}
+	if cfg.Logs.TailLines <= 0 || cfg.Logs.TailLines > 1000 {
+		cfg.Logs.TailLines = 200
+	}
+	if cfg.Logs.FastRefreshMs < 1000 || cfg.Logs.FastRefreshMs > 30000 {
+		cfg.Logs.FastRefreshMs = 3000
+	}
+	if cfg.Logs.ErrorWindowHours <= 0 || cfg.Logs.ErrorWindowHours > 168 {
+		cfg.Logs.ErrorWindowHours = 24
+	}
+	if cfg.Logs.MaxErrorSignatures <= 0 || cfg.Logs.MaxErrorSignatures > 10000 {
+		cfg.Logs.MaxErrorSignatures = 1000
 	}
 	if cfg.System.GatewayTimeoutMs < 200 || cfg.System.GatewayTimeoutMs > 15000 {
 		cfg.System.GatewayTimeoutMs = 5000

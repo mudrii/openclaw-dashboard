@@ -130,6 +130,19 @@ func CopyFile(src, dst string, mode os.FileMode) error {
 	return os.WriteFile(dst, data, mode)
 }
 
+// ResolveOpenclawPath returns the OpenClaw root directory used by dashboard collectors.
+// It honors OPENCLAW_HOME and falls back to ~/.openclaw.
+func ResolveOpenclawPath() string {
+	if override := strings.TrimSpace(os.Getenv("OPENCLAW_HOME")); override != "" {
+		return appconfig.ExpandHome(override)
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ".openclaw"
+	}
+	return filepath.Join(home, ".openclaw")
+}
+
 func DetectVersion(dir string) string {
 	for _, base := range []string{dir, filepath.Dir(dir)} {
 		vf := filepath.Join(base, "VERSION")

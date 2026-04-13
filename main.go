@@ -17,6 +17,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/mudrii/openclaw-dashboard/internal/appruntime"
 	"github.com/mudrii/openclaw-dashboard/internal/appservice"
 )
 
@@ -139,14 +140,7 @@ func Main() int {
 	}
 
 	if *doRefresh {
-		openclawPath := os.Getenv("OPENCLAW_HOME")
-		if openclawPath == "" {
-			home, err := os.UserHomeDir()
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "[dashboard] WARNING: UserHomeDir failed: %v\n", err)
-			}
-			openclawPath = filepath.Join(home, ".openclaw")
-		}
+		openclawPath := appruntime.ResolveOpenclawPath()
 		if _, err := os.Stat(openclawPath); errors.Is(err, os.ErrNotExist) {
 			fmt.Fprintf(os.Stderr, "OpenClaw not found at %s\n", openclawPath)
 			return 1

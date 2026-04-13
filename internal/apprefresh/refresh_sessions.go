@@ -1,12 +1,13 @@
 package apprefresh
 
 import (
+	"cmp"
 	"encoding/json"
 	"log"
 	"math"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
 	"time"
 )
@@ -344,10 +345,10 @@ func collectSessions(stores []SessionStoreFile, basePath string, loc *time.Locat
 		}
 	}
 
-	sort.Slice(sessionsList, func(i, j int) bool {
-		ui, _ := sessionsList[i]["updatedAt"].(float64)
-		uj, _ := sessionsList[j]["updatedAt"].(float64)
-		return ui > uj
+	slices.SortFunc(sessionsList, func(a, b map[string]any) int {
+		ua, _ := a["updatedAt"].(float64)
+		ub, _ := b["updatedAt"].(float64)
+		return cmp.Compare(ub, ua)
 	})
 	return sessionsList
 }

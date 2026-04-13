@@ -233,13 +233,31 @@ body{font-family:-apple-system,BlinkMacSystemFont,'SF Pro','Helvetica Neue',sans
 .oc-global-controls{display:flex;gap:6px;margin-bottom:12px;justify-content:flex-end}
 .oc-global-btn{background:var(--surface);border:1px solid var(--border);padding:4px 10px;border-radius:6px;color:var(--dim);font-size:10px;cursor:pointer;transition:all .15s}
 .oc-global-btn:hover{background:var(--surfaceHover);color:var(--textStrong)}
+.oc-log-controls{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.log-controls{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:8px}
+.log-control-input{width:190px;min-width:150px;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:5px 8px;font-size:11px;color:var(--text);font-family:monospace}
+.log-control-input:focus{outline:none;border-color:var(--accent)}
+.log-list{max-height:420px;overflow:auto;border:1px solid var(--border);background:var(--surface);border-radius:8px;padding:6px 0;min-height:220px}
+.log-line{display:grid;grid-template-columns:70px auto 1fr;gap:8px;padding:5px 8px;border-bottom:1px solid var(--border);font-size:11px;font-family:"SF Mono",Monaco,monospace;line-height:1.35}
+.log-line:last-child{border-bottom:none}
+.log-line-sev{font-weight:700;font-size:9px;letter-spacing:.06em;text-transform:uppercase;white-space:nowrap}
+.log-line-source{color:var(--dim);white-space:nowrap}
+.log-line-time{color:var(--dim);white-space:nowrap}
+.log-line-msg{word-break:break-word}
+.log-line-msg mark{background:rgba(250,204,21,.28);color:inherit;border-radius:2px;padding:0 2px}
+.log-empty{padding:24px;text-align:center;color:var(--dim);font-size:11px}
+.log-error{color:var(--red)}
+.log-warn{color:var(--yellow)}
+.log-info{color:var(--text)}
+.log-debug{color:var(--orange)}
+.diag-badge{cursor:pointer}
 @media(prefers-reduced-motion:reduce){.oc-chevron{transition:none}}
 </style>
 <script>
 // FOUC bootstrap: read localStorage before body renders to prevent flash
 (function(){
   var STORAGE_KEY='ocDash:collapse:v2';
-  var DEFAULTS={'alerts':false,'health':false,'cost':false,'charts':false,'crons':false,'sessions':false,'usage':false,'subagent':false,'agent-config':false};
+  var DEFAULTS={'alerts':false,'health':false,'cost':false,'charts':false,'crons':false,'sessions':false,'usage':false,'subagent':false,'logs':false,'errors':false,'agent-config':false};
   var state=Object.assign({},DEFAULTS);
   try{
     var raw=localStorage.getItem(STORAGE_KEY);
@@ -271,6 +289,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'SF Pro','Helvetica Neue',sans
     </a>
     <span class="countdown" id="countdown">60s</span>
     <span class="last-update" id="lastUpdate"></span>
+    <span class="sys-pill diag-badge" id="diagErrorBadge" style="display:none;background:rgba(248,113,113,.12);color:var(--red);border-color:rgba(248,113,113,.25)" onclick="ErrorFeed.jumpToSection()" title="Open diagnostics errors">⚠ 0 errors</span>
     <div class="theme-picker">
       <button class="theme-btn" id="themeBtn" onclick="OCUI.toggleThemeMenu()" title="Change theme">🎨</button>
       <div class="theme-menu" id="themeMenu"></div>
@@ -502,7 +521,70 @@ body{font-family:-apple-system,BlinkMacSystemFont,'SF Pro','Helvetica Neue',sans
   </div>
 </section>
 
-<!-- 11. Agent Configuration (includes Models, Skills, Git Log) -->
+<!-- 11. Live Logs -->
+<section class="oc-section" data-section="logs">
+  <div class="oc-section-header">
+    <button class="oc-section-toggle" aria-expanded="true" aria-controls="oc-body-logs" aria-label="Toggle Live Logs" onclick="Sections.toggle('logs')">
+      <span class="section-title">📋 Live Logs</span>
+      <span class="oc-chevron">▼</span>
+    </button>
+    <div class="oc-log-controls">
+      <div class="tab-group" id="logSourceGroup">
+        <button class="tab-btn active" id="logSourceAll" onclick="OCUI.setLogSource('all')">All</button>
+        <button class="tab-btn" id="logSourceGateway" onclick="OCUI.setLogSource('gateway')">Gateway</button>
+        <button class="tab-btn" id="logSourceCron" onclick="OCUI.setLogSource('cron')">Cron</button>
+      </div>
+      <div class="tab-group" id="logSeverityGroup">
+        <button class="tab-btn active" id="logSevAll" onclick="OCUI.setLogSeverity('all')">All</button>
+        <button class="tab-btn" id="logSevInfo" onclick="OCUI.setLogSeverity('info')">Info</button>
+        <button class="tab-btn" id="logSevWarn" onclick="OCUI.setLogSeverity('warn')">Warn</button>
+        <button class="tab-btn" id="logSevError" onclick="OCUI.setLogSeverity('error')">Error</button>
+      </div>
+      <button class="oc-global-btn" id="logPauseBtn" onclick="OCUI.toggleLogPause()">⏸ Pause</button>
+      <button class="oc-global-btn" id="logFastBtn" onclick="OCUI.toggleLogFast()">🐢 Fast (3s)</button>
+    </div>
+  </div>
+  <div class="oc-section-body" id="oc-body-logs">
+    <div class="log-controls">
+      <input class="log-control-input" id="logRegexFilter" placeholder="Filter (regex)" oninput="OCUI.setLogRegex(this.value)" />
+      <span id="logStatus" class="log-empty" style="display:none"></span>
+      <span id="logCount" class="log-empty" style="margin-left:auto"></span>
+    </div>
+    <div class="log-list" id="logTail" aria-live="polite">
+      <div class="log-empty">Loading logs…</div>
+    </div>
+  </div>
+</section>
+
+<!-- 12. Error Feed -->
+<section class="oc-section" data-section="errors">
+  <div class="oc-section-header">
+    <button class="oc-section-toggle" aria-expanded="true" aria-controls="oc-body-errors" aria-label="Toggle Error Feed" onclick="Sections.toggle('errors')">
+      <span class="section-title">🚨 Error Feed</span>
+      <span class="oc-chevron">▼</span>
+    </button>
+    <div style="display:flex;align-items:center;gap:8px">
+      <span id="errorCount" style="font-size:12px;color:var(--muted)"></span>
+      <div class="tab-group">
+        <button class="tab-btn active" id="errSortCount" onclick="OCUI.setErrorSort('count')">Frequent</button>
+        <button class="tab-btn" id="errSortLast" onclick="OCUI.setErrorSort('last_seen')">Recent</button>
+      </div>
+    </div>
+  </div>
+  <div class="oc-section-body" id="oc-body-errors">
+    <div class="glass panel" style="overflow-x:auto">
+      <table class="dtable">
+        <thead>
+          <tr><th>Severity</th><th>Source</th><th class="r">Count</th><th>Message</th><th>Last Seen</th><th style="min-width:70px">Details</th></tr>
+        </thead>
+        <tbody id="errorBody"></tbody>
+      </table>
+    </div>
+    <div class="empty" id="errorFeedEmpty" style="display:none">No errors detected.</div>
+  </div>
+</section>
+
+<!-- 13. Agent Configuration (includes Models, Skills, Git Log) -->
 <section class="oc-section" data-section="agent-config" style="margin-top:16px">
   <div class="oc-section-header">
     <button class="oc-section-toggle" aria-expanded="false" aria-controls="oc-body-agent-config" aria-label="Toggle Agent Configuration" onclick="Sections.toggle('agent-config')">
@@ -646,6 +728,11 @@ function relTime(ts){
   if(diff<86400)return Math.floor(diff/3600)+'h ago';
   return Math.floor(diff/86400)+'d ago';
 }
+function formatAbsTime(ts){
+  if(!ts)return'—';
+  const d=typeof ts==='number'?new Date(ts):new Date(ts);
+  return isNaN(d.getTime())?'—':d.toLocaleString();
+}
 
 // === Theme ===
 const Theme = {
@@ -769,6 +856,390 @@ const DataLayer = {
       if(myId!==this._reqId)return null;
       throw e;
     }
+  }
+};
+
+// === Diagnostics ===
+const LogTail = {
+  limit: 250,
+  fastMs: 3000,
+  normalMs: 15000,
+  _reqId: 0,
+  _timer: null,
+  _source: 'all',
+  _severity: 'all',
+  _regex: '',
+  _paused: false,
+  _hoverPause: false,
+  _lastRegexError: '',
+  _compiledRegex: null,
+
+  _normalizeSource(v) {
+    const value = String(v || 'all').trim().toLowerCase();
+    if (!value || value === 'all') return 'all';
+    return value;
+  },
+
+  init() {
+    const tail = $('logTail');
+    if (!tail) return;
+    tail.addEventListener('mouseenter', () => {
+      this._hoverPause = true;
+    });
+    tail.addEventListener('mouseleave', () => {
+      const wasPaused = this._hoverPause;
+      this._hoverPause = false;
+      if (wasPaused) this.fetch();
+    });
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) {
+        this._stopPoll();
+        return;
+      }
+      this._startPoll();
+      this.fetch();
+    });
+
+    this._startPoll();
+    this.fetch();
+    this._renderControls();
+  },
+
+  _startPoll() {
+    const next = this._fast ? this.fastMs : this.normalMs;
+    if (this._timer) {
+      clearInterval(this._timer);
+      this._timer = null;
+    }
+    this._timer = setInterval(() => this.fetch(), next);
+  },
+
+  _stopPoll() {
+    if (this._timer) {
+      clearInterval(this._timer);
+      this._timer = null;
+    }
+  },
+
+  setSource(v) {
+    const next = this._normalizeSource(v);
+    if (this._source === next) return;
+    this._source = next;
+    this.fetch();
+    this._renderControls();
+  },
+
+  setSeverity(v) {
+    if (!v || this._severity === v) return;
+    this._severity = v;
+    this.fetch();
+    this._renderControls();
+  },
+
+  setRegex(v) {
+    this._regex = (v || '').trim();
+    try {
+      this._compiledRegex = this._regex ? new RegExp(this._regex, 'i') : null;
+      this._lastRegexError = '';
+    } catch (e) {
+      this._compiledRegex = null;
+      this._lastRegexError = 'Invalid regex';
+    }
+    this._render();
+  },
+
+  togglePause() {
+    this._paused = !this._paused;
+    if (!this._paused) this.fetch();
+    this._renderControls();
+  },
+
+  toggleFast() {
+    this._fast = !this._fast;
+    this._startPoll();
+    this.fetch();
+    this._renderControls();
+  },
+
+  async fetch() {
+    if (this._paused || this._hoverPause) return;
+    const id = ++this._reqId;
+    const source = this._normalizeSource(this._source);
+    const qs = new URLSearchParams();
+    qs.set('limit', String(this.limit));
+    if (source !== 'all') {
+      qs.set('source', source);
+    }
+    try {
+      const r = await fetch('/api/logs?' + qs.toString());
+      if (id !== this._reqId) return;
+      if (!r.ok) {
+        const status = r.status;
+        const body = await r.json().catch(() => null);
+        if (status === 503 && body && body.error === 'logs disabled') {
+          this._setStatus('Logs disabled in config.');
+        } else {
+          this._setStatus('Failed to load logs.');
+        }
+        return;
+      }
+      const json = await r.json();
+      if (id !== this._reqId) return;
+      this._render(json);
+    } catch (e) {
+      if (id !== this._reqId) return;
+      this._setStatus('Network error while fetching logs.');
+    }
+  },
+
+  _setStatus(msg) {
+    const status = $('logStatus');
+    const list = $('logTail');
+    if (status) {
+      status.style.display = 'block';
+      status.textContent = msg;
+    }
+    if (list) list.innerHTML = `<div class="log-empty">${esc(msg)}</div>`;
+  },
+
+  _renderControls() {
+    const pauseBtn = $('logPauseBtn');
+    const fastBtn = $('logFastBtn');
+    if (pauseBtn) pauseBtn.textContent = this._paused ? '▶ Resume' : '⏸ Pause';
+    if (fastBtn) {
+      fastBtn.textContent = this._fast ? '⚡ Normal' : '🐢 Fast (3s)';
+      fastBtn.title = this._fast ? 'Switch to normal interval' : 'Switch to fast mode';
+    }
+    const sourceIds = {all:'logSourceAll', gateway:'logSourceGateway', cron:'logSourceCron'};
+    const severityIds = {all:'logSevAll', info:'logSevInfo', warn:'logSevWarn', error:'logSevError'};
+    Object.keys(sourceIds).forEach((k) => {
+      const b = $(sourceIds[k]);
+      if (b) b.className = 'tab-btn' + (k === this._source ? ' active' : '');
+    });
+    Object.keys(severityIds).forEach((k) => {
+      const b = $(severityIds[k]);
+      if (b) b.className = 'tab-btn' + (k === this._severity ? ' active' : '');
+    });
+    if (this._lastRegexError) {
+      const rc = $('logStatus');
+      if (rc) {
+        rc.style.display = 'block';
+        rc.textContent = this._lastRegexError;
+      }
+    } else {
+      const rc = $('logStatus');
+      if (rc && rc.textContent === 'Invalid regex') {
+        rc.style.display = 'none';
+      }
+    }
+    this._render();
+  },
+
+  _render(payload) {
+    const list = $('logTail');
+    if (!list) return;
+    const logCount = $('logCount');
+    const entries = payload && Array.isArray(payload.entries) ? payload.entries : [];
+    const prepared = this._filtered(entries);
+    if (logCount) logCount.textContent = prepared.length ? prepared.length + ' log lines' : 'No matching logs';
+    const shouldStickBottom = list.scrollHeight - list.clientHeight - list.scrollTop < 24;
+    if (!entries.length) {
+      list.innerHTML = '<div class="log-empty">No logs found</div>';
+      return;
+    }
+    if (!prepared.length) {
+      list.innerHTML = '<div class="log-empty">No matching logs</div>';
+      return;
+    }
+    list.innerHTML = prepared.map((entry) => {
+      const sev = (entry.severity || 'info').toLowerCase();
+      const seen = entry.seenAt || formatAbsTime(entry.timestamp || 0);
+      const source = entry.source || 'log';
+      const msg = this._highlight(entry.message || entry.line || '');
+      return `<div class="log-line"><span class="log-line-sev log-${esc(sev)}">${esc(sev)}</span><span class="log-line-source">${esc(source)} · ${esc(seen)}</span><span class="log-line-msg">${msg}</span></div>`;
+    }).join('');
+    if (shouldStickBottom) list.scrollTop = list.scrollHeight;
+  },
+
+  _filtered(entries) {
+    const source = this._normalizeSource(this._source);
+    return entries.filter((e) => {
+      const eSource = String(e.source || '').toLowerCase();
+      if (source === 'gateway' && !eSource.includes('gateway')) return false;
+      if (source === 'cron' && !eSource.includes('cron')) return false;
+      if (source !== 'all' && source !== 'gateway' && source !== 'cron' && eSource !== source) return false;
+      const sev = (e.severity || 'info').toLowerCase();
+      if (this._severity !== 'all' && sev !== this._severity) return false;
+      if (this._compiledRegex) {
+        const haystack = `${e.source || ''} ${e.message || e.line || ''} ${e.severity || ''}`;
+        return this._compiledRegex.test(haystack);
+      }
+      return true;
+    });
+  },
+
+  _highlight(text) {
+    if (!this._compiledRegex) return esc(text);
+    if (!text) return '';
+    let safe = esc(text);
+    try {
+      return safe.replace(this._compiledRegex, (m) => `<mark>${esc(m)}</mark>`);
+    } catch (e) {
+      return safe;
+    }
+  }
+};
+
+const ErrorFeed = {
+  _reqId: 0,
+  _sort: 'count',
+  _items: [],
+  _expanded: {},
+
+  init() {
+    this.fetch();
+    this._renderControls();
+  },
+
+  jumpToSection() {
+    const section = document.querySelector('[data-section="errors"]');
+    if (section) section.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  },
+
+  setSort(mode) {
+    if (this._sort === mode) return;
+    this._sort = mode;
+    this.fetch();
+    this._renderControls();
+  },
+
+  async fetch() {
+    const id = ++this._reqId;
+    const qs = new URLSearchParams();
+    qs.set('sort', this._sort);
+    qs.set('limit', '80');
+    try {
+      const r = await fetch('/api/errors?' + qs.toString());
+      if (id !== this._reqId) return;
+      if (!r.ok) {
+        if (id !== this._reqId) return;
+        const payload = await r.json().catch(() => null);
+        const body = $('errorFeedEmpty');
+        if (body) {
+          body.style.display = 'block';
+          body.textContent = payload && payload.error === 'logs disabled' ? 'Error feed disabled in config.' : 'Failed to load error feed.';
+        }
+        return;
+      }
+      const payload = await r.json();
+      if (id !== this._reqId) return;
+      const items = Array.isArray(payload && payload.items) ? payload.items : [];
+      this._items = items.map((item) => this._normalizeItem(item));
+      this.render();
+    } catch (e) {
+      if (id !== this._reqId) return;
+      const body = $('errorFeedEmpty');
+      if (body) {
+        body.style.display = 'block';
+        body.textContent = 'Network error while loading error feed.';
+      }
+    }
+  },
+
+  _renderControls() {
+    const countBtn = $('errSortCount');
+    const lastBtn = $('errSortLast');
+    if (countBtn) countBtn.className = 'tab-btn' + (this._sort === 'count' ? ' active' : '');
+    if (lastBtn) lastBtn.className = 'tab-btn' + (this._sort === 'last_seen' ? ' active' : '');
+  },
+
+  _normalizeItem(rawItem) {
+    const item = rawItem || {};
+    return {
+      source: typeof item.source === 'string' ? item.source : '',
+      severity: typeof item.severity === 'string' ? item.severity : 'warn',
+      signature: typeof item.signature === 'string' ? item.signature : '',
+      count: Number.isFinite(Number(item.count)) ? Number(item.count) : 0,
+      firstSeen: item.firstSeen != null ? Number(item.firstSeen) : 0,
+      lastSeen: item.lastSeen != null ? Number(item.lastSeen) : 0,
+      sampleMessage: this._normalizeMessage(item.sampleMessage || item.sample_message || item.message),
+      lastOccurrences: this._normalizeOccurrences(item.lastOccurrences || item.last_occurrences || []),
+    };
+  },
+
+  _normalizeMessage(v) {
+    if (v == null) return '';
+    return String(v);
+  },
+
+  _normalizeOccurrences(v) {
+    const raw = Array.isArray(v) ? v : [];
+    return raw.map((entry) => {
+      if (entry == null || typeof entry !== 'object') {
+        return { timestamp: 0, line: '', message: this._normalizeMessage(entry) };
+      }
+      return {
+        timestamp: entry.timestamp != null ? Number(entry.timestamp) : Number(entry.time || entry.ts || 0),
+        line: this._normalizeMessage(entry.line),
+        message: this._normalizeMessage(entry.message || entry.msg || entry.text),
+      };
+    }).filter((entry) => entry.timestamp > 0 || entry.line || entry.message);
+  },
+
+  render() {
+    const body = $('errorBody');
+    const empty = $('errorFeedEmpty');
+    if (!body) return;
+    if (!this._items.length) {
+      if (empty) {
+        empty.style.display = 'block';
+        empty.textContent = 'No errors detected.';
+      }
+      body.innerHTML = '';
+      const b = $('errorCount');
+      if (b) b.textContent = '0 issues';
+      const badge = $('diagErrorBadge');
+      if (badge) badge.style.display = 'none';
+      this._renderControls();
+      return;
+    }
+    if (empty) empty.style.display = 'none';
+    let html = '';
+    let totalErrors = 0;
+    this._items.forEach((item, i) => {
+      if ((item.severity || '').toLowerCase() === 'error') totalErrors += Number(item.count || 0);
+      const rowId = 'errRow' + i;
+      const sev = (item.severity || 'warn').toLowerCase();
+      const samples = Array.isArray(item.lastOccurrences) ? item.lastOccurrences : [];
+      const sample = item.sampleMessage || '';
+      const sampleRows = samples.map((s) => `<div style="margin-bottom:4px;color:var(--dim)">${formatAbsTime(s.timestamp)} — ${esc(s.message || s.line || '—')}</div>`).join('');
+      html += `<tr class="dr"><td><span class="badge ${sev === 'error' ? 'badge-err' : 'badge-none'}">${esc(sev)}</span></td><td>${esc(item.source || '—')}</td><td class="r">${item.count || 0}</td><td title="${esc(sample)}">${esc(sample).slice(0, 120)}</td><td>${formatAbsTime(item.lastSeen)}</td><td style="white-space:nowrap"><button class="tab-btn" style="padding:2px 8px;font-size:10px" onclick="ErrorFeed.toggle('${i}')">${this._expanded[rowId] ? 'Hide' : 'View'}</button></td></tr><tr id="${rowId}" style="display:${this._expanded[rowId] ? 'table-row' : 'none'}"><td colspan="6"><div style="padding:8px 0 10px;color:var(--dim)">${'Signature: ' + esc(item.signature || '—')}</div><div style="padding-bottom:6px;color:var(--muted)">${'First seen: ' + formatAbsTime(item.firstSeen)} · ${'Last seen: ' + formatAbsTime(item.lastSeen)}</div><div style="padding-bottom:4px;color:var(--text)">${esc(item.sampleMessage || '—')}</div>${sampleRows ? `<div style="margin-top:8px"><div style="margin-bottom:4px;color:var(--muted)">Recent occurrences</div>${sampleRows}</div>` : ''}</td></tr>`;
+    });
+    body.innerHTML = html;
+    const count = $('errorCount');
+    if (count) count.textContent = this._items.length + ' issues';
+    const badge = $('diagErrorBadge');
+    if (badge) {
+      if (totalErrors <= 0) {
+        badge.style.display = 'none';
+      } else {
+        badge.style.display = 'inline-block';
+        badge.textContent = '⚠ ' + totalErrors + ' errors';
+      }
+    }
+    this._renderControls();
+  },
+
+  toggle(index) {
+    const id = 'errRow' + index;
+    const row = $(id);
+    if (!row) return;
+    this._expanded[id] = !this._expanded[id];
+    row.style.display = this._expanded[id] ? 'table-row' : 'none';
+    const btn = row.previousElementSibling
+      ? row.previousElementSibling.querySelector('button')
+      : null;
+    if (btn) btn.textContent = this._expanded[id] ? 'Hide' : 'View';
   }
 };
 
@@ -1618,11 +2089,11 @@ const SystemBar = {
 };
 
 // === Collapsible Sections ===
-const SECTION_KEYS = ['alerts','health','cost','charts','crons','sessions','usage','subagent','agent-config'];
+const SECTION_KEYS = ['alerts','health','cost','charts','crons','sessions','usage','subagent','logs','errors','agent-config'];
 const Sections = {
   _state: {},
   STORAGE_KEY: 'ocDash:collapse:v2',
-  DEFAULTS: {'alerts':false,'health':false,'cost':false,'charts':false,'crons':false,'sessions':false,'usage':false,'subagent':false,'agent-config':false},
+  DEFAULTS: {'alerts':false,'health':false,'cost':false,'charts':false,'crons':false,'sessions':false,'usage':false,'subagent':false,'logs':false,'errors':false,'agent-config':false},
 
   loadState() {
     var merged = Object.assign({}, this.DEFAULTS);
@@ -1686,6 +2157,8 @@ const App = {
   init() {
     Theme.load();
     Sections.init();
+    LogTail.init();
+    ErrorFeed.init();
     setInterval(()=>App.onTick(),1000);
     App.refresh();
     SystemBar.start(5000);
@@ -1696,6 +2169,8 @@ const App = {
       if(json===null)return;
       State.update(json);
       App.renderNow();
+      LogTail.fetch().catch(()=>{});
+      ErrorFeed.fetch().catch(()=>{});
       $('lastUpdate').textContent='Updated: '+new Date().toLocaleTimeString();
       State.resetCountdown();
     }catch(e){
@@ -1734,6 +2209,13 @@ window.OCUI = {
   expandAll:      ()=>Sections.setAll(false),
   collapseAll:    ()=>Sections.setAll(true),
   toggleSection:  key=>Sections.toggle(key),
+  setLogSource:  source=>{LogTail.setSource(source);},
+  setLogSeverity:severity=>{LogTail.setSeverity(severity);},
+  setLogRegex:   value=>{LogTail.setRegex(value);},
+  toggleLogPause: ()=>{LogTail.togglePause();},
+  toggleLogFast:  ()=>{LogTail.toggleFast();},
+  setErrorSort:  sort=>{ErrorFeed.setSort(sort);},
+  jumpToErrorSection: ()=>{ErrorFeed.jumpToSection();},
 };
 </script>
 

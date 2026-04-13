@@ -3,6 +3,7 @@ name: go-rig
 description: Use this skill when building, reviewing, or refactoring Go code that must follow strict design discipline — ATDD/TDD workflow, explicit dependency injection, package-boundary discipline, and structured code review. Complements CLAUDE.md by focusing on process and design judgment rather than version-specific Go features.
 metadata:
   short-description: Go design, workflow, and review discipline
+  slash-command: enabled
 ---
 
 # Go Rig
@@ -12,10 +13,12 @@ Strict design and testing discipline for Go projects.
 This skill **complements** `CLAUDE.md`.
 
 `CLAUDE.md` owns:
-- Go version and toolchain guidance
-- stdlib and language idioms
-- testing APIs and tooling commands
-- modernization guidance such as `go fix`
+- Go version, toolchain, and commands
+- Key style, error, context, and concurrency rules
+
+`.claude/rules/` owns:
+- Go 1.26 idioms and go fix modernizer catalog (`go-idioms.md`)
+- Detailed style, API, documentation, and testing patterns (`go-patterns.md`)
 
 This skill adds:
 - ATDD/TDD workflow
@@ -27,6 +30,16 @@ This skill adds:
 - structured review process
 
 Do not restate or override version-specific guidance from `CLAUDE.md`. If `CLAUDE.md` is stricter on a shared point, follow `CLAUDE.md`.
+
+## When to Use
+
+Use this skill when:
+
+- implementing a new feature or behavior increment
+- refactoring Go code for clearer ownership or testability
+- reviewing package boundaries or dependency flow
+- replacing hidden collaborator construction with explicit injection
+- tightening tests around user-visible or integration behavior
 
 ## ATDD/TDD Workflow
 
@@ -81,7 +94,6 @@ When applying SRP/DRY/OCP in Go, prefer deleting duplication caused by mixed res
 - If an abstraction adds files, wiring, and names but no clear testability or ownership win, do not add it
 
 Avoid:
-- interface-per-struct
 - repositories or services that only forward calls
 - configuration objects passed everywhere to avoid choosing explicit parameters
 - “future-proofing” abstractions without a concrete second implementation or consumer
@@ -90,9 +102,7 @@ Avoid:
 
 - A function should usually do one thing: validate, transform, orchestrate, persist, or render
 - If a function mixes business rules with transport, storage, or logging details, split it
-- Prefer early returns over nested condition pyramids
 - Keep parameter lists explicit and intention-revealing; if many values travel together for one reason, introduce a small typed struct
-- Use whitespace to separate logical phases so the control flow reads top to bottom
 
 Refactor when a function:
 - needs comments to explain the control flow
@@ -105,26 +115,8 @@ Refactor when a function:
 - **Constructors** for types that must enforce invariants or own long-lived collaborators
 - **Function parameters** for short-lived collaborators and pure logic
 - Never construct DB clients, HTTP clients, loggers, or repositories inside domain methods
-- No DI frameworks — explicit wiring only
-- No hidden globals or singletons
 - Prefer passing dependencies from the composition root (`main`, wiring package, or test setup) instead of looking them up deep inside the call stack
 - Inject seams for time, randomness, process execution, filesystem, and external I/O when behavior depends on them
-- Do not hide dependencies behind package-level variables except in rare compatibility shims
-
-```go
-// constructor injection for long-lived deps
-func NewOrderService(store OrderStore, clock Clock) *OrderService {
-    return &OrderService{store: store, clock: clock}
-}
-
-// function parameter for short-lived/pure logic
-func ValidateOrder(order Order, now time.Time) error {
-    if order.ExpiresAt.Before(now) {
-        return fmt.Errorf("order %s expired: %w", order.ID, ErrExpired)
-    }
-    return nil
-}
-```
 
 ## Package Design
 
@@ -136,11 +128,9 @@ Organize by domain, not by technical layer.
 - Split packages only when coupling pressure is real, not speculative
 
 Avoid:
-- interface-per-struct without a consumer need
 - deep layering in small services
-- `internal/platform/` catch-all layers — keep cross-cutting concerns in focused packages (`internal/config/`, `internal/db/`)
+- `internal/platform/` catch-all layers — keep cross-cutting concerns in focused packages
 - packages that combine unrelated domains because they share a datastore or transport
-- "shared" packages that centralize unrelated helpers and create import gravity
 
 ## Hardcoding And Configuration
 
@@ -204,32 +194,38 @@ Treat linting and static analysis as design feedback, not cosmetic cleanup.
 Before finishing any change, verify:
 
 - [ ] Package boundaries are coherent — no cross-domain leaks
-- [ ] No premature abstractions — interfaces have real consumers
 - [ ] Dependencies injected explicitly — no hidden construction
-- [ ] No hardcoded runtime values (URLs, ports, credentials, timeouts)
-- [ ] Types are explicit where they protect domain correctness
-- [ ] Functions are readable in one pass
-- [ ] Functions do not mix unrelated responsibilities
-- [ ] Repeated logic is unified only when it shares the same reason to change
-- [ ] Errors wrapped with useful context (`%w`)
+- [ ] Functions are readable in one pass and do not mix unrelated responsibilities
 - [ ] Tests cover acceptance behavior and unit behavior
 - [ ] TDD/ATDD flow was followed as closely as the repo constraints allowed
 - [ ] Behavioral compatibility checked where public APIs, JSON, or persistence shape changed
 - [ ] Nil vs empty behavior is intentional for slices, maps, pointers, and JSON fields
 - [ ] Concurrency changes have a shutdown path and observable ownership
-- [ ] Exported docs and package docs were updated when public behavior changed
-- [ ] Tests are robust against irrelevant formatting churn
-- [ ] Version/tooling guidance from `CLAUDE.md` has been followed
-- [ ] Lint and test gates expected by the repo have been run or consciously deferred
+- [ ] Root-package wrappers added/updated for any new `internal/` exports
+- [ ] Lint and test gates (`make check`) have been run or consciously deferred
 
-## Reject These Patterns
+## Project-Specific: Root-Package Facade
 
-- Interface-per-struct without consumer need
-- Giant functions mixing validation, orchestration, and persistence
-- Hardcoded configuration or collaborator selection
-- Weakly typed domain data kept as raw maps or generic blobs without need
-- Comments that restate code
-- Brittle mock-only tests — prefer fakes with real behavior
-- Transport concerns embedded in core domain logic
-- Production design distorted to satisfy a mocking framework
-- Refactors that add indirection without improving correctness, ownership, or testability
+This project uses a facade pattern where the root `dashboard` package re-exports `internal/` APIs via thin wrappers and type aliases.
+
+When adding a new feature:
+1. Implement logic in `internal/app<domain>/` with exported names
+2. Add type aliases (`type X = appfoo.X`) and wrapper functions in the root package
+3. Write tests at both the internal package level (unit) and root level (integration)
+
+When modifying an existing internal API:
+- If the signature changes, update the corresponding root-level wrapper
+- Root-level wrappers must remain zero-logic forwarding — no business logic in the facade
+
+Legacy note: `CollectTokenUsage` and `CollectTokenUsageWithCache` have 15+ map parameters. New code should use options structs per CLAUDE.md convention. These functions are candidates for future refactoring but are not blocking.
+
+## Success Criteria
+
+This skill is being followed correctly when:
+
+- changes are small, test-backed, and easy to review
+- dependency flow is explicit from the composition root
+- package responsibilities are cleaner after the change, not blurrier
+- the implementation follows the Go standards in `CLAUDE.md`
+- tests speak in behavior terms, not implementation vocabulary
+- the resulting code reads clearly without comments explaining the control flow

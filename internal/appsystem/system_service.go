@@ -13,7 +13,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
-	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -29,10 +28,11 @@ type SystemService struct {
 	dashVer     string
 	shutdownCtx context.Context // lifecycle context — cancelled on graceful shutdown; do NOT use for per-request ops
 
-	metricsMu      sync.RWMutex
-	metricsPayload []byte
-	metricsAt      time.Time
-	metricsRefresh bool
+	metricsMu           sync.RWMutex
+	metricsPayload      []byte
+	metricsStalePayload []byte // pre-computed version with "stale":true
+	metricsAt           time.Time
+	metricsRefresh      bool
 
 	verMu      sync.RWMutex
 	verCached  SystemVersions
@@ -98,20 +98,11 @@ func (s *SystemService) GetJSON(ctx context.Context) (int, []byte) {
 				s.metricsMu.Unlock()
 			}()
 		}
-		b := s.metricsPayload
-		s.metricsMu.Unlock()
-
-		// Mark stale in response — use JSON round-trip for safety instead of fragile byte
-		// replacement. Byte-level replace silently fails if JSON ordering/spacing differs (B2 fix).
-		var sr SystemResponse
-		if err := json.Unmarshal(b, &sr); err == nil {
-			sr.Stale = true
-			if sb, err := json.Marshal(sr); err == nil {
-				return http.StatusOK, sb
-			}
+		b := s.metricsStalePayload
+		if b == nil {
+			b = s.metricsPayload
 		}
-		// Fallback: serve original payload (stale field inaccurate but data still useful)
-		log.Printf("[system] stale injection: could not round-trip JSON, serving original")
+		s.metricsMu.Unlock()
 		return http.StatusOK, b
 	}
 
@@ -207,8 +198,17 @@ func (s *SystemService) refresh(ctx context.Context) ([]byte, bool) {
 		log.Printf("[dashboard] collectMetrics: json.Marshal failed: %v", err)
 		return nil, true
 	}
+
+	// Pre-compute stale payload to avoid JSON round-trip on every stale hit
+	resp.Stale = true
+	staleB, staleErr := json.Marshal(resp)
+	if staleErr != nil {
+		staleB = b
+	}
+
 	s.metricsMu.Lock()
 	s.metricsPayload = b
+	s.metricsStalePayload = staleB
 	s.metricsAt = time.Now()
 	s.metricsMu.Unlock()
 	return b, allFailed
@@ -732,7 +732,15 @@ func ResolveOpenclawBin() string {
 	// Also probe asdf nodejs installs — sort newest-first using version-aware comparison.
 	if nodeDir := filepath.Join(home, ".asdf", "installs", "nodejs"); nodeDir != "" {
 		if entries, err := os.ReadDir(nodeDir); err == nil {
-			sort.Slice(entries, func(i, j int) bool { return versionishGreater(entries[i].Name(), entries[j].Name()) })
+			slices.SortFunc(entries, func(a, b os.DirEntry) int {
+				if versionishGreater(a.Name(), b.Name()) {
+					return -1
+				}
+				if versionishGreater(b.Name(), a.Name()) {
+					return 1
+				}
+				return 0
+			})
 			for _, e := range entries {
 				if e.IsDir() {
 					candidates = append(candidates, filepath.Join(nodeDir, e.Name(), "bin", "openclaw"))

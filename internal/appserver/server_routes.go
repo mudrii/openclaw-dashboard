@@ -27,6 +27,10 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		s.handleSystem(w, r)
 	case isRead && r.URL.Path == "/api/refresh":
 		s.handleRefresh(w, r)
+	case isRead && r.URL.Path == "/api/logs":
+		s.handleLogs(w, r)
+	case isRead && r.URL.Path == "/api/errors":
+		s.handleErrors(w, r)
 	case r.Method == http.MethodOptions:
 		s.setCORSHeaders(w, r)
 		w.Header().Set("Access-Control-Allow-Methods", "GET, HEAD, POST, OPTIONS")

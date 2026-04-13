@@ -31,7 +31,7 @@ func getLiveSessionModels(now time.Time, ttl time.Duration) map[string]string {
 
 	sessionModelCache.mu.Lock()
 	if now.Before(sessionModelCache.expiresAt) {
-		models := cloneStringMap(sessionModelCache.models)
+		models := maps.Clone(sessionModelCache.models)
 		sessionModelCache.mu.Unlock()
 		return models
 	}
@@ -40,9 +40,9 @@ func getLiveSessionModels(now time.Time, ttl time.Duration) map[string]string {
 	models := fetchLiveSessionModels()
 
 	sessionModelCache.mu.Lock()
-	sessionModelCache.models = cloneStringMap(models)
+	sessionModelCache.models = maps.Clone(models)
 	sessionModelCache.expiresAt = now.Add(ttl)
-	cached := cloneStringMap(sessionModelCache.models)
+	cached := maps.Clone(sessionModelCache.models)
 	sessionModelCache.mu.Unlock()
 	return cached
 }
@@ -90,11 +90,3 @@ func fetchLiveSessionModelsCLI() map[string]string {
 	return models
 }
 
-func cloneStringMap(in map[string]string) map[string]string {
-	if len(in) == 0 {
-		return map[string]string{}
-	}
-	out := make(map[string]string, len(in))
-	maps.Copy(out, in)
-	return out
-}
