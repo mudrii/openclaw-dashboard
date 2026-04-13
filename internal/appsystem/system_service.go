@@ -258,7 +258,6 @@ func (s *SystemService) getLatestVersionCached() string {
 		s.latestMu.RUnlock()
 		return v
 	}
-	cached := s.latestVer
 	s.latestMu.RUnlock()
 
 	s.latestMu.Lock()
@@ -272,6 +271,7 @@ func (s *SystemService) getLatestVersionCached() string {
 		s.latestMu.Unlock()
 		return v
 	}
+	v := s.latestVer // capture before goroutine mutates
 	s.latestRefresh = true
 	s.latestMu.Unlock()
 
@@ -287,7 +287,7 @@ func (s *SystemService) getLatestVersionCached() string {
 		s.latestMu.Unlock()
 	}()
 
-	return cached
+	return v
 }
 
 // collectDiskRoot uses syscall.Statfs — works on both darwin and linux.
