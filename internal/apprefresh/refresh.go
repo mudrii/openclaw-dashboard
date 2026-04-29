@@ -883,7 +883,16 @@ func CollectCrons(cronPath string, loc *time.Location) []map[string]any {
 			schedStr = string(b)
 		}
 
-		// Prefer sidecar state (live runtime) over inline state (legacy).
+		// Sidecar override contract (OpenClaw v2026.4.20+):
+		// When jobs-state.json contains an entry for this job id, it is the
+		// authoritative live state — we replace inline state wholesale rather
+		// than field-merging. Rationale: in v2026.4.20+, OpenClaw stops writing
+		// runtime state to jobs.json, so any inline fields present there are
+		// pre-migration leftovers, not authoritative. A field-level merge could
+		// surface stale lastRun/nextRun values from a long-superseded inline
+		// snapshot. Inline state remains the fallback only when the sidecar is
+		// absent entirely (loadCronStateSidecar returns nil) or has no entry
+		// for this id (legacy jobs.json layout, sidecar missing this job).
 		state := asObj(jm["state"])
 		if id := jsonStr(jm, "id"); id != "" {
 			if sc, ok := sidecarStates[id]; ok {

@@ -240,6 +240,110 @@ func TestCollectCrons_BothPresent_SidecarWins(t *testing.T) {
 	}
 }
 
+// TestCollectCrons_SidecarEmptyStateFallsBackToInline: when the sidecar has an
+// entry for this job id but its `state` field is `{}` (empty object — the OpenClaw
+// gateway has registered the job but never populated runtime state, e.g. brand-new
+// schedule before its first run), loadCronStateSidecar must skip the entry and
+// CollectCrons must fall back to inline state if available. Otherwise the UI would
+// show a job with empty lastStatus/lastRun even when a legitimate inline value
+// exists (e.g. mid-migration repos where jobs.json still has stale-but-non-empty
+// state and jobs-state.json has been initialized with empty objects).
+func TestCollectCrons_SidecarEmptyStateFallsBackToInline(t *testing.T) {
+	dir := t.TempDir()
+	cronPath := filepath.Join(dir, "jobs.json")
+	statePath := filepath.Join(dir, "jobs-state.json")
+
+	id := "empty-sidecar-id"
+	jobs := map[string]any{
+		"jobs": []any{
+			map[string]any{
+				"id":       id,
+				"name":     "x",
+				"enabled":  true,
+				"schedule": map[string]any{"kind": "cron", "expr": "0 0 * * *"},
+				"state": map[string]any{
+					"lastStatus":     "ok",
+					"lastRunAtMs":    float64(1777025060681),
+					"nextRunAtMs":    float64(1777046660670),
+					"lastDurationMs": float64(555),
+				},
+			},
+		},
+	}
+	sidecar := map[string]any{
+		"jobs": map[string]any{
+			id: map[string]any{"state": map[string]any{}}, // empty state
+		},
+	}
+	jb, _ := json.Marshal(jobs)
+	sb, _ := json.Marshal(sidecar)
+	_ = os.WriteFile(cronPath, jb, 0o644)
+	_ = os.WriteFile(statePath, sb, 0o644)
+
+	crons := CollectCrons(cronPath, time.UTC)
+	if len(crons) != 1 {
+		t.Fatalf("expected 1 cron, got %d", len(crons))
+	}
+	if crons[0]["lastStatus"] != "ok" {
+		t.Errorf("lastStatus = %v, want ok (inline fallback when sidecar state is empty)", crons[0]["lastStatus"])
+	}
+	if crons[0]["lastDurationMs"] != 555 {
+		t.Errorf("lastDurationMs = %v, want 555 (inline fallback)", crons[0]["lastDurationMs"])
+	}
+}
+
+// TestCollectCrons_SidecarPartialOverridesInlineFully: locks in the documented
+// override contract — when sidecar has an entry with non-empty state, it fully
+// replaces inline state even when the sidecar entry has fewer populated fields
+// than inline. This prevents stale inline data from leaking through into the UI.
+// The inline state has lastDurationMs=999; the sidecar has lastStatus only
+// (no duration). Result must reflect the sidecar's missing duration as 0,
+// not the inline 999.
+func TestCollectCrons_SidecarPartialOverridesInlineFully(t *testing.T) {
+	dir := t.TempDir()
+	cronPath := filepath.Join(dir, "jobs.json")
+	statePath := filepath.Join(dir, "jobs-state.json")
+
+	id := "partial-sidecar-id"
+	jobs := map[string]any{
+		"jobs": []any{
+			map[string]any{
+				"id":       id,
+				"name":     "x",
+				"enabled":  true,
+				"schedule": map[string]any{"kind": "cron", "expr": "0 0 * * *"},
+				"state": map[string]any{
+					"lastStatus":     "stale-from-inline",
+					"lastDurationMs": float64(999),
+				},
+			},
+		},
+	}
+	sidecar := map[string]any{
+		"jobs": map[string]any{
+			id: map[string]any{
+				"state": map[string]any{
+					"lastStatus": "ok-from-sidecar",
+					// no lastDurationMs; contract says inline 999 must NOT survive
+				},
+			},
+		},
+	}
+	jb, _ := json.Marshal(jobs)
+	sb, _ := json.Marshal(sidecar)
+	_ = os.WriteFile(cronPath, jb, 0o644)
+	_ = os.WriteFile(statePath, sb, 0o644)
+
+	crons := CollectCrons(cronPath, time.UTC)
+	if crons[0]["lastStatus"] != "ok-from-sidecar" {
+		t.Errorf("lastStatus = %v, want ok-from-sidecar", crons[0]["lastStatus"])
+	}
+	if crons[0]["lastDurationMs"] != 0 {
+		t.Errorf("lastDurationMs = %v, want 0 — sidecar must fully replace inline, not merge",
+			crons[0]["lastDurationMs"])
+	}
+}
+
 // TestCollectCrons_SidecarLastRunStatusFallback: when sidecar omits lastStatus but
 // has lastRunStatus, use lastRunStatus.
 func TestCollectCrons_SidecarLastRunStatusFallback(t *testing.T) {
