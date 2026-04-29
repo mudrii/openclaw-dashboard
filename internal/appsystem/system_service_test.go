@@ -118,20 +118,16 @@ func TestParseGatewayStatusJSON_Offline(t *testing.T) {
 }
 
 func TestGetLatestVersionCached_FailureIsNegativelyCached(t *testing.T) {
-	prev := fetchLatestVersion
-	defer func() { fetchLatestVersion = prev }()
-
 	var calls atomic.Int32
-	fetchLatestVersion = func(ctx context.Context, timeoutMs int) string {
-		calls.Add(1)
-		return ""
-	}
-
 	svc := NewSystemService(appconfig.SystemConfig{
 		Enabled:            true,
 		VersionsTTLSeconds: 60,
 		GatewayTimeoutMs:   100,
 	}, "test", context.Background())
+	svc.fetchLatest = func(ctx context.Context, timeoutMs int) string {
+		calls.Add(1)
+		return ""
+	}
 
 	_ = svc.getLatestVersionCached()
 	deadline := time.Now().Add(500 * time.Millisecond)

@@ -20,15 +20,11 @@ func TestGetLatestVersionCached_ConcurrentCalls_NoRace(t *testing.T) {
 	}
 
 	var fetchCount atomic.Int32
-	original := fetchLatestVersion
-	t.Cleanup(func() { fetchLatestVersion = original })
-
-	fetchLatestVersion = func(_ context.Context, _ int) string {
+	svc := NewSystemService(cfg, "test", context.Background())
+	svc.fetchLatest = func(_ context.Context, _ int) string {
 		fetchCount.Add(1)
 		return "2026.4.11"
 	}
-
-	svc := NewSystemService(cfg, "test", context.Background())
 
 	const goroutines = 20
 	var wg sync.WaitGroup
@@ -79,16 +75,12 @@ func TestGetLatestVersionCached_ReturnsCachedValueWhileRefreshing(t *testing.T) 
 		PollSeconds:        10,
 	}
 
-	original := fetchLatestVersion
-	t.Cleanup(func() { fetchLatestVersion = original })
-
 	fetched := make(chan struct{})
-	fetchLatestVersion = func(_ context.Context, _ int) string {
+	svc := NewSystemService(cfg, "test", context.Background())
+	svc.fetchLatest = func(_ context.Context, _ int) string {
 		<-fetched
 		return "2026.4.11-new"
 	}
-
-	svc := NewSystemService(cfg, "test", context.Background())
 
 	// Pre-seed expired cache
 	svc.latestMu.Lock()
@@ -121,14 +113,10 @@ func TestGetLatestVersionCached_NegativeCaching(t *testing.T) {
 		PollSeconds:        10,
 	}
 
-	original := fetchLatestVersion
-	t.Cleanup(func() { fetchLatestVersion = original })
-
-	fetchLatestVersion = func(_ context.Context, _ int) string {
+	svc := NewSystemService(cfg, "test", context.Background())
+	svc.fetchLatest = func(_ context.Context, _ int) string {
 		return "" // simulate failure
 	}
-
-	svc := NewSystemService(cfg, "test", context.Background())
 
 	svc.getLatestVersionCached()
 	waitForLatestRefreshDone(t, svc)

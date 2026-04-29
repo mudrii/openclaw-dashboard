@@ -28,6 +28,12 @@ type SystemService struct {
 	dashVer     string
 	shutdownCtx context.Context // lifecycle context — cancelled on graceful shutdown; do NOT use for per-request ops
 
+	// fetchLatest probes the npm registry for the newest published openclaw
+	// version. Set per-instance so each test can override it without touching a
+	// shared package var (which previously raced with the goroutine in
+	// getLatestVersionCached during test cleanup).
+	fetchLatest func(ctx context.Context, timeoutMs int) string
+
 	metricsMu           sync.RWMutex
 	metricsPayload      []byte
 	metricsStalePayload []byte // pre-computed version with "stale":true
@@ -48,11 +54,15 @@ type SystemService struct {
 	binPath string
 }
 
-var fetchLatestVersion = FetchLatestNpmVersion
 var sharedSystemHTTPClient = &http.Client{}
 
 func NewSystemService(cfg appconfig.SystemConfig, dashVer string, serverCtx context.Context) *SystemService {
-	return &SystemService{cfg: cfg, dashVer: dashVer, shutdownCtx: serverCtx}
+	return &SystemService{
+		cfg:         cfg,
+		dashVer:     dashVer,
+		shutdownCtx: serverCtx,
+		fetchLatest: FetchLatestNpmVersion,
+	}
 }
 
 func (s *SystemService) SetMetricsTimestampForTest(ts time.Time) {
@@ -153,8 +163,10 @@ func (s *SystemService) refresh(ctx context.Context) ([]byte, bool) {
 	}()
 	go func() {
 		defer wg.Done()
-		// Pass empty SystemVersions; ver may not be ready when this goroutine
-		// runs, so we patch openclaw.Status.{Current,Latest}Version after wg.Wait().
+		// Run independently of the versions goroutine — both probe the gateway,
+		// so serializing them would double the cold-path wall time. We pass
+		// SystemVersions{} here and patch openclaw.Status.{Current,Latest}Version
+		// from `ver` after wg.Wait() once both goroutines have finished.
 		openclaw = CollectOpenclawRuntime(coldCtx, oclawBin, s.cfg.GatewayTimeoutMs, s.cfg.GatewayPort, SystemVersions{})
 	}()
 	go func() { defer wg.Done(); disk = CollectDiskRoot(s.cfg.DiskPath) }()
@@ -310,12 +322,21 @@ func (s *SystemService) getLatestVersionCached() string {
 	s.latestMu.Unlock()
 
 	go func() {
-		latest := fetchLatestVersion(s.shutdownCtx, s.cfg.GatewayTimeoutMs)
+		latest := s.fetchLatest(s.shutdownCtx, s.cfg.GatewayTimeoutMs)
 		now := time.Now()
 		s.latestMu.Lock()
 		if latest != "" {
 			s.latestVer = latest
 		}
+		// Negative caching: stamp latestAt unconditionally so an empty result
+		// (npm down, decode failure, non-200) suppresses retries for the full
+		// VersionsTTLSeconds window. This protects the npm registry from
+		// request storms during outages — at the cost of a slight recovery
+		// delay (≤ TTL) when npm comes back. NOT analogous to the verAt cold-
+		// path poisoning fix: that case caches *partial* results from a
+		// deadline-cancelled in-progress collection; this case caches a
+		// completed-but-failed external probe. Different concerns, different
+		// answers. Locked in by TestGetLatestVersionCached_NegativeCaching.
 		s.latestAt = now
 		s.latestRefresh = false
 		s.latestMu.Unlock()

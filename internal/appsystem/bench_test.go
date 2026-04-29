@@ -10,17 +10,17 @@ import (
 
 func BenchmarkGetJSON_CacheHit(b *testing.B) {
 	cfg := appconfig.SystemConfig{
-		Enabled:          true,
-		MetricsTTLSeconds: 3600,
-		PollSeconds:      10,
-		DiskPath:         "/",
-		GatewayTimeoutMs: 100,
-		GatewayPort:      18789,
+		Enabled:            true,
+		MetricsTTLSeconds:  3600,
+		PollSeconds:        10,
+		DiskPath:           "/",
+		GatewayTimeoutMs:   100,
+		GatewayPort:        18789,
 		VersionsTTLSeconds: 3600,
-		CPU:  appconfig.MetricThreshold{Warn: 80, Critical: 95},
-		RAM:  appconfig.MetricThreshold{Warn: 80, Critical: 95},
-		Swap: appconfig.MetricThreshold{Warn: 50, Critical: 80},
-		Disk: appconfig.MetricThreshold{Warn: 80, Critical: 95},
+		CPU:                appconfig.MetricThreshold{Warn: 80, Critical: 95},
+		RAM:                appconfig.MetricThreshold{Warn: 80, Critical: 95},
+		Swap:               appconfig.MetricThreshold{Warn: 50, Critical: 80},
+		Disk:               appconfig.MetricThreshold{Warn: 80, Critical: 95},
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
