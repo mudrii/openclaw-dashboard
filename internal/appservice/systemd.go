@@ -26,6 +26,8 @@ After=network.target
 [Service]
 Type=simple
 WorkingDirectory={{systemdQuote .WorkDir}}
+Environment={{systemdQuote (printf "OPENCLAW_HOME=%s" .OpenclawHome)}}
+Environment={{systemdQuote (printf "PATH=%s" .PathEnv)}}
 ExecStart={{systemdQuote .BinPath}} --bind {{systemdQuote .Host}} --port {{.Port}}
 Restart=always
 RestartSec=5
@@ -35,10 +37,12 @@ WantedBy=default.target
 `))
 
 type unitData struct {
-	BinPath string
-	Host    string
-	Port    int
-	WorkDir string
+	BinPath      string
+	Host         string
+	Port         int
+	WorkDir      string
+	OpenclawHome string
+	PathEnv      string
 }
 
 var unitPortRe = regexp.MustCompile(`(?:^|\s)--port\s+"?([0-9]+)"?`)
@@ -89,7 +93,15 @@ func (sb *systemdBackend) Install(cfg InstallConfig) error {
 		return fmt.Errorf("create unit file: %w", err)
 	}
 	defer func() { _ = f.Close() }()
-	if err := unitTmpl.Execute(f, unitData{BinPath: cfg.BinPath, Host: cfg.Host, Port: cfg.Port, WorkDir: cfg.WorkDir}); err != nil {
+	data := unitData{
+		BinPath:      cfg.BinPath,
+		Host:         cfg.Host,
+		Port:         cfg.Port,
+		WorkDir:      cfg.WorkDir,
+		OpenclawHome: systemdOpenclawHome(),
+		PathEnv:      systemdPathEnv(),
+	}
+	if err := unitTmpl.Execute(f, data); err != nil {
 		return fmt.Errorf("write unit file: %w", err)
 	}
 	if out, err := sb.ctl("daemon-reload"); err != nil {
@@ -98,10 +110,50 @@ func (sb *systemdBackend) Install(cfg InstallConfig) error {
 	if out, err := sb.ctl("enable", systemdUnitName); err != nil {
 		return fmt.Errorf("enable: %s: %w", strings.TrimSpace(string(out)), err)
 	}
-	if out, err := sb.ctl("start", systemdUnitName); err != nil {
-		return fmt.Errorf("start: %s: %w", strings.TrimSpace(string(out)), err)
+	// Use restart so a reinstall with changed --bind/--port/Env actually picks
+	// up the new unit content. systemctl restart starts the unit if it is not
+	// currently running, so this also works for first installs.
+	if out, err := sb.ctl("restart", systemdUnitName); err != nil {
+		return fmt.Errorf("restart: %s: %w", strings.TrimSpace(string(out)), err)
 	}
 	return nil
+}
+
+func systemdOpenclawHome() string {
+	if path := strings.TrimSpace(os.Getenv("OPENCLAW_HOME")); path != "" {
+		return path
+	}
+	if home, err := os.UserHomeDir(); err == nil && home != "" {
+		return filepath.Join(home, ".openclaw")
+	}
+	return ""
+}
+
+func systemdPathEnv() string {
+	seen := make(map[string]struct{})
+	var paths []string
+	add := func(entries ...string) {
+		for _, entry := range entries {
+			entry = strings.TrimSpace(entry)
+			if entry == "" {
+				continue
+			}
+			if _, ok := seen[entry]; ok {
+				continue
+			}
+			seen[entry] = struct{}{}
+			paths = append(paths, entry)
+		}
+	}
+	add(strings.Split(os.Getenv("PATH"), ":")...)
+	add(
+		"/usr/local/bin",
+		"/usr/bin",
+		"/bin",
+		"/usr/sbin",
+		"/sbin",
+	)
+	return strings.Join(paths, ":")
 }
 
 func (sb *systemdBackend) Uninstall() error {

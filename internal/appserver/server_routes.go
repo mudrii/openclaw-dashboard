@@ -85,6 +85,18 @@ func (s *Server) notFound(w http.ResponseWriter, r *http.Request) {
 	http.NotFound(w, r)
 }
 
+// setCORSHeaders reflects any loopback origin (any port) and defaults to the
+// configured server origin otherwise. This is safe because:
+//   - The dashboard binds to 127.0.0.1 by default (Server.Host), so non-loopback
+//     origins cannot reach it over the network in the typical deployment.
+//   - No Access-Control-Allow-Credentials header is set, so a cross-origin
+//     request cannot carry cookies or HTTP auth.
+//   - The /api/chat gateway token is server-side (s.gatewayToken from .env),
+//     never client-supplied, and that endpoint is rate-limited to 10/min per IP.
+//
+// Loopback reflection exists so a developer running the SPA on a separate
+// localhost port (e.g. Vite on :5173) can talk to the dashboard during
+// development without disabling CORS.
 func (s *Server) setCORSHeaders(w http.ResponseWriter, r *http.Request) {
 	vary := w.Header().Get("Vary")
 	switch {

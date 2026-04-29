@@ -2,6 +2,8 @@
 
 ## ✅ Released
 
+- **v2026.4.29**: cron sidecar merge (#25), `/api/system` cold-path deadline + degraded fallback (#26), `system.gatewayPort` inheritance fix, systemd `Environment=` + `restart` on reinstall, per-instance latest-version fetcher
+- **v2026.4.13**: diagnostics + log visibility (#14), release hardening pass, structured logging cleanup
 - Built-in service management (`install`/`uninstall`/`start`/`stop`/`restart`/`status`) via launchd (macOS) and systemd (Linux)
 - Security hardening (XSS, CORS, O(N²), shell safety, file handles)
 - Performance, dirty-checking & test suite (initial 44 ACs, rAF, scroll preserve, tab fix)

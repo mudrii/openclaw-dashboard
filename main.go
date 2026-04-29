@@ -58,6 +58,7 @@ func Main() int {
 			if version == "" {
 				version = detectVersion(cmdCtx, dir)
 			}
+			version = strings.TrimPrefix(version, "v")
 			cfg := loadConfig(dir)
 
 			// env var overrides
@@ -111,6 +112,7 @@ func Main() int {
 	if version == "" {
 		version = detectVersion(cmdCtx, dir)
 	}
+	version = strings.TrimPrefix(version, "v")
 	cfg := loadConfig(dir)
 
 	// Env var defaults

@@ -283,7 +283,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'SF Pro','Helvetica Neue',sans
     </div>
   </div>
   <div class="header-right">
-    <a href="https://github.com/mudrii/openclaw-dashboard" target="_blank" title="View on GitHub" style="display:flex;align-items:center;gap:4px;font-size:11px;color:var(--dim);text-decoration:none;opacity:0.7;transition:opacity 0.2s" onmouseover="this.style.opacity=1" onmouseout="this.style.opacity=0.7">
+    <a href="https://github.com/mudrii/openclaw-dashboard" target="_blank" rel="noopener noreferrer" title="View on GitHub" style="display:flex;align-items:center;gap:4px;font-size:11px;color:var(--dim);text-decoration:none;opacity:0.7;transition:opacity 0.2s" onmouseover="this.style.opacity=1" onmouseout="this.style.opacity=0.7">
       <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
       __RUNTIME__ · v__VERSION__
     </a>
@@ -1710,7 +1710,7 @@ const Renderer = {
     $('skillsGrid').innerHTML=(D.skills||[]).map(s=>{
       const c=s.active?'color:var(--green);border-color:rgba(74,222,128,.2);background:rgba(74,222,128,.05)':'color:var(--dim);border-color:var(--border)';
       return `<span class="skill-tag" style="${c}">${esc(s.name)}</span>`;
-    }).join('');
+    }).join('')||'<div class="empty">No skills configured</div>';
   }
 
   // Git
@@ -1989,6 +1989,18 @@ const SystemBar = {
     if(im<lm)return(lm-im)>=2?2:1;if(im>lm)return 0;
     return(ld-id)>=2?2:1;
   },
+  _kv(k,v,c='var(--text)'){return `<div style="display:flex;justify-content:space-between;margin-bottom:4px"><span style="font-size:12px;color:var(--muted)">${esc(k)}</span><span style="font-size:12px;color:${c};font-weight:600">${esc(String(v))}</span></div>`;},
+  renderGatewayDegraded(reason){
+    const el=$('gatewayRuntimePanelInner');
+    if(el){
+      el.innerHTML=[
+        this._kv('State','Unavailable','var(--red)'),
+        this._kv('Source',reason,'var(--muted)'),
+      ].join('');
+    }
+    window._sysBarActive=false;
+    window._gwOnlineConfirmed=false;
+  },
   _gatewayState(d) {
     const gwRuntime=d.openclaw?.gateway||{};
     const gwVersion=d.versions?.gateway||{};
@@ -2105,12 +2117,12 @@ const SystemBar = {
       const upTxt=gwState.source==='runtime'?this.fmtDurationMs(gwRuntime.uptimeMs)||gwVersion.uptime||'—':gwVersion.uptime||'—';
       const probeSource=gwState.source==='runtime'?'live probes':'status fallback';
       gwRtEl.innerHTML=[
-        kv('State', stateLabel, stateColor),
-        kv('Version', gwVersion.version||'—'),
-        kv('PID', gwVersion.pid||'—'),
-        kv('Uptime', upTxt),
-        kv('Memory', gwVersion.memory||'—'),
-        kv('Source', probeSource, 'var(--muted)'),
+        this._kv('State', stateLabel, stateColor),
+        this._kv('Version', gwVersion.version||'—'),
+        this._kv('PID', gwVersion.pid||'—'),
+        this._kv('Uptime', upTxt),
+        this._kv('Memory', gwVersion.memory||'—'),
+        this._kv('Source', probeSource, 'var(--muted)'),
       ].join('');
     }
 
@@ -2118,8 +2130,18 @@ const SystemBar = {
   },
   async fetch() {
     if(this._inflight)return; this._inflight=true;
-    try{const r=await fetch('/api/system');if(r.ok){this.render(await r.json());}else{window._sysBarActive=false;window._gwOnlineConfirmed=false;}}
-    catch(e){window._sysBarActive=false;window._gwOnlineConfirmed=false;}finally{this._inflight=false;}
+    // 6000ms client timeout; backend cold-path budget is ~4000ms, this allows
+    // a small margin for marshal + network jitter before declaring degraded.
+    const ctl=new AbortController();
+    const t=setTimeout(()=>ctl.abort(),6000);
+    try{
+      const r=await fetch('/api/system',{signal:ctl.signal});
+      if(r.ok){this.render(await r.json());}
+      else{this.renderGatewayDegraded('http '+r.status);}
+    }catch(e){
+      const reason=e&&e.name==='AbortError'?'timeout':'network error';
+      this.renderGatewayDegraded(reason);
+    }finally{clearTimeout(t);this._inflight=false;}
   },
   start(ms){ms=Math.max(ms||5000,2000);if(this._timer&&this._lastMs===ms)return;if(this._timer)clearInterval(this._timer);this._lastMs=ms;this.fetch();this._timer=setInterval(()=>this.fetch(),ms);},
   _lastMs:0

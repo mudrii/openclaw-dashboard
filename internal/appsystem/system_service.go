@@ -28,6 +28,12 @@ type SystemService struct {
 	dashVer     string
 	shutdownCtx context.Context // lifecycle context — cancelled on graceful shutdown; do NOT use for per-request ops
 
+	// fetchLatest probes the npm registry for the newest published openclaw
+	// version. Set per-instance so each test can override it without touching a
+	// shared package var (which previously raced with the goroutine in
+	// getLatestVersionCached during test cleanup).
+	fetchLatest func(ctx context.Context, timeoutMs int) string
+
 	metricsMu           sync.RWMutex
 	metricsPayload      []byte
 	metricsStalePayload []byte // pre-computed version with "stale":true
@@ -48,11 +54,15 @@ type SystemService struct {
 	binPath string
 }
 
-var fetchLatestVersion = FetchLatestNpmVersion
 var sharedSystemHTTPClient = &http.Client{}
 
 func NewSystemService(cfg appconfig.SystemConfig, dashVer string, serverCtx context.Context) *SystemService {
-	return &SystemService{cfg: cfg, dashVer: dashVer, shutdownCtx: serverCtx}
+	return &SystemService{
+		cfg:         cfg,
+		dashVer:     dashVer,
+		shutdownCtx: serverCtx,
+		fetchLatest: FetchLatestNpmVersion,
+	}
 }
 
 func (s *SystemService) SetMetricsTimestampForTest(ts time.Time) {
@@ -120,17 +130,22 @@ func (s *SystemService) GetJSON(ctx context.Context) (int, []byte) {
 
 // refresh collects fresh metrics and returns (jsonBytes, isHardFail).
 // isHardFail=true when ALL core collectors failed (no useful data).
+//
+// Cold-path bounding: the entire collection runs under a single
+// context.WithTimeout(ColdPathTimeoutMs) so a hung gateway can never drag the
+// whole refresh past the frontend's fetch deadline. Versions and OpenClaw
+// runtime are collected in parallel; on the cold path that halves the worst
+// case from ~2 × GatewayTimeoutMs down to ~1 × GatewayTimeoutMs (or the cold
+// budget, whichever fires first).
 func (s *SystemService) refresh(ctx context.Context) ([]byte, bool) {
-	// Collect versions first (heavily cached — 300s TTL, effectively free on hot path).
-	// This guarantees collectOpenclawRuntime receives real version data instead of an
-	// empty SystemVersions{}, eliminating the fragile post-hoc patching that previously
-	// existed (B1 fix).
-	ver := s.getVersionsCached(ctx)
-	if latest := s.getLatestVersionCached(); latest != "" {
-		ver.Latest = latest
+	coldPath := time.Duration(s.cfg.ColdPathTimeoutMs) * time.Millisecond
+	if coldPath <= 0 {
+		coldPath = 4 * time.Second
 	}
+	coldCtx, cancel := context.WithTimeout(ctx, coldPath)
+	defer cancel()
 
-	// Run OpenClaw runtime + disk + CPU/RAM/Swap in parallel for minimum wall-clock time.
+	var ver SystemVersions
 	var openclaw SystemOpenclaw
 	var disk SystemDisk
 	var cpu SystemCPU
@@ -138,17 +153,37 @@ func (s *SystemService) refresh(ctx context.Context) ([]byte, bool) {
 	var swap SystemSwap
 	oclawBin := s.openclawBin()
 	var wg sync.WaitGroup
-	wg.Add(3)
+	wg.Add(4)
 	go func() {
 		defer wg.Done()
-		openclaw = CollectOpenclawRuntime(ctx, oclawBin, s.cfg.GatewayTimeoutMs, s.cfg.GatewayPort, ver)
+		ver = s.getVersionsCached(coldCtx)
+		if latest := s.getLatestVersionCached(); latest != "" {
+			ver.Latest = latest
+		}
+	}()
+	go func() {
+		defer wg.Done()
+		// Run independently of the versions goroutine — both probe the gateway,
+		// so serializing them would double the cold-path wall time. We pass
+		// SystemVersions{} here and patch openclaw.Status.{Current,Latest}Version
+		// from `ver` after wg.Wait() once both goroutines have finished.
+		openclaw = CollectOpenclawRuntime(coldCtx, oclawBin, s.cfg.GatewayTimeoutMs, s.cfg.GatewayPort, SystemVersions{})
 	}()
 	go func() { defer wg.Done(); disk = CollectDiskRoot(s.cfg.DiskPath) }()
 	go func() {
 		defer wg.Done()
-		cpu, ram, swap = collectCPURAMSwapParallel(ctx)
+		cpu, ram, swap = collectCPURAMSwapParallel(coldCtx)
 	}()
 	wg.Wait()
+
+	deadlineHit := coldCtx.Err() == context.DeadlineExceeded
+
+	if openclaw.Status.CurrentVersion == "" {
+		openclaw.Status.CurrentVersion = ver.Openclaw
+	}
+	if openclaw.Status.LatestVersion == "" {
+		openclaw.Status.LatestVersion = ver.Latest
+	}
 
 	// Hard fail = all four core collectors failed
 	allFailed := cpu.Error != nil && ram.Error != nil && swap.Error != nil && disk.Error != nil
@@ -192,6 +227,10 @@ func (s *SystemService) refresh(ctx context.Context) ([]byte, bool) {
 		for _, e := range openclaw.Errors {
 			resp.Errors = append(resp.Errors, "openclaw: "+e)
 		}
+	}
+	if deadlineHit {
+		resp.Degraded = true
+		resp.Errors = append(resp.Errors, "cold path: deadline exceeded")
 	}
 
 	b, err := json.Marshal(resp)
@@ -244,9 +283,15 @@ func (s *SystemService) getVersionsCached(ctx context.Context) SystemVersions {
 
 	v := CollectVersionsLocal(ctx, s.dashVer, s.cfg.GatewayTimeoutMs, s.cfg.GatewayPort, s.openclawBin())
 	s.verMu.Lock()
-	s.verCached = v
-	s.verAt = time.Now()
 	s.verRefresh = false
+	// Cache only when ctx finished cleanly. If a cold-path deadline cut us
+	// short, the result may be partial (e.g. empty Openclaw or unknown Gateway
+	// status); persisting it would poison the warm cache and skip the next
+	// real collection silently.
+	if ctx.Err() == nil {
+		s.verCached = v
+		s.verAt = time.Now()
+	}
 	s.verMu.Unlock()
 	return v
 }
@@ -277,12 +322,21 @@ func (s *SystemService) getLatestVersionCached() string {
 	s.latestMu.Unlock()
 
 	go func() {
-		latest := fetchLatestVersion(s.shutdownCtx, s.cfg.GatewayTimeoutMs)
+		latest := s.fetchLatest(s.shutdownCtx, s.cfg.GatewayTimeoutMs)
 		now := time.Now()
 		s.latestMu.Lock()
 		if latest != "" {
 			s.latestVer = latest
 		}
+		// Negative caching: stamp latestAt unconditionally so an empty result
+		// (npm down, decode failure, non-200) suppresses retries for the full
+		// VersionsTTLSeconds window. This protects the npm registry from
+		// request storms during outages — at the cost of a slight recovery
+		// delay (≤ TTL) when npm comes back. NOT analogous to the verAt cold-
+		// path poisoning fix: that case caches *partial* results from a
+		// deadline-cancelled in-progress collection; this case caches a
+		// completed-but-failed external probe. Different concerns, different
+		// answers. Locked in by TestGetLatestVersionCached_NegativeCaching.
 		s.latestAt = now
 		s.latestRefresh = false
 		s.latestMu.Unlock()

@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "jobs": [
+    {
+      "id": "legacy-job-1",
+      "name": "Legacy inline-state job",
+      "enabled": true,
+      "schedule": {
+        "kind": "cron",
+        "expr": "0 9 * * *"
+      },
+      "payload": {
+        "model": "claude-sonnet"
+      },
+      "state": {
+        "nextRunAtMs": 1777046660670,
+        "lastRunAtMs": 1777025060681,
+        "lastStatus": "ok",
+        "lastDurationMs": 12345
+      }
+    }
+  ]
+}

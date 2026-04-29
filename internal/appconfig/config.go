@@ -62,19 +62,24 @@ type MetricThreshold struct {
 }
 
 type SystemConfig struct {
-	Enabled            bool            `json:"enabled"`
-	PollSeconds        int             `json:"pollSeconds"`
-	MetricsTTLSeconds  int             `json:"metricsTtlSeconds"`
-	VersionsTTLSeconds int             `json:"versionsTtlSeconds"`
-	GatewayTimeoutMs   int             `json:"gatewayTimeoutMs"`
-	GatewayPort        int             `json:"gatewayPort"`
-	DiskPath           string          `json:"diskPath"`
-	WarnPercent        float64         `json:"warnPercent"`
-	CriticalPercent    float64         `json:"criticalPercent"`
-	CPU                MetricThreshold `json:"cpu"`
-	RAM                MetricThreshold `json:"ram"`
-	Swap               MetricThreshold `json:"swap"`
-	Disk               MetricThreshold `json:"disk"`
+	Enabled            bool `json:"enabled"`
+	PollSeconds        int  `json:"pollSeconds"`
+	MetricsTTLSeconds  int  `json:"metricsTtlSeconds"`
+	VersionsTTLSeconds int  `json:"versionsTtlSeconds"`
+	GatewayTimeoutMs   int  `json:"gatewayTimeoutMs"`
+	// ColdPathTimeoutMs bounds the worst-case wall time of a cold /api/system
+	// collection (no warm cache). Each subcollector still has its own per-probe
+	// timeout; this is the overall budget that prevents a slow gateway from
+	// dragging the whole refresh past the frontend fetch deadline.
+	ColdPathTimeoutMs int             `json:"coldPathTimeoutMs"`
+	GatewayPort       int             `json:"gatewayPort"`
+	DiskPath          string          `json:"diskPath"`
+	WarnPercent       float64         `json:"warnPercent"`
+	CriticalPercent   float64         `json:"criticalPercent"`
+	CPU               MetricThreshold `json:"cpu"`
+	RAM               MetricThreshold `json:"ram"`
+	Swap              MetricThreshold `json:"swap"`
+	Disk              MetricThreshold `json:"disk"`
 }
 
 type Config struct {
@@ -127,14 +132,17 @@ func Default() Config {
 			MetricsTTLSeconds:  10,
 			VersionsTTLSeconds: 300,
 			GatewayTimeoutMs:   5000,
-			GatewayPort:        18789,
-			DiskPath:           "/",
-			WarnPercent:        70,
-			CriticalPercent:    85,
-			CPU:                MetricThreshold{Warn: 80, Critical: 95},
-			RAM:                MetricThreshold{Warn: 80, Critical: 95},
-			Swap:               MetricThreshold{Warn: 80, Critical: 95},
-			Disk:               MetricThreshold{Warn: 80, Critical: 95},
+			ColdPathTimeoutMs:  4000,
+			// GatewayPort intentionally left zero so Load() can inherit from
+			// AI.GatewayPort when system.gatewayPort is omitted in config.json.
+			// Pre-filling here would mask user overrides on the AI side.
+			DiskPath:        "/",
+			WarnPercent:     70,
+			CriticalPercent: 85,
+			CPU:             MetricThreshold{Warn: 80, Critical: 95},
+			RAM:             MetricThreshold{Warn: 80, Critical: 95},
+			Swap:            MetricThreshold{Warn: 80, Critical: 95},
+			Disk:            MetricThreshold{Warn: 80, Critical: 95},
 		},
 	}
 }
@@ -148,11 +156,11 @@ func Load(dir string) Config {
 	}
 	if err != nil {
 		slog.Warn("[dashboard] config: no config.json found, using defaults")
-		return cfg
-	}
-	defer func() { _ = f.Close() }()
-	if err := json.NewDecoder(f).Decode(&cfg); err != nil {
-		slog.Warn("[dashboard] invalid config.json, using defaults for missing/invalid fields", "error", err)
+	} else {
+		defer func() { _ = f.Close() }()
+		if err := json.NewDecoder(f).Decode(&cfg); err != nil {
+			slog.Warn("[dashboard] invalid config.json, using defaults for missing/invalid fields", "error", err)
+		}
 	}
 	if len(cfg.Logs.Sources) == 0 && len(cfg.Logs.LogSources) > 0 {
 		cfg.Logs.Sources = append([]string{}, cfg.Logs.LogSources...)
@@ -207,6 +215,9 @@ func Load(dir string) Config {
 	}
 	if cfg.System.GatewayTimeoutMs < 200 || cfg.System.GatewayTimeoutMs > 15000 {
 		cfg.System.GatewayTimeoutMs = 5000
+	}
+	if cfg.System.ColdPathTimeoutMs < 200 || cfg.System.ColdPathTimeoutMs > 15000 {
+		cfg.System.ColdPathTimeoutMs = 4000
 	}
 	if cfg.System.GatewayPort <= 0 {
 		cfg.System.GatewayPort = cfg.AI.GatewayPort

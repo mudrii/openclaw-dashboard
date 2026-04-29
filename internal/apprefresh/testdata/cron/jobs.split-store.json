@@ -1,0 +1,34 @@
+{
+  "version": 1,
+  "jobs": [
+    {
+      "id": "6f34de99-6a2d-4b20-89e4-65a5e4410c1b",
+      "agentId": "main",
+      "name": "Backup workspace git push",
+      "enabled": true,
+      "schedule": {
+        "kind": "cron",
+        "expr": "0 */6 * * *"
+      },
+      "payload": {
+        "kind": "agentTurn",
+        "model": "claude-sonnet"
+      },
+      "state": {}
+    },
+    {
+      "id": "91ba6af1-9ab2-4f65-b24f-7b7f037f3778",
+      "agentId": "main",
+      "name": "Vault Inbox Pipeline",
+      "enabled": true,
+      "schedule": {
+        "kind": "every",
+        "everyMs": 3600000
+      },
+      "payload": {
+        "model": "openai-codex/gpt-5.4"
+      },
+      "state": {}
+    }
+  ]
+}

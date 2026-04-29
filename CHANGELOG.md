@@ -1,5 +1,44 @@
 # Changelog
 
+## v2026.4.29 — 2026-04-29
+
+### Fixed
+
+- **Cron table empty after OpenClaw v2026.4.20+ ([#25](https://github.com/mudrii/openclaw-dashboard/issues/25))** — OpenClaw v2026.4.20 split runtime cron state into a separate `~/.openclaw/cron/jobs-state.json` sidecar; the dashboard previously read only `jobs.json`, so the cron table rendered with blank `Last run` / `Next run` / `Last status` / `Last duration` columns. The refresh collector now merges the sidecar by `job.id`, with sidecar values winning wholesale and inline state preserved as the legacy fallback when the sidecar is absent. Dashboards now work against both pre- and post-v2026.4.20 OpenClaw installs.
+- **`/api/system` cold-start latency and Gateway Runtime stuck on "Loading…" ([#26](https://github.com/mudrii/openclaw-dashboard/issues/26))** — cold collections (no warm cache) could run 10–12s when the gateway was slow because version probes ran serially before the parallel host-metrics group; the frontend Gateway Runtime card had no fetch timeout and never repainted on `r.ok===false` or thrown errors, so it stayed on `Loading…` indefinitely.
+  - **Backend**: introduced `system.coldPathTimeoutMs` (default 4000, validated [200, 15000]); `SystemService.refresh` now wraps the entire collection in `context.WithTimeout(ColdPathTimeoutMs)` and runs versions in parallel with runtime/host-metrics goroutines. Partial cold-path results return `degraded:true` rather than blocking on the slowest probe; the version cache is only updated on full success so a deadline-cancelled collection can never poison the cached version pair.
+  - **Frontend**: `Sys.fetch()` now uses `AbortController` with a 6000ms ceiling (4000ms cold-path budget + jitter); on `r.ok===false` or thrown exception the new `renderGatewayDegraded(reason)` helper repaints the card with `State=Unavailable` and an explicit reason instead of leaving the placeholder text in place.
+  - **Skills empty state**: `web/index.html` now falls back to a `No skills configured` empty-state element when `data.skills` is `null` or `[]`, matching the existing Git Log fallback pattern.
+- **`system.gatewayPort` default masked `ai.gatewayPort` inheritance** — `appconfig.Default()` pre-filled `SystemConfig.GatewayPort` with `18789`, which defeated the `Load()` fallback that was supposed to inherit from `ai.gatewayPort` when `system.gatewayPort` was omitted. The default is now zero so the inheritance path activates as documented; user-supplied values (either side) still win.
+- **systemd unit missing `Environment=`** — Linux `service install` generated a unit file with no `OPENCLAW_HOME` or `PATH`, so the daemonized binary could not locate the openclaw CLI or OpenClaw runtime on fresh machines. The unit template now emits both `Environment=` directives, computed from the install-time `OPENCLAW_HOME` env override (falling back to `~/.openclaw`) and a deduplicated `PATH` with system bins (`/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin`) appended.
+- **systemd `service install` did not pick up changed flags on reinstall** — the install path called `systemctl --user start`, which is a no-op when the unit is already running. Switched to `systemctl --user restart` so reinstalls with changed `--bind` / `--port` / `Environment` actually apply; `restart` also starts a stopped unit so first-installs still work.
+- **Latest-version fetcher races with test cleanup** — the `getLatestVersionCached` background goroutine read a package-level `fetchLatestVersion` var that tests overrode during cleanup, occasionally producing data races under `-race`. Replaced with a per-instance `SystemService.fetchLatest` field set in the constructor; tests now isolate fully without touching shared state.
+- **Version banner double-`v` prefix** — when `BuildVersion` was injected via `-ldflags` (the `make build` path) and the `VERSION` file already started with `v`, the startup banner printed `vv2026.4.x`. Both `Main()` assignment sites now normalize via `strings.TrimPrefix(version, "v")` so the banner and `--version` flag agree on the rendered value.
+
+### Added
+
+- **`system.coldPathTimeoutMs` configuration** — overall budget for a cold `/api/system` collection; defaults to 4000ms, validated [200, 15000]ms. Documented in `README.md` and `docs/CONFIGURATION.md`.
+- **Frontend `renderGatewayDegraded(reason)` helper** — paints the Gateway Runtime card with an explicit `State=Unavailable` plus reason on fetch timeout, network error, or `r.ok===false`, so the card always reaches a terminal state.
+- **Skills empty-state fallback** in `web/index.html`, matching the Git Log pattern.
+- **Cron sidecar regression coverage** — new `internal/apprefresh/cron_state_test.go` plus split-store and legacy-inline fixtures exercise sidecar-only, legacy-only, sidecar-missing-job-id, malformed-sidecar, both-present, and `lastRunStatus` fallback paths.
+- **Cold-path regression coverage** — new `internal/appsystem/cold_path_test.go` asserts the deadline is honoured, `degraded:true` is set on partial collection, host metrics still ship when gateway probes hang, and a deadline-cancelled collection cannot poison the version cache.
+
+### Changed
+
+- **`/api/system` cold path is now fully parallel** — versions, gateway runtime, and host metrics goroutines all run inside the same bounded `context.WithTimeout`. Previously versions ran serially before the parallel block.
+- **CORS loopback-reflection invariants are now documented in code** — `internal/appserver/server_routes.go` carries an inline doc above `setCORSHeaders` enumerating why arbitrary `localhost:*` / `127.0.0.1:*` / `[::1]:*` origins are reflected (loopback bind by default, no `Allow-Credentials`, server-side gateway token, rate-limited `/api/chat`).
+- **Planning doc preserved** — the issue #25/#26 fix plan moved to `docs/plans/2026-04-29-issue-25-26-fix-plan.md` alongside other historical planning docs.
+
+### Security
+
+- **GitHub external link hardened** — added `rel="noopener noreferrer"` to the `target="_blank"` link in the dashboard header so the linked tab cannot reach back to `window.opener`. Browsers default this for `noopener` since 2021, but the explicit attribute satisfies static auditors and older browsers.
+
+### Documentation
+
+- **`README.md`** and **`docs/CONFIGURATION.md`** — added rows for `system.coldPathTimeoutMs` and `system.gatewayPort` (including the inheritance behaviour). `examples/config.full.json` now includes the full `system` block which was previously missing.
+
+---
+
 ## v2026.4.13 — 2026-04-13
 
 ### Added

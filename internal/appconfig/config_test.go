@@ -103,6 +103,51 @@ func TestLoad_InvalidJSON(t *testing.T) {
 	}
 }
 
+// TestLoad_SystemGatewayPortInheritsFromAI verifies that omitting
+// system.gatewayPort in config.json inherits the value from ai.gatewayPort,
+// which is the documented behavior. Regression: previously Default()
+// pre-populated System.GatewayPort=18789, masking any AI override.
+func TestLoad_SystemGatewayPortInheritsFromAI(t *testing.T) {
+	dir := t.TempDir()
+	data := `{"ai":{"gatewayPort":12345}}`
+	if err := os.WriteFile(filepath.Join(dir, "config.json"), []byte(data), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg := Load(dir)
+	if cfg.AI.GatewayPort != 12345 {
+		t.Fatalf("AI.GatewayPort = %d, want 12345", cfg.AI.GatewayPort)
+	}
+	if cfg.System.GatewayPort != 12345 {
+		t.Fatalf("System.GatewayPort = %d, want inherited 12345 from ai.gatewayPort",
+			cfg.System.GatewayPort)
+	}
+}
+
+// TestLoad_SystemGatewayPortExplicitOverridesAI verifies that an explicit
+// system.gatewayPort in config.json wins over ai.gatewayPort.
+func TestLoad_SystemGatewayPortExplicitOverridesAI(t *testing.T) {
+	dir := t.TempDir()
+	data := `{"ai":{"gatewayPort":12345},"system":{"enabled":true,"gatewayPort":54321}}`
+	if err := os.WriteFile(filepath.Join(dir, "config.json"), []byte(data), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg := Load(dir)
+	if cfg.System.GatewayPort != 54321 {
+		t.Fatalf("explicit System.GatewayPort lost: got %d, want 54321", cfg.System.GatewayPort)
+	}
+}
+
+// TestLoad_SystemGatewayPortMissingFileFallsBackToDefault locks in the
+// no-config-file path: System.GatewayPort still ends up at the default
+// (inherited from AI.GatewayPort default 18789), not zero.
+func TestLoad_SystemGatewayPortMissingFileFallsBackToDefault(t *testing.T) {
+	cfg := Load(t.TempDir())
+	if cfg.System.GatewayPort != 18789 {
+		t.Fatalf("System.GatewayPort = %d, want 18789 (default via AI inheritance)",
+			cfg.System.GatewayPort)
+	}
+}
+
 func TestLoad_SystemThresholdClamping(t *testing.T) {
 	dir := t.TempDir()
 	// Set critical <= warn to trigger clamping
