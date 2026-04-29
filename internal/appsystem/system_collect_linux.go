@@ -62,36 +62,6 @@ func collectMeminfo() (map[string]uint64, error) {
 	return parseProcMeminfo(string(content))
 }
 
-func collectRAM(ctx context.Context) SystemRAM {
-	select {
-	case <-ctx.Done():
-		e := "ram collection cancelled"
-		return SystemRAM{Error: &e}
-	default:
-	}
-	info, err := collectMeminfo()
-	if err != nil {
-		e := err.Error()
-		return SystemRAM{Error: &e}
-	}
-	return ramFromMeminfo(info)
-}
-
-func collectSwap(ctx context.Context) SystemSwap {
-	select {
-	case <-ctx.Done():
-		e := "swap collection cancelled"
-		return SystemSwap{Error: &e}
-	default:
-	}
-	info, err := collectMeminfo()
-	if err != nil {
-		e := err.Error()
-		return SystemSwap{Error: &e}
-	}
-	return swapFromMeminfo(info)
-}
-
 // ramFromMeminfo builds SystemRAM from a pre-parsed /proc/meminfo map.
 func ramFromMeminfo(info map[string]uint64) SystemRAM {
 	totalKb := info["MemTotal"]
