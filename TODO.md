@@ -2,6 +2,8 @@
 
 ## ✅ Released
 
+- **v2026.4.29**: cron sidecar merge (#25), `/api/system` cold-path deadline + degraded fallback (#26), `system.gatewayPort` inheritance fix, systemd `Environment=` + `restart` on reinstall, per-instance latest-version fetcher
+- **v2026.4.13**: diagnostics + log visibility (#14), release hardening pass, structured logging cleanup
 - Built-in service management (`install`/`uninstall`/`start`/`stop`/`restart`/`status`) via launchd (macOS) and systemd (Linux)
 - Security hardening (XSS, CORS, O(N²), shell safety, file handles)
 - Performance, dirty-checking & test suite (initial 44 ACs, rAF, scroll preserve, tab fix)
@@ -38,11 +40,6 @@ See `ARCHITECTURE.md` for full spec.
 
 - [x] Go test suite — `go test -race` covering all endpoints and core logic
 - [x] Playwright E2E tests — 16 tests covering tabs, charts, countdown, chat panel, theme menu
-
-## 🐛 Bugs
-
-- [x] Cron state sidecar compatibility — merge `~/.openclaw/cron/jobs-state.json` with `jobs.json` in the refresh collector so Dashboard `v2026.4.13`+ works with OpenClaw `v2026.4.20+`, and add regression coverage for split-store fixtures (#25)
-- [x] /api/system cold-path bound + degraded UI — context.WithTimeout(ColdPathTimeoutMs) over parallel collectors, AbortController + renderGatewayDegraded on the frontend, Skills empty-state fallback (#26)
 
 ## 📦 Release Plan
 
