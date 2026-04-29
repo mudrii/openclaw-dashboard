@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "jobs": {
+    "6f34de99-6a2d-4b20-89e4-65a5e4410c1b": {
+      "updatedAtMs": 1777389430815,
+      "state": {
+        "nextRunAtMs": 1777046660670,
+        "lastRunAtMs": 1777025060681,
+        "lastRunStatus": "ok",
+        "lastStatus": "ok",
+        "lastDurationMs": 23028,
+        "consecutiveErrors": 0
+      }
+    },
+    "91ba6af1-9ab2-4f65-b24f-7b7f037f3778": {
+      "updatedAtMs": 1777435374595,
+      "state": {
+        "nextRunAtMs": 1777456921384,
+        "lastRunAtMs": 1777435321398,
+        "lastRunStatus": "ok",
+        "lastStatus": "ok",
+        "lastDurationMs": 53197,
+        "consecutiveErrors": 0
+      }
+    }
+  }
+}

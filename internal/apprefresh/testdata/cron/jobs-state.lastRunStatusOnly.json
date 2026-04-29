@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "jobs": {
+    "6f34de99-6a2d-4b20-89e4-65a5e4410c1b": {
+      "updatedAtMs": 1777389430815,
+      "state": {
+        "nextRunAtMs": 1777046660670,
+        "lastRunAtMs": 1777025060681,
+        "lastRunStatus": "fail",
+        "lastDurationMs": 99
+      }
+    }
+  }
+}
