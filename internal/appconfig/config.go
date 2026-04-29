@@ -67,14 +67,19 @@ type SystemConfig struct {
 	MetricsTTLSeconds  int             `json:"metricsTtlSeconds"`
 	VersionsTTLSeconds int             `json:"versionsTtlSeconds"`
 	GatewayTimeoutMs   int             `json:"gatewayTimeoutMs"`
-	GatewayPort        int             `json:"gatewayPort"`
-	DiskPath           string          `json:"diskPath"`
-	WarnPercent        float64         `json:"warnPercent"`
-	CriticalPercent    float64         `json:"criticalPercent"`
-	CPU                MetricThreshold `json:"cpu"`
-	RAM                MetricThreshold `json:"ram"`
-	Swap               MetricThreshold `json:"swap"`
-	Disk               MetricThreshold `json:"disk"`
+	// ColdPathTimeoutMs bounds the worst-case wall time of a cold /api/system
+	// collection (no warm cache). Each subcollector still has its own per-probe
+	// timeout; this is the overall budget that prevents a slow gateway from
+	// dragging the whole refresh past the frontend fetch deadline.
+	ColdPathTimeoutMs int             `json:"coldPathTimeoutMs"`
+	GatewayPort       int             `json:"gatewayPort"`
+	DiskPath          string          `json:"diskPath"`
+	WarnPercent       float64         `json:"warnPercent"`
+	CriticalPercent   float64         `json:"criticalPercent"`
+	CPU               MetricThreshold `json:"cpu"`
+	RAM               MetricThreshold `json:"ram"`
+	Swap              MetricThreshold `json:"swap"`
+	Disk              MetricThreshold `json:"disk"`
 }
 
 type Config struct {
@@ -127,6 +132,7 @@ func Default() Config {
 			MetricsTTLSeconds:  10,
 			VersionsTTLSeconds: 300,
 			GatewayTimeoutMs:   5000,
+			ColdPathTimeoutMs:  4000,
 			GatewayPort:        18789,
 			DiskPath:           "/",
 			WarnPercent:        70,
@@ -207,6 +213,9 @@ func Load(dir string) Config {
 	}
 	if cfg.System.GatewayTimeoutMs < 200 || cfg.System.GatewayTimeoutMs > 15000 {
 		cfg.System.GatewayTimeoutMs = 5000
+	}
+	if cfg.System.ColdPathTimeoutMs < 200 || cfg.System.ColdPathTimeoutMs > 15000 {
+		cfg.System.ColdPathTimeoutMs = 4000
 	}
 	if cfg.System.GatewayPort <= 0 {
 		cfg.System.GatewayPort = cfg.AI.GatewayPort
