@@ -39,6 +39,11 @@ See `ARCHITECTURE.md` for full spec.
 - [x] Go test suite — `go test -race` covering all endpoints and core logic
 - [x] Playwright E2E tests — 16 tests covering tabs, charts, countdown, chat panel, theme menu
 
+## 🐛 Bugs
+
+- [x] Cron state sidecar compatibility — merge `~/.openclaw/cron/jobs-state.json` with `jobs.json` in the refresh collector so Dashboard `v2026.4.13`+ works with OpenClaw `v2026.4.20+`, and add regression coverage for split-store fixtures (#25)
+- [x] /api/system cold-path bound + degraded UI — context.WithTimeout(ColdPathTimeoutMs) over parallel collectors, AbortController + renderGatewayDegraded on the frontend, Skills empty-state fallback (#26)
+
 ## 📦 Release Plan
 
 1. ~~Architecture refactor (State/DataLayer/DirtyChecker/Renderer/Theme) with synchronized test updates.~~ ✅
