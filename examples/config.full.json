@@ -26,5 +26,21 @@
     "model": "",
     "maxHistory": 6,
     "dotenvPath": "~/.openclaw/.env"
+  },
+  "system": {
+    "enabled": true,
+    "pollSeconds": 10,
+    "metricsTtlSeconds": 10,
+    "versionsTtlSeconds": 300,
+    "gatewayTimeoutMs": 5000,
+    "coldPathTimeoutMs": 4000,
+    "gatewayPort": 18789,
+    "diskPath": "/",
+    "warnPercent": 70,
+    "criticalPercent": 85,
+    "cpu": { "warn": 80, "critical": 95 },
+    "ram": { "warn": 80, "critical": 95 },
+    "swap": { "warn": 80, "critical": 95 },
+    "disk": { "warn": 80, "critical": 95 }
   }
 }

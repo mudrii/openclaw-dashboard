@@ -393,6 +393,8 @@ is usually the repo root. For `install.sh` installs it is
 | `system.metricsTtlSeconds` | `10` | Server-side metrics cache TTL (seconds) |
 | `system.versionsTtlSeconds` | `300` | Version/gateway probe cache TTL (seconds) |
 | `system.gatewayTimeoutMs` | `5000` | Timeout for gateway liveness probe (ms) |
+| `system.coldPathTimeoutMs` | `4000` | Overall budget for a cold `/api/system` collection (ms) |
+| `system.gatewayPort` | `18789` | Gateway port for health probes (defaults to `ai.gatewayPort`) |
 | `system.diskPath` | `"/"` | Filesystem path to report disk usage for |
 | `system.warnPercent` | `70` | Global warn threshold (% used) — overridden by per-metric values |
 | `system.criticalPercent` | `85` | Global critical threshold (% used) — overridden by per-metric values |
