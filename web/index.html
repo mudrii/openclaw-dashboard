@@ -1710,7 +1710,7 @@ const Renderer = {
     $('skillsGrid').innerHTML=(D.skills||[]).map(s=>{
       const c=s.active?'color:var(--green);border-color:rgba(74,222,128,.2);background:rgba(74,222,128,.05)':'color:var(--dim);border-color:var(--border)';
       return `<span class="skill-tag" style="${c}">${esc(s.name)}</span>`;
-    }).join('');
+    }).join('')||'<div class="empty">No skills configured</div>';
   }
 
   // Git
@@ -1989,6 +1989,18 @@ const SystemBar = {
     if(im<lm)return(lm-im)>=2?2:1;if(im>lm)return 0;
     return(ld-id)>=2?2:1;
   },
+  _kv(k,v,c='var(--text)'){return `<div style="display:flex;justify-content:space-between;margin-bottom:4px"><span style="font-size:12px;color:var(--muted)">${esc(k)}</span><span style="font-size:12px;color:${c};font-weight:600">${esc(String(v))}</span></div>`;},
+  renderGatewayDegraded(reason){
+    const el=$('gatewayRuntimePanelInner');
+    if(el){
+      el.innerHTML=[
+        this._kv('State','Unavailable','var(--red)'),
+        this._kv('Source',reason,'var(--muted)'),
+      ].join('');
+    }
+    window._sysBarActive=false;
+    window._gwOnlineConfirmed=false;
+  },
   _gatewayState(d) {
     const gwRuntime=d.openclaw?.gateway||{};
     const gwVersion=d.versions?.gateway||{};
@@ -2105,12 +2117,12 @@ const SystemBar = {
       const upTxt=gwState.source==='runtime'?this.fmtDurationMs(gwRuntime.uptimeMs)||gwVersion.uptime||'—':gwVersion.uptime||'—';
       const probeSource=gwState.source==='runtime'?'live probes':'status fallback';
       gwRtEl.innerHTML=[
-        kv('State', stateLabel, stateColor),
-        kv('Version', gwVersion.version||'—'),
-        kv('PID', gwVersion.pid||'—'),
-        kv('Uptime', upTxt),
-        kv('Memory', gwVersion.memory||'—'),
-        kv('Source', probeSource, 'var(--muted)'),
+        this._kv('State', stateLabel, stateColor),
+        this._kv('Version', gwVersion.version||'—'),
+        this._kv('PID', gwVersion.pid||'—'),
+        this._kv('Uptime', upTxt),
+        this._kv('Memory', gwVersion.memory||'—'),
+        this._kv('Source', probeSource, 'var(--muted)'),
       ].join('');
     }
 
@@ -2118,8 +2130,18 @@ const SystemBar = {
   },
   async fetch() {
     if(this._inflight)return; this._inflight=true;
-    try{const r=await fetch('/api/system');if(r.ok){this.render(await r.json());}else{window._sysBarActive=false;window._gwOnlineConfirmed=false;}}
-    catch(e){window._sysBarActive=false;window._gwOnlineConfirmed=false;}finally{this._inflight=false;}
+    // 6000ms client timeout; backend cold-path budget is ~4000ms, this allows
+    // a small margin for marshal + network jitter before declaring degraded.
+    const ctl=new AbortController();
+    const t=setTimeout(()=>ctl.abort(),6000);
+    try{
+      const r=await fetch('/api/system',{signal:ctl.signal});
+      if(r.ok){this.render(await r.json());}
+      else{this.renderGatewayDegraded('http '+r.status);}
+    }catch(e){
+      const reason=e&&e.name==='AbortError'?'timeout':'network error';
+      this.renderGatewayDegraded(reason);
+    }finally{clearTimeout(t);this._inflight=false;}
   },
   start(ms){ms=Math.max(ms||5000,2000);if(this._timer&&this._lastMs===ms)return;if(this._timer)clearInterval(this._timer);this._lastMs=ms;this.fetch();this._timer=setInterval(()=>this.fetch(),ms);},
   _lastMs:0
