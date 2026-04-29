@@ -27,6 +27,9 @@ func newTestSystemd(t *testing.T) (*systemdBackend, string) {
 
 func TestSystemd_Install_writesUnitFile(t *testing.T) {
 	sb, dir := newTestSystemd(t)
+	t.Setenv("HOME", "/home/user")
+	t.Setenv("PATH", "/usr/local/bin:/usr/bin:/bin")
+	t.Setenv("OPENCLAW_HOME", "/srv/openclaw")
 	cfg := InstallConfig{
 		BinPath: "/usr/local/bin/openclaw-dashboard",
 		WorkDir: "/home/user/.openclaw/dashboard",
@@ -53,6 +56,8 @@ func TestSystemd_Install_writesUnitFile(t *testing.T) {
 		"/home/user/.openclaw/dashboard",
 		"Restart=always",
 		"WantedBy=default.target",
+		`Environment="OPENCLAW_HOME=/srv/openclaw"`,
+		`Environment="PATH=/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"`,
 	} {
 		if !strings.Contains(content, want) {
 			t.Errorf("unit file missing %q\ncontent:\n%s", want, content)
@@ -101,7 +106,7 @@ func TestSystemd_Install_callsSystemctl(t *testing.T) {
 	if err := sb.Install(cfg); err != nil {
 		t.Fatalf("Install: %v", err)
 	}
-	for _, w := range []string{"daemon-reload", "enable", "start"} {
+	for _, w := range []string{"daemon-reload", "enable", "restart"} {
 		found := false
 		for _, c := range calls {
 			if strings.Contains(c, w) {
