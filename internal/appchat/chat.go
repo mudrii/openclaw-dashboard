@@ -321,11 +321,12 @@ func CallGateway(ctx context.Context, system string, history []Message, question
 		return "", &GatewayError{Status: http.StatusBadGateway, Msg: redactToken(fmt.Errorf("parse error: %w", err).Error(), token)}
 	}
 	if len(result.Choices) == 0 {
-		return "(empty response)", nil
+		// Contract violation: a well-formed completion always returns at
+		// least one choice. Surface this as a 502 so the operator notices
+		// rather than silently rendering a placeholder.
+		return "", &GatewayError{Status: http.StatusBadGateway, Msg: "gateway returned no choices"}
 	}
-	content := result.Choices[0].Message.Content
-	if content == "" {
-		content = "(empty response)"
-	}
-	return content, nil
+	// An empty content string is a legitimate (if unhelpful) answer; let it
+	// flow through unchanged so the caller can distinguish it from errors.
+	return result.Choices[0].Message.Content, nil
 }
