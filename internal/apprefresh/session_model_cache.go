@@ -12,62 +12,111 @@ import (
 	appsystem "github.com/mudrii/openclaw-dashboard/internal/appsystem"
 )
 
-var fetchLiveSessionModels = fetchLiveSessionModelsCLI
-var resolveOpenclawBin = appsystem.ResolveOpenclawBin
-var execCommandContext = exec.CommandContext
-
+// liveSessionModelCache caches the live model→key map fetched from the openclaw
+// CLI under a TTL and prevents thundering-herd refresh via a singleflight
+// pattern (one inflight refresh; concurrent callers wait or return stale).
+//
+// All collaborators (binary path resolver, CLI fetcher, command runner) are
+// fields so tests can construct an isolated cache without touching globals —
+// enables t.Parallel() in test packages that previously had to serialize.
 type liveSessionModelCache struct {
 	mu         sync.Mutex
 	cond       *sync.Cond
 	expiresAt  time.Time
 	models     map[string]string
 	refreshing bool
+
+	// Injectable seams. nil → use package-level defaults.
+	fetchFn         func(ctx context.Context, runner func(ctx context.Context, name string, args ...string) *exec.Cmd, bin string) map[string]string
+	resolveOpenclaw func() string
+	runner          func(ctx context.Context, name string, args ...string) *exec.Cmd
 }
 
-var sessionModelCache liveSessionModelCache
+func newLiveSessionModelCache() *liveSessionModelCache {
+	c := &liveSessionModelCache{}
+	c.cond = sync.NewCond(&c.mu)
+	return c
+}
 
-func getLiveSessionModels(ctx context.Context, now time.Time, ttl time.Duration) map[string]string {
+// defaultSessionModelCache is the singleton used by collectSessions. Tests that
+// need isolation construct their own via newLiveSessionModelCache.
+var defaultSessionModelCache = newLiveSessionModelCache()
+
+// Package-level overrides kept for back-compat with existing tests that swap
+// these. New tests should construct a liveSessionModelCache instead.
+var fetchLiveSessionModels = fetchLiveSessionModelsCLI
+var resolveOpenclawBin = appsystem.ResolveOpenclawBin
+var execCommandContext = exec.CommandContext
+
+// fetch returns the cached map or refreshes it. Uses the receiver's injected
+// collaborators when set, otherwise falls back to package-level defaults.
+func (c *liveSessionModelCache) fetch(ctx context.Context, now time.Time, ttl time.Duration) map[string]string {
 	if ttl <= 0 {
 		ttl = 30 * time.Second
 	}
 
-	sessionModelCache.mu.Lock()
-	if sessionModelCache.cond == nil {
-		sessionModelCache.cond = sync.NewCond(&sessionModelCache.mu)
+	c.mu.Lock()
+	if c.cond == nil {
+		c.cond = sync.NewCond(&c.mu)
 	}
 	for {
-		if now.Before(sessionModelCache.expiresAt) {
-			models := maps.Clone(sessionModelCache.models)
-			sessionModelCache.mu.Unlock()
+		if now.Before(c.expiresAt) {
+			models := maps.Clone(c.models)
+			c.mu.Unlock()
 			return models
 		}
-		if !sessionModelCache.refreshing {
-			sessionModelCache.refreshing = true
+		if !c.refreshing {
+			c.refreshing = true
 			break
 		}
-		sessionModelCache.cond.Wait()
+		c.cond.Wait()
 	}
-	sessionModelCache.mu.Unlock()
+	c.mu.Unlock()
 
-	models := fetchLiveSessionModels(ctx)
+	models := c.callFetch(ctx)
 
-	sessionModelCache.mu.Lock()
-	sessionModelCache.models = maps.Clone(models)
-	sessionModelCache.expiresAt = now.Add(ttl)
-	sessionModelCache.refreshing = false
-	sessionModelCache.cond.Broadcast()
-	cached := maps.Clone(sessionModelCache.models)
-	sessionModelCache.mu.Unlock()
+	c.mu.Lock()
+	c.models = maps.Clone(models)
+	c.expiresAt = now.Add(ttl)
+	c.refreshing = false
+	c.cond.Broadcast()
+	cached := maps.Clone(c.models)
+	c.mu.Unlock()
 	return cached
 }
 
+// callFetch dispatches via injected fetch function (test seam) or the package-
+// level default fetchLiveSessionModels.
+func (c *liveSessionModelCache) callFetch(ctx context.Context) map[string]string {
+	if c.fetchFn != nil {
+		runner := c.runner
+		if runner == nil {
+			runner = execCommandContext
+		}
+		resolve := c.resolveOpenclaw
+		if resolve == nil {
+			resolve = resolveOpenclawBin
+		}
+		return c.fetchFn(ctx, runner, resolve())
+	}
+	return fetchLiveSessionModels(ctx)
+}
+
+// getLiveSessionModels is the package-level entry point used by collectSessions.
+// Delegates to the default cache so existing call sites stay unchanged.
+func getLiveSessionModels(ctx context.Context, now time.Time, ttl time.Duration) map[string]string {
+	return defaultSessionModelCache.fetch(ctx, now, ttl)
+}
+
+// resetLiveSessionModelCacheForTest clears the default cache. Used by legacy
+// tests; new tests should construct a private cache instead.
 func resetLiveSessionModelCacheForTest() {
-	sessionModelCache.mu.Lock()
-	sessionModelCache.expiresAt = time.Time{}
-	sessionModelCache.models = nil
-	sessionModelCache.refreshing = false
-	sessionModelCache.cond = nil
-	sessionModelCache.mu.Unlock()
+	defaultSessionModelCache.mu.Lock()
+	defaultSessionModelCache.expiresAt = time.Time{}
+	defaultSessionModelCache.models = nil
+	defaultSessionModelCache.refreshing = false
+	defaultSessionModelCache.cond = sync.NewCond(&defaultSessionModelCache.mu)
+	defaultSessionModelCache.mu.Unlock()
 }
 
 func fetchLiveSessionModelsCLI(ctx context.Context) map[string]string {
