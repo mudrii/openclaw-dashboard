@@ -70,6 +70,11 @@ func ramFromMeminfo(info map[string]uint64) SystemRAM {
 	if !ok {
 		availKb = info["MemFree"]
 	}
+	// Clamp: kernel races / VMs can transiently report MemAvailable > MemTotal,
+	// which would underflow the uint64 subtraction below.
+	if availKb > totalKb {
+		availKb = totalKb
+	}
 	usedKb := totalKb - availKb
 	totalBytes := int64(totalKb * 1024)
 	usedBytes := int64(usedKb * 1024)
@@ -84,6 +89,11 @@ func ramFromMeminfo(info map[string]uint64) SystemRAM {
 func swapFromMeminfo(info map[string]uint64) SystemSwap {
 	totalKb := info["SwapTotal"]
 	freeKb := info["SwapFree"]
+	// Clamp: same underflow guard as ramFromMeminfo. SwapFree can momentarily
+	// exceed SwapTotal during kernel reconfiguration.
+	if freeKb > totalKb {
+		freeKb = totalKb
+	}
 	usedKb := totalKb - freeKb
 	totalBytes := int64(totalKb * 1024)
 	usedBytes := int64(usedKb * 1024)
