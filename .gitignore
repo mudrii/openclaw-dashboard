@@ -35,3 +35,4 @@ dashboard-server
 
 # Local Claude settings
 .claude/settings.local.json
+graphify-out/
