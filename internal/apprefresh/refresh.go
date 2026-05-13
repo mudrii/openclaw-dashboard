@@ -72,10 +72,15 @@ func ModelName(model string) string {
 		parts := strings.SplitN(ml, "/", 2)
 		ml = parts[1]
 	}
-	// Segment-aware boundary check for OpenAI o1/o3 reasoning models so
-	// arbitrary substrings like "gpt-fo1bar" do not trip the O1 rule.
+	// Segment-anchored boundary check for OpenAI o1/o3 reasoning models so
+	// arbitrary substrings like "gpt-fo1bar" or "o1foo" do not trip the O1
+	// rule. Tokens are split on common separators (`/`, `-`, `:`) and the
+	// target must appear as a standalone segment.
+	segments := strings.FieldsFunc(ml, func(r rune) bool {
+		return r == '/' || r == '-' || r == ':'
+	})
 	hasOSegment := func(seg string) bool {
-		return strings.HasPrefix(ml, seg) || strings.Contains(ml, "-"+seg) || strings.Contains(ml, "/"+seg)
+		return slices.Contains(segments, seg)
 	}
 	switch {
 	case strings.Contains(ml, "opus-4-6"):
