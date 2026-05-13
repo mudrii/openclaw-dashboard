@@ -575,6 +575,47 @@ func TestChat_RateLimitPerIP(t *testing.T) {
 	}
 }
 
+// --- PreWarm wrapper ---
+
+func TestPreWarm_TriggersRefreshCollector(t *testing.T) {
+	dir := t.TempDir()
+	openclawHome := t.TempDir()
+	t.Setenv("OPENCLAW_HOME", openclawHome)
+
+	prev := refreshCollectorFunc
+	defer func() { refreshCollectorFunc = prev }()
+
+	called := make(chan struct{}, 1)
+	refreshCollectorFunc = func(ctx context.Context, dashboardDir, openclawPath string, cfg Config) error {
+		select {
+		case called <- struct{}{}:
+		default:
+		}
+		return os.WriteFile(filepath.Join(dashboardDir, "data.json"), []byte(`{"ok":true}`), 0o644)
+	}
+
+	srv := testServer(t, dir)
+
+	// PreWarm is fire-and-forget; it must not panic and must trigger the collector.
+	srv.PreWarm()
+
+	select {
+	case <-called:
+	case <-time.After(2 * time.Second):
+		t.Fatal("PreWarm did not trigger refreshCollectorFunc within 2s")
+	}
+
+	// Observable side-effect: data.json should eventually exist.
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if _, err := os.Stat(filepath.Join(dir, "data.json")); err == nil {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatal("PreWarm completed but data.json was not written")
+}
+
 // --- Helpers ---
 
 func writeJSON(t *testing.T, path string, v any) {
