@@ -737,7 +737,7 @@ make check
 | File | Tests | Coverage |
 |------|------:|----------|
 | `server_test.go` | 22 | Cache coherence, HEAD/GET, static allowlist, path traversal, CORS, routing, index rendering, data missing |
-| `chat_test.go` | 11 | Gateway calls (success, errors, empty, oversized), system prompt building |
+| `chat_test.go` | 11 | Gateway calls (success, HTTP/timeout/unreachable errors mapped to 502/504, empty choices array → 502, empty content string passes through, oversized response, history forwarding), system prompt building |
 | `config_test.go` | 11 | Config defaults/overrides/clamping, dotenv parsing (quotes, comments, equals), expandHome |
 | `version_test.go` | 12 | VERSION file, fallback, empty file |
 | `system_test.go` | 43 | Openclaw runtime collection, gateway probes, `fetchJSONMapAllowStatus`, `parseGatewayStatusJSON`, CPU/RAM/swap/disk collectors, versions caching, thundering herd prevention |
