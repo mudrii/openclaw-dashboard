@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"path/filepath"
 	"strings"
 	"time"
@@ -138,7 +139,14 @@ func FormatStatus(version string, st ServiceStatus) string {
 }
 
 func formatUptime(d time.Duration) string {
-	if d <= 0 {
+	if d < 0 {
+		// Clock skew between sample sites (e.g., process start lstart parsed
+		// against time.Since wall clock). Log once and surface a placeholder
+		// rather than misreporting "0s".
+		slog.Warn("clock skew", "duration", d)
+		return "—"
+	}
+	if d == 0 {
 		return "0s"
 	}
 	h := int(d.Hours())

@@ -76,7 +76,7 @@ func TestFormatUptime(t *testing.T) {
 		{"hours and minutes", 3*time.Hour + 12*time.Minute, "3h 12m"},
 		{"minutes only", 45 * time.Minute, "45m"},
 		{"zero", 0, "0s"},
-		{"negative", -1 * time.Second, "0s"},
+		{"negative", -1 * time.Second, "—"},
 		{"seconds only", 30 * time.Second, "30s"},
 		{"exact hour", 1 * time.Hour, "1h 0m"},
 	}

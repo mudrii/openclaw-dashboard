@@ -3,6 +3,7 @@
 package appservice
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/xml"
@@ -11,11 +12,11 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"slices"
 	"strconv"
 	"strings"
 	"text/template"
 	"time"
+	"unicode/utf8"
 )
 
 const launchdLabel = "com.openclaw.dashboard"
@@ -389,7 +390,8 @@ func resolveUptime(ctx context.Context, run runCmdFunc, pid int) time.Duration {
 	return 0
 }
 
-// tailFile reads the last n lines of a file. Returns nil on error.
+// tailFile reads the last n lines of a file. Returns nil on error. Lines that
+// are not valid UTF-8 are dropped to keep downstream JSON serialization safe.
 func tailFile(path string, n int) []string {
 	f, err := os.Open(path)
 	if err != nil {
@@ -409,8 +411,18 @@ func tailFile(path string, n int) []string {
 		return nil
 	}
 
-	lines := slices.Collect(strings.SplitSeq(strings.TrimRight(string(buf), "\n"), "\n"))
+	scanner := bufio.NewScanner(bytes.NewReader(buf))
+	scanner.Buffer(make([]byte, 64*1024), int(maxTailBytes))
+	var lines []string
+	for scanner.Scan() {
+		line := scanner.Text()
+		if !utf8.ValidString(line) {
+			continue
+		}
+		lines = append(lines, line)
+	}
 	if start > 0 && len(lines) > 0 {
+		// Drop the first line — it may be a partial fragment of an earlier line.
 		lines = lines[1:]
 	}
 	if len(lines) > n {
@@ -419,7 +431,11 @@ func tailFile(path string, n int) []string {
 	return lines
 }
 
-func xmlText(v any) string {
+// xmlText XML-escapes v for embedding in a plist string. Returns an error so
+// template execution surfaces escape failures (in practice a Builder write
+// cannot fail, but plumbing the error keeps the seam honest and lets future
+// writers swap the destination).
+func xmlText(v any) (string, error) {
 	var raw string
 	switch value := v.(type) {
 	case string:
@@ -431,7 +447,7 @@ func xmlText(v any) string {
 	}
 	var b strings.Builder
 	if err := xml.EscapeText(&b, []byte(raw)); err != nil {
-		return raw
+		return "", fmt.Errorf("xml escape: %w", err)
 	}
-	return b.String()
+	return b.String(), nil
 }
