@@ -39,6 +39,37 @@ func (f *fakeBackend) Status() (appservice.ServiceStatus, error) {
 	return f.statusResult, f.errStatus
 }
 
+// TestServiceCmdSetMatchesActions ensures the pre-flag subcommand recognition
+// set stays in lockstep with the actual action dispatch table. If they drift,
+// Main may accept a subcommand that runServiceCmd cannot execute (or vice versa).
+func TestServiceCmdSetMatchesActions(t *testing.T) {
+	want := map[string]struct{}{
+		"install":   {},
+		"uninstall": {},
+		"start":     {},
+		"stop":      {},
+		"restart":   {},
+		"status":    {},
+	}
+	if len(serviceCmdSet) != len(want) {
+		t.Fatalf("serviceCmdSet size = %d, want %d", len(serviceCmdSet), len(want))
+	}
+	for k := range want {
+		if _, ok := serviceCmdSet[k]; !ok {
+			t.Errorf("serviceCmdSet missing key %q", k)
+		}
+	}
+	actions := serviceActions()
+	if len(actions) != len(want) {
+		t.Fatalf("serviceActions size = %d, want %d", len(actions), len(want))
+	}
+	for k := range want {
+		if _, ok := actions[k]; !ok {
+			t.Errorf("serviceActions missing key %q", k)
+		}
+	}
+}
+
 func TestNormaliseCmd(t *testing.T) {
 	tests := []struct {
 		name     string
