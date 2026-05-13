@@ -2,6 +2,7 @@ package appsystem
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -176,5 +177,60 @@ func TestProbeOpenclawGatewayEndpoints_RespectsTimeout(t *testing.T) {
 	}
 	if elapsed > 150*time.Millisecond {
 		t.Fatalf("expected timeout-bounded probe, took %v", elapsed)
+	}
+}
+
+func TestRunWithTimeout_TimeoutWrapped(t *testing.T) {
+	_, err := runWithTimeout(context.Background(), 50, "/bin/sleep", "5")
+	if err == nil {
+		t.Fatal("expected error from sleep timeout, got nil")
+	}
+	if !errors.Is(err, ErrCommandTimeout) {
+		t.Fatalf("expected errors.Is(err, ErrCommandTimeout); got %v", err)
+	}
+}
+
+func TestRunWithTimeout_NotFoundWrapped(t *testing.T) {
+	_, err := runWithTimeout(context.Background(), 1000, "/nonexistent/openclaw-xyz")
+	if err == nil {
+		t.Fatal("expected error from missing binary, got nil")
+	}
+	if !errors.Is(err, ErrCommandNotFound) {
+		t.Fatalf("expected errors.Is(err, ErrCommandNotFound); got %v", err)
+	}
+}
+
+func TestSystemService_BackoffOnHardFail(t *testing.T) {
+	cfg := appconfig.SystemConfig{
+		Enabled:            true,
+		MetricsTTLSeconds:  1,
+		ColdPathTimeoutMs:  100,
+		VersionsTTLSeconds: 60,
+	}
+	s := NewSystemService(cfg, "test", context.Background())
+	s.fetchLatest = func(ctx context.Context, timeoutMs int) string { return "" }
+
+	s.metricsMu.Lock()
+	s.metricsPayload = []byte(`{}`)
+	s.metricsStalePayload = []byte(`{"stale":true}`)
+	s.metricsAt = time.Now().Add(-time.Hour)
+	s.hardFailUntil = time.Now().Add(10 * time.Second)
+	s.metricsMu.Unlock()
+
+	status, body := s.GetJSON(context.Background())
+	if status != http.StatusOK {
+		t.Fatalf("status = %d, want 200", status)
+	}
+	if string(body) != `{"stale":true}` {
+		t.Fatalf("body = %q, want stale payload", string(body))
+	}
+
+	// Brief sleep — even if a goroutine were spawned it would have started by now.
+	time.Sleep(50 * time.Millisecond)
+
+	s.metricsMu.RLock()
+	defer s.metricsMu.RUnlock()
+	if s.metricsRefresh {
+		t.Fatal("background refresh kicked off during back-off window")
 	}
 }

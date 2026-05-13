@@ -3,6 +3,7 @@ package appsystem
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -22,6 +23,12 @@ import (
 	appconfig "github.com/mudrii/openclaw-dashboard/internal/appconfig"
 )
 
+// ErrCommandTimeout is returned when runWithTimeout's context deadline fired.
+var ErrCommandTimeout = errors.New("command timeout")
+
+// ErrCommandNotFound is returned when the binary itself could not be located.
+var ErrCommandNotFound = errors.New("command not found")
+
 // SystemService collects host metrics and versions with TTL caching.
 type SystemService struct {
 	cfg         appconfig.SystemConfig
@@ -39,6 +46,7 @@ type SystemService struct {
 	metricsStalePayload []byte // pre-computed version with "stale":true
 	metricsAt           time.Time
 	metricsRefresh      bool
+	hardFailUntil       time.Time // back-off window: skip background refresh while now < hardFailUntil
 
 	verMu      sync.RWMutex
 	verCached  SystemVersions
@@ -97,6 +105,17 @@ func (s *SystemService) GetJSON(ctx context.Context) (int, []byte) {
 	if hasStale {
 		// Return stale immediately, refresh in background
 		s.metricsMu.Lock()
+		now := time.Now()
+		if now.Before(s.hardFailUntil) {
+			// In back-off window after consecutive hard failures — don't kick off
+			// another refresh; serve stale and let the window expire.
+			b := s.metricsStalePayload
+			if b == nil {
+				b = s.metricsPayload
+			}
+			s.metricsMu.Unlock()
+			return http.StatusOK, b
+		}
 		if !s.metricsRefresh {
 			s.metricsRefresh = true
 			go func() {
@@ -106,6 +125,12 @@ func (s *SystemService) GetJSON(ctx context.Context) (int, []byte) {
 				}
 				s.metricsMu.Lock()
 				s.metricsRefresh = false
+				if hardFail {
+					backoff := 2 * time.Duration(s.cfg.MetricsTTLSeconds) * time.Second
+					s.hardFailUntil = time.Now().Add(backoff)
+				} else {
+					s.hardFailUntil = time.Time{}
+				}
 				s.metricsMu.Unlock()
 			}()
 		}
@@ -743,7 +768,14 @@ func runWithTimeout(ctx context.Context, timeoutMs int, name string, args ...str
 	cmd := exec.CommandContext(tctx, name, args...)
 	out, err := cmd.Output()
 	if err != nil {
-		if exitErr, ok := err.(*exec.ExitError); ok && len(exitErr.Stderr) > 0 {
+		if errors.Is(tctx.Err(), context.DeadlineExceeded) {
+			return strings.TrimSpace(string(out)), fmt.Errorf("%w: %s", ErrCommandTimeout, name)
+		}
+		if errors.Is(err, exec.ErrNotFound) || errors.Is(err, os.ErrNotExist) {
+			return strings.TrimSpace(string(out)), fmt.Errorf("%w: %s", ErrCommandNotFound, name)
+		}
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) && len(exitErr.Stderr) > 0 {
 			return strings.TrimSpace(string(out)), fmt.Errorf("%w: %s", err, strings.TrimSpace(string(exitErr.Stderr)))
 		}
 		return strings.TrimSpace(string(out)), err

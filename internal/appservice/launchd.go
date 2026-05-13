@@ -225,9 +225,10 @@ func (lb *launchdBackend) Status() (ServiceStatus, error) {
 	// AutoStart = plist file exists
 	p := lb.plistPath()
 	plistContent, err := os.ReadFile(p)
+	var logPath string
 	if err == nil {
 		st.AutoStart = true
-		st.Port = parsePlistPort(string(plistContent))
+		st.Port, logPath = parsePlist(string(plistContent))
 	}
 
 	// Running = launchctl list succeeds and contains PID
@@ -246,11 +247,8 @@ func (lb *launchdBackend) Status() (ServiceStatus, error) {
 	}
 
 	// Last 20 log lines
-	if st.AutoStart {
-		logPath := parsePlistLogPath(string(plistContent))
-		if logPath != "" {
-			st.LogLines = tailFile(logPath, 20)
-		}
+	if st.AutoStart && logPath != "" {
+		st.LogLines = tailFile(logPath, 20)
 	}
 	return st, nil
 }
@@ -280,40 +278,102 @@ func parseLaunchctlPID(out string) int {
 	return 0
 }
 
+// parsePlist parses a launchd plist and extracts the --port value from any
+// <array> of <string>s and the StandardOutPath value. On malformed input or
+// missing fields it returns zero values; errors are not propagated.
+//
+// Behavior:
+//   - port: the <string> immediately following a <string>--port</string>
+//     entry inside an <array>.
+//   - logPath: the next <string> appearing after the most recent
+//     <key>StandardOutPath</key>.
+func parsePlist(content string) (port int, logPath string) {
+	dec := xml.NewDecoder(strings.NewReader(content))
+	dec.Strict = false
+
+	var (
+		curKey   *strings.Builder
+		curStr   *strings.Builder
+		lastKey  string
+		inArray  int
+		arrStrs  []string // <string> values seen inside the current <array>
+		stdOut   string
+		wantNext bool // next <string> should be captured as StandardOutPath
+	)
+
+	for {
+		tok, err := dec.Token()
+		if err != nil {
+			break
+		}
+		switch t := tok.(type) {
+		case xml.StartElement:
+			switch t.Name.Local {
+			case "array":
+				inArray++
+				arrStrs = nil
+			case "key":
+				curKey = &strings.Builder{}
+			case "string":
+				curStr = &strings.Builder{}
+			}
+		case xml.CharData:
+			if curKey != nil {
+				curKey.Write(t)
+			}
+			if curStr != nil {
+				curStr.Write(t)
+			}
+		case xml.EndElement:
+			switch t.Name.Local {
+			case "key":
+				if curKey != nil {
+					lastKey = strings.TrimSpace(curKey.String())
+					curKey = nil
+				}
+			case "string":
+				if curStr != nil {
+					val := curStr.String()
+					if inArray > 0 {
+						arrStrs = append(arrStrs, val)
+					} else if wantNext {
+						stdOut = val
+						wantNext = false
+					}
+					curStr = nil
+				}
+			case "array":
+				if inArray > 0 {
+					inArray--
+				}
+				if inArray == 0 && port == 0 {
+					for i, a := range arrStrs {
+						if a == "--port" && i+1 < len(arrStrs) {
+							port, _ = strconv.Atoi(strings.TrimSpace(arrStrs[i+1]))
+							break
+						}
+					}
+				}
+			}
+			// Arm StandardOutPath capture once we exit the <key> element.
+			if t.Name.Local == "key" && lastKey == "StandardOutPath" && stdOut == "" {
+				wantNext = true
+			}
+		}
+	}
+	return port, strings.TrimSpace(stdOut)
+}
+
 // parsePlistPort reads the --port value from the ProgramArguments in a plist.
 func parsePlistPort(content string) int {
-	_, after, ok := strings.Cut(content, "--port</string>")
-	if !ok {
-		return 0
-	}
-	_, val, ok := strings.Cut(after, "<string>")
-	if !ok {
-		return 0
-	}
-	val, _, ok = strings.Cut(val, "</string>")
-	if !ok {
-		return 0
-	}
-	n, _ := strconv.Atoi(strings.TrimSpace(val))
-	return n
+	port, _ := parsePlist(content)
+	return port
 }
 
 // parsePlistLogPath reads StandardOutPath from a plist.
 func parsePlistLogPath(content string) string {
-	const key = "<key>StandardOutPath</key>"
-	_, after, ok := strings.Cut(content, key)
-	if !ok {
-		return ""
-	}
-	_, val, ok := strings.Cut(after, "<string>")
-	if !ok {
-		return ""
-	}
-	val, _, ok = strings.Cut(val, "</string>")
-	if !ok {
-		return ""
-	}
-	return strings.TrimSpace(val)
+	_, logPath := parsePlist(content)
+	return logPath
 }
 
 // resolveUptime fetches the process start time via ps and computes elapsed duration.

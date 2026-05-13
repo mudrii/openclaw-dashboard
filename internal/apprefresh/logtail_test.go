@@ -239,6 +239,28 @@ func TestClassifySeverity(t *testing.T) {
 	}
 }
 
+func TestClassifySeverity_NoFalsePositives(t *testing.T) {
+	tests := []struct {
+		line, component, want string
+	}{
+		// "deprecated" is a single token containing no error/warn/debug whole
+		// words → info (legacy substring matcher returned "error").
+		{"deprecated API", "", "info"},
+		// "no error occurred" — negation of an error token suppresses the
+		// classification → info (legacy substring matcher returned "error").
+		{"no error occurred", "", "info"},
+		{"warning: cache miss", "", "warn"},
+		{"panic: nil", "", "error"},
+		{"timeout reading", "", "warn"},
+	}
+	for _, tc := range tests {
+		got := classifySeverity(tc.line, tc.component)
+		if got != tc.want {
+			t.Errorf("classifySeverity(%q, %q) = %q, want %q", tc.line, tc.component, got, tc.want)
+		}
+	}
+}
+
 func TestInferSeverity_RawWins(t *testing.T) {
 	if inferSeverity("err", "everything is fine") != "error" {
 		t.Errorf("raw='err' should win over benign line")

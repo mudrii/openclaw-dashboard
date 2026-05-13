@@ -312,6 +312,56 @@ func TestLaunchd_parsePlistPort(t *testing.T) {
 	}
 }
 
+func TestParsePlistPort_Reformatted(t *testing.T) {
+	// Reformatted: tags split across lines, extra whitespace inside <string>,
+	// attribute order varied. The old strings.Cut implementation (which
+	// relied on the literal "--port</string>" substring) would miss these.
+	content := `<?xml version="1.0" encoding="UTF-8"?>
+<plist version="1.0">
+	<dict>
+		<key>ProgramArguments</key>
+		<array>
+			<string >/bin/openclaw-dashboard</string>
+			<string>--bind</string>
+			<string>127.0.0.1</string>
+			<string
+			>--port</string
+			>
+			<string>  7777  </string>
+		</array>
+	</dict>
+</plist>`
+	if got := parsePlistPort(content); got != 7777 {
+		t.Errorf("parsePlistPort reformatted: got %d, want 7777", got)
+	}
+}
+
+func TestParsePlistLogPath_Reformatted(t *testing.T) {
+	// Reformatted with split tags + whitespace; old string-cut would break
+	// on the linebreak between "</key>" and "<string>".
+	content := `<?xml version="1.0" encoding="UTF-8"?>
+<plist version="1.0">
+	<dict>
+		<key>ProgramArguments</key>
+		<array>
+			<string>/bin/d</string>
+			<string>--port</string>
+			<string>8080</string>
+		</array>
+		<key
+		>StandardOutPath</key
+		>
+		<string>
+			/var/log/openclaw/dashboard.log
+		</string>
+	</dict>
+</plist>`
+	got := parsePlistLogPath(content)
+	if got != "/var/log/openclaw/dashboard.log" {
+		t.Errorf("parsePlistLogPath reformatted: got %q, want %q", got, "/var/log/openclaw/dashboard.log")
+	}
+}
+
 func TestLaunchd_parseLaunchctlPID(t *testing.T) {
 	tests := []struct {
 		name    string
