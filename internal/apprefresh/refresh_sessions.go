@@ -53,6 +53,9 @@ func buildGroupNames(stores []SessionStoreFile) map[string]string {
 				continue
 			}
 			gid := strings.SplitN(parts[1], ":", 2)[0]
+			if gid == "" {
+				continue
+			}
 			name := ""
 			if s, ok := val["subject"].(string); ok && s != "" {
 				name = s
