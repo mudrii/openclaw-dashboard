@@ -247,6 +247,17 @@ type GatewayError struct {
 
 func (e *GatewayError) Error() string { return e.Msg }
 
+// redactToken replaces every occurrence of token in s with "[redacted]".
+// A misbehaving upstream may echo our Authorization header (or other
+// secret-bearing payload) into a 5xx response body; this prevents that
+// leakage from flowing into surfaced error messages or logs.
+func redactToken(s, token string) string {
+	if token == "" {
+		return s
+	}
+	return strings.ReplaceAll(s, token, "[redacted]")
+}
+
 func CallGateway(ctx context.Context, system string, history []Message, question string, port int, token, model string, client *http.Client) (string, error) {
 	// Pre-allocate messages slice: system + history + user question
 	messages := make([]Message, 0, 2+len(history))
@@ -262,31 +273,30 @@ func CallGateway(ctx context.Context, system string, history []Message, question
 	}
 	body, err := json.Marshal(payload)
 	if err != nil {
-		return "", &GatewayError{Status: http.StatusBadGateway, Msg: fmt.Sprintf("marshal error: %v", err)}
+		return "", &GatewayError{Status: http.StatusBadGateway, Msg: fmt.Errorf("marshal error: %w", err).Error()}
 	}
 
 	url := "http://localhost:" + strconv.Itoa(port) + "/v1/chat/completions"
 	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(body))
 	if err != nil {
-		return "", &GatewayError{Status: http.StatusBadGateway, Msg: fmt.Sprintf("request error: %v", err)}
+		return "", &GatewayError{Status: http.StatusBadGateway, Msg: fmt.Errorf("request error: %w", err).Error()}
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+token)
 
 	resp, err := client.Do(req)
 	if err != nil {
-		if ctx.Err() == context.DeadlineExceeded ||
-			errors.Is(err, context.DeadlineExceeded) ||
+		if errors.Is(err, context.DeadlineExceeded) ||
 			errors.Is(err, context.Canceled) {
 			return "", &GatewayError{Status: http.StatusGatewayTimeout, Msg: "Gateway timed out — model took too long to respond"}
 		}
-		return "", &GatewayError{Status: http.StatusBadGateway, Msg: fmt.Sprintf("gateway unreachable: %v", err)}
+		return "", &GatewayError{Status: http.StatusBadGateway, Msg: redactToken(fmt.Errorf("gateway unreachable: %w", err).Error(), token)}
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	respBody, err := io.ReadAll(io.LimitReader(resp.Body, maxGatewayResp+1))
 	if err != nil {
-		return "", &GatewayError{Status: http.StatusBadGateway, Msg: fmt.Sprintf("read error: %v", err)}
+		return "", &GatewayError{Status: http.StatusBadGateway, Msg: redactToken(fmt.Errorf("read error: %w", err).Error(), token)}
 	}
 	if len(respBody) > maxGatewayResp {
 		return "", &GatewayError{Status: http.StatusBadGateway, Msg: fmt.Sprintf("gateway response too large (>%d bytes)", maxGatewayResp)}
@@ -297,7 +307,7 @@ func CallGateway(ctx context.Context, system string, history []Message, question
 		if len(preview) > 200 {
 			preview = preview[:200]
 		}
-		return "", &GatewayError{Status: http.StatusBadGateway, Msg: fmt.Sprintf("gateway HTTP %d: %s", resp.StatusCode, preview)}
+		return "", &GatewayError{Status: http.StatusBadGateway, Msg: redactToken(fmt.Sprintf("gateway HTTP %d: %s", resp.StatusCode, preview), token)}
 	}
 
 	var result struct {
@@ -308,7 +318,7 @@ func CallGateway(ctx context.Context, system string, history []Message, question
 		} `json:"choices"`
 	}
 	if err := json.Unmarshal(respBody, &result); err != nil {
-		return "", &GatewayError{Status: http.StatusBadGateway, Msg: fmt.Sprintf("parse error: %v", err)}
+		return "", &GatewayError{Status: http.StatusBadGateway, Msg: redactToken(fmt.Errorf("parse error: %w", err).Error(), token)}
 	}
 	if len(result.Choices) == 0 {
 		return "(empty response)", nil
