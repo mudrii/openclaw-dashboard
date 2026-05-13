@@ -30,7 +30,6 @@ Code-review fixes (waves 1–4) and security hardening pass. No new features.
 - **`/api/chat` empty gateway response** — an empty `choices[]` array now returns HTTP 502 with `{"error":"gateway unavailable"}` instead of HTTP 200 with `"(empty response)"`. An empty `content:""` string from the gateway still passes through unchanged.
 - **`/api/chat` error bodies** — generic redacted messages only; raw upstream response bodies are no longer surfaced.
 - **`/api/errors` response** — additive `dropped_signatures` (int) field reports the count of error signatures dropped after the in-memory dedup map saturated.
-- **`cache_meta.versions[*]`** — additive `gen` (int64) and `stale` (bool) fields exposed so clients can detect staleness without re-fetching.
 - **`cmd/openclaw-dashboard`** — `main()` now `os.Exit(run())`; the `run()` seam lets in-process tests exercise the binary entrypoint.
 
 ### Coverage
