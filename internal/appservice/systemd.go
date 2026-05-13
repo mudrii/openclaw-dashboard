@@ -3,6 +3,7 @@
 package appservice
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -88,11 +89,6 @@ func (sb *systemdBackend) Install(cfg InstallConfig) error {
 	if err := os.MkdirAll(sb.unitDir, 0o755); err != nil {
 		return fmt.Errorf("create systemd user dir: %w", err)
 	}
-	f, err := os.Create(sb.unitPath())
-	if err != nil {
-		return fmt.Errorf("create unit file: %w", err)
-	}
-	defer func() { _ = f.Close() }()
 	data := unitData{
 		BinPath:      cfg.BinPath,
 		Host:         cfg.Host,
@@ -101,7 +97,11 @@ func (sb *systemdBackend) Install(cfg InstallConfig) error {
 		OpenclawHome: systemdOpenclawHome(),
 		PathEnv:      systemdPathEnv(),
 	}
-	if err := unitTmpl.Execute(f, data); err != nil {
+	var buf bytes.Buffer
+	if err := unitTmpl.Execute(&buf, data); err != nil {
+		return fmt.Errorf("render unit file: %w", err)
+	}
+	if err := writeFileAtomic(sb.unitPath(), buf.Bytes(), 0o600); err != nil {
 		return fmt.Errorf("write unit file: %w", err)
 	}
 	if out, err := sb.ctl("daemon-reload"); err != nil {

@@ -3,6 +3,7 @@
 package appservice
 
 import (
+	"bytes"
 	"context"
 	"encoding/xml"
 	"errors"
@@ -107,11 +108,6 @@ func (lb *launchdBackend) Install(cfg InstallConfig) error {
 	if err := os.MkdirAll(lb.plistDir, 0o755); err != nil {
 		return fmt.Errorf("create LaunchAgents dir: %w", err)
 	}
-	f, err := os.Create(lb.plistPath())
-	if err != nil {
-		return fmt.Errorf("create plist: %w", err)
-	}
-	defer func() { _ = f.Close() }()
 	data := plistData{
 		Label:        launchdLabel,
 		BinPath:      cfg.BinPath,
@@ -123,7 +119,11 @@ func (lb *launchdBackend) Install(cfg InstallConfig) error {
 		PathEnv:      launchdPathEnv(),
 		OpenclawHome: launchdOpenclawHome(),
 	}
-	if err := plistTmpl.Execute(f, data); err != nil {
+	var buf bytes.Buffer
+	if err := plistTmpl.Execute(&buf, data); err != nil {
+		return fmt.Errorf("render plist: %w", err)
+	}
+	if err := writeFileAtomic(lb.plistPath(), buf.Bytes(), 0o600); err != nil {
 		return fmt.Errorf("write plist: %w", err)
 	}
 	// unload first in case a stale registration exists
