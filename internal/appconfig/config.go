@@ -348,14 +348,18 @@ func ReadDotenv(path string) map[string]string {
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
 		}
+		// Strip an optional "export" keyword before splitting on '=' so that
+		// "notexport=val" stays a literal key while "export FOO=bar" yields
+		// FOO=bar. CutPrefix matches the literal "export " (single space);
+		// any further whitespace is absorbed by the TrimSpace below.
+		if rest, ok := strings.CutPrefix(line, "export "); ok {
+			line = strings.TrimSpace(rest)
+		}
 		before, after, ok := strings.Cut(line, "=")
 		if !ok {
 			continue
 		}
 		key := strings.TrimSpace(before)
-		if after0, ok0 := strings.CutPrefix(key, "export "); ok0 {
-			key = strings.TrimSpace(after0)
-		}
 		if key == "" {
 			continue
 		}
