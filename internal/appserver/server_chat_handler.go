@@ -2,6 +2,7 @@ package appserver
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"net"
@@ -107,7 +108,8 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("[dashboard] POST /api/chat error", "error", err)
 		status := http.StatusBadGateway
-		if ge, ok := err.(*appchat.GatewayError); ok {
+		var ge *appchat.GatewayError
+		if errors.As(err, &ge) {
 			status = ge.Status
 		}
 		s.sendJSON(w, r, status, map[string]string{"error": err.Error()})

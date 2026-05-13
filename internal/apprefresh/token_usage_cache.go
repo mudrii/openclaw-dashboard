@@ -209,7 +209,17 @@ func parseTokenUsageFile(path string, info os.FileInfo, loc *time.Location) (tok
 			break
 		}
 		if err != nil {
-			return summary, err
+			// Return zero-value summary so a partial result cannot be persisted
+			// to the cache by a future caller that ignores the error. The caller
+			// at CollectTokenUsageWithCache already `continue`s on err, but
+			// hardening this here prevents accidental cache poisoning if the
+			// contract is ever broken.
+			return tokenUsageFileSummary{
+				Size:            info.Size(),
+				ModTimeUnixNano: info.ModTime().UnixNano(),
+				Models:          map[string]TokenBucket{},
+				Daily:           map[string]map[string]TokenBucket{},
+			}, err
 		}
 	}
 

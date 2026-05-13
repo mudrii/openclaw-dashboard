@@ -52,7 +52,12 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 // HandleStaticFile serves an allowlisted file from the dashboard directory.
+// Re-checks the allowlist here so direct callers cannot bypass ServeHTTP's gate.
 func (s *Server) HandleStaticFile(w http.ResponseWriter, r *http.Request, path, contentType string) {
+	if _, ok := allowedStatic[path]; !ok {
+		s.notFound(w, r)
+		return
+	}
 	// Clean the path to prevent traversal
 	clean := filepath.Clean(path)
 	if clean != path {

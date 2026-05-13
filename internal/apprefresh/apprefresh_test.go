@@ -121,7 +121,11 @@ func TestCollectTokenUsageWithCache_ReusesUnchangedFileSummary(t *testing.T) {
 	if err := os.Chmod(filePath, 0o000); err != nil {
 		t.Fatal(err)
 	}
-	defer os.Chmod(filePath, 0o644)
+	t.Cleanup(func() {
+		if err := os.Chmod(filePath, 0o644); err != nil {
+			t.Logf("restore perms on %s: %v", filePath, err)
+		}
+	})
 
 	second := run()
 	if second["GPT-5"] == nil || second["GPT-5"].Total != 100 {

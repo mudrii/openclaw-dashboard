@@ -42,8 +42,10 @@ var (
 	errInvalidDashboardData = errors.New("dashboard data is invalid")
 )
 
-// chatRateLimiter implements a simple per-IP token-bucket rate limiter for /api/chat.
-// Uses sync.Map for lock-free reads on the hot path.
+// chatRateLimiter implements a per-IP fixed-window rate limiter for /api/chat:
+// each IP may issue up to chatRateLimit requests within chatRateWindow; the
+// counter resets when the window elapses. sync.Map keeps reads lock-free; on
+// the hot path Load avoids allocating a fresh bucket per request.
 type chatRateLimiter struct {
 	// entries maps IP → *rateBucket
 	entries sync.Map
@@ -58,11 +60,14 @@ type rateBucket struct {
 // allow checks if the given IP is within rate limit. Returns true if allowed.
 func (rl *chatRateLimiter) allow(ip string) bool {
 	now := time.Now()
-	val, _ := rl.entries.LoadOrStore(ip, &rateBucket{
-		tokens:    chatRateLimit,
-		lastReset: now,
-	})
-	bucket := val.(*rateBucket)
+	v, ok := rl.entries.Load(ip)
+	if !ok {
+		v, _ = rl.entries.LoadOrStore(ip, &rateBucket{
+			tokens:    chatRateLimit,
+			lastReset: now,
+		})
+	}
+	bucket := v.(*rateBucket)
 
 	bucket.mu.Lock()
 	defer bucket.mu.Unlock()

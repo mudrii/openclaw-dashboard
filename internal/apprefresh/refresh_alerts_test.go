@@ -39,6 +39,15 @@ func TestBuildAlerts_CronFailure(t *testing.T) {
 	}
 }
 
+func TestBuildAlerts_StatusComparisonIsCaseInsensitive(t *testing.T) {
+	// Mixed-case "Error" and "OFFLINE" must still produce alerts.
+	crons := []map[string]any{{"name": "x", "lastStatus": "Error"}}
+	alerts := BuildAlerts(0, 50, 20, crons, nil, 80, map[string]any{"status": "OFFLINE"}, 1<<30)
+	if len(alerts) != 2 {
+		t.Fatalf("want 2 alerts (cron + gateway), got %d: %+v", len(alerts), alerts)
+	}
+}
+
 func TestBuildAlerts_HighContext(t *testing.T) {
 	sessions := []map[string]any{
 		{"name": "noisy", "contextPct": 85.0},

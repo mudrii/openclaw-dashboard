@@ -48,7 +48,7 @@ func RunRefreshCollector(ctx context.Context, dashboardDir, openclawPath string,
 	return nil
 }
 
-var reStripTelegramID = regexp.MustCompile(`\s*id[:\-]\s*-?\d+`)
+var reStripTelegramID = regexp.MustCompile(`(?i)\s*\bid\b[\s:=\-]*\d+`)
 
 // titleCase uppercases the first byte of an ASCII string.
 // Replaces deprecated strings.Title for the simple provider-name case.
@@ -1020,7 +1020,17 @@ func BuildDailyChart(now time.Time, dailyCosts map[string]map[string]float64,
 		})
 	}
 
-	// Merge frozen historical data
+	// Merge frozen historical data.
+	//
+	// Contract: a frozen entry overrides the computed chart entry for a given
+	// day ONLY when frozen.total > computed.total. When the gate passes, ALL
+	// fields from frozen replace the computed entry's matching fields (total,
+	// tokens, subagentRuns, subagentCost, models). When the gate fails, the
+	// computed entry is preserved wholesale — frozen.tokens/subagent* are
+	// ignored even if higher. Rationale: frozen-daily.json is a manually
+	// curated backstop for days where the live aggregation has gaps; only
+	// when frozen reports a strictly higher cost do we trust its full
+	// snapshot for that day. Pinned by TestBuildDailyChart_FrozenMergeContract.
 	frozenPath := filepath.Join(dashboardDir, "frozen-daily.json")
 	if data, err := os.ReadFile(frozenPath); err == nil {
 		var frozen map[string]map[string]any
@@ -1087,6 +1097,13 @@ func collectGitLog(ctx context.Context, openclawPath string) []map[string]any {
 	return gitLog
 }
 
+// Status string constants used to classify cron and gateway state in alerts.
+// Compared case-insensitively so upstream variations ("Error", "OFFLINE") still trigger alerts.
+const (
+	statusError   = "error"
+	statusOffline = "offline"
+)
+
 func BuildAlerts(totalCostToday, costHigh, costWarn float64,
 	crons []map[string]any, sessions []map[string]any,
 	contextThreshold float64, gateway map[string]any, memThresholdKB float64) []map[string]any {
@@ -1108,7 +1125,8 @@ func BuildAlerts(totalCostToday, costHigh, costWarn float64,
 	}
 
 	for _, c := range crons {
-		if c["lastStatus"] == "error" {
+		s, _ := c["lastStatus"].(string)
+		if strings.EqualFold(s, statusError) {
 			name, _ := c["name"].(string)
 			alerts = append(alerts, map[string]any{
 				"type": "error", "icon": "❌",
@@ -1133,7 +1151,7 @@ func BuildAlerts(totalCostToday, costHigh, costWarn float64,
 		}
 	}
 
-	if gateway["status"] == "offline" {
+	if gwStatus, _ := gateway["status"].(string); strings.EqualFold(gwStatus, statusOffline) {
 		alerts = append(alerts, map[string]any{
 			"type": "error", "icon": "🔴",
 			"message": "Gateway is offline", "severity": "critical",
