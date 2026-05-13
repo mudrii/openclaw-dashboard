@@ -221,16 +221,18 @@ func Main() int {
 	select {
 	case <-cmdCtx.Done():
 	case err := <-serverErr:
-		serverCancel()
 		fmt.Fprintf(os.Stderr, "[dashboard] fatal: %v\n", err)
 		return 1
 	}
 
-	serverCancel() // cancel background goroutines (metrics refresh, etc.)
 	fmt.Println("\n[dashboard] shutting down...")
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	if err := httpSrv.Shutdown(ctx); err != nil {
+	// Derive shutdown ctx from a fresh signal-aware parent so a second SIGINT/SIGTERM
+	// during graceful shutdown aborts the wait instead of being ignored.
+	shutdownCtx, shutdownCancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer shutdownCancel()
+	shutdownCtx, timeoutCancel := context.WithTimeout(shutdownCtx, 5*time.Second)
+	defer timeoutCancel()
+	if err := httpSrv.Shutdown(shutdownCtx); err != nil {
 		fmt.Fprintf(os.Stderr, "[dashboard] shutdown error: %v\n", err)
 	}
 	fmt.Println("[dashboard] stopped")
