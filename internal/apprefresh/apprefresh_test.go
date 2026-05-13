@@ -198,7 +198,7 @@ func TestFetchLiveSessionModelsCLI_UsesResolvedOpenclawBin(t *testing.T) {
 	if gotName != "/resolved/openclaw" {
 		t.Fatalf("expected resolved openclaw path, got %q", gotName)
 	}
-	if !slices.Equal(gotArgs, []string{"sessions", "--json"}) {
+	if !slices.Equal(gotArgs, []string{"sessions", "--all-agents", "--limit", "all", "--json"}) {
 		t.Fatalf("unexpected args: got %v", gotArgs)
 	}
 }
@@ -309,8 +309,14 @@ func TestParseOpenclawConfig_SortsMapBackedLists(t *testing.T) {
 		t.Fatalf("hook order = %#v, want alphabetical", hooks)
 	}
 
-	plugins := agentConfig["plugins"].([]string)
-	if !slices.Equal(plugins, []string{"plugin-a", "plugin-b"}) {
-		t.Fatalf("plugin order = %v, want alphabetical", plugins)
+	plugins := agentConfig["plugins"].([]map[string]any)
+	if len(plugins) != 2 ||
+		plugins[0]["name"] != "plugin-a" || plugins[1]["name"] != "plugin-b" {
+		t.Fatalf("plugin order = %v, want alphabetical [plugin-a plugin-b]", plugins)
+	}
+	for _, p := range plugins {
+		if p["enabled"] != true {
+			t.Errorf("plugin %v: enabled = %v, want true (default when omitted)", p["name"], p["enabled"])
+		}
 	}
 }

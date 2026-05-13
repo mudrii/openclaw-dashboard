@@ -126,7 +126,11 @@ func fetchLiveSessionModelsCLI(ctx context.Context) map[string]string {
 	}
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
-	out, err := execCommandContext(ctx, resolveOpenclawBin(), "sessions", "--json").Output()
+	// --all-agents aggregates across configured agent stores instead of the
+	// default-agent-only view; --limit all removes the 100-row cap so large
+	// stores still surface live model mappings for every session. Matches
+	// cli/sessions.md JSON contract (returns either `[…]` or `{"sessions":[…]}`).
+	out, err := execCommandContext(ctx, resolveOpenclawBin(), "sessions", "--all-agents", "--limit", "all", "--json").Output()
 	if err != nil {
 		slog.Warn("[dashboard] fetchLiveSessionModelsCLI: command failed", "error", err)
 		return models

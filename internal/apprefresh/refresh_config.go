@@ -16,7 +16,7 @@ func defaultAgentConfig() map[string]any {
 		"channels": []string{}, "channelStatus": map[string]any{},
 		"compaction": map[string]any{}, "agents": []any{},
 		"search": map[string]any{}, "gateway": map[string]any{},
-		"hooks": []any{}, "plugins": []string{},
+		"hooks": []any{}, "plugins": []map[string]any{},
 		"skills": []any{}, "bindings": []any{},
 		"crons": []any{}, "tts": false, "diagnostics": false,
 	}
@@ -79,7 +79,7 @@ func parseOpenclawConfig(oc map[string]any, basePath string) (
 		"imageModel":       aliasOrID(modelAliases, imageModel),
 		"imageModelId":     imageModel,
 		"fallbacks":        fb3,
-		"streamMode":       jsonStrDefault(tgCfg, "streamMode", "off"),
+		"streamMode":       telegramStreamMode(tgCfg),
 		"telegramDmPolicy": jsonStrDefault(tgCfg, "dmPolicy", "—"),
 		"telegramGroups":   len(asObj(tgCfg["groups"])),
 		"channels":         channelsEnabled,
@@ -278,9 +278,23 @@ func parseHooks(oc map[string]any) []any {
 	return out
 }
 
-func parsePlugins(oc map[string]any) []string {
+func parsePlugins(oc map[string]any) []map[string]any {
 	entries := jsonObj(jsonObj(oc, "plugins"), "entries")
-	return append([]string(nil), sortedJSONKeys(entries)...)
+	// Return list of {name, enabled} so the UI can render disabled plugins
+	// without dropping them entirely. Per gateway/configuration-reference.md:
+	// plugins.entries.<id>.enabled: false keeps the entry but disables loading.
+	out := make([]map[string]any, 0, len(entries))
+	for _, n := range sortedJSONKeys(entries) {
+		pm := asObj(entries[n])
+		enabled := true
+		if pm != nil {
+			if e, ok := pm["enabled"].(bool); ok {
+				enabled = e
+			}
+		}
+		out = append(out, map[string]any{"name": n, "enabled": enabled})
+	}
+	return out
 }
 
 func parseSkillsCfg(oc map[string]any) []any {
@@ -308,12 +322,19 @@ func parseBindings(oc, agents map[string]any) []any {
 		}
 		match := asObj(bm["match"])
 		peer := asObj(match["peer"])
+		// Per gateway/config-agents.md, the match tier order is
+		// peer → guildId → teamId → accountId(*) → default. Carry all four so
+		// multi-account / multi-guild deployments can disambiguate bindings
+		// instead of collapsing them in the dashboard panel.
 		out = append(out, map[string]any{
-			"agentId": jsonStr(bm, "agentId"),
-			"channel": jsonStr(match, "channel"),
-			"kind":    jsonStr(peer, "kind"),
-			"id":      jsonStr(peer, "id"),
-			"name":    "",
+			"agentId":   jsonStr(bm, "agentId"),
+			"channel":   jsonStr(match, "channel"),
+			"kind":      jsonStr(peer, "kind"),
+			"id":        jsonStr(peer, "id"),
+			"accountId": jsonStr(match, "accountId"),
+			"guildId":   jsonStr(match, "guildId"),
+			"teamId":    jsonStr(match, "teamId"),
+			"name":      "",
 		})
 	}
 
@@ -455,4 +476,15 @@ func parseAgents(agents map[string]any, primary string, fallbacks []string, mode
 		})
 	}
 	return out
+}
+
+// telegramStreamMode prefers the canonical channels.telegram.streaming.mode
+// key (see channels/telegram.md) and falls back to the legacy
+// channels.telegram.streamMode for configs not yet migrated by
+// `openclaw doctor --fix`.
+func telegramStreamMode(tgCfg map[string]any) string {
+	if mode := jsonStr(jsonObj(tgCfg, "streaming"), "mode"); mode != "" {
+		return mode
+	}
+	return jsonStrDefault(tgCfg, "streamMode", "off")
 }
