@@ -64,6 +64,11 @@ type SystemService struct {
 
 var sharedSystemHTTPClient = &http.Client{}
 
+// maxJSONResponseBytes caps every JSON body we decode from the gateway or npm
+// registry. 64KB is comfortably above any payload these endpoints emit, while
+// staying low enough to bound memory if a misbehaving server streams forever.
+const maxJSONResponseBytes = 1 << 16
+
 func NewSystemService(cfg appconfig.SystemConfig, dashVer string, serverCtx context.Context) *SystemService {
 	return &SystemService{
 		cfg:         cfg,
@@ -551,7 +556,7 @@ func fetchJSONMapAllowStatus(ctx context.Context, client *http.Client, url strin
 		return nil, fmt.Errorf("status %d", resp.StatusCode)
 	}
 	var payload map[string]any
-	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&payload); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, maxJSONResponseBytes)).Decode(&payload); err != nil {
 		return nil, err
 	}
 	return payload, nil
@@ -573,7 +578,7 @@ func FetchJSONMap(ctx context.Context, client *http.Client, url string) (map[str
 		return nil, fmt.Errorf("status %d", resp.StatusCode)
 	}
 	var payload map[string]any
-	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&payload); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, maxJSONResponseBytes)).Decode(&payload); err != nil {
 		return nil, err
 	}
 	return payload, nil
@@ -885,7 +890,7 @@ func FetchLatestNpmVersion(ctx context.Context, timeoutMs int) string {
 	var pkg struct {
 		Version string `json:"version"`
 	}
-	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<16)).Decode(&pkg); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, maxJSONResponseBytes)).Decode(&pkg); err != nil {
 		slog.Warn("[dashboard] FetchLatestNpmVersion: JSON decode failed", "error", err)
 		return ""
 	}

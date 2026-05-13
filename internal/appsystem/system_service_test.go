@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -209,6 +210,86 @@ func TestGetProcessInfo_RejectsNonPositivePID(t *testing.T) {
 			t.Errorf("GetProcessInfo(%d) = (%q, %q), want empty", pid, uptime, memory)
 		}
 	}
+}
+
+// C9b: JSON fetchers must cap response bodies at maxJSONResponseBytes (64KB).
+// A ~70KB JSON body should fail decoding (truncated) rather than be accepted.
+func TestJSONFetchers_BodyCapAt64KB(t *testing.T) {
+	// Build a JSON object whose serialized form exceeds 64KB.
+	// Single big string value keeps it a valid map[string]any until truncation.
+	bigPayload := func() []byte {
+		var sb strings.Builder
+		sb.WriteString(`{"blob":"`)
+		// 70KB of 'a' inside a string value pushes total beyond 64KB cap.
+		for range 70 * 1024 {
+			sb.WriteByte('a')
+		}
+		sb.WriteString(`"}`)
+		return []byte(sb.String())
+	}()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(bigPayload)
+	}))
+	defer srv.Close()
+
+	srv503 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_, _ = w.Write(bigPayload)
+	}))
+	defer srv503.Close()
+
+	// Sanity: payload must exceed the 64KB cap so truncation occurs.
+	if len(bigPayload) <= 1<<16 {
+		t.Fatalf("test payload too small (%d bytes) — must exceed 64KB to exercise cap", len(bigPayload))
+	}
+
+	t.Run("FetchJSONMap", func(t *testing.T) {
+		_, err := FetchJSONMap(context.Background(), http.DefaultClient, srv.URL)
+		if err == nil {
+			t.Fatal("expected decode error from oversized body, got nil")
+		}
+	})
+
+	t.Run("fetchJSONMapAllowStatus", func(t *testing.T) {
+		_, err := fetchJSONMapAllowStatus(context.Background(), http.DefaultClient, srv503.URL, 200, 503)
+		if err == nil {
+			t.Fatal("expected decode error from oversized body, got nil")
+		}
+	})
+
+	t.Run("FetchLatestNpmVersion", func(t *testing.T) {
+		// FetchLatestNpmVersion hits a hardcoded URL; we test the cap behavior
+		// by ensuring the limit constant is wired identically. The function
+		// already uses 1<<16, but we assert that constant is what's exported.
+		// We exercise the path by pointing a custom transport at our server.
+		client := &http.Client{Transport: &rewriteTransport{target: srv.URL}}
+		old := sharedSystemHTTPClient
+		sharedSystemHTTPClient = client
+		defer func() { sharedSystemHTTPClient = old }()
+		v := FetchLatestNpmVersion(context.Background(), 1000)
+		if v != "" {
+			t.Fatalf("expected empty version on oversized body, got %q", v)
+		}
+	})
+}
+
+// rewriteTransport rewrites every request to hit a single test server URL.
+// Used to redirect FetchLatestNpmVersion's hardcoded npm URL to a local server.
+type rewriteTransport struct{ target string }
+
+func (rt *rewriteTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	u, err := url.Parse(rt.target)
+	if err != nil {
+		return nil, err
+	}
+	req.URL.Scheme = u.Scheme
+	req.URL.Host = u.Host
+	req.Host = u.Host
+	return http.DefaultTransport.RoundTrip(req)
 }
 
 func TestSystemService_BackoffOnHardFail(t *testing.T) {
