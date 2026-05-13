@@ -1,5 +1,49 @@
 # Changelog
 
+## v2026.4.30 — 2026-05-13
+
+Code-review fixes (waves 1–4) and security hardening pass. No new features.
+
+### Security
+
+- **Static file handler rejects symlink escapes** — resolved paths that point outside the served root via symlinks now return 404 instead of serving the target file.
+- **Service files written with mode 0o600 via atomic temp+sync+rename** — generated `launchd` plist and `systemd` unit files no longer leak bind address, port, or env values to other local users; the temp+fsync+rename sequence also closes the previous TOCTOU window.
+- **Gateway error messages redact the gateway auth token** — added a `redactToken` helper applied to all error paths in `appchat`; raw upstream response bodies are no longer surfaced to clients.
+- **Service install rejects non-absolute paths** — `OPENCLAW_HOME` must be absolute, and `PATH` entries that are not absolute are filtered out before being written into the unit/plist.
+- **Response body caps unified at 64KB** — `appsystem.FetchJSONMap`, `fetchJSONMapAllowStatus`, and `FetchLatestNpmVersion` now share the same 64KiB `io.LimitReader` ceiling (was inconsistently 1MB in some paths).
+
+### Fixed
+
+- **`GetDataCached` data race** — concurrent map read/write fatal eliminated by returning a top-level `maps.Clone` snapshot under the cache lock.
+- **Linux meminfo/swap underflow** — clamps when the kernel reports `MemAvailable > MemTotal` (observed on certain anomalous kernels) so used-bytes never wraps.
+- **`parseTopCPU` bounds guard** — checks regex submatch length before indexing to avoid a panic on malformed `top -l 2` output.
+- **`GetProcessInfo` rejects non-positive PIDs** before invoking `ps`/`proc` reads.
+- **`GetJSON` stale-cache flag** — derived under a single mutex scope so the `(value, stale)` pair can no longer be torn across writers.
+- **Shutdown sequence** — single `defer serverCancel()`, and the shutdown context is now parented to `signal.NotifyContext` so a second `SIGINT` accelerates exit instead of being swallowed.
+- **`appruntime.CopyIfMissing` is atomic** via `O_CREATE|O_EXCL`; `appruntime.CopyFile` is atomic via temp file + `fsync` + `rename`.
+- **`apprefresh.ModelName` segment-anchored O1/O3 match** — match now requires `/`, `-`, `:`, `.`, or `_` separators around the `o1`/`o3` token, eliminating `foo1bar`-style false positives.
+- **`apprefresh` skips empty group ids** in session parsing to avoid an empty-key entry in the aggregation map.
+- **Config strict-decode warnings** — unknown JSON keys emit a `slog.Warn` instead of being silently ignored; dotenv `export ` prefix is now correctly stripped before the `=` split.
+
+### Changed
+
+- **`/api/chat` empty gateway response** — an empty `choices[]` array now returns HTTP 502 with `{"error":"gateway unavailable"}` instead of HTTP 200 with `"(empty response)"`. An empty `content:""` string from the gateway still passes through unchanged.
+- **`/api/chat` error bodies** — generic redacted messages only; raw upstream response bodies are no longer surfaced.
+- **`/api/errors` response** — additive `dropped_signatures` (int) field reports the count of error signatures dropped after the in-memory dedup map saturated.
+- **`cache_meta.versions[*]`** — additive `gen` (int64) and `stale` (bool) fields exposed so clients can detect staleness without re-fetching.
+- **`cmd/openclaw-dashboard`** — `main()` now `os.Exit(run())`; the `run()` seam lets in-process tests exercise the binary entrypoint.
+
+### Coverage
+
+- `cmd/openclaw-dashboard`: 0% → 50% (in-process tests via the `run()` seam).
+- `internal/appruntime`: 57.5% → 66.7% (failure-injection tests).
+- `internal/appsystem`: 59.9% → 67.1%.
+- `internal/appserver`: 66.9% → 73.1%.
+- `internal/appservice`: 74.9% → 80.0%.
+- Total: 60.7% → ~65%.
+
+---
+
 ## v2026.4.29 — 2026-04-29
 
 ### Fixed
