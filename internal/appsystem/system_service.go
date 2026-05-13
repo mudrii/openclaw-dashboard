@@ -91,6 +91,11 @@ func (s *SystemService) openclawBin() string {
 
 // GetJSON returns (statusCode, jsonBody).
 // Respects system.enabled config — returns 503 when disabled.
+//
+// The cache decision (fresh / stale / cold) happens inside a single critical
+// section so a reader never observes a torn snapshot of (payload, metricsAt,
+// hardFailUntil, metricsRefresh) under writer contention. The captured payload
+// and refresh intent are then acted on after the lock is released.
 func (s *SystemService) GetJSON(ctx context.Context) (int, []byte) {
 	if !s.cfg.Enabled {
 		return http.StatusServiceUnavailable, []byte(`{"ok":false,"error":"system metrics disabled"}`)
@@ -98,31 +103,38 @@ func (s *SystemService) GetJSON(ctx context.Context) (int, []byte) {
 
 	ttl := time.Duration(s.cfg.MetricsTTLSeconds) * time.Second
 
-	s.metricsMu.RLock()
-	if s.metricsPayload != nil && time.Since(s.metricsAt) < ttl {
-		b := s.metricsPayload
-		s.metricsMu.RUnlock()
-		return http.StatusOK, b
-	}
-	hasStale := s.metricsPayload != nil
-	s.metricsMu.RUnlock()
-
-	if hasStale {
-		// Return stale immediately, refresh in background
-		s.metricsMu.Lock()
-		now := time.Now()
-		if now.Before(s.hardFailUntil) {
-			// In back-off window after consecutive hard failures — don't kick off
-			// another refresh; serve stale and let the window expire.
-			b := s.metricsStalePayload
-			if b == nil {
-				b = s.metricsPayload
-			}
-			s.metricsMu.Unlock()
-			return http.StatusOK, b
+	// Single decision under one lock: classify cache state and, if a stale
+	// hit needs a background refresh, claim the refresh slot atomically.
+	s.metricsMu.Lock()
+	var (
+		freshPayload []byte
+		stalePayload []byte
+		kickRefresh  bool
+	)
+	switch {
+	case s.metricsPayload != nil && time.Since(s.metricsAt) < ttl:
+		freshPayload = s.metricsPayload
+	case s.metricsPayload != nil:
+		// Stale hit. Return the pre-marked stale payload (or fall back to the
+		// fresh-marked payload if none was pre-computed). Kick a background
+		// refresh unless we are in the hard-fail back-off window or another
+		// refresh is already in flight.
+		stalePayload = s.metricsStalePayload
+		if stalePayload == nil {
+			stalePayload = s.metricsPayload
 		}
-		if !s.metricsRefresh {
+		if !time.Now().Before(s.hardFailUntil) && !s.metricsRefresh {
 			s.metricsRefresh = true
+			kickRefresh = true
+		}
+	}
+	s.metricsMu.Unlock()
+
+	if freshPayload != nil {
+		return http.StatusOK, freshPayload
+	}
+	if stalePayload != nil {
+		if kickRefresh {
 			go func() {
 				data, hardFail := s.refresh(s.shutdownCtx)
 				if data == nil || hardFail {
@@ -139,15 +151,10 @@ func (s *SystemService) GetJSON(ctx context.Context) (int, []byte) {
 				s.metricsMu.Unlock()
 			}()
 		}
-		b := s.metricsStalePayload
-		if b == nil {
-			b = s.metricsPayload
-		}
-		s.metricsMu.Unlock()
-		return http.StatusOK, b
+		return http.StatusOK, stalePayload
 	}
 
-	// No cache — collect synchronously
+	// No cache — collect synchronously.
 	data, hardFail := s.refresh(ctx)
 	if data == nil {
 		return http.StatusServiceUnavailable, []byte(`{"ok":false,"degraded":true,"error":"system metrics unavailable"}`)

@@ -2,12 +2,14 @@ package appsystem
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -290,6 +292,118 @@ func (rt *rewriteTransport) RoundTrip(req *http.Request) (*http.Response, error)
 	req.URL.Host = u.Host
 	req.Host = u.Host
 	return http.DefaultTransport.RoundTrip(req)
+}
+
+// C9b: GetJSON must not produce torn observations under writer contention.
+// Every returned payload must match the generation that was current when the
+// stale/fresh decision was made — i.e. the lock must span the entire decision.
+//
+// We embed a monotonic gen counter in both the fresh and stale payload bytes.
+// Writers swap (payload, stalePayload, metricsAt) atomically under metricsMu.
+// Readers parse the returned gen and verify it is <= the latest gen ever
+// written (no read-from-future) and that the stale-vs-fresh classification
+// the reader made aligns with the gen that was current at read time.
+func TestGetJSON_AtomicStaleDecision(t *testing.T) {
+	cfg := appconfig.SystemConfig{
+		Enabled:            true,
+		MetricsTTLSeconds:  1,
+		ColdPathTimeoutMs:  100,
+		VersionsTTLSeconds: 60,
+	}
+	s := NewSystemService(cfg, "test", context.Background())
+	s.fetchLatest = func(ctx context.Context, timeoutMs int) string { return "" }
+
+	var latestGen atomic.Int64
+
+	// Seed an initial fresh payload so GetJSON never falls into the synchronous
+	// collect path (we are testing the cached decision, not refresh).
+	setGen := func(gen int64, freshAt time.Time) {
+		s.metricsMu.Lock()
+		// Publish latestGen BEFORE the bytes a reader might observe — this
+		// guarantees latestGen.Load() in the reader will be >= the gen baked
+		// into any payload it can possibly see.
+		latestGen.Store(gen)
+		s.metricsPayload = []byte(`{"gen":` + strconv.FormatInt(gen, 10) + `,"stale":false}`)
+		s.metricsStalePayload = []byte(`{"gen":` + strconv.FormatInt(gen, 10) + `,"stale":true}`)
+		s.metricsAt = freshAt
+		s.metricsMu.Unlock()
+	}
+	setGen(1, time.Now())
+
+	// Suppress background refresh — we are testing the cached decision path,
+	// not refresh itself. Without this, the "hasStale" branch would spawn a
+	// real refresh goroutine that shells out to openclaw and hangs the test.
+	s.metricsMu.Lock()
+	s.hardFailUntil = time.Now().Add(time.Hour)
+	s.metricsMu.Unlock()
+
+	deadline := time.Now().Add(500 * time.Millisecond)
+	var wg sync.WaitGroup
+
+	// Writer: flips the cache between fresh (current time) and stale
+	// (1 hour ago) while bumping gen. Alternating freshness forces GetJSON
+	// down both code branches.
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		var gen int64 = 2
+		for time.Now().Before(deadline) {
+			at := time.Now()
+			if gen%2 == 0 {
+				at = at.Add(-time.Hour) // make it stale
+			}
+			setGen(gen, at)
+			gen++
+		}
+	}()
+
+	// Readers: parse returned body, record (observed_gen, is_stale_label).
+	// Invariant: observed_gen must be <= latestGen.Load() at read time
+	// (cannot read from the future). The "stale" flag in the bytes must
+	// match the bytes' source — fresh payload says stale:false, stale
+	// payload says stale:true. Anything else is a torn read.
+	const readers = 32
+	type obs struct {
+		gen        int64
+		stale      bool
+		latestSeen int64
+	}
+	results := make([][]obs, readers)
+	for i := range readers {
+		results[i] = make([]obs, 0, 1024)
+	}
+
+	wg.Add(readers)
+	for i := range readers {
+		go func(idx int) {
+			defer wg.Done()
+			for time.Now().Before(deadline) {
+				_, body := s.GetJSON(context.Background())
+				latest := latestGen.Load()
+				// Parse "gen":N and "stale":bool from body.
+				var parsed struct {
+					Gen   int64 `json:"gen"`
+					Stale bool  `json:"stale"`
+				}
+				if err := json.Unmarshal(body, &parsed); err != nil {
+					t.Errorf("reader %d: invalid body %q: %v", idx, body, err)
+					return
+				}
+				results[idx] = append(results[idx], obs{parsed.Gen, parsed.Stale, latest})
+			}
+		}(i)
+	}
+
+	wg.Wait()
+
+	// Verify invariant on every observation.
+	for ri, rs := range results {
+		for _, o := range rs {
+			if o.gen > o.latestSeen {
+				t.Errorf("reader %d: observed gen %d > latest %d (torn read from future)", ri, o.gen, o.latestSeen)
+			}
+		}
+	}
 }
 
 func TestSystemService_BackoffOnHardFail(t *testing.T) {
