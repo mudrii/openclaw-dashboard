@@ -108,6 +108,10 @@ func (lb *launchdBackend) Install(cfg InstallConfig) error {
 	if err := os.MkdirAll(lb.plistDir, 0o755); err != nil {
 		return fmt.Errorf("create LaunchAgents dir: %w", err)
 	}
+	openclawHome, err := launchdOpenclawHome()
+	if err != nil {
+		return fmt.Errorf("resolve OPENCLAW_HOME: %w", err)
+	}
 	data := plistData{
 		Label:        launchdLabel,
 		BinPath:      cfg.BinPath,
@@ -117,7 +121,7 @@ func (lb *launchdBackend) Install(cfg InstallConfig) error {
 		LogPath:      cfg.LogPath,
 		HomeDir:      userHomeDir(),
 		PathEnv:      launchdPathEnv(),
-		OpenclawHome: launchdOpenclawHome(),
+		OpenclawHome: openclawHome,
 	}
 	var buf bytes.Buffer
 	if err := plistTmpl.Execute(&buf, data); err != nil {
@@ -142,44 +146,34 @@ func userHomeDir() string {
 }
 
 func launchdPathEnv() string {
-	seen := make(map[string]struct{})
-	var paths []string
-
-	add := func(entries ...string) {
-		for _, entry := range entries {
-			entry = strings.TrimSpace(entry)
-			if entry == "" {
-				continue
-			}
-			if _, ok := seen[entry]; ok {
-				continue
-			}
-			seen[entry] = struct{}{}
-			paths = append(paths, entry)
-		}
-	}
-
-	add(strings.Split(os.Getenv("PATH"), ":")...)
-	add(
-		"/opt/homebrew/bin",
-		"/usr/local/bin",
-		"/usr/bin",
-		"/bin",
-		"/usr/sbin",
-		"/sbin",
+	return joinAbsPaths(
+		strings.Split(os.Getenv("PATH"), ":"),
+		[]string{
+			"/opt/homebrew/bin",
+			"/usr/local/bin",
+			"/usr/bin",
+			"/bin",
+			"/usr/sbin",
+			"/sbin",
+		},
 	)
-
-	return strings.Join(paths, ":")
 }
 
-func launchdOpenclawHome() string {
-	if path := strings.TrimSpace(os.Getenv("OPENCLAW_HOME")); path != "" {
-		return path
+func launchdOpenclawHome() (string, error) {
+	if raw := strings.TrimSpace(os.Getenv("OPENCLAW_HOME")); raw != "" {
+		if err := validateAbsPath(raw); err != nil {
+			return "", fmt.Errorf("OPENCLAW_HOME: %w", err)
+		}
+		return raw, nil
 	}
-	if home := userHomeDir(); home != "" {
-		return filepath.Join(home, ".openclaw")
+	home := userHomeDir()
+	if home == "" {
+		return "", errors.New("OPENCLAW_HOME unset and home directory unknown")
 	}
-	return ""
+	if err := validateAbsPath(home); err != nil {
+		return "", fmt.Errorf("home dir: %w", err)
+	}
+	return filepath.Join(home, ".openclaw"), nil
 }
 
 func (lb *launchdBackend) Uninstall() error {
