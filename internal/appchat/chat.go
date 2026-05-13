@@ -258,6 +258,10 @@ func redactToken(s, token string) string {
 	return strings.ReplaceAll(s, token, "[redacted]")
 }
 
+// CallGateway posts a chat completion request to the local AI gateway and
+// returns the assistant's reply. ctx must be non-nil; pass context.Background()
+// for unscoped calls. Errors are wrapped in *GatewayError with an HTTP status
+// the caller should forward (502 for upstream faults, 504 for timeouts).
 func CallGateway(ctx context.Context, system string, history []Message, question string, port int, token, model string, client *http.Client) (string, error) {
 	// Pre-allocate messages slice: system + history + user question
 	messages := make([]Message, 0, 2+len(history))

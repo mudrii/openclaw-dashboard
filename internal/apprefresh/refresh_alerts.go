@@ -92,7 +92,7 @@ func BuildCostBreakdown(m map[string]*TokenBucket) []map[string]any {
 		model string
 		cost  float64
 	}
-	var pairs []kv
+	pairs := make([]kv, 0, len(m))
 	for k, v := range m {
 		if v.Cost > 0 {
 			pairs = append(pairs, kv{k, v.Cost})

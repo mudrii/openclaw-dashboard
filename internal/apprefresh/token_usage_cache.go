@@ -61,7 +61,8 @@ func CollectTokenUsageWithCache(
 		Version: tokenUsageCacheVersion,
 		Files:   make(map[string]tokenUsageFileSummary, len(allFiles)),
 	}
-	subagentRuns := make([]map[string]any, 0)
+	// Pre-size for typical batch (~64 subagent sessions) to avoid early grow.
+	subagentRuns := make([]map[string]any, 0, 64)
 
 	for _, path := range allFiles {
 		info, err := os.Stat(path)
