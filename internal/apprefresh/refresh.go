@@ -18,13 +18,9 @@ import (
 )
 
 // RunRefreshCollector generates data.json from OpenClaw's filesystem data.
-func RunRefreshCollector(ctx context.Context, dashboardDir, openclawPath string, cfgOpt ...appconfig.Config) error {
-	var cfg appconfig.Config
-	if len(cfgOpt) > 0 {
-		cfg = cfgOpt[0]
-	} else {
-		cfg = appconfig.Load(dashboardDir)
-	}
+// Callers must supply the active dashboard Config; use appconfig.Load(dir) at
+// the call site if no Config is on hand.
+func RunRefreshCollector(ctx context.Context, dashboardDir, openclawPath string, cfg appconfig.Config) error {
 	data := collectDashboardData(ctx, dashboardDir, openclawPath, cfg)
 
 	out, err := json.MarshalIndent(data, "", "  ")

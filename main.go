@@ -166,7 +166,17 @@ func Main() int {
 	env := readDotenv(cfg.AI.DotenvPath)
 	gatewayToken := env["OPENCLAW_GATEWAY_TOKEN"]
 	if cfg.AI.Enabled && gatewayToken == "" {
-		slog.Warn("[dashboard] ai.enabled=true but OPENCLAW_GATEWAY_TOKEN not found in dotenv")
+		// Fail fast at startup rather than letting the first /api/chat request
+		// hit the gateway with an empty Authorization header. Set
+		// DASHBOARD_AI_TOKEN_OPTIONAL=1 to downgrade this to a warning (useful
+		// for dev environments where the gateway runs without auth).
+		if os.Getenv("DASHBOARD_AI_TOKEN_OPTIONAL") == "1" {
+			slog.Warn("[dashboard] ai.enabled=true but OPENCLAW_GATEWAY_TOKEN missing — proceeding because DASHBOARD_AI_TOKEN_OPTIONAL=1")
+		} else {
+			fmt.Fprintln(os.Stderr, "[dashboard] fatal: ai.enabled=true but OPENCLAW_GATEWAY_TOKEN missing from "+cfg.AI.DotenvPath)
+			fmt.Fprintln(os.Stderr, "[dashboard] set OPENCLAW_GATEWAY_TOKEN in the dotenv, or DASHBOARD_AI_TOKEN_OPTIONAL=1 to bypass")
+			return 1
+		}
 	}
 
 	// Server lifecycle context — follows the top-level CLI lifecycle.

@@ -108,11 +108,17 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("[dashboard] POST /api/chat error", "error", err)
 		status := http.StatusBadGateway
+		// Default user-facing message — never leak upstream gateway bodies which
+		// may contain stack traces, model identifiers, or raw HTML 5xx pages.
+		userMsg := "gateway unavailable"
 		var ge *appchat.GatewayError
 		if errors.As(err, &ge) {
 			status = ge.Status
+			if status == http.StatusGatewayTimeout {
+				userMsg = "gateway timed out"
+			}
 		}
-		s.sendJSON(w, r, status, map[string]string{"error": err.Error()})
+		s.sendJSON(w, r, status, map[string]string{"error": userMsg})
 		return
 	}
 

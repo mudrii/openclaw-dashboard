@@ -13,8 +13,8 @@ type sessionStoreFile = apprefresh.SessionStoreFile
 
 var refreshCollectorFunc = runRefreshCollectorWithContext
 
-func runRefreshCollectorWithContext(ctx context.Context, dashboardDir, openclawPath string, cfgOpt ...Config) error {
-	return apprefresh.RunRefreshCollector(ctx, dashboardDir, openclawPath, cfgOpt...)
+func runRefreshCollectorWithContext(ctx context.Context, dashboardDir, openclawPath string, cfg Config) error {
+	return apprefresh.RunRefreshCollector(ctx, dashboardDir, openclawPath, cfg)
 }
 
 func titleCase(s string) string {

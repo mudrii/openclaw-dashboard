@@ -127,7 +127,7 @@ type Server struct {
 	systemSvc *appsystem.SystemService
 
 	// Refresh collector function (injected at construction, not a global)
-	refreshFn func(context.Context, string, string, ...appconfig.Config) error
+	refreshFn func(context.Context, string, string, appconfig.Config) error
 
 	// Lifecycle done channel — closed on graceful shutdown; nil channel in select never fires
 	ctx  context.Context
@@ -137,7 +137,7 @@ type Server struct {
 	chatLimiter chatRateLimiter
 }
 
-func NewServer(dir, version string, cfg appconfig.Config, gatewayToken string, indexHTML []byte, serverCtx context.Context, refreshFn func(context.Context, string, string, ...appconfig.Config) error) *Server {
+func NewServer(dir, version string, cfg appconfig.Config, gatewayToken string, indexHTML []byte, serverCtx context.Context, refreshFn func(context.Context, string, string, appconfig.Config) error) *Server {
 	openclawPath := appruntime.ResolveOpenclawPath()
 	content := string(indexHTML)
 	preset := html.EscapeString(cfg.Theme.Preset)

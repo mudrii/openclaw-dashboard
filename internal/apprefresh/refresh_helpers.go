@@ -7,14 +7,17 @@ import (
 
 // JSON helper functions ---------------------------------------------------
 
+// jsonObj returns the map under key, or nil. Callers must tolerate nil; nil
+// values short-circuit nested calls like jsonObj(jsonObj(m, "a"), "b") because
+// the inner nil propagates through subsequent helpers.
 func jsonObj(m map[string]any, key string) map[string]any {
 	if m == nil {
-		return map[string]any{}
+		return nil
 	}
 	if v, ok := m[key].(map[string]any); ok {
 		return v
 	}
-	return map[string]any{}
+	return nil
 }
 
 func jsonArr(m map[string]any, key string) []any {

@@ -25,7 +25,7 @@ func chatTestServer(t *testing.T, dir string, gatewayPort int) *Server {
 	indexHTML := []byte("<html><head></head><body></body></html>")
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
-	refreshFn := func(ctx context.Context, d, o string, c ...appconfig.Config) error { return nil }
+	refreshFn := func(ctx context.Context, d, o string, cfg appconfig.Config) error { return nil }
 	return NewServer(dir, "1.0.0-test", cfg, "tok", indexHTML, ctx, refreshFn)
 }
 
@@ -54,7 +54,7 @@ func TestHandleChat_Disabled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 	s := NewServer(dir, "v", cfg, "", []byte("<html></html>"), ctx,
-		func(ctx context.Context, d, o string, c ...appconfig.Config) error { return nil })
+		func(ctx context.Context, d, o string, cfg appconfig.Config) error { return nil })
 
 	w := mustPostChat(t, s, `{"question":"hi"}`)
 	if w.Code != http.StatusServiceUnavailable {
