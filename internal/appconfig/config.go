@@ -4,9 +4,11 @@ package appconfig
 import (
 	"bufio"
 	"encoding/json"
+	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 )
 
@@ -147,6 +149,69 @@ func Default() Config {
 	}
 }
 
+// warnUnknownConfigKeys decodes raw as a generic JSON tree and emits a
+// slog warning for every top-level or nested key that does not appear in
+// the Config struct schema. Best-effort: a malformed JSON payload is
+// reported by the subsequent strict Unmarshal, so we silently skip here
+// when the loose decode fails.
+func warnUnknownConfigKeys(raw []byte) {
+	var generic map[string]any
+	if err := json.Unmarshal(raw, &generic); err != nil {
+		return
+	}
+	walkUnknownKeys("", generic, reflect.TypeOf(Config{}))
+}
+
+// walkUnknownKeys recurses through a decoded JSON tree, comparing each
+// key against the JSON tags of structType. Nested objects descend into
+// the corresponding field type; unrecognised keys produce a warning
+// containing the dotted path (e.g. "ai.gatewayPot").
+func walkUnknownKeys(prefix string, m map[string]any, structType reflect.Type) {
+	for structType.Kind() == reflect.Pointer {
+		structType = structType.Elem()
+	}
+	if structType.Kind() != reflect.Struct {
+		return
+	}
+	known := jsonFields(structType)
+	for k, v := range m {
+		path := k
+		if prefix != "" {
+			path = prefix + "." + k
+		}
+		ft, ok := known[k]
+		if !ok {
+			slog.Warn("[dashboard] unknown config key", "field", path)
+			continue
+		}
+		if child, ok := v.(map[string]any); ok {
+			walkUnknownKeys(path, child, ft)
+		}
+	}
+}
+
+// jsonFields builds a map from JSON tag name to the field's Go type
+// for every exported field in t. Used to validate config.json keys.
+func jsonFields(t reflect.Type) map[string]reflect.Type {
+	out := make(map[string]reflect.Type, t.NumField())
+	for i := 0; i < t.NumField(); i++ {
+		f := t.Field(i)
+		if !f.IsExported() {
+			continue
+		}
+		tag := f.Tag.Get("json")
+		name, _, _ := strings.Cut(tag, ",")
+		if name == "" {
+			name = f.Name
+		}
+		if name == "-" {
+			continue
+		}
+		out[name] = f.Type
+	}
+	return out
+}
+
 func Load(dir string) Config {
 	cfg := Default()
 	path := filepath.Join(dir, "config.json")
@@ -158,8 +223,14 @@ func Load(dir string) Config {
 		slog.Warn("[dashboard] config: no config.json found, using defaults")
 	} else {
 		defer func() { _ = f.Close() }()
-		if err := json.NewDecoder(f).Decode(&cfg); err != nil {
-			slog.Warn("[dashboard] invalid config.json, using defaults for missing/invalid fields", "error", err)
+		raw, readErr := io.ReadAll(f)
+		if readErr != nil {
+			slog.Warn("[dashboard] config: read error, using defaults", "error", readErr)
+		} else {
+			warnUnknownConfigKeys(raw)
+			if err := json.Unmarshal(raw, &cfg); err != nil {
+				slog.Warn("[dashboard] invalid config.json, using defaults for missing/invalid fields", "error", err)
+			}
 		}
 	}
 	if len(cfg.Logs.Sources) == 0 && len(cfg.Logs.LogSources) > 0 {
