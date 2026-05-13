@@ -12,6 +12,7 @@ Thumbs.db
 
 # Worktrees
 .worktrees/
+.claude/worktrees/
 
 # Generated data (contains local system info)
 data.json
