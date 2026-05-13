@@ -33,8 +33,6 @@ func parseOpenclawConfig(oc map[string]any, basePath string) (
 	modelAliases map[string]string,
 	agentConfig map[string]any,
 ) {
-	modelAliases = map[string]string{}
-
 	agents := jsonObj(oc, "agents")
 	defaults := jsonObj(agents, "defaults")
 
