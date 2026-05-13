@@ -2,8 +2,8 @@
 package apprefresh
 
 import (
-	"context"
 	"cmp"
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"

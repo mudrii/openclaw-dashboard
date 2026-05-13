@@ -62,8 +62,8 @@ func TestEnrichBindings_NoBindingsField(t *testing.T) {
 func TestBackfillChannelConnectivity_MarksActive(t *testing.T) {
 	sessions := []map[string]any{
 		{"key": "agent:work:telegram:123:main", "active": true},
-		{"key": "agent:main:cron:42:main", "active": true}, // ignored: cron
-		{"key": "agent:main:subagent:5:main", "active": true}, // ignored: subagent
+		{"key": "agent:main:cron:42:main", "active": true},     // ignored: cron
+		{"key": "agent:main:subagent:5:main", "active": true},  // ignored: subagent
 		{"key": "agent:work:whatsapp:7:main", "active": false}, // inactive
 	}
 	agentConfig := map[string]any{

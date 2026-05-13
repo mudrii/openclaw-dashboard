@@ -31,7 +31,7 @@ func TestModelName_O1O3OrderingAndBoundary(t *testing.T) {
 		// rule, so ModelName returns the raw id.
 		{"openai/foo1bar", "openai/foo1bar"},
 		{"gpt-fo1xx", "gpt-fo1xx"},
-		{"o1foo", "o1foo"},        // no trailing separator
+		{"o1foo", "o1foo"},         // no trailing separator
 		{"foo-o1bar", "foo-o1bar"}, // leading separator but no trailing one
 		{"o3xyz", "o3xyz"},
 
