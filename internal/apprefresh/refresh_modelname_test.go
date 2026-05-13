@@ -40,6 +40,13 @@ func TestModelName_O1O3OrderingAndBoundary(t *testing.T) {
 		// "o3" is a real segment between dashes, so O3 is correct.
 		{"openai/gpt-o3-test", "O3"},
 
+		// Dot and underscore separators must also anchor segment boundaries.
+		{"openai/o1.preview", "O1"},
+		{"o3.mini", "O3"},
+		{"o1_preview", "O1"},
+		// Negative regression: "o1" embedded in a longer dotted token must not match.
+		{"foo1.bar", "foo1.bar"},
+
 		// Empty input: falls through, returns the raw (empty) id.
 		{"", ""},
 	}

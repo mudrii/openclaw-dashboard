@@ -74,10 +74,10 @@ func ModelName(model string) string {
 	}
 	// Segment-anchored boundary check for OpenAI o1/o3 reasoning models so
 	// arbitrary substrings like "gpt-fo1bar" or "o1foo" do not trip the O1
-	// rule. Tokens are split on common separators (`/`, `-`, `:`) and the
-	// target must appear as a standalone segment.
+	// rule. Tokens are split on common separators (`/`, `-`, `:`, `.`, `_`)
+	// and the target must appear as a standalone segment.
 	segments := strings.FieldsFunc(ml, func(r rune) bool {
-		return r == '/' || r == '-' || r == ':'
+		return r == '/' || r == '-' || r == ':' || r == '.' || r == '_'
 	})
 	hasOSegment := func(seg string) bool {
 		return slices.Contains(segments, seg)
