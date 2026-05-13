@@ -229,6 +229,10 @@ func ResolveOpenclawPath() string {
 	return filepath.Join(home, ".openclaw")
 }
 
+// DetectVersion returns the project version, preferring a VERSION file in dir
+// or its parent and falling back to the latest git tag. ctx must be non-nil;
+// its deadline and cancellation are propagated to the git probe so callers
+// can bound the lookup.
 func DetectVersion(ctx context.Context, dir string) string {
 	for _, base := range []string{dir, filepath.Dir(dir)} {
 		vf := filepath.Join(base, "VERSION")
@@ -239,9 +243,6 @@ func DetectVersion(ctx context.Context, dir string) string {
 				return strings.TrimPrefix(v, "v")
 			}
 		}
-	}
-	if ctx == nil {
-		ctx = context.Background()
 	}
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
