@@ -712,6 +712,11 @@ func FormatBytes(b int64) string {
 // getProcessInfo returns uptime and memory usage for a PID using ps.
 // Uses a 3-second context timeout to avoid hanging on unresponsive ps.
 func GetProcessInfo(ctx context.Context, pid int) (uptime string, memory string) {
+	// C9b: reject non-positive PIDs early — ps would either fail or, worse on
+	// some kernels, treat 0 as "all processes" and return ambiguous output.
+	if pid <= 0 {
+		return "", ""
+	}
 	tctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
 	// Get elapsed time and RSS via ps

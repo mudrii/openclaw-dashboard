@@ -127,6 +127,11 @@ func parseTopCPU(output string) (float64, error) {
 		return 0, fmt.Errorf("CPU usage line not found in top output")
 	}
 	m := reTopIdle.FindStringSubmatch(lastMatch)
+	// Defense-in-depth: MatchString already passed, but if the regex is ever
+	// edited to lose its capture group this guard prevents an index panic.
+	if len(m) < 2 {
+		return 0, fmt.Errorf("CPU usage line lacked idle capture: %q", lastMatch)
+	}
 	idle, err := strconv.ParseFloat(m[1], 64)
 	if err != nil {
 		return 0, err

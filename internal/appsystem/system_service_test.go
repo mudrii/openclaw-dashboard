@@ -200,6 +200,17 @@ func TestRunWithTimeout_NotFoundWrapped(t *testing.T) {
 	}
 }
 
+// C9b: GetProcessInfo must early-return for non-positive PIDs without
+// shelling out to ps.
+func TestGetProcessInfo_RejectsNonPositivePID(t *testing.T) {
+	for _, pid := range []int{0, -1, -42} {
+		uptime, memory := GetProcessInfo(context.Background(), pid)
+		if uptime != "" || memory != "" {
+			t.Errorf("GetProcessInfo(%d) = (%q, %q), want empty", pid, uptime, memory)
+		}
+	}
+}
+
 func TestSystemService_BackoffOnHardFail(t *testing.T) {
 	cfg := appconfig.SystemConfig{
 		Enabled:            true,
