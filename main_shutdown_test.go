@@ -8,7 +8,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strconv"
 	"syscall"
 	"testing"
@@ -24,9 +23,6 @@ import (
 //   - httpSrv.Shutdown used a context.Background() parent, so a second SIGINT
 //     could not accelerate exit.
 func TestShutdownSequence(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("POSIX signal semantics required")
-	}
 	if testing.Short() {
 		t.Skip("subprocess test; skipped under -short")
 	}

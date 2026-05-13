@@ -8,7 +8,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -99,9 +98,6 @@ func runBin(t *testing.T, args []string, timeout time.Duration) (string, int) {
 }
 
 func TestCmdVersionFlag(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("subprocess smoke test")
-	}
 	if testing.Short() {
 		t.Skip("subprocess test; skipped under -short")
 	}
@@ -115,9 +111,6 @@ func TestCmdVersionFlag(t *testing.T) {
 }
 
 func TestCmdShortVersionFlag(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("subprocess smoke test")
-	}
 	if testing.Short() {
 		t.Skip("subprocess test; skipped under -short")
 	}
@@ -131,9 +124,6 @@ func TestCmdShortVersionFlag(t *testing.T) {
 }
 
 func TestCmdUnknownSubcommand(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("subprocess smoke test")
-	}
 	if testing.Short() {
 		t.Skip("subprocess test; skipped under -short")
 	}
@@ -150,9 +140,6 @@ func TestCmdUnknownSubcommand(t *testing.T) {
 }
 
 func TestCmdBareServicePrintsUsage(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("subprocess smoke test")
-	}
 	if testing.Short() {
 		t.Skip("subprocess test; skipped under -short")
 	}
@@ -169,9 +156,6 @@ func TestCmdBareServicePrintsUsage(t *testing.T) {
 // (either 0 if installed or non-zero if not) without panicking. The status
 // path is admin-free, so it can run in any test environment.
 func TestCmdServiceStatusNoPanic(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("subprocess smoke test")
-	}
 	if testing.Short() {
 		t.Skip("subprocess test; skipped under -short")
 	}
@@ -186,9 +170,6 @@ func TestCmdServiceStatusNoPanic(t *testing.T) {
 // TestCmdInvalidFlag verifies that an unknown CLI flag exits non-zero with a
 // flag-usage message rather than starting the server.
 func TestCmdInvalidFlag(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("subprocess smoke test")
-	}
 	if testing.Short() {
 		t.Skip("subprocess test; skipped under -short")
 	}

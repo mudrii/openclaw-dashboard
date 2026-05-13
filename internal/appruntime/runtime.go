@@ -186,7 +186,7 @@ func streamCopy(src string, dst io.Writer) error {
 	if err != nil {
 		return err
 	}
-	defer in.Close()
+	defer func() { _ = in.Close() }()
 	if _, err := io.Copy(dst, in); err != nil {
 		return err
 	}
