@@ -46,12 +46,12 @@ func TestCallGateway_EmptyChoices(t *testing.T) {
 
 	port := extractPort(t, ts.URL)
 	client := &http.Client{}
-	answer, err := callGateway(context.Background(), "sys", nil, "hi", port, "tok", "model", client)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	_, err := callGateway(context.Background(), "sys", nil, "hi", port, "tok", "model", client)
+	if err == nil {
+		t.Fatal("expected error for empty choices array")
 	}
-	if answer != "(empty response)" {
-		t.Fatalf("expected '(empty response)', got %q", answer)
+	if !strings.Contains(strings.ToLower(err.Error()), "no choices") {
+		t.Fatalf("error should mention 'no choices', got: %v", err)
 	}
 }
 
@@ -67,8 +67,8 @@ func TestCallGateway_EmptyContent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if answer != "(empty response)" {
-		t.Fatalf("expected '(empty response)', got %q", answer)
+	if answer != "" {
+		t.Fatalf("expected empty content, got %q", answer)
 	}
 }
 
