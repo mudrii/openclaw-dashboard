@@ -1,6 +1,6 @@
 # Changelog
 
-## v2026.4.30 — 2026-05-13
+## v2026.5.13 — 2026-05-13
 
 Code-review fixes (waves 1–4) and security hardening pass. No new features.
 
