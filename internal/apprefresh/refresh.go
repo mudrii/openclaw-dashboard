@@ -72,6 +72,11 @@ func ModelName(model string) string {
 		parts := strings.SplitN(ml, "/", 2)
 		ml = parts[1]
 	}
+	// Segment-aware boundary check for OpenAI o1/o3 reasoning models so
+	// arbitrary substrings like "gpt-fo1bar" do not trip the O1 rule.
+	hasOSegment := func(seg string) bool {
+		return strings.HasPrefix(ml, seg) || strings.Contains(ml, "-"+seg) || strings.Contains(ml, "/"+seg)
+	}
 	switch {
 	case strings.Contains(ml, "opus-4-6"):
 		return "Claude Opus 4.6"
@@ -103,6 +108,10 @@ func ModelName(model string) string {
 		return "GLM-4"
 	case strings.Contains(ml, "k2p5") || strings.Contains(ml, "kimi"):
 		return "Kimi K2.5"
+	case hasOSegment("o1"):
+		return "O1"
+	case hasOSegment("o3"):
+		return "O3"
 	case strings.Contains(ml, "gpt-5.3-codex"):
 		return "GPT-5.3 Codex"
 	case strings.Contains(ml, "gpt-5"):
@@ -111,10 +120,6 @@ func ModelName(model string) string {
 		return "GPT-4o"
 	case strings.Contains(ml, "gpt-4"):
 		return "GPT-4"
-	case strings.Contains(ml, "o1"):
-		return "O1"
-	case strings.Contains(ml, "o3"):
-		return "O3"
 	default:
 		return model
 	}
