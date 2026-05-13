@@ -3,7 +3,12 @@ package appruntime
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
+	"errors"
 	"fmt"
+	"io"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -112,22 +117,103 @@ func SeedHomebrewRuntimeDir(binDir string) (string, bool, error) {
 	return runtimeDir, true, nil
 }
 
+// CopyIfMissing copies src to dst only if dst does not already exist. The
+// existence check and creation are performed atomically via O_CREATE|O_EXCL,
+// so concurrent first-run callers race safely: exactly one writer materializes
+// the file and the rest observe it as already present.
 func CopyIfMissing(src, dst string, mode os.FileMode) error {
-	if _, err := os.Stat(dst); err == nil {
-		return nil
-	}
-	return CopyFile(src, dst, mode)
-}
-
-func CopyFile(src, dst string, mode os.FileMode) error {
-	data, err := os.ReadFile(src)
-	if err != nil {
-		return err
-	}
 	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
 		return err
 	}
-	return os.WriteFile(dst, data, mode)
+	f, err := os.OpenFile(dst, os.O_CREATE|os.O_EXCL|os.O_WRONLY, mode)
+	if err != nil {
+		if errors.Is(err, fs.ErrExist) {
+			return nil
+		}
+		return err
+	}
+	// We own dst exclusively. Stream src into it; on any failure remove the
+	// empty/partial file so the next call retries cleanly.
+	if err := streamCopy(src, f); err != nil {
+		_ = f.Close()
+		_ = os.Remove(dst)
+		return err
+	}
+	if err := f.Sync(); err != nil {
+		_ = f.Close()
+		_ = os.Remove(dst)
+		return err
+	}
+	return f.Close()
+}
+
+// CopyFile writes src to dst atomically via temp-file + rename. Readers
+// observe either the prior contents of dst or the new contents — never an
+// intermediate truncated state.
+func CopyFile(src, dst string, mode os.FileMode) error {
+	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+		return err
+	}
+	tmp, err := openTempSibling(dst, mode)
+	if err != nil {
+		return err
+	}
+	tmpName := tmp.Name()
+	if err := streamCopy(src, tmp); err != nil {
+		_ = tmp.Close()
+		_ = os.Remove(tmpName)
+		return err
+	}
+	if err := tmp.Sync(); err != nil {
+		_ = tmp.Close()
+		_ = os.Remove(tmpName)
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		_ = os.Remove(tmpName)
+		return err
+	}
+	if err := os.Rename(tmpName, dst); err != nil {
+		_ = os.Remove(tmpName)
+		return err
+	}
+	return nil
+}
+
+// streamCopy copies src bytes into dst without buffering the whole file.
+func streamCopy(src string, dst io.Writer) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = in.Close() }()
+	if _, err := io.Copy(dst, in); err != nil {
+		return err
+	}
+	return nil
+}
+
+// openTempSibling creates a uniquely-named file alongside dst with the
+// requested mode. Using a sibling guarantees the subsequent rename stays on
+// the same filesystem and is therefore atomic.
+func openTempSibling(dst string, mode os.FileMode) (*os.File, error) {
+	dir := filepath.Dir(dst)
+	base := filepath.Base(dst)
+	var suffix [8]byte
+	for range 8 {
+		if _, err := rand.Read(suffix[:]); err != nil {
+			return nil, err
+		}
+		name := filepath.Join(dir, base+".tmp."+hex.EncodeToString(suffix[:]))
+		f, err := os.OpenFile(name, os.O_CREATE|os.O_EXCL|os.O_WRONLY, mode)
+		if err == nil {
+			return f, nil
+		}
+		if !errors.Is(err, fs.ErrExist) {
+			return nil, err
+		}
+	}
+	return nil, fmt.Errorf("create temp sibling for %s: exhausted attempts", dst)
 }
 
 // ResolveOpenclawPath returns the OpenClaw root directory used by dashboard collectors.
@@ -143,6 +229,10 @@ func ResolveOpenclawPath() string {
 	return filepath.Join(home, ".openclaw")
 }
 
+// DetectVersion returns the project version, preferring a VERSION file in dir
+// or its parent and falling back to the latest git tag. ctx must be non-nil;
+// its deadline and cancellation are propagated to the git probe so callers
+// can bound the lookup.
 func DetectVersion(ctx context.Context, dir string) string {
 	for _, base := range []string{dir, filepath.Dir(dir)} {
 		vf := filepath.Join(base, "VERSION")
@@ -153,9 +243,6 @@ func DetectVersion(ctx context.Context, dir string) string {
 				return strings.TrimPrefix(v, "v")
 			}
 		}
-	}
-	if ctx == nil {
-		ctx = context.Background()
 	}
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()

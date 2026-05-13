@@ -52,7 +52,12 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 // HandleStaticFile serves an allowlisted file from the dashboard directory.
+// Re-checks the allowlist here so direct callers cannot bypass ServeHTTP's gate.
 func (s *Server) HandleStaticFile(w http.ResponseWriter, r *http.Request, path, contentType string) {
+	if _, ok := allowedStatic[path]; !ok {
+		s.notFound(w, r)
+		return
+	}
 	// Clean the path to prevent traversal
 	clean := filepath.Clean(path)
 	if clean != path {
@@ -60,10 +65,11 @@ func (s *Server) HandleStaticFile(w http.ResponseWriter, r *http.Request, path, 
 		return
 	}
 	fullPath := filepath.Join(s.dir, clean)
-	data, err := os.ReadFile(fullPath)
+	data, err := readStaticFileWithinRoot(s.dir, fullPath)
 	if err != nil {
-		fallbackPath := filepath.Join(s.dir, "assets", "runtime", strings.TrimPrefix(clean, "/"))
-		data, err = os.ReadFile(fallbackPath)
+		fallbackRoot := filepath.Join(s.dir, "assets", "runtime")
+		fallbackPath := filepath.Join(fallbackRoot, strings.TrimPrefix(clean, "/"))
+		data, err = readStaticFileWithinRoot(fallbackRoot, fallbackPath)
 		if err != nil {
 			s.notFound(w, r)
 			return
@@ -76,6 +82,24 @@ func (s *Server) HandleStaticFile(w http.ResponseWriter, r *http.Request, path, 
 	if r.Method != http.MethodHead {
 		_, _ = w.Write(data)
 	}
+}
+
+// readStaticFileWithinRoot reads target only if its real (symlink-resolved)
+// path stays under root. Returns os.ErrNotExist when the target escapes the
+// root, so callers fall through to the standard 404 path.
+func readStaticFileWithinRoot(root, target string) ([]byte, error) {
+	rootAbs, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		return nil, err
+	}
+	realTarget, err := filepath.EvalSymlinks(target)
+	if err != nil {
+		return nil, err
+	}
+	if realTarget != rootAbs && !strings.HasPrefix(realTarget, rootAbs+string(os.PathSeparator)) {
+		return nil, os.ErrNotExist
+	}
+	return os.ReadFile(realTarget)
 }
 
 // notFound sends a 404 response with CORS headers set, so browser clients

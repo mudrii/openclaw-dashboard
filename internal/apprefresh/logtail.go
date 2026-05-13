@@ -2,12 +2,11 @@
 package apprefresh
 
 import (
-	"bytes"
+	"bufio"
 	"cmp"
 	"container/heap"
 	"encoding/json"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -15,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	appconfig "github.com/mudrii/openclaw-dashboard/internal/appconfig"
 )
@@ -39,9 +39,27 @@ var (
 )
 
 const (
-	readTailChunkSize    = 32 * 1024
-	readTailMaxFallback  = 1024 * 1024
 	readTailMaxLineBytes = 1024 * 1024
+)
+
+var (
+	errorTokens = map[string]struct{}{
+		"error":    {},
+		"panic":    {},
+		"fatal":    {},
+		"segfault": {},
+	}
+	warnTokens = map[string]struct{}{
+		"warn":        {},
+		"warning":     {},
+		"missing":     {},
+		"stale":       {},
+		"timeout":     {},
+		"unavailable": {},
+	}
+	debugTokens = map[string]struct{}{
+		"debug": {},
+	}
 )
 
 // ReadMergedLogs tails and parses log sources, returning entries in oldest-to-newest order.
@@ -290,16 +308,32 @@ func classifySeverity(line, component string) string {
 		return "error"
 	}
 	low := strings.ToLower(line)
-	switch {
-	case strings.Contains(low, "error") || strings.Contains(low, "panic") || strings.Contains(low, "fatal") || strings.Contains(low, "segfault") || strings.Contains(low, "panic:"):
-		return "error"
-	case strings.Contains(low, "warn") || strings.Contains(low, "warning") || strings.Contains(low, "missing") || strings.Contains(low, "stale") || strings.Contains(low, "timeout") || strings.Contains(low, "unavailable"):
-		return "warn"
-	case strings.Contains(low, "debug"):
-		return "debug"
-	default:
-		return "info"
+	tokens := strings.FieldsFunc(low, func(r rune) bool {
+		return !unicode.IsLetter(r) && !unicode.IsDigit(r)
+	})
+	severity := "info"
+	for i, tok := range tokens {
+		negated := i > 0 && (tokens[i-1] == "no" || tokens[i-1] == "not")
+		if _, ok := errorTokens[tok]; ok {
+			if negated {
+				continue
+			}
+			return "error"
+		}
+		if _, ok := warnTokens[tok]; ok {
+			if negated {
+				continue
+			}
+			severity = "warn"
+			continue
+		}
+		if severity == "info" {
+			if _, ok := debugTokens[tok]; ok {
+				severity = "debug"
+			}
+		}
 	}
+	return severity
 }
 
 func inferSeverity(raw string, line string) string {
@@ -405,60 +439,42 @@ func readTailLines(path string, limit int) ([]string, error) {
 		return nil, nil
 	}
 
-	var (
-		offset = stat.Size()
-		chunk  = make([]byte, readTailChunkSize)
-		accum  []byte
-		lines  = make([]string, 0, limit)
-	)
+	scanner := bufio.NewScanner(f)
+	// Allow scanner buffer to grow up to 2x the line cap so we can capture
+	// over-long lines and truncate them, rather than failing with ErrTooLong.
+	scanner.Buffer(make([]byte, 64*1024), 2*readTailMaxLineBytes)
 
-	for offset > 0 && len(lines) < limit {
-		readSize := readTailChunkSize
-		if int64(readSize) > offset {
-			readSize = int(offset)
+	ring := make([]string, limit)
+	var count, write int
+	for scanner.Scan() {
+		line := strings.TrimSuffix(scanner.Text(), "\r")
+		if line == "" {
+			continue
 		}
-		offset -= int64(readSize)
-
-		buf := chunk[:readSize]
-		if _, err := f.ReadAt(buf, offset); err != nil && err != io.EOF {
-			return nil, fmt.Errorf("read %s: %w", path, err)
-		}
-		accum = append(buf, accum...)
-		for len(lines) < limit {
-			nl := bytes.LastIndexByte(accum, '\n')
-			if nl < 0 {
-				break
-			}
-			raw := strings.TrimSuffix(string(accum[nl+1:]), "\r")
-			accum = accum[:nl]
-			if raw == "" {
-				continue
-			}
-			lines = append(lines, raw)
-		}
-		if len(accum) > readTailMaxFallback {
-			accum = accum[len(accum)-readTailMaxFallback:]
-		}
-	}
-
-	if len(lines) < limit && len(strings.TrimSpace(string(accum))) > 0 {
-		line := strings.TrimSuffix(string(accum), "\r")
-		lines = append(lines, line)
-	}
-
-	for i := 0; i < len(lines); i++ {
-		line := strings.TrimSuffix(lines[i], "\r")
 		if len(line) > readTailMaxLineBytes {
 			line = line[:readTailMaxLineBytes]
 		}
-		lines[i] = strings.TrimRight(line, "\n")
+		ring[write] = line
+		write = (write + 1) % limit
+		count++
+	}
+	if err := scanner.Err(); err != nil {
+		return nil, fmt.Errorf("read %s: %w", path, err)
 	}
 
-	// Convert from newest-first to oldest-first order.
-	for i, j := 0, len(lines)-1; i < j; i, j = i+1, j-1 {
-		lines[i], lines[j] = lines[j], lines[i]
+	n := count
+	if n > limit {
+		n = limit
 	}
-	return lines, nil
+	out := make([]string, 0, n)
+	start := 0
+	if count > limit {
+		start = write
+	}
+	for i := 0; i < n; i++ {
+		out = append(out, ring[(start+i)%limit])
+	}
+	return out, nil
 }
 
 func ResolveLogPath(openclawPath, source string) (string, bool) {

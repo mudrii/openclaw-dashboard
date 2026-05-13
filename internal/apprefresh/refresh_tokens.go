@@ -47,7 +47,7 @@ func BucketsToList(m map[string]*TokenBucket) []TokenUsageEntry {
 		k string
 		v *TokenBucket
 	}
-	var pairs []kv
+	pairs := make([]kv, 0, len(m))
 	for k, v := range m {
 		pairs = append(pairs, kv{k, v})
 	}

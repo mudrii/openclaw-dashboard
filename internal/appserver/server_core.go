@@ -26,6 +26,9 @@ const (
 	chatRateLimit           = 10 // max requests per minute per IP
 	chatRateWindow          = 1 * time.Minute
 	chatRateCleanupInterval = 5 * time.Minute
+	// defaultUpstreamHTTPTimeout caps end-to-end calls from this server to
+	// upstream HTTP services (currently the AI chat gateway).
+	defaultUpstreamHTTPTimeout = 60 * time.Second
 )
 
 // Pre-defined error JSON responses — avoid map alloc + marshal on hot paths
@@ -42,8 +45,10 @@ var (
 	errInvalidDashboardData = errors.New("dashboard data is invalid")
 )
 
-// chatRateLimiter implements a simple per-IP token-bucket rate limiter for /api/chat.
-// Uses sync.Map for lock-free reads on the hot path.
+// chatRateLimiter implements a per-IP fixed-window rate limiter for /api/chat:
+// each IP may issue up to chatRateLimit requests within chatRateWindow; the
+// counter resets when the window elapses. sync.Map keeps reads lock-free; on
+// the hot path Load avoids allocating a fresh bucket per request.
 type chatRateLimiter struct {
 	// entries maps IP → *rateBucket
 	entries sync.Map
@@ -58,11 +63,14 @@ type rateBucket struct {
 // allow checks if the given IP is within rate limit. Returns true if allowed.
 func (rl *chatRateLimiter) allow(ip string) bool {
 	now := time.Now()
-	val, _ := rl.entries.LoadOrStore(ip, &rateBucket{
-		tokens:    chatRateLimit,
-		lastReset: now,
-	})
-	bucket := val.(*rateBucket)
+	v, ok := rl.entries.Load(ip)
+	if !ok {
+		v, _ = rl.entries.LoadOrStore(ip, &rateBucket{
+			tokens:    chatRateLimit,
+			lastReset: now,
+		})
+	}
+	bucket := v.(*rateBucket)
 
 	bucket.mu.Lock()
 	defer bucket.mu.Unlock()
@@ -122,7 +130,7 @@ type Server struct {
 	systemSvc *appsystem.SystemService
 
 	// Refresh collector function (injected at construction, not a global)
-	refreshFn func(context.Context, string, string, ...appconfig.Config) error
+	refreshFn func(context.Context, string, string, appconfig.Config) error
 
 	// Lifecycle done channel — closed on graceful shutdown; nil channel in select never fires
 	ctx  context.Context
@@ -132,7 +140,7 @@ type Server struct {
 	chatLimiter chatRateLimiter
 }
 
-func NewServer(dir, version string, cfg appconfig.Config, gatewayToken string, indexHTML []byte, serverCtx context.Context, refreshFn func(context.Context, string, string, ...appconfig.Config) error) *Server {
+func NewServer(dir, version string, cfg appconfig.Config, gatewayToken string, indexHTML []byte, serverCtx context.Context, refreshFn func(context.Context, string, string, appconfig.Config) error) *Server {
 	openclawPath := appruntime.ResolveOpenclawPath()
 	content := string(indexHTML)
 	preset := html.EscapeString(cfg.Theme.Preset)
@@ -150,7 +158,7 @@ func NewServer(dir, version string, cfg appconfig.Config, gatewayToken string, i
 		indexHTMLRendered:  rendered,
 		indexContentLength: strconv.Itoa(len(rendered)),
 		corsDefault:        "http://localhost:" + strconv.Itoa(cfg.Server.Port),
-		httpClient:         &http.Client{Timeout: 60 * time.Second},
+		httpClient:         &http.Client{Timeout: defaultUpstreamHTTPTimeout},
 		systemSvc:          appsystem.NewSystemService(cfg.System, version, serverCtx),
 		refreshFn:          refreshFn,
 		ctx:                serverCtx,

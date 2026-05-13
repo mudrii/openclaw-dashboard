@@ -591,7 +591,7 @@ func TestRunRefreshCollector_WithoutConfig(t *testing.T) {
 	agentsDir := filepath.Join(openclawPath, "agents", "main", "sessions")
 	os.MkdirAll(agentsDir, 0o755)
 
-	err := runRefreshCollectorWithContext(context.Background(), dir, openclawPath)
+	err := runRefreshCollectorWithContext(context.Background(), dir, openclawPath, loadConfig(dir))
 	if err != nil {
 		t.Fatalf("runRefreshCollector without config: %v", err)
 	}

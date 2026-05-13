@@ -57,6 +57,11 @@ type errorsResponse struct {
 	Limit   int             `json:"limit"`
 	Items   []errorFeedItem `json:"items"`
 	Sources []string        `json:"sources"`
+	// DroppedSignatures counts unique signatures rejected once the per-request
+	// dedup map reached cfg.Logs.MaxErrorSignatures. Ordering policy is
+	// first-seen: earlier signatures retain their slot, later ones are dropped
+	// silently aside from this counter so operators can detect saturation.
+	DroppedSignatures int `json:"dropped_signatures"`
 }
 
 const (
@@ -154,6 +159,7 @@ func (s *Server) handleErrors(w http.ResponseWriter, r *http.Request) {
 
 	windowStart := time.Now().Add(-time.Duration(windowHours) * time.Hour)
 	itemsBySig := make(map[string]*errorFeedItem, s.cfg.Logs.MaxErrorSignatures)
+	droppedSignatures := 0
 	for _, entry := range entries {
 		if entry.Timestamp.IsZero() || entry.Timestamp.Before(windowStart) {
 			continue
@@ -165,6 +171,7 @@ func (s *Server) handleErrors(w http.ResponseWriter, r *http.Request) {
 		sig := entry.Source + "|" + apprefresh.NormalizeErrorSignature(entry.Message)
 		if len(itemsBySig) >= s.cfg.Logs.MaxErrorSignatures {
 			if _, exists := itemsBySig[sig]; !exists {
+				droppedSignatures++
 				continue
 			}
 		}
@@ -223,13 +230,14 @@ func (s *Server) handleErrors(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.sendJSON(w, r, http.StatusOK, errorsResponse{
-		OK:      true,
-		Window:  windowHours,
-		Count:   len(items),
-		Sort:    sortMode,
-		Limit:   limit,
-		Items:   items,
-		Sources: rawSourceList,
+		OK:                true,
+		Window:            windowHours,
+		Count:             len(items),
+		Sort:              sortMode,
+		Limit:             limit,
+		Items:             items,
+		Sources:           rawSourceList,
+		DroppedSignatures: droppedSignatures,
 	})
 }
 

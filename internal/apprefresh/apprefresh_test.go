@@ -121,7 +121,11 @@ func TestCollectTokenUsageWithCache_ReusesUnchangedFileSummary(t *testing.T) {
 	if err := os.Chmod(filePath, 0o000); err != nil {
 		t.Fatal(err)
 	}
-	defer os.Chmod(filePath, 0o644)
+	t.Cleanup(func() {
+		if err := os.Chmod(filePath, 0o644); err != nil {
+			t.Logf("restore perms on %s: %v", filePath, err)
+		}
+	})
 
 	second := run()
 	if second["GPT-5"] == nil || second["GPT-5"].Total != 100 {
@@ -194,7 +198,7 @@ func TestFetchLiveSessionModelsCLI_UsesResolvedOpenclawBin(t *testing.T) {
 	if gotName != "/resolved/openclaw" {
 		t.Fatalf("expected resolved openclaw path, got %q", gotName)
 	}
-	if !slices.Equal(gotArgs, []string{"sessions", "--json"}) {
+	if !slices.Equal(gotArgs, []string{"sessions", "--all-agents", "--limit", "all", "--json"}) {
 		t.Fatalf("unexpected args: got %v", gotArgs)
 	}
 }
@@ -305,8 +309,14 @@ func TestParseOpenclawConfig_SortsMapBackedLists(t *testing.T) {
 		t.Fatalf("hook order = %#v, want alphabetical", hooks)
 	}
 
-	plugins := agentConfig["plugins"].([]string)
-	if !slices.Equal(plugins, []string{"plugin-a", "plugin-b"}) {
-		t.Fatalf("plugin order = %v, want alphabetical", plugins)
+	plugins := agentConfig["plugins"].([]map[string]any)
+	if len(plugins) != 2 ||
+		plugins[0]["name"] != "plugin-a" || plugins[1]["name"] != "plugin-b" {
+		t.Fatalf("plugin order = %v, want alphabetical [plugin-a plugin-b]", plugins)
+	}
+	for _, p := range plugins {
+		if p["enabled"] != true {
+			t.Errorf("plugin %v: enabled = %v, want true (default when omitted)", p["name"], p["enabled"])
+		}
 	}
 }

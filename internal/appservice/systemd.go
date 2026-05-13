@@ -3,6 +3,7 @@
 package appservice
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -88,20 +89,23 @@ func (sb *systemdBackend) Install(cfg InstallConfig) error {
 	if err := os.MkdirAll(sb.unitDir, 0o755); err != nil {
 		return fmt.Errorf("create systemd user dir: %w", err)
 	}
-	f, err := os.Create(sb.unitPath())
+	openclawHome, err := systemdOpenclawHome()
 	if err != nil {
-		return fmt.Errorf("create unit file: %w", err)
+		return fmt.Errorf("resolve OPENCLAW_HOME: %w", err)
 	}
-	defer func() { _ = f.Close() }()
 	data := unitData{
 		BinPath:      cfg.BinPath,
 		Host:         cfg.Host,
 		Port:         cfg.Port,
 		WorkDir:      cfg.WorkDir,
-		OpenclawHome: systemdOpenclawHome(),
+		OpenclawHome: openclawHome,
 		PathEnv:      systemdPathEnv(),
 	}
-	if err := unitTmpl.Execute(f, data); err != nil {
+	var buf bytes.Buffer
+	if err := unitTmpl.Execute(&buf, data); err != nil {
+		return fmt.Errorf("render unit file: %w", err)
+	}
+	if err := writeFileAtomic(sb.unitPath(), buf.Bytes(), 0o600); err != nil {
 		return fmt.Errorf("write unit file: %w", err)
 	}
 	if out, err := sb.ctl("daemon-reload"); err != nil {
@@ -119,41 +123,34 @@ func (sb *systemdBackend) Install(cfg InstallConfig) error {
 	return nil
 }
 
-func systemdOpenclawHome() string {
-	if path := strings.TrimSpace(os.Getenv("OPENCLAW_HOME")); path != "" {
-		return path
+func systemdOpenclawHome() (string, error) {
+	if raw := strings.TrimSpace(os.Getenv("OPENCLAW_HOME")); raw != "" {
+		if err := validateAbsPath(raw); err != nil {
+			return "", fmt.Errorf("OPENCLAW_HOME: %w", err)
+		}
+		return raw, nil
 	}
-	if home, err := os.UserHomeDir(); err == nil && home != "" {
-		return filepath.Join(home, ".openclaw")
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		return "", errors.New("OPENCLAW_HOME unset and home directory unknown")
 	}
-	return ""
+	if err := validateAbsPath(home); err != nil {
+		return "", fmt.Errorf("home dir: %w", err)
+	}
+	return filepath.Join(home, ".openclaw"), nil
 }
 
 func systemdPathEnv() string {
-	seen := make(map[string]struct{})
-	var paths []string
-	add := func(entries ...string) {
-		for _, entry := range entries {
-			entry = strings.TrimSpace(entry)
-			if entry == "" {
-				continue
-			}
-			if _, ok := seen[entry]; ok {
-				continue
-			}
-			seen[entry] = struct{}{}
-			paths = append(paths, entry)
-		}
-	}
-	add(strings.Split(os.Getenv("PATH"), ":")...)
-	add(
-		"/usr/local/bin",
-		"/usr/bin",
-		"/bin",
-		"/usr/sbin",
-		"/sbin",
+	return joinAbsPaths(
+		strings.Split(os.Getenv("PATH"), ":"),
+		[]string{
+			"/usr/local/bin",
+			"/usr/bin",
+			"/bin",
+			"/usr/sbin",
+			"/sbin",
+		},
 	)
-	return strings.Join(paths, ":")
 }
 
 func (sb *systemdBackend) Uninstall() error {

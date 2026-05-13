@@ -3,6 +3,7 @@ package appsystem
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -22,6 +23,12 @@ import (
 	appconfig "github.com/mudrii/openclaw-dashboard/internal/appconfig"
 )
 
+// ErrCommandTimeout is returned when runWithTimeout's context deadline fired.
+var ErrCommandTimeout = errors.New("command timeout")
+
+// ErrCommandNotFound is returned when the binary itself could not be located.
+var ErrCommandNotFound = errors.New("command not found")
+
 // SystemService collects host metrics and versions with TTL caching.
 type SystemService struct {
 	cfg         appconfig.SystemConfig
@@ -39,6 +46,7 @@ type SystemService struct {
 	metricsStalePayload []byte // pre-computed version with "stale":true
 	metricsAt           time.Time
 	metricsRefresh      bool
+	hardFailUntil       time.Time // back-off window: skip background refresh while now < hardFailUntil
 
 	verMu      sync.RWMutex
 	verCached  SystemVersions
@@ -55,6 +63,11 @@ type SystemService struct {
 }
 
 var sharedSystemHTTPClient = &http.Client{}
+
+// maxJSONResponseBytes caps every JSON body we decode from the gateway or npm
+// registry. 64KB is comfortably above any payload these endpoints emit, while
+// staying low enough to bound memory if a misbehaving server streams forever.
+const maxJSONResponseBytes = 1 << 16
 
 func NewSystemService(cfg appconfig.SystemConfig, dashVer string, serverCtx context.Context) *SystemService {
 	return &SystemService{
@@ -78,6 +91,11 @@ func (s *SystemService) openclawBin() string {
 
 // GetJSON returns (statusCode, jsonBody).
 // Respects system.enabled config — returns 503 when disabled.
+//
+// The cache decision (fresh / stale / cold) happens inside a single critical
+// section so a reader never observes a torn snapshot of (payload, metricsAt,
+// hardFailUntil, metricsRefresh) under writer contention. The captured payload
+// and refresh intent are then acted on after the lock is released.
 func (s *SystemService) GetJSON(ctx context.Context) (int, []byte) {
 	if !s.cfg.Enabled {
 		return http.StatusServiceUnavailable, []byte(`{"ok":false,"error":"system metrics disabled"}`)
@@ -85,20 +103,38 @@ func (s *SystemService) GetJSON(ctx context.Context) (int, []byte) {
 
 	ttl := time.Duration(s.cfg.MetricsTTLSeconds) * time.Second
 
-	s.metricsMu.RLock()
-	if s.metricsPayload != nil && time.Since(s.metricsAt) < ttl {
-		b := s.metricsPayload
-		s.metricsMu.RUnlock()
-		return http.StatusOK, b
-	}
-	hasStale := s.metricsPayload != nil
-	s.metricsMu.RUnlock()
-
-	if hasStale {
-		// Return stale immediately, refresh in background
-		s.metricsMu.Lock()
-		if !s.metricsRefresh {
+	// Single decision under one lock: classify cache state and, if a stale
+	// hit needs a background refresh, claim the refresh slot atomically.
+	s.metricsMu.Lock()
+	var (
+		freshPayload []byte
+		stalePayload []byte
+		kickRefresh  bool
+	)
+	switch {
+	case s.metricsPayload != nil && time.Since(s.metricsAt) < ttl:
+		freshPayload = s.metricsPayload
+	case s.metricsPayload != nil:
+		// Stale hit. Return the pre-marked stale payload (or fall back to the
+		// fresh-marked payload if none was pre-computed). Kick a background
+		// refresh unless we are in the hard-fail back-off window or another
+		// refresh is already in flight.
+		stalePayload = s.metricsStalePayload
+		if stalePayload == nil {
+			stalePayload = s.metricsPayload
+		}
+		if !time.Now().Before(s.hardFailUntil) && !s.metricsRefresh {
 			s.metricsRefresh = true
+			kickRefresh = true
+		}
+	}
+	s.metricsMu.Unlock()
+
+	if freshPayload != nil {
+		return http.StatusOK, freshPayload
+	}
+	if stalePayload != nil {
+		if kickRefresh {
 			go func() {
 				data, hardFail := s.refresh(s.shutdownCtx)
 				if data == nil || hardFail {
@@ -106,18 +142,19 @@ func (s *SystemService) GetJSON(ctx context.Context) (int, []byte) {
 				}
 				s.metricsMu.Lock()
 				s.metricsRefresh = false
+				if hardFail {
+					backoff := 2 * time.Duration(s.cfg.MetricsTTLSeconds) * time.Second
+					s.hardFailUntil = time.Now().Add(backoff)
+				} else {
+					s.hardFailUntil = time.Time{}
+				}
 				s.metricsMu.Unlock()
 			}()
 		}
-		b := s.metricsStalePayload
-		if b == nil {
-			b = s.metricsPayload
-		}
-		s.metricsMu.Unlock()
-		return http.StatusOK, b
+		return http.StatusOK, stalePayload
 	}
 
-	// No cache — collect synchronously
+	// No cache — collect synchronously.
 	data, hardFail := s.refresh(ctx)
 	if data == nil {
 		return http.StatusServiceUnavailable, []byte(`{"ok":false,"degraded":true,"error":"system metrics unavailable"}`)
@@ -526,7 +563,7 @@ func fetchJSONMapAllowStatus(ctx context.Context, client *http.Client, url strin
 		return nil, fmt.Errorf("status %d", resp.StatusCode)
 	}
 	var payload map[string]any
-	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&payload); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, maxJSONResponseBytes)).Decode(&payload); err != nil {
 		return nil, err
 	}
 	return payload, nil
@@ -548,7 +585,7 @@ func FetchJSONMap(ctx context.Context, client *http.Client, url string) (map[str
 		return nil, fmt.Errorf("status %d", resp.StatusCode)
 	}
 	var payload map[string]any
-	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&payload); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, maxJSONResponseBytes)).Decode(&payload); err != nil {
 		return nil, err
 	}
 	return payload, nil
@@ -687,6 +724,11 @@ func FormatBytes(b int64) string {
 // getProcessInfo returns uptime and memory usage for a PID using ps.
 // Uses a 3-second context timeout to avoid hanging on unresponsive ps.
 func GetProcessInfo(ctx context.Context, pid int) (uptime string, memory string) {
+	// C9b: reject non-positive PIDs early — ps would either fail or, worse on
+	// some kernels, treat 0 as "all processes" and return ambiguous output.
+	if pid <= 0 {
+		return "", ""
+	}
 	tctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
 	// Get elapsed time and RSS via ps
@@ -743,7 +785,14 @@ func runWithTimeout(ctx context.Context, timeoutMs int, name string, args ...str
 	cmd := exec.CommandContext(tctx, name, args...)
 	out, err := cmd.Output()
 	if err != nil {
-		if exitErr, ok := err.(*exec.ExitError); ok && len(exitErr.Stderr) > 0 {
+		if errors.Is(tctx.Err(), context.DeadlineExceeded) {
+			return strings.TrimSpace(string(out)), fmt.Errorf("%w: %s", ErrCommandTimeout, name)
+		}
+		if errors.Is(err, exec.ErrNotFound) || errors.Is(err, os.ErrNotExist) {
+			return strings.TrimSpace(string(out)), fmt.Errorf("%w: %s", ErrCommandNotFound, name)
+		}
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) && len(exitErr.Stderr) > 0 {
 			return strings.TrimSpace(string(out)), fmt.Errorf("%w: %s", err, strings.TrimSpace(string(exitErr.Stderr)))
 		}
 		return strings.TrimSpace(string(out)), err
@@ -848,7 +897,7 @@ func FetchLatestNpmVersion(ctx context.Context, timeoutMs int) string {
 	var pkg struct {
 		Version string `json:"version"`
 	}
-	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<16)).Decode(&pkg); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, maxJSONResponseBytes)).Decode(&pkg); err != nil {
 		slog.Warn("[dashboard] FetchLatestNpmVersion: JSON decode failed", "error", err)
 		return ""
 	}

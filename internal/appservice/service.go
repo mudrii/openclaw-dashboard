@@ -4,12 +4,54 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
+	"path/filepath"
 	"strings"
 	"time"
 )
 
 // ErrUnsupported is returned on platforms without a service backend.
 var ErrUnsupported = errors.New("service management not supported on this platform")
+
+// validateAbsPath returns nil iff p is a non-empty absolute filesystem path.
+// Used to keep relative or empty values out of generated unit/plist files,
+// where they would either fail at service-start with confusing errors or
+// (worse) resolve against the daemon's cwd.
+func validateAbsPath(p string) error {
+	if p == "" {
+		return errors.New("path is empty")
+	}
+	if !filepath.IsAbs(p) {
+		return fmt.Errorf("path %q is not absolute", p)
+	}
+	return nil
+}
+
+// joinAbsPaths returns a colon-joined PATH-style string built from the given
+// entry groups. Empty, whitespace-only, and non-absolute entries are dropped;
+// duplicates are kept once in first-seen order. Use to sanitize PATH derived
+// from os.Getenv("PATH") before embedding into a service unit file.
+func joinAbsPaths(groups ...[]string) string {
+	seen := make(map[string]struct{})
+	var paths []string
+	for _, g := range groups {
+		for _, entry := range g {
+			entry = strings.TrimSpace(entry)
+			if entry == "" {
+				continue
+			}
+			if !filepath.IsAbs(entry) {
+				continue
+			}
+			if _, ok := seen[entry]; ok {
+				continue
+			}
+			seen[entry] = struct{}{}
+			paths = append(paths, entry)
+		}
+	}
+	return strings.Join(paths, ":")
+}
 
 // runCmdFunc is the signature for running an external command.
 // Injected into backends so tests can intercept exec calls.
@@ -97,7 +139,14 @@ func FormatStatus(version string, st ServiceStatus) string {
 }
 
 func formatUptime(d time.Duration) string {
-	if d <= 0 {
+	if d < 0 {
+		// Clock skew between sample sites (e.g., process start lstart parsed
+		// against time.Since wall clock). Log once and surface a placeholder
+		// rather than misreporting "0s".
+		slog.Warn("clock skew", "duration", d)
+		return "—"
+	}
+	if d == 0 {
 		return "0s"
 	}
 	h := int(d.Hours())

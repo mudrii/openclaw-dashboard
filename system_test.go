@@ -14,6 +14,14 @@ import (
 	"time"
 )
 
+func TestNewSystemService_ReturnsNonNil(t *testing.T) {
+	cfg := defaultConfig().System
+	svc := NewSystemService(cfg, "test-version", context.Background())
+	if svc == nil {
+		t.Fatal("NewSystemService returned nil")
+	}
+}
+
 func TestHandleSystem_GET_Returns200WithSchema(t *testing.T) {
 	dir := t.TempDir()
 	srv := testServer(t, dir)
@@ -864,7 +872,7 @@ func TestRefresh_DataMissing_HasCORSHeaders(t *testing.T) {
 
 	prev := refreshCollectorFunc
 	defer func() { refreshCollectorFunc = prev }()
-	refreshCollectorFunc = func(ctx context.Context, dashboardDir, openclawPath string, cfgOpt ...Config) error {
+	refreshCollectorFunc = func(ctx context.Context, dashboardDir, openclawPath string, cfg Config) error {
 		return os.ErrNotExist
 	}
 

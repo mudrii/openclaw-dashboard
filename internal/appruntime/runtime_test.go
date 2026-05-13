@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestDetectVersion_FromFile(t *testing.T) {
@@ -23,6 +24,26 @@ func TestDetectVersion_Fallback(t *testing.T) {
 	v := DetectVersion(context.Background(), dir)
 	if v != "dev" {
 		t.Errorf("expected dev fallback, got %q", v)
+	}
+}
+
+// TestDetectVersion_RespectsCallerCancellation verifies that DetectVersion
+// honors the caller's context deadline rather than silently substituting a
+// fresh background context. With a cancelled ctx and no VERSION file, the
+// git probe must not run unbounded.
+func TestDetectVersion_RespectsCallerCancellation(t *testing.T) {
+	dir := t.TempDir()
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	done := make(chan string, 1)
+	go func() { done <- DetectVersion(ctx, dir) }()
+	select {
+	case got := <-done:
+		if got != "dev" {
+			t.Errorf("expected dev fallback, got %q", got)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("DetectVersion did not honor cancelled ctx")
 	}
 }
 

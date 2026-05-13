@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"log/slog"
+	"maps"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -65,6 +66,11 @@ func (s *Server) runRefresh(done chan struct{}) {
 // parsed map atomically under one lock acquisition. Merges the old
 // getDataRawCached/getDataCached into a single cache layer to eliminate
 // double-read on concurrent requests.
+//
+// Callers receive a top-level shallow clone of the cached map so concurrent
+// refreshes that swap or mutate s.cachedData cannot race with caller iteration.
+// The raw byte slice is treated as immutable (only ever replaced wholesale)
+// and is returned as-is.
 func (s *Server) loadData() ([]byte, map[string]any, error) {
 	dataPath := filepath.Join(s.dir, "data.json")
 	stat, err := os.Stat(dataPath)
@@ -75,7 +81,8 @@ func (s *Server) loadData() ([]byte, map[string]any, error) {
 
 	s.dataMu.RLock()
 	if s.cachedDataRaw != nil && s.cachedData != nil && !mtime.After(s.cachedDataMtime) {
-		raw, parsed := s.cachedDataRaw, s.cachedData
+		raw := s.cachedDataRaw
+		parsed := maps.Clone(s.cachedData)
 		s.dataMu.RUnlock()
 		return raw, parsed, nil
 	}
@@ -96,11 +103,13 @@ func (s *Server) loadData() ([]byte, map[string]any, error) {
 	s.dataMu.Lock()
 	// Double-check: another goroutine may have updated while we read/parsed
 	if s.cachedDataRaw != nil && s.cachedData != nil && !mtime.After(s.cachedDataMtime) {
-		raw, parsed = s.cachedDataRaw, s.cachedData
+		raw = s.cachedDataRaw
+		parsed = maps.Clone(s.cachedData)
 	} else {
 		s.cachedDataRaw = raw
 		s.cachedData = parsed
 		s.cachedDataMtime = mtime
+		parsed = maps.Clone(parsed)
 	}
 	s.dataMu.Unlock()
 	return raw, parsed, nil

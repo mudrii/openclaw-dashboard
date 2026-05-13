@@ -47,18 +47,13 @@ func Main() int {
 	// Service subcommand dispatch — must happen before flag.Parse so flags
 	// like --bind/--port are not consumed by the default flagset.
 	if subcmd, rest := normaliseCmd(os.Args[1:]); subcmd != "" {
-		switch subcmd {
-		case "install", "uninstall", "start", "stop", "restart", "status":
+		if _, ok := serviceCmdSet[subcmd]; ok {
 			dir, dirErr := resolveDashboardDirWithError(binDir)
 			if dirErr != nil {
 				fmt.Fprintf(os.Stderr, "[dashboard] failed to resolve runtime directory: %v\n", dirErr)
 				return 1
 			}
-			version := BuildVersion
-			if version == "" {
-				version = detectVersion(cmdCtx, dir)
-			}
-			version = strings.TrimPrefix(version, "v")
+			version := resolveVersion(cmdCtx, dir)
 			cfg := loadConfig(dir)
 
 			// env var overrides
@@ -89,11 +84,10 @@ func Main() int {
 				defaultBind: envBind,
 				defaultPort: envPort,
 			})
-		default:
-			fmt.Fprintf(os.Stderr, "[dashboard] unknown command %q\n", subcmd)
-			fmt.Fprintln(os.Stderr, "Usage: openclaw-dashboard [service] install|uninstall|start|stop|restart|status")
-			return 1
 		}
+		fmt.Fprintf(os.Stderr, "[dashboard] unknown command %q\n", subcmd)
+		fmt.Fprintln(os.Stderr, "Usage: openclaw-dashboard [service] install|uninstall|start|stop|restart|status")
+		return 1
 	} else if len(os.Args) > 1 && os.Args[1] == "service" {
 		fmt.Fprintln(os.Stderr, "Usage: openclaw-dashboard service install|uninstall|start|stop|restart|status")
 		return 1
@@ -108,11 +102,7 @@ func Main() int {
 		return 1
 	}
 
-	version := BuildVersion
-	if version == "" {
-		version = detectVersion(cmdCtx, dir)
-	}
-	version = strings.TrimPrefix(version, "v")
+	version := resolveVersion(cmdCtx, dir)
 	cfg := loadConfig(dir)
 
 	// Env var defaults
@@ -166,7 +156,17 @@ func Main() int {
 	env := readDotenv(cfg.AI.DotenvPath)
 	gatewayToken := env["OPENCLAW_GATEWAY_TOKEN"]
 	if cfg.AI.Enabled && gatewayToken == "" {
-		slog.Warn("[dashboard] ai.enabled=true but OPENCLAW_GATEWAY_TOKEN not found in dotenv")
+		// Fail fast at startup rather than letting the first /api/chat request
+		// hit the gateway with an empty Authorization header. Set
+		// DASHBOARD_AI_TOKEN_OPTIONAL=1 to downgrade this to a warning (useful
+		// for dev environments where the gateway runs without auth).
+		if os.Getenv("DASHBOARD_AI_TOKEN_OPTIONAL") == "1" {
+			slog.Warn("[dashboard] ai.enabled=true but OPENCLAW_GATEWAY_TOKEN missing — proceeding because DASHBOARD_AI_TOKEN_OPTIONAL=1")
+		} else {
+			fmt.Fprintln(os.Stderr, "[dashboard] fatal: ai.enabled=true but OPENCLAW_GATEWAY_TOKEN missing from "+cfg.AI.DotenvPath)
+			fmt.Fprintln(os.Stderr, "[dashboard] set OPENCLAW_GATEWAY_TOKEN in the dotenv, or DASHBOARD_AI_TOKEN_OPTIONAL=1 to bypass")
+			return 1
+		}
 	}
 
 	// Server lifecycle context — follows the top-level CLI lifecycle.
@@ -211,16 +211,18 @@ func Main() int {
 	select {
 	case <-cmdCtx.Done():
 	case err := <-serverErr:
-		serverCancel()
 		fmt.Fprintf(os.Stderr, "[dashboard] fatal: %v\n", err)
 		return 1
 	}
 
-	serverCancel() // cancel background goroutines (metrics refresh, etc.)
 	fmt.Println("\n[dashboard] shutting down...")
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	if err := httpSrv.Shutdown(ctx); err != nil {
+	// Derive shutdown ctx from a fresh signal-aware parent so a second SIGINT/SIGTERM
+	// during graceful shutdown aborts the wait instead of being ignored.
+	shutdownCtx, shutdownCancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer shutdownCancel()
+	shutdownCtx, timeoutCancel := context.WithTimeout(shutdownCtx, 5*time.Second)
+	defer timeoutCancel()
+	if err := httpSrv.Shutdown(shutdownCtx); err != nil {
 		fmt.Fprintf(os.Stderr, "[dashboard] shutdown error: %v\n", err)
 	}
 	fmt.Println("[dashboard] stopped")
@@ -269,6 +271,45 @@ type serviceCmdOpts struct {
 	defaultPort int
 }
 
+// resolveVersion returns the canonical dashboard version string.
+// Prefers the link-time BuildVersion, falling back to detectVersion(dir).
+// Strips the leading "v" so callers see a bare semver.
+func resolveVersion(ctx context.Context, dir string) string {
+	v := BuildVersion
+	if v == "" {
+		v = detectVersion(ctx, dir)
+	}
+	return strings.TrimPrefix(v, "v")
+}
+
+// serviceAction handles a single subcommand using parsed flags + opts.
+// Returns the process exit code.
+type serviceAction func(opts serviceCmdOpts, bind string, port int) int
+
+// serviceActions returns the dispatch table keyed by subcommand name.
+func serviceActions() map[string]serviceAction {
+	return map[string]serviceAction{
+		"install":   serviceInstall,
+		"uninstall": serviceUninstall,
+		"start":     serviceStart,
+		"stop":      serviceStop,
+		"restart":   serviceRestart,
+		"status":    serviceStatus,
+	}
+}
+
+// serviceCmdSet is the set of subcommand names accepted by Main's dispatch.
+// Keys mirror serviceActions(); kept as a separate var so the pre-flag
+// recognition path does not allocate the action table.
+var serviceCmdSet = map[string]struct{}{
+	"install":   {},
+	"uninstall": {},
+	"start":     {},
+	"stop":      {},
+	"restart":   {},
+	"status":    {},
+}
+
 // runServiceCmd executes a service lifecycle subcommand using the given opts.
 func runServiceCmd(cmd string, opts serviceCmdOpts) int {
 	fs := flag.NewFlagSet("service", flag.ContinueOnError)
@@ -284,62 +325,75 @@ func runServiceCmd(cmd string, opts serviceCmdOpts) int {
 		return 1
 	}
 
-	switch cmd {
-	case "install":
-		cfg := appservice.InstallConfig{
-			BinPath: opts.binPath,
-			WorkDir: opts.dir,
-			LogPath: filepath.Join(opts.dir, "server.log"),
-			Host:    *bind,
-			Port:    *port,
-		}
-		if err := opts.backend.Install(cfg); err != nil {
-			fmt.Fprintf(os.Stderr, "[dashboard] install failed: %v\n", err)
-			return 1
-		}
-		fmt.Println("[dashboard] service installed and started")
-		return 0
-	case "uninstall":
-		if err := opts.backend.Uninstall(); err != nil {
-			fmt.Fprintf(os.Stderr, "[dashboard] uninstall failed: %v\n", err)
-			return 1
-		}
-		fmt.Println("[dashboard] service stopped and unregistered (config and data preserved)")
-		return 0
-	case "start":
-		if err := opts.backend.Start(); err != nil {
-			fmt.Fprintf(os.Stderr, "[dashboard] start failed: %v\n", err)
-			return 1
-		}
-		fmt.Println("[dashboard] service started")
-		return 0
-	case "stop":
-		if err := opts.backend.Stop(); err != nil {
-			fmt.Fprintf(os.Stderr, "[dashboard] stop failed: %v\n", err)
-			return 1
-		}
-		fmt.Println("[dashboard] service stopped")
-		return 0
-	case "restart":
-		if err := opts.backend.Restart(); err != nil {
-			fmt.Fprintf(os.Stderr, "[dashboard] restart failed: %v\n", err)
-			return 1
-		}
-		fmt.Println("[dashboard] service restarted")
-		return 0
-	case "status":
-		st, err := opts.backend.Status()
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "[dashboard] status failed: %v\n", err)
-			return 1
-		}
-		fmt.Print(appservice.FormatStatus(opts.version, st))
-		return 0
-	default:
+	action, ok := serviceActions()[cmd]
+	if !ok {
 		fmt.Fprintf(os.Stderr, "[dashboard] unknown service command %q\n", cmd)
 		fmt.Fprintln(os.Stderr, "Usage: openclaw-dashboard [service] install|uninstall|start|stop|restart|status")
 		return 1
 	}
+	return action(opts, *bind, *port)
+}
+
+func serviceInstall(opts serviceCmdOpts, bind string, port int) int {
+	cfg := appservice.InstallConfig{
+		BinPath: opts.binPath,
+		WorkDir: opts.dir,
+		LogPath: filepath.Join(opts.dir, "server.log"),
+		Host:    bind,
+		Port:    port,
+	}
+	if err := opts.backend.Install(cfg); err != nil {
+		fmt.Fprintf(os.Stderr, "[dashboard] install failed: %v\n", err)
+		return 1
+	}
+	fmt.Println("[dashboard] service installed and started")
+	return 0
+}
+
+func serviceUninstall(opts serviceCmdOpts, _ string, _ int) int {
+	if err := opts.backend.Uninstall(); err != nil {
+		fmt.Fprintf(os.Stderr, "[dashboard] uninstall failed: %v\n", err)
+		return 1
+	}
+	fmt.Println("[dashboard] service stopped and unregistered (config and data preserved)")
+	return 0
+}
+
+func serviceStart(opts serviceCmdOpts, _ string, _ int) int {
+	if err := opts.backend.Start(); err != nil {
+		fmt.Fprintf(os.Stderr, "[dashboard] start failed: %v\n", err)
+		return 1
+	}
+	fmt.Println("[dashboard] service started")
+	return 0
+}
+
+func serviceStop(opts serviceCmdOpts, _ string, _ int) int {
+	if err := opts.backend.Stop(); err != nil {
+		fmt.Fprintf(os.Stderr, "[dashboard] stop failed: %v\n", err)
+		return 1
+	}
+	fmt.Println("[dashboard] service stopped")
+	return 0
+}
+
+func serviceRestart(opts serviceCmdOpts, _ string, _ int) int {
+	if err := opts.backend.Restart(); err != nil {
+		fmt.Fprintf(os.Stderr, "[dashboard] restart failed: %v\n", err)
+		return 1
+	}
+	fmt.Println("[dashboard] service restarted")
+	return 0
+}
+
+func serviceStatus(opts serviceCmdOpts, _ string, _ int) int {
+	st, err := opts.backend.Status()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "[dashboard] status failed: %v\n", err)
+		return 1
+	}
+	fmt.Print(appservice.FormatStatus(opts.version, st))
+	return 0
 }
 
 func localIP() string {

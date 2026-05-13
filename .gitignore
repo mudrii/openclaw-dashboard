@@ -12,6 +12,7 @@ Thumbs.db
 
 # Worktrees
 .worktrees/
+.claude/worktrees/
 
 # Generated data (contains local system info)
 data.json
@@ -35,3 +36,4 @@ dashboard-server
 
 # Local Claude settings
 .claude/settings.local.json
+graphify-out/
