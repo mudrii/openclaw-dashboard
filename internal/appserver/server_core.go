@@ -26,6 +26,9 @@ const (
 	chatRateLimit           = 10 // max requests per minute per IP
 	chatRateWindow          = 1 * time.Minute
 	chatRateCleanupInterval = 5 * time.Minute
+	// defaultUpstreamHTTPTimeout caps end-to-end calls from this server to
+	// upstream HTTP services (currently the AI chat gateway).
+	defaultUpstreamHTTPTimeout = 60 * time.Second
 )
 
 // Pre-defined error JSON responses — avoid map alloc + marshal on hot paths
@@ -155,7 +158,7 @@ func NewServer(dir, version string, cfg appconfig.Config, gatewayToken string, i
 		indexHTMLRendered:  rendered,
 		indexContentLength: strconv.Itoa(len(rendered)),
 		corsDefault:        "http://localhost:" + strconv.Itoa(cfg.Server.Port),
-		httpClient:         &http.Client{Timeout: 60 * time.Second},
+		httpClient:         &http.Client{Timeout: defaultUpstreamHTTPTimeout},
 		systemSvc:          appsystem.NewSystemService(cfg.System, version, serverCtx),
 		refreshFn:          refreshFn,
 		ctx:                serverCtx,
