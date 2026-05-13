@@ -36,6 +36,10 @@ func writeFileAtomic(path string, data []byte, perm fs.FileMode) error {
 		_ = f.Close()
 		return fmt.Errorf("write temp: %w", err)
 	}
+	if err := f.Sync(); err != nil {
+		_ = f.Close()
+		return fmt.Errorf("sync temp: %w", err)
+	}
 	if err := f.Close(); err != nil {
 		return fmt.Errorf("close temp: %w", err)
 	}
