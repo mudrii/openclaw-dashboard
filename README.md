@@ -480,6 +480,23 @@ The chat is stateless — each question is sent directly to the gateway with a s
 
 See [docs/CONFIGURATION.md](docs/CONFIGURATION.md) for full details.
 
+### Example: Monitor X/Twitter Automation
+
+If an OpenClaw agent handles public X/Twitter work, install TweetClaw as the
+action plugin and use OpenClaw Dashboard to watch the matching agent session,
+cron status, token usage, configured skills, and cost trend while it runs.
+
+```bash
+openclaw plugins install @xquik/tweetclaw
+```
+
+TweetClaw covers API-backed tweet search, reply search, follower export, user
+lookup, media upload/download, direct messages, monitors, webhooks, giveaway
+draws, and approval-gated posts or replies. See the
+[GitHub repo](https://github.com/Xquik-dev/tweetclaw),
+[npm package](https://www.npmjs.com/package/@xquik/tweetclaw), and
+[ClawHub listing](https://clawhub.ai/plugins/@xquik/tweetclaw).
+
 ## Screenshots
 
 Full dashboard view — all sections at a glance:

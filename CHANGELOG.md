@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Documentation
+
+- **TweetClaw workflow example** - documents how to pair OpenClaw Dashboard with `@xquik/tweetclaw` so users can monitor sessions, crons, costs, and configured skills for X/Twitter automation work.
+
 ## v2026.5.13 — 2026-05-13
 
 Code-review fixes (waves 1–4) and security hardening pass. No new features.
