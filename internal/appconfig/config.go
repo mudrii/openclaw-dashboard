@@ -287,7 +287,11 @@ func Load(dir string) Config {
 	if cfg.System.GatewayTimeoutMs < 200 || cfg.System.GatewayTimeoutMs > 15000 {
 		cfg.System.GatewayTimeoutMs = 5000
 	}
-	if cfg.System.ColdPathTimeoutMs < 200 || cfg.System.ColdPathTimeoutMs > 15000 {
+	// Upper bound 30000 (was 15000) accommodates runtimes where
+	// `openclaw status --json` is wrapped in docker exec or similar that adds
+	// ~10s of overhead (see issue #31). Worst case the dashboard waits 30s
+	// for cold metrics, which is still finite and protects the page load.
+	if cfg.System.ColdPathTimeoutMs < 200 || cfg.System.ColdPathTimeoutMs > 30000 {
 		cfg.System.ColdPathTimeoutMs = 4000
 	}
 	if cfg.System.GatewayPort <= 0 {
