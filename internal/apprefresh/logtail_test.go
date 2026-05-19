@@ -219,6 +219,40 @@ func TestParseLogTimestamp_NoCandidates(t *testing.T) {
 	}
 }
 
+// TestParseLogTimestamp_TZLessUsesLocal guards against regression of the bug
+// where time.Parse on a TZ-less layout defaulted to UTC. Gateway logs are
+// emitted in local time; if the parser interprets them as UTC, chart buckets
+// drift by the local UTC offset.
+func TestParseLogTimestamp_TZLessIsLocalNotUTC(t *testing.T) {
+	const raw = "2026-05-01 10:00:00"
+	ts, _ := ParseLogTimestamp(raw)
+	if ts.IsZero() {
+		t.Fatalf("expected parse to succeed")
+	}
+	if ts.Location() != time.Local {
+		t.Fatalf("location: want time.Local, got %v", ts.Location())
+	}
+	want := time.Date(2026, 5, 1, 10, 0, 0, 0, time.Local)
+	if !ts.Equal(want) {
+		t.Fatalf("ts: want %v (Local), got %v (%v)", want, ts, ts.Location())
+	}
+}
+
+// TestParseLogTimestamp_RFC3339OffsetPreserved guards that the location
+// switch did not break inputs that carry their own offset.
+func TestParseLogTimestamp_RFC3339OffsetPreserved(t *testing.T) {
+	const raw = "2026-05-01T10:00:00+03:00"
+	ts, _ := ParseLogTimestamp(raw)
+	if ts.IsZero() {
+		t.Fatalf("expected parse to succeed")
+	}
+	// Expected absolute instant: 07:00:00 UTC.
+	want := time.Date(2026, 5, 1, 7, 0, 0, 0, time.UTC)
+	if !ts.Equal(want) {
+		t.Fatalf("ts: want %v, got %v", want, ts)
+	}
+}
+
 func TestClassifySeverity(t *testing.T) {
 	tests := []struct {
 		line, component, want string

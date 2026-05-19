@@ -186,7 +186,7 @@ func collectDashboardData(ctx context.Context, dashboardDir, openclawPath string
 	var gitLog []map[string]any
 	var cwg sync.WaitGroup
 	cwg.Add(3)
-	go func() { defer cwg.Done(); gateway = collectGatewayHealth(ctx) }()
+	go func() { defer cwg.Done(); gateway = collectGatewayHealth(ctx, cfg.AI.GatewayPort) }()
 	go func() { defer cwg.Done(); crons = CollectCrons(cronPath, loc) }()
 	go func() { defer cwg.Done(); gitLog = collectGitLog(ctx, openclawPath) }()
 

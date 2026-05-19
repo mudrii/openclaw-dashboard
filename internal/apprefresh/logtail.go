@@ -266,7 +266,12 @@ func parsePlainLine(line string, fallback time.Time) LogRecord {
 	}
 }
 
-// ParseLogTimestamp tries multiple timestamp formats and returns the first valid match.
+// ParseLogTimestamp tries multiple timestamp formats and returns the first
+// valid match. TZ-less layouts are interpreted in the process's local
+// timezone — gateway logs are emitted in local time on the same host as the
+// dashboard, so anchoring on time.Local keeps chart buckets and alert
+// windows aligned. RFC3339 layouts carry their own offset in the string and
+// are unaffected by the location argument.
 func ParseLogTimestamp(candidates ...string) (time.Time, string) {
 	if len(candidates) == 0 {
 		return time.Time{}, ""
@@ -286,7 +291,7 @@ func ParseLogTimestamp(candidates ...string) (time.Time, string) {
 			"2006-01-02T15:04:05",
 			"2006-01-02T15:04:05Z",
 		} {
-			if parsed, err := time.Parse(layout, c); err == nil {
+			if parsed, err := time.ParseInLocation(layout, c, time.Local); err == nil {
 				return parsed, c
 			}
 		}

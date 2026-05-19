@@ -117,7 +117,9 @@ func saveTokenUsageCache(path string, cache tokenUsageCache) {
 		return
 	}
 	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o644); err != nil {
+	// 0o600 matches data.json + plist + systemd unit writers; cache holds
+	// per-session token/cost data that should not be world-readable.
+	if err := os.WriteFile(tmp, data, 0o600); err != nil {
 		slog.Error("[dashboard] saveTokenUsageCache: write failed", "path", tmp, "error", err)
 		return
 	}
