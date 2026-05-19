@@ -616,6 +616,29 @@ func TestPreWarm_TriggersRefreshCollector(t *testing.T) {
 	t.Fatal("PreWarm completed but data.json was not written")
 }
 
+// --- Loopback bind enforcement ---
+
+func TestValidateLoopbackBind(t *testing.T) {
+	allowed := []string{"", "127.0.0.1", "localhost", "::1", "  127.0.0.1  "}
+	for _, h := range allowed {
+		if err := validateLoopbackBind(h); err != nil {
+			t.Errorf("validateLoopbackBind(%q) = %v, want nil", h, err)
+		}
+	}
+
+	rejected := []string{"0.0.0.0", "192.168.1.10", "::", "10.0.0.1", "example.com"}
+	for _, h := range rejected {
+		err := validateLoopbackBind(h)
+		if err == nil {
+			t.Errorf("validateLoopbackBind(%q) = nil, want error", h)
+			continue
+		}
+		if !strings.Contains(err.Error(), "non-loopback") {
+			t.Errorf("validateLoopbackBind(%q) error = %q, want substring %q", h, err.Error(), "non-loopback")
+		}
+	}
+}
+
 // --- Helpers ---
 
 func writeJSON(t *testing.T, path string, v any) {

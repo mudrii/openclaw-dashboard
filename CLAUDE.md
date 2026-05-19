@@ -114,3 +114,6 @@ Scopes: `refresh`, `server`, `system`, `chat`, `config`, `service`, `runtime`, `
 ## Review Rejects
 
 Premature abstractions · swallowed errors · context misuse · goroutine leaks · unsafe shared state · unnecessary deps · behavior-changing go fix applied blindly · transport in domain · missing tests · secrets in code · pre-1.24 patterns when go.mod allows modern · magic values · giant mixed-responsibility functions
+
+## graphify
+See [docs/graphify.md](docs/graphify.md) for the canonical knowledge-graph workflow and rules.

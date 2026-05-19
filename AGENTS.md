@@ -116,3 +116,6 @@ Zero-dependency Go HTTP server with embedded SPA frontend:
 - Core logic belongs in `internal/app<domain>/`.
 - The root package is a facade and must stay zero-logic.
 - Frontend changes require rebuild because `web/index.html` is embedded.
+
+## graphify
+See [docs/graphify.md](docs/graphify.md) for the canonical knowledge-graph workflow and rules.

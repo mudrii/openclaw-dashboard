@@ -173,6 +173,11 @@ func Main() int {
 	serverCtx, serverCancel := context.WithCancel(cmdCtx)
 	defer serverCancel()
 
+	if err := validateLoopbackBind(*bind); err != nil {
+		fmt.Fprintf(os.Stderr, "[dashboard] fatal: %v\n", err)
+		return 1
+	}
+
 	srv := NewServer(dir, version, cfg, gatewayToken, indexHTML, serverCtx)
 
 	// Pre-warm data.json in background so first browser hit is instant
@@ -394,6 +399,17 @@ func serviceStatus(opts serviceCmdOpts, _ string, _ int) int {
 	}
 	fmt.Print(appservice.FormatStatus(opts.version, st))
 	return 0
+}
+
+// validateLoopbackBind enforces the loopback-only bind policy. The dashboard's
+// chat rate-limit map grows unbounded between cleanup cycles, so exposing it on
+// a non-loopback interface is a DoS surface. There is no override flag.
+func validateLoopbackBind(host string) error {
+	switch strings.TrimSpace(host) {
+	case "", "127.0.0.1", "localhost", "::1":
+		return nil
+	}
+	return fmt.Errorf("non-loopback bind host %q is not supported; this dashboard is loopback-only by design", host)
 }
 
 func localIP() string {
