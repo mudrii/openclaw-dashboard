@@ -19,7 +19,52 @@ func defaultAgentConfig() map[string]any {
 		"hooks": []any{}, "plugins": []map[string]any{},
 		"skills": []any{}, "bindings": []any{},
 		"crons": []any{}, "tts": false, "diagnostics": false,
+		"contextWindow": nil, "maxOutputTokens": nil,
+		"memoryPolicy": nil,
 	}
+}
+
+// lookupModelLimits walks the openclaw.json model registry (models.providers[provider].models[])
+// and returns the contextWindow + maxTokens entry for the given fully-qualified
+// model id (e.g. "minimax/MiniMax-M2.7"). Returns (nil, nil) when not found —
+// the dashboard surfaces null rather than fabricating a default.
+func lookupModelLimits(oc map[string]any, modelID string) (contextWindow, maxTokens any) {
+	if modelID == "" || !strings.Contains(modelID, "/") {
+		return nil, nil
+	}
+	parts := strings.SplitN(modelID, "/", 2)
+	provider, mid := parts[0], parts[1]
+	providers := jsonObj(jsonObj(oc, "models"), "providers")
+	prov := jsonObj(providers, provider)
+	for _, entry := range jsonArr(prov, "models") {
+		em := asObj(entry)
+		if em == nil {
+			continue
+		}
+		if jsonStr(em, "id") == mid {
+			return em["contextWindow"], em["maxTokens"]
+		}
+	}
+	return nil, nil
+}
+
+// parseMemoryPolicy projects agents.defaults.memorySearch into the wire format
+// the dashboard surfaces under agentConfig.memoryPolicy. Returns nil when no
+// memorySearch block is configured.
+func parseMemoryPolicy(defaults map[string]any) map[string]any {
+	ms := asObj(defaults["memorySearch"])
+	if ms == nil {
+		return nil
+	}
+	out := map[string]any{
+		"enabled":  ms["enabled"],
+		"sources":  ms["sources"],
+		"fallback": ms["fallback"],
+	}
+	if exp, ok := ms["experimental"].(map[string]any); ok {
+		out["experimental"] = exp
+	}
+	return out
 }
 
 // parseOpenclawConfig walks a parsed openclaw.json map and produces the
@@ -128,6 +173,10 @@ func parseOpenclawConfig(oc map[string]any, basePath string) (
 			"maxChildrenPerAgent": jsonObj(defaults, "subagents")["maxChildrenPerAgent"],
 		},
 	}
+	contextWindow, maxOutputTokens := lookupModelLimits(oc, primary)
+	agentConfig["contextWindow"] = contextWindow
+	agentConfig["maxOutputTokens"] = maxOutputTokens
+	agentConfig["memoryPolicy"] = parseMemoryPolicy(defaults)
 
 	return compactionMode, skills, availableModels, modelAliases, agentConfig
 }

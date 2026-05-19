@@ -140,9 +140,13 @@ func CollectCrons(cronPath string, loc *time.Location) []map[string]any {
 		model := jsonStr(payload, "model")
 
 		name := jsonStrDefault(jm, "name", "Unknown")
+		agentID := jsonStr(jm, "agentId")
+		id := jsonStr(jm, "id")
 
 		crons = append(crons, map[string]any{
+			"id":             id,
 			"name":           name,
+			"agentId":        agentID,
 			"schedule":       schedStr,
 			"enabled":        enabled,
 			"lastRun":        lastRunStr,
