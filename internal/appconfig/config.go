@@ -78,6 +78,10 @@ type SystemConfig struct {
 	// timeout; this is the overall budget that prevents a slow gateway from
 	// dragging the whole refresh past the frontend fetch deadline.
 	ColdPathTimeoutMs int             `json:"coldPathTimeoutMs"`
+	// CPUTimeoutMs bounds the CPU sampling command on darwin (`top -l 2 -s 1`)
+	// and the CPU read on linux (`/proc/stat`). Defaults to 4000ms; raise when
+	// the host is heavily loaded and `top` exceeds the default budget.
+	CPUTimeoutMs int             `json:"cpuTimeoutMs"`
 	GatewayPort       int             `json:"gatewayPort"`
 	DiskPath          string          `json:"diskPath"`
 	WarnPercent       float64         `json:"warnPercent"`
@@ -138,7 +142,8 @@ func Default() Config {
 			MetricsTTLSeconds:  10,
 			VersionsTTLSeconds: 300,
 			GatewayTimeoutMs:   5000,
-			ColdPathTimeoutMs:  4000,
+			ColdPathTimeoutMs:  8000,
+			CPUTimeoutMs:       6000,
 			// GatewayPort intentionally left zero so Load() can inherit from
 			// AI.GatewayPort when system.gatewayPort is omitted in config.json.
 			// Pre-filling here would mask user overrides on the AI side.
@@ -296,7 +301,10 @@ func Load(dir string) Config {
 	// ~10s of overhead (see issue #31). Worst case the dashboard waits 30s
 	// for cold metrics, which is still finite and protects the page load.
 	if cfg.System.ColdPathTimeoutMs < 200 || cfg.System.ColdPathTimeoutMs > 30000 {
-		cfg.System.ColdPathTimeoutMs = 4000
+		cfg.System.ColdPathTimeoutMs = 8000
+	}
+	if cfg.System.CPUTimeoutMs < 500 || cfg.System.CPUTimeoutMs > 20000 {
+		cfg.System.CPUTimeoutMs = 6000
 	}
 	if cfg.System.GatewayPort <= 0 {
 		cfg.System.GatewayPort = cfg.AI.GatewayPort

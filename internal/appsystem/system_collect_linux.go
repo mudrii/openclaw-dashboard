@@ -14,7 +14,7 @@ import (
 	"time"
 )
 
-func collectCPU(ctx context.Context) SystemCPU {
+func collectCPU(ctx context.Context, _ int) SystemCPU {
 	content1, err := os.ReadFile("/proc/stat")
 	if err != nil {
 		e := fmt.Sprintf("read /proc/stat: %v", err)
@@ -106,7 +106,7 @@ func swapFromMeminfo(info map[string]uint64) SystemSwap {
 
 // collectCPURAMSwapParallel runs all three Linux collectors concurrently.
 // /proc/meminfo is read once and shared between RAM and Swap collectors.
-func collectCPURAMSwapParallel(ctx context.Context) (SystemCPU, SystemRAM, SystemSwap) {
+func collectCPURAMSwapParallel(ctx context.Context, cpuTimeoutMs int) (SystemCPU, SystemRAM, SystemSwap) {
 	// Read /proc/meminfo once — shared by RAM and Swap to avoid double I/O
 	// and ensure both metrics come from the same kernel snapshot.
 	info, meminfoErr := collectMeminfo()
@@ -116,7 +116,7 @@ func collectCPURAMSwapParallel(ctx context.Context) (SystemCPU, SystemRAM, Syste
 	var swap SystemSwap
 	var wg sync.WaitGroup
 	wg.Add(3)
-	go func() { defer wg.Done(); cpu = collectCPU(ctx) }()
+	go func() { defer wg.Done(); cpu = collectCPU(ctx, cpuTimeoutMs) }()
 	go func() {
 		defer wg.Done()
 		if meminfoErr != nil {

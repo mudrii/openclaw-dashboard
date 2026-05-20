@@ -209,7 +209,7 @@ func (s *SystemService) refresh(ctx context.Context) ([]byte, bool) {
 	go func() { defer wg.Done(); disk = CollectDiskRoot(s.cfg.DiskPath) }()
 	go func() {
 		defer wg.Done()
-		cpu, ram, swap = collectCPURAMSwapParallel(coldCtx)
+		cpu, ram, swap = collectCPURAMSwapParallel(coldCtx, s.cfg.CPUTimeoutMs)
 	}()
 	wg.Wait()
 

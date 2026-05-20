@@ -8,22 +8,24 @@ import (
 )
 
 // TestColdPathTimeoutMs_Clamp pins the accepted range for ColdPathTimeoutMs:
-// 200ms to 30000ms inclusive. Out-of-range values fall back to 4000ms. The
+// 200ms to 30000ms inclusive. Out-of-range values fall back to 8000ms. The
 // 30s upper bound (raised from 15s, see issue #31) accommodates runtimes
 // where openclaw status --json is wrapped in docker exec and takes ~16s.
+// Default raised from 4000 to 8000 to survive busy hosts where `top -l 2`
+// can exceed the previous 4s budget.
 func TestColdPathTimeoutMs_Clamp(t *testing.T) {
 	tests := []struct {
 		name string
 		in   int
 		want int
 	}{
-		{"below 200 resets to default", 199, 4000},
+		{"below 200 resets to default", 199, 8000},
 		{"200 accepted (lower bound)", 200, 200},
 		{"in-range value preserved", 5000, 5000},
 		{"previously rejected 16000 now accepted", 16000, 16000},
 		{"upper bound 30000 accepted", 30000, 30000},
-		{"above 30000 resets to default", 30001, 4000},
-		{"absurd value resets to default", 999999, 4000},
+		{"above 30000 resets to default", 30001, 8000},
+		{"absurd value resets to default", 999999, 8000},
 	}
 
 	for _, tc := range tests {
