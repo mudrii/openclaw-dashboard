@@ -57,7 +57,7 @@ func collectCPU(ctx context.Context) SystemCPU {
 func collectMeminfo() (map[string]uint64, error) {
 	content, err := os.ReadFile("/proc/meminfo")
 	if err != nil {
-		return nil, fmt.Errorf("read /proc/meminfo: %v", err)
+		return nil, fmt.Errorf("read /proc/meminfo: %w", err)
 	}
 	return parseProcMeminfo(string(content))
 }
