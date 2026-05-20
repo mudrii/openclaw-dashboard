@@ -22,7 +22,7 @@ import (
 type LogRecord struct {
 	Source      string    `json:"source,omitempty"`
 	SeenAt      string    `json:"seenAt,omitempty"`
-	TimestampMs int64     `json:"timestamp,omitempty"`
+	TimestampMs int64     `json:"timestamp"`
 	Severity    string    `json:"severity,omitempty"`
 	Message     string    `json:"message,omitempty"`
 	Line        string    `json:"line,omitempty"`
@@ -73,33 +73,29 @@ func ReadMergedLogs(openclawPath string, sources []string, globalLimit int) ([]L
 
 	perSourceRecords := make([][]LogRecord, 0, len(sources))
 	for _, source := range sources {
-		path, ok := resolveLogPath(openclawPath, source)
-		if !ok {
-			continue
-		}
-
-		stat, err := os.Stat(path)
-		if err != nil {
-			continue
-		}
-
-		lines, err := readTailLines(path, globalLimit)
-		if err != nil {
-			continue
-		}
-
-		sourceRecords := make([]LogRecord, 0, len(lines))
-		for _, line := range lines {
-			record, ok := parseLogLine(line, path, stat.ModTime())
-			if !ok {
+		candidates := candidateLogPaths(openclawPath, source)
+		sourceRecords := make([]LogRecord, 0)
+		for _, path := range candidates {
+			stat, err := os.Stat(path)
+			if err != nil {
 				continue
 			}
-			record.Source = source
-			record.Raw = line
-			if record.TimestampMs == 0 {
-				record.TimestampMs = stat.ModTime().UnixMilli()
+			lines, err := readTailLines(path, globalLimit)
+			if err != nil {
+				continue
 			}
-			sourceRecords = append(sourceRecords, record)
+			for _, line := range lines {
+				record, ok := parseLogLine(line, path, stat.ModTime())
+				if !ok {
+					continue
+				}
+				record.Source = source
+				record.Raw = line
+				if record.TimestampMs == 0 {
+					record.TimestampMs = stat.ModTime().UnixMilli()
+				}
+				sourceRecords = append(sourceRecords, record)
+			}
 		}
 		if len(sourceRecords) > 0 {
 			perSourceRecords = append(perSourceRecords, sourceRecords)
@@ -492,6 +488,58 @@ func ResolveLogPath(openclawPath, source string) (string, bool) {
 
 func resolveLogPath(openclawPath, source string) (string, bool) {
 	return ResolveLogPath(openclawPath, source)
+}
+
+// logFallbackRootsFunc is overridable so tests can disable home-dir lookup
+// and stay hermetic. Production callers must not reassign it.
+var logFallbackRootsFunc = defaultLogFallbackRoots
+
+// LogFallbackRoots returns directories to search for log files when the primary
+// path under openclawPath is missing. OpenClaw 2026.5.18+ writes logs to the
+// platform standard log directory, so the dashboard needs to look outside
+// ~/.openclaw to find the live file.
+func LogFallbackRoots() []string {
+	return logFallbackRootsFunc()
+}
+
+func defaultLogFallbackRoots() []string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return nil
+	}
+	return []string{filepath.Join(home, "Library", "Logs", "openclaw")}
+}
+
+// SetLogFallbackRoots overrides the directory list returned by LogFallbackRoots.
+// Pass nil to revert to the platform default. Intended for tests; production
+// code should leave this alone.
+func SetLogFallbackRoots(fn func() []string) {
+	if fn == nil {
+		logFallbackRootsFunc = defaultLogFallbackRoots
+		return
+	}
+	logFallbackRootsFunc = fn
+}
+
+// candidateLogPaths returns paths to try for a given source, in priority order:
+// the primary path under openclawPath followed by each fallback root from
+// LogFallbackRoots(). Callers should read every existing candidate so log
+// data is merged when OpenClaw rotates or migrates log locations (e.g.
+// 2026.5.18+ moved gateway logs from ~/.openclaw/logs/ to
+// ~/Library/Logs/openclaw/).
+func candidateLogPaths(openclawPath, source string) []string {
+	out := make([]string, 0, 2)
+	if path, ok := ResolveLogPath(openclawPath, source); ok {
+		out = append(out, path)
+	}
+	base := strings.TrimPrefix(filepath.Clean(filepath.FromSlash(source)), "logs"+string(filepath.Separator))
+	if base == "" || filepath.IsAbs(base) || strings.HasPrefix(base, "..") {
+		return out
+	}
+	for _, root := range LogFallbackRoots() {
+		out = append(out, filepath.Join(root, base))
+	}
+	return out
 }
 
 func GetLogRuntimeConfig(cfg appconfig.Config) map[string]any {
