@@ -1,5 +1,22 @@
 # Changelog
 
+## v2026.5.22 — 2026-05-20
+
+Single-fix patch.
+
+### Fixed
+
+- **`gateway.port` now populated in `data.json`** — `collectGatewayHealth`
+  in `internal/apprefresh/refresh_gateway.go` was returning a gateway block
+  without the `port` field, so the UI's Gateway Panel rendered an empty
+  port cell even when the configured value was correct (the value was
+  available via `agentConfig.gateway.port` but the top-level block was
+  the source for the panel). The collector now surfaces the caller-provided
+  port unconditionally, including when the gateway probe reports offline,
+  so the panel can show "configured port X, status offline" instead of
+  a blank cell. New test `TestCollectGatewayHealth_PortFieldPopulated`
+  pins the contract.
+
 ## v2026.5.21 — 2026-05-20
 
 Same-day patch. Closes the toolchain CVEs surfaced by the v2026.5.20 CI gate,

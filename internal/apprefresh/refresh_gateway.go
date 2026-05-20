@@ -57,6 +57,7 @@ func collectGatewayHealth(ctx context.Context, gatewayPort int) map[string]any {
 	gw := map[string]any{
 		"status": "offline",
 		"pid":    nil,
+		"port":   gatewayPort,
 		"uptime": "",
 		"memory": "",
 		"rss":    0,

@@ -174,3 +174,35 @@ func TestCollectGatewayHealth_PortZeroSkipsHTTP(t *testing.T) {
 		t.Fatalf("status: want offline, got %v", gw["status"])
 	}
 }
+
+// TestCollectGatewayHealth_PortFieldPopulated pins the dashboard wire-format
+// contract: the gateway block in data.json must carry the gateway port so
+// the UI's Gateway Panel can render it without round-tripping through
+// agentConfig.gateway.port. Prior releases (≤ v2026.5.21) omitted the field
+// entirely; the panel displayed an empty port column even when the
+// configured value was correct.
+func TestCollectGatewayHealth_PortFieldPopulated(t *testing.T) {
+	stubHealthz(t, true)
+	stubPgrep(t, "", nil)
+	gw := collectGatewayHealth(context.Background(), 18789)
+	port, ok := gw["port"].(int)
+	if !ok {
+		t.Fatalf("port: want int field, got %T (%v)", gw["port"], gw["port"])
+	}
+	if port != 18789 {
+		t.Fatalf("port: want 18789, got %d", port)
+	}
+
+	// Port must mirror the caller's value even when the gateway is offline,
+	// so the UI can show "configured port 18789, status offline" instead of
+	// a blank cell.
+	stubHealthz(t, false)
+	stubPgrep(t, "", nil)
+	gw = collectGatewayHealth(context.Background(), 12345)
+	if gw["status"] != "offline" {
+		t.Fatalf("status: want offline, got %v", gw["status"])
+	}
+	if gw["port"] != 12345 {
+		t.Fatalf("port: want 12345 even when offline, got %v", gw["port"])
+	}
+}
