@@ -46,18 +46,17 @@ checksum:
 sboms:
   - artifacts: archive
 
-# Keyless cosign signature on the checksums file. Activates only when running
-# in a workflow that has OIDC permission (release.yml grants id-token: write).
-# Local goreleaser builds skip signing because COSIGN_EXPERIMENTAL is unset.
+# Keyless cosign signature on the checksums file via the workflow's OIDC
+# token (release.yml grants id-token: write). cosign v4 dropped the split
+# --output-certificate / --output-signature flags in favor of a single
+# --bundle file containing both. Local goreleaser builds skip signing because
+# there's no OIDC issuer to authenticate against.
 signs:
   - cmd: cosign
-    env:
-      - COSIGN_EXPERIMENTAL=1
-    certificate: "${artifact}.pem"
+    signature: "${artifact}.bundle"
     args:
       - sign-blob
-      - "--output-certificate=${certificate}"
-      - "--output-signature=${signature}"
+      - "--bundle=${signature}"
       - "${artifact}"
       - --yes
     artifacts: checksum
