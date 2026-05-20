@@ -414,6 +414,13 @@ func validateLoopbackBind(host string) error {
 		return nil
 	}
 	if os.Getenv("OPENCLAW_DASHBOARD_ALLOW_NON_LOOPBACK") == "1" {
+		// Surface the bypass in startup logs so operators reading the unit's
+		// journal can tell the loopback policy was relaxed by env override
+		// rather than silently shipped that way.
+		slog.Warn("loopback-only policy bypassed via env override",
+			"env", "OPENCLAW_DASHBOARD_ALLOW_NON_LOOPBACK=1",
+			"bind", host,
+			"note", "rate-limit map is unbounded between cleanups; ensure a network boundary protects this port")
 		return nil
 	}
 	return fmt.Errorf("non-loopback bind host %q is not supported; this dashboard is loopback-only by design (set OPENCLAW_DASHBOARD_ALLOW_NON_LOOPBACK=1 to override in containerized deployments)", host)

@@ -227,7 +227,9 @@ func streamCopy(src string, dst io.Writer) error {
 
 // openTempSibling creates a uniquely-named file alongside dst with the
 // requested mode. Using a sibling guarantees the subsequent rename stays on
-// the same filesystem and is therefore atomic.
+// the same filesystem and is therefore atomic. Mode bits are explicitly
+// applied via Chmod after creation so a process umask (e.g., 0o077 under
+// systemd) cannot strip group/other read bits the caller intended.
 func openTempSibling(dst string, mode os.FileMode) (*os.File, error) {
 	dir := filepath.Dir(dst)
 	base := filepath.Base(dst)
@@ -239,6 +241,11 @@ func openTempSibling(dst string, mode os.FileMode) (*os.File, error) {
 		name := filepath.Join(dir, base+".tmp."+hex.EncodeToString(suffix[:]))
 		f, err := os.OpenFile(name, os.O_CREATE|os.O_EXCL|os.O_WRONLY, mode)
 		if err == nil {
+			if chmodErr := f.Chmod(mode); chmodErr != nil {
+				_ = f.Close()
+				_ = os.Remove(name)
+				return nil, chmodErr
+			}
 			return f, nil
 		}
 		if !errors.Is(err, fs.ErrExist) {
