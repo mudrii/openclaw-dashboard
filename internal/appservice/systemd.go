@@ -87,6 +87,10 @@ func (sb *systemdBackend) ctl(args ...string) ([]byte, error) {
 }
 
 func (sb *systemdBackend) Install(cfg InstallConfig) error {
+	// systemd captures stdout/stderr into the journal directly, so cfg.LogPath
+	// is intentionally ignored here. launchd validates LogPath because the
+	// plist redirects stdout/err to that path; do not mirror this check in the
+	// systemd backend without first updating unitTmpl to consume LogPath.
 	if err := validateAbsPath(cfg.BinPath); err != nil {
 		return fmt.Errorf("BinPath: %w", err)
 	}
@@ -165,10 +169,10 @@ func (sb *systemdBackend) Uninstall() error {
 	if _, err := os.Stat(p); errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("service not installed (unit file not found: %s)", p)
 	}
-	if out, err := sb.ctl("stop", systemdUnitName); err != nil {
+	if out, err := sb.ctl("stop", systemdUnitName); err != nil && !isBenignSystemctlFailure(out) {
 		slog.Warn("systemd stop during uninstall failed", "output", strings.TrimSpace(string(out)), "error", err)
 	}
-	if out, err := sb.ctl("disable", systemdUnitName); err != nil {
+	if out, err := sb.ctl("disable", systemdUnitName); err != nil && !isBenignSystemctlFailure(out) {
 		slog.Warn("systemd disable during uninstall failed", "output", strings.TrimSpace(string(out)), "error", err)
 	}
 	if err := os.Remove(p); err != nil {
@@ -178,6 +182,26 @@ func (sb *systemdBackend) Uninstall() error {
 		return fmt.Errorf("daemon-reload after uninstall: %w", err)
 	}
 	return nil
+}
+
+// isBenignSystemctlFailure returns true when systemctl's stderr indicates the
+// unit was already in the desired state (e.g., stop on a stopped unit, disable
+// on a disabled unit). These are routine outcomes during Uninstall and should
+// not surface as warnings; only genuine failures (permission denied, bus
+// error, etc.) should reach the operator's logs.
+func isBenignSystemctlFailure(out []byte) bool {
+	s := strings.ToLower(string(out))
+	for _, marker := range []string{
+		"not loaded",
+		"not active",
+		"no such file or directory",
+		"failed to disable unit: file does not exist",
+	} {
+		if strings.Contains(s, marker) {
+			return true
+		}
+	}
+	return false
 }
 
 func (sb *systemdBackend) Start() error {

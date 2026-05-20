@@ -9,9 +9,9 @@ permissions:
   contents: write
   # id-token is required for cosign keyless signing via the GitHub OIDC issuer.
   id-token: write
-  # attestations enables actions/attest-build-provenance (SLSA v1.0) for the
-  # archives produced by GoReleaser.
-  attestations: write
+  # NOTE: attestations: write is intentionally NOT granted yet. Add it back
+  # when an actions/attest-build-provenance step is wired up; otherwise the
+  # permission would be granted but unused.
 
 jobs:
   release:
@@ -29,7 +29,9 @@ jobs:
           cache: true
 
       - name: Install syft (SBOM generator)
-        uses: anchore/sbom-action/download-syft@v0
+        # Pin exact: floating @v0 will silently disappear when syft v1 → v2.
+        # Dependabot's github-actions ecosystem watches exact versions.
+        uses: anchore/sbom-action/download-syft@v0.24.0
 
       - name: Install cosign (keyless signing)
         # Pin exact: sigstore/cosign-installer does not publish a floating @v4

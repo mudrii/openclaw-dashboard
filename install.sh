@@ -38,21 +38,58 @@ echo "📁 Installing to: $INSTALL_DIR"
 mkdir -p "$INSTALL_DIR"
 cd "$INSTALL_DIR"
 
-# Download or build the Go binary
+# Download or build the Go binary.
+# Resolve the explicit tag once via the `releases/latest` redirect so we do
+# not race the (small) propagation delay during which GitHub has the tag but
+# has not yet promoted it to `latest/download/`.
 ARCHIVE_NAME="openclaw-dashboard-${OS}-${ARCH}.tar.gz"
-ARCHIVE_URL="$REPO/releases/latest/download/$ARCHIVE_NAME"
-echo "📦 Downloading release archive ($ARCHIVE_NAME)..."
-if tmp_archive="$(mktemp "${TMPDIR:-/tmp}/openclaw-dashboard.XXXXXX.tar.gz")"; then
-  cleanup_archive() {
-    rm -f "$tmp_archive"
-  }
-  trap cleanup_archive EXIT
+LATEST_TAG=""
+if redirect_url="$(curl -fsSLI -o /dev/null -w '%{url_effective}' "$REPO/releases/latest" 2>/dev/null)"; then
+  LATEST_TAG="${redirect_url##*/}"
+fi
+if [ -n "$LATEST_TAG" ] && [ "$LATEST_TAG" != "latest" ]; then
+  ARCHIVE_URL="$REPO/releases/download/$LATEST_TAG/$ARCHIVE_NAME"
+  CHECKSUMS_URL="$REPO/releases/download/$LATEST_TAG/checksums-sha256.txt"
 else
+  LATEST_TAG=""  # signal "unknown" to the fallback path below
+  ARCHIVE_URL="$REPO/releases/latest/download/$ARCHIVE_NAME"
+  CHECKSUMS_URL="$REPO/releases/latest/download/checksums-sha256.txt"
+fi
+echo "📦 Downloading release archive ($ARCHIVE_NAME)..."
+
+tmp_archive="$(mktemp "${TMPDIR:-/tmp}/openclaw-dashboard.XXXXXX.tar.gz")" || {
   echo "❌ Could not create temporary archive file"
   exit 1
-fi
+}
+tmp_checksums="$(mktemp "${TMPDIR:-/tmp}/openclaw-dashboard.XXXXXX.sha256")" || {
+  rm -f "$tmp_archive"
+  echo "❌ Could not create temporary checksum file"
+  exit 1
+}
+cleanup_tmp() {
+  rm -f "$tmp_archive" "$tmp_checksums"
+}
+trap cleanup_tmp EXIT
 
-if curl -fsSL "$ARCHIVE_URL" -o "$tmp_archive" 2>/dev/null; then
+if curl -fsSL "$ARCHIVE_URL" -o "$tmp_archive" 2>/dev/null \
+   && curl -fsSL "$CHECKSUMS_URL" -o "$tmp_checksums" 2>/dev/null; then
+  # SHA-256 verify before unpacking. Use shasum (BSD/macOS) or sha256sum (Linux).
+  expected="$(grep "  ${ARCHIVE_NAME}\$" "$tmp_checksums" | awk '{print $1}')"
+  if [ -z "$expected" ]; then
+    echo "❌ ${ARCHIVE_NAME} not listed in checksums-sha256.txt"
+    exit 1
+  fi
+  if command -v sha256sum >/dev/null 2>&1; then
+    actual="$(sha256sum "$tmp_archive" | awk '{print $1}')"
+  else
+    actual="$(shasum -a 256 "$tmp_archive" | awk '{print $1}')"
+  fi
+  if [ "$expected" != "$actual" ]; then
+    echo "❌ SHA-256 mismatch for $ARCHIVE_NAME"
+    echo "   expected: $expected"
+    echo "   actual:   $actual"
+    exit 1
+  fi
   tar -xzf "$tmp_archive" -C "$INSTALL_DIR"
   if [ ! -f "openclaw-dashboard" ]; then
     echo "❌ Release archive did not contain openclaw-dashboard"
@@ -63,12 +100,17 @@ if curl -fsSL "$ARCHIVE_URL" -o "$tmp_archive" 2>/dev/null; then
     exit 1
   fi
   chmod +x openclaw-dashboard assets/runtime/refresh.sh
-  echo "✅ Release archive downloaded"
+  echo "✅ Release archive downloaded and SHA-256 verified"
 elif command -v go >/dev/null 2>&1; then
   echo "⚠️  Download failed, building from source..."
+  # Use the resolved tag (or "dev" if we never resolved one) so the built
+  # binary reports the same BuildVersion as a downloaded release would.
+  build_version="${LATEST_TAG:-dev}"
   curl -fsSL "$REPO/archive/main.tar.gz" | tar -xz --strip-components=1 -C "$INSTALL_DIR"
-  go build -ldflags="-s -w" -o openclaw-dashboard ./cmd/openclaw-dashboard
-  echo "✅ Binary built from source"
+  go build \
+    -ldflags="-s -w -X github.com/mudrii/openclaw-dashboard.BuildVersion=${build_version}" \
+    -o openclaw-dashboard ./cmd/openclaw-dashboard
+  echo "✅ Binary built from source (version: ${build_version})"
 else
   echo "❌ Could not download binary and 'go' is not available to build from source"
   exit 1

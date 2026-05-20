@@ -96,3 +96,60 @@ git push origin v0.0.0-dryrun
 gh release delete v0.0.0-dryrun --yes --cleanup-tag
 git push origin :v0.0.0-dryrun
 ```
+
+## 5. Sigstore outage runbook
+
+The release pipeline produces a keyless cosign signature on the
+`checksums-sha256.txt` artifact (`.goreleaser.yml` `signs:` block). The
+signing chain depends on three Sigstore services:
+
+- **Fulcio** — issues short-lived certs from the GitHub OIDC token
+- **Rekor** — public transparency log entry for the signature
+- **TUF** — root metadata for trust verification
+
+If any of the three is unavailable, the `Run GoReleaser` step in
+`release.yml` will fail at the sign stage, blocking the release.
+
+**Recovery options (in order of preference):**
+
+1. **Wait + re-run.** Sigstore outages are usually short (< 1 hour). Check
+   <https://status.sigstore.dev>. Re-run the failed workflow run from the
+   GitHub Actions UI once status is green.
+
+2. **Skip signing for this release.** Add a job-level env var to bypass
+   the signs block:
+
+   ```yaml
+   # release.yml — temporary while Sigstore is down
+   env:
+     GORELEASER_SKIP: sign
+   ```
+
+   Push a no-op commit, retag, and re-release. **Remove the env var the
+   moment Sigstore is restored** — unsigned releases are not a steady state.
+
+3. **Manual SHA-256 verification only.** Document in the GitHub Release
+   body that the cosign bundle is missing for this version and that users
+   should verify via `sha256sum -c checksums-sha256.txt` against the
+   archives. Acceptable as a one-off; do not normalize.
+
+**Verifying a signed release as a user:**
+
+```sh
+# Download the archive + checksums + bundle
+RELEASE=v2026.5.20
+curl -fsSL -o checksums-sha256.txt \
+  https://github.com/mudrii/openclaw-dashboard/releases/download/$RELEASE/checksums-sha256.txt
+curl -fsSL -o checksums-sha256.txt.bundle \
+  https://github.com/mudrii/openclaw-dashboard/releases/download/$RELEASE/checksums-sha256.txt.bundle
+
+# Verify the bundle came from this repo's release workflow
+cosign verify-blob \
+  --bundle checksums-sha256.txt.bundle \
+  --certificate-identity-regexp '^https://github.com/mudrii/openclaw-dashboard/' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  checksums-sha256.txt
+
+# Then verify each archive against the (now-trusted) checksums file
+sha256sum -c checksums-sha256.txt
+```
