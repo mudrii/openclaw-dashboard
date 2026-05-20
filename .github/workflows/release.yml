@@ -7,11 +7,17 @@ on:
 
 permissions:
   contents: write
+  # id-token is required for cosign keyless signing via the GitHub OIDC issuer.
+  id-token: write
+  # attestations enables actions/attest-build-provenance (SLSA v1.0) for the
+  # archives produced by GoReleaser.
+  attestations: write
 
 jobs:
   release:
     name: Build and release
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v5
         with:
@@ -20,6 +26,13 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
+          cache: true
+
+      - name: Install syft (SBOM generator)
+        uses: anchore/sbom-action/download-syft@v0
+
+      - name: Install cosign (keyless signing)
+        uses: sigstore/cosign-installer@v4
 
       - name: Mint homebrew-tap token
         uses: actions/create-github-app-token@v2
@@ -34,7 +47,7 @@ jobs:
         uses: goreleaser/goreleaser-action@v7
         with:
           distribution: goreleaser
-          version: "~> v2"
+          version: "v2.4.5"
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

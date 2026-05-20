@@ -4,10 +4,19 @@ on:
   pull_request:
     types: [opened, edited, reopened, synchronize]
 
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   validate-pr-body:
     name: Check PR template is filled out
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - name: Validate PR description
         uses: actions/github-script@v9

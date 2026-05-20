@@ -51,8 +51,20 @@ internal packages. Run the full suite before every commit:
 make check
 ```
 
-`make check` runs `go vet ./...`, `golangci-lint run ./...`, and `go test -race -count=1 ./...`.
-The race detector is part of the expected workflow; do not skip it for local runs.
+`make check` runs the full CI gate locally: `go vet ./...`, `golangci-lint run ./...`,
+`go test -race -count=1 ./...`, and `govulncheck ./...`.
+
+| Target | What it does |
+|--------|--------------|
+| `make build` | Build a static binary with `CGO_ENABLED=0`, `-s -w` strip, and the VERSION embedded via `-X main.BuildVersion=…`. Matches the binary produced by `Dockerfile`, `.goreleaser.yml`, and `flake.nix`. |
+| `make test` | `go test -race -count=1 ./...`. The race detector is non-negotiable for local runs. |
+| `make lint` | `golangci-lint run ./...`. Linters enabled in `.golangci.yml`: `errcheck`, `govet`, `staticcheck`, `ineffassign`, `unused`, `gocritic`, `gosec`, `errorlint`. |
+| `make vet` | `go vet ./...` only. Fast first pass before lint. |
+| `make govulncheck` | `govulncheck ./...`. Scans stdlib + module for known CVEs. Install once: `go install golang.org/x/vuln/cmd/govulncheck@v1.3.0`. |
+| `make check` | All of the above in sequence — the gate CI also enforces. |
+
+`golangci-lint` (>= v1.55) and `govulncheck` (>= v1.3.0) must be on `PATH`. The
+Nix `devShell` installs both; for non-Nix dev machines, `go install` works.
 
 ### What the Go tests cover
 

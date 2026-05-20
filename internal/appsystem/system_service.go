@@ -615,12 +615,31 @@ func parseOpenclawStatusJSON(output string, versions SystemVersions) (SystemOpen
 	return status, nil
 }
 
+// decodeJSONObjectFromOutput finds the first '{'-prefixed substring of output
+// that parses as a valid JSON object and decodes it into v. CLI tools often
+// emit log preambles like "[INFO] starting up {wrong} {actual:json}" — naive
+// "first brace wins" fails on those, so we scan forward through every '{'
+// position until one parses. Emits a debug log when the JSON started after
+// non-empty preamble so operators can spot stdout pollution from upstream.
 func decodeJSONObjectFromOutput(output string, v any) error {
-	start := strings.Index(output, "{")
-	if start < 0 {
-		return fmt.Errorf("json object not found")
+	var lastErr error
+	for i := 0; i < len(output); i++ {
+		if output[i] != '{' {
+			continue
+		}
+		if err := json.Unmarshal([]byte(output[i:]), v); err == nil {
+			if i > 0 {
+				slog.Debug("decoded JSON after preamble", "preamble_bytes", i)
+			}
+			return nil
+		} else {
+			lastErr = err
+		}
 	}
-	return json.Unmarshal([]byte(output[start:]), v)
+	if lastErr != nil {
+		return fmt.Errorf("decode json: %w", lastErr)
+	}
+	return fmt.Errorf("json object not found")
 }
 
 func BoolFromAny(v any) (bool, bool) {

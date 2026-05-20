@@ -263,6 +263,9 @@ func redactToken(s, token string) string {
 // for unscoped calls. Errors are wrapped in *GatewayError with an HTTP status
 // the caller should forward (502 for upstream faults, 504 for timeouts).
 func CallGateway(ctx context.Context, system string, history []Message, question string, port int, token, model string, client *http.Client) (string, error) {
+	if port < 1 || port > 65535 {
+		return "", &GatewayError{Status: http.StatusBadGateway, Msg: fmt.Sprintf("invalid gateway port: %d", port)}
+	}
 	// Pre-allocate messages slice: system + history + user question
 	messages := make([]Message, 0, 2+len(history))
 	messages = append(messages, Message{Role: "system", Content: system})

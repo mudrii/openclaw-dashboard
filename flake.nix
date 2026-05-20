@@ -10,18 +10,27 @@
     flake-utils.lib.eachDefaultSystem (system:
       let
         pkgs = nixpkgs.legacyPackages.${system};
+        # Project requires Go 1.26+ (see go.mod). Pin explicitly so we don't
+        # silently drift to whatever the nixpkgs channel default is.
+        go = pkgs.go_1_26 or pkgs.go;
         runtimeDeps = [ pkgs.bash pkgs.git ];
+        version = pkgs.lib.fileContents ./VERSION;
       in {
         packages = {
           # Go binary (default) — single binary, zero runtime deps
           default = pkgs.buildGoModule {
             pname = "openclaw-dashboard";
-            version = "2026.4.8";
+            inherit version;
             src = ./.;
+            inherit go;
             vendorHash = null; # no external deps
             subPackages = [ "cmd/openclaw-dashboard" ];
 
-            ldflags = [ "-s" "-w" ];
+            env.CGO_ENABLED = "0";
+            ldflags = [
+              "-s" "-w"
+              "-X" "github.com/mudrii/openclaw-dashboard.BuildVersion=${version}"
+            ];
 
             nativeBuildInputs = [ pkgs.makeWrapper ];
 
@@ -41,7 +50,11 @@
             meta = {
               description = "OpenClaw real-time bot monitoring dashboard (Go)";
               license = pkgs.lib.licenses.mit;
-              platforms = pkgs.lib.platforms.unix;
+              # Project targets Linux + macOS only (see .goreleaser.yml goos
+              # list). Narrower than platforms.unix so `nix flake check`
+              # surfaces a clean error on BSD/etc. instead of an opaque build
+              # failure mid-compile.
+              platforms = pkgs.lib.platforms.linux ++ pkgs.lib.platforms.darwin;
               mainProgram = "openclaw-dashboard";
             };
           };
@@ -49,8 +62,10 @@
 
         devShells.default = pkgs.mkShell {
           buildInputs = [
-            pkgs.go
+            go
             pkgs.bash pkgs.git
+            pkgs.gopls pkgs.gotools pkgs.gofumpt
+            pkgs.golangci-lint pkgs.govulncheck
           ];
           shellHook = ''
             echo "OpenClaw Dashboard dev shell"
@@ -58,6 +73,8 @@
             echo "  Go:     go run ./cmd/openclaw-dashboard --port 8080"
             echo "  Build:  go build -ldflags='-s -w' -o openclaw-dashboard ./cmd/openclaw-dashboard"
             echo "  Test:   go test -race -v -count=1 ./..."
+            echo "  Vuln:   govulncheck ./..."
+            echo "  Lint:   golangci-lint run"
           '';
         };
 
@@ -66,6 +83,11 @@
             drv = self.packages.${system}.default;
             exePath = "/bin/openclaw-dashboard";
           };
+        };
+
+        # `nix flake check` will build the default package on each system.
+        checks = {
+          build = self.packages.${system}.default;
         };
       });
 }

@@ -38,6 +38,10 @@ type AIConfig struct {
 	DotenvPath  string `json:"dotenvPath"`
 }
 
+// defaultDotenvPath is the fallback location for the dashboard's .env file
+// when neither config.json nor the AI section overrides it.
+const defaultDotenvPath = "~/.openclaw/.env"
+
 type LogsConfig struct {
 	Enabled              bool     `json:"enabled"`
 	TailLines            int      `json:"tailLines"`
@@ -108,7 +112,7 @@ func Default() Config {
 			GatewayPort: 18789,
 			Model:       "",
 			MaxHistory:  6,
-			DotenvPath:  "~/.openclaw/.env",
+			DotenvPath:  defaultDotenvPath,
 		},
 		Logs: LogsConfig{
 			Enabled:              true,
@@ -252,7 +256,7 @@ func Load(dir string) Config {
 		cfg.AI.GatewayPort = 18789
 	}
 	if cfg.AI.DotenvPath == "" {
-		cfg.AI.DotenvPath = "~/.openclaw/.env"
+		cfg.AI.DotenvPath = defaultDotenvPath
 	}
 	if cfg.Refresh.IntervalSeconds <= 0 {
 		cfg.Refresh.IntervalSeconds = 30

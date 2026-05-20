@@ -1,10 +1,47 @@
 # Changelog
 
-## Unreleased
+## v2026.5.20 — 2026-05-20
+
+Six-pass audit + hardening cycle. Security, atomicity, supply-chain, and docs all touched. Zero new third-party dependencies; the loopback-only design is preserved.
+
+### Security
+
+- **CSP and friends on `/`** — `handleIndex` now sets `Content-Security-Policy` (default-src `'self'`, connect-src `'self'`, frame-ancestors `'none'`, base-uri `'self'`), plus `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer`. Inline scripts still need `'unsafe-inline'` because the SPA inlines them, but exfiltration and clickjacking surfaces are closed.
+- **Loopback bind opt-in for containers** — `validateLoopbackBind` now accepts `OPENCLAW_DASHBOARD_ALLOW_NON_LOOPBACK=1` so Docker/Kubernetes deployments can listen on `0.0.0.0`. The opt-in only accepts the literal string `"1"` (rejects `true`, `yes`, etc.) so it never engages by accident.
+- **`appchat.CallGateway` validates gateway port** before constructing the request URL. Out-of-range ports (`<1` or `>65535`) return a `502 GatewayError` instead of producing a malformed `http://localhost:N/` URL.
+
+### Fixed
+
+- **`appruntime.CopyIfMissing` is fully atomic across crash and concurrent callers.** Rewritten to write to a temp sibling, `fsync`, then publish via `os.Link` (atomic on POSIX; fails with `ErrExist` on race). On success the parent directory is `fsync`ed via a new `syncDir` helper. Previous code removed `dst` on a `Sync` failure, which left a second concurrent caller with an `O_EXCL`-failed handle pointing at a now-missing file.
+- **`appruntime.CopyFile` `fsync`s the parent directory after `os.Rename`** so renames survive a crash. Plain `Rename` is atomic in metadata but not durable.
+- **`appservice` `Install` rejects non-absolute `BinPath`, `WorkDir`, and `LogPath`** before rendering the unit/plist template. The `validateAbsPath` helper already existed; both backends now call it up front so daemons never start with paths that resolve against the service runner's cwd.
+- **`appservice.systemd.Uninstall` logs `stop` and `disable` failures** via `slog.Warn` instead of discarding them. A failed disable used to leave the unit enabled silently.
+- **`appsystem.decodeJSONObjectFromOutput` scans every `{` position.** CLI tools that emit log preamble like `[INFO] starting up {wrong} {"k":"v"}` parse correctly now; the previous first-brace-wins implementation returned an error on the invalid `{wrong}`. Two tests updated to pin the new contract.
+- **`appruntime.DetectVersion` honors the caller's context deadline.** The hardcoded 5-second `WithTimeout` no longer overrides a tighter caller deadline.
+
+### Tests
+
+- **6× `err.(*GatewayError)` → `errors.As(err, &ge)`** across `chat_test.go`, `internal/appchat/chat_test.go`, and `internal/appchat/chat_redaction_test.go`. Matches `errorlint` and survives wrapping.
+- **`TestValidateLoopbackBind_EnvOverride`** covers the new opt-in env var — both the success matrix and a typo-rejection matrix (`"true"`, `"yes"`, `"TRUE"`, `""`).
+- All packages still pass `go test -race -count=1` plus extended `-count=5` stress runs with zero flakes.
+
+### Infrastructure
+
+- **Build-path parity.** `Makefile`, `Dockerfile`, `.goreleaser.yml`, and `flake.nix` all set `CGO_ENABLED=0`, embed `-X github.com/mudrii/openclaw-dashboard.BuildVersion=...`, and pass `-s -w` strip flags so every artifact path produces an equivalent binary.
+- **`Makefile`** exports `CGO_ENABLED=0`, adds a `govulncheck` target, and folds it into `make check` (now `vet lint test govulncheck`).
+- **`.golangci.yml`** v2 — enables `gosec` and `errorlint` in addition to `errcheck`, `govet`, `staticcheck`, `ineffassign`, `unused`, `gocritic`. `gosec` excludes G104, G204, G301, G304, G115, G705 with code-context rationale.
+- **`Dockerfile`** — `ARG VERSION` wired into ldflags; dropped `apk add bash git` from the runtime stage; added explicit `apk add wget` so the HEALTHCHECK is stable across Alpine minors; split `ENTRYPOINT`/`CMD`; updated comments to document `OPENCLAW_DASHBOARD_ALLOW_NON_LOOPBACK=1` and `--network=host` options.
+- **`.dockerignore`** — excludes `.planning/`, `graphify-out/`, `plan/`, `.codex/`, `.opencode/`, `.gemini/`, `*_test.go`, `testdata/`.
+- **`flake.nix`** — pins `pkgs.go_1_26 or pkgs.go`, reads `VERSION` for the version string, embeds it via ldflags, sets `env.CGO_ENABLED = "0"`, narrows `meta.platforms` to `linux ++ darwin`, adds a `checks` output so `nix flake check` rebuilds the package, expands devShell with `gopls`, `gotools`, `gofumpt`, `golangci-lint`, `govulncheck`.
+- **GitHub Actions** — `tests.yml` adds an `os: [ubuntu-latest, macos-latest]` matrix, a `govulncheck@v1.3.0` job, `cache: true` on `setup-go`, top-level `permissions: contents: read`, a concurrency group, and `timeout-minutes` per job. `pr-validate.yml`/`label-issues.yml` get matching permissions + timeouts. `release.yml` pins GoReleaser to `v2.4.5`, adds `id-token: write` + `attestations: write`, and installs `syft` + `sigstore/cosign-installer@v4`.
+- **`.goreleaser.yml`** — adds `sboms` (CycloneDX per archive) and `signs` (cosign keyless on the checksums file).
+- **`.github/dependabot.yml`** (new) — weekly bumps for `github-actions` and `docker` ecosystems.
+- **`docs/INFRA-CHECKLIST.md`** (new) — exact commands for the three user-side actions that can't be automated: `nix flake update`, docker base image digest pin, and `gh api -X PUT … branches/main/protection` with the correct `Tests / ` / `PR Validation / ` context prefixes.
 
 ### Documentation
 
 - **TweetClaw workflow example** - documents how to pair OpenClaw Dashboard with `@xquik/tweetclaw` so users can monitor sessions, crons, costs, and configured skills for X/Twitter automation work.
+- **README Docker section** now shows the two supported runtime patterns (env opt-in vs. `--network=host`) so the loopback-only design doesn't surprise container users at first run.
 
 ## v2026.5.13 — 2026-05-13
 

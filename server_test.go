@@ -639,6 +639,26 @@ func TestValidateLoopbackBind(t *testing.T) {
 	}
 }
 
+// TestValidateLoopbackBind_EnvOverride confirms the OPENCLAW_DASHBOARD_ALLOW_NON_LOOPBACK
+// escape hatch only opens with the exact value "1" — a typo like "true" or
+// "yes" must still fail closed so an accidental container env doesn't relax
+// the policy.
+func TestValidateLoopbackBind_EnvOverride(t *testing.T) {
+	const key = "OPENCLAW_DASHBOARD_ALLOW_NON_LOOPBACK"
+	t.Setenv(key, "1")
+	for _, h := range []string{"0.0.0.0", "192.168.1.10"} {
+		if err := validateLoopbackBind(h); err != nil {
+			t.Errorf("with %s=1, validateLoopbackBind(%q) = %v, want nil", key, h, err)
+		}
+	}
+	for _, val := range []string{"", "0", "true", "yes", "TRUE"} {
+		t.Setenv(key, val)
+		if err := validateLoopbackBind("0.0.0.0"); err == nil {
+			t.Errorf("with %s=%q, want rejection, got nil", key, val)
+		}
+	}
+}
+
 // --- Helpers ---
 
 func writeJSON(t *testing.T, path string, v any) {

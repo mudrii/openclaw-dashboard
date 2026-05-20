@@ -106,6 +106,15 @@ func (lb *launchdBackend) plistPath() string {
 }
 
 func (lb *launchdBackend) Install(cfg InstallConfig) error {
+	if err := validateAbsPath(cfg.BinPath); err != nil {
+		return fmt.Errorf("BinPath: %w", err)
+	}
+	if err := validateAbsPath(cfg.WorkDir); err != nil {
+		return fmt.Errorf("WorkDir: %w", err)
+	}
+	if err := validateAbsPath(cfg.LogPath); err != nil {
+		return fmt.Errorf("LogPath: %w", err)
+	}
 	if err := os.MkdirAll(lb.plistDir, 0o755); err != nil {
 		return fmt.Errorf("create LaunchAgents dir: %w", err)
 	}

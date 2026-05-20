@@ -34,6 +34,12 @@ dist/
 promo-*.png
 dashboard-server
 
+# Go test/profile leftovers
+*.test
+*.prof
+coverage.out
+coverage.html
+
 # Local Claude settings
 .claude/settings.local.json
 graphify-out/

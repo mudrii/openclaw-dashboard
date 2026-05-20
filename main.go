@@ -403,13 +403,20 @@ func serviceStatus(opts serviceCmdOpts, _ string, _ int) int {
 
 // validateLoopbackBind enforces the loopback-only bind policy. The dashboard's
 // chat rate-limit map grows unbounded between cleanup cycles, so exposing it on
-// a non-loopback interface is a DoS surface. There is no override flag.
+// a non-loopback interface is a DoS surface. Setting the environment variable
+// OPENCLAW_DASHBOARD_ALLOW_NON_LOOPBACK=1 opts into a non-loopback bind for
+// containerized deployments (Docker, Kubernetes) where the surrounding network
+// boundary is the operator's responsibility. The opt-in is intentionally
+// awkward — there is no CLI flag — so it never gets enabled by accident.
 func validateLoopbackBind(host string) error {
 	switch strings.TrimSpace(host) {
 	case "", "127.0.0.1", "localhost", "::1":
 		return nil
 	}
-	return fmt.Errorf("non-loopback bind host %q is not supported; this dashboard is loopback-only by design", host)
+	if os.Getenv("OPENCLAW_DASHBOARD_ALLOW_NON_LOOPBACK") == "1" {
+		return nil
+	}
+	return fmt.Errorf("non-loopback bind host %q is not supported; this dashboard is loopback-only by design (set OPENCLAW_DASHBOARD_ALLOW_NON_LOOPBACK=1 to override in containerized deployments)", host)
 }
 
 func localIP() string {

@@ -2,6 +2,7 @@ package dashboard
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -150,8 +151,8 @@ func TestCallGateway_Timeout_Returns504(t *testing.T) {
 		t.Fatal("expected error on timeout")
 	}
 
-	ge, ok := err.(*gatewayError)
-	if !ok {
+	var ge *gatewayError
+	if !errors.As(err, &ge) {
 		t.Fatalf("expected *gatewayError, got %T: %v", err, err)
 	}
 	if ge.Status != http.StatusGatewayTimeout {
@@ -173,8 +174,8 @@ func TestCallGateway_HTTPError_Returns502(t *testing.T) {
 		t.Fatal("expected error for 500 response")
 	}
 
-	ge, ok := err.(*gatewayError)
-	if !ok {
+	var ge *gatewayError
+	if !errors.As(err, &ge) {
 		t.Fatalf("expected *gatewayError, got %T: %v", err, err)
 	}
 	if ge.Status != http.StatusBadGateway {
@@ -189,8 +190,8 @@ func TestCallGateway_Unreachable_Returns502(t *testing.T) {
 		t.Fatal("expected error for unreachable server")
 	}
 
-	ge, ok := err.(*gatewayError)
-	if !ok {
+	var ge *gatewayError
+	if !errors.As(err, &ge) {
 		t.Fatalf("expected *gatewayError, got %T: %v", err, err)
 	}
 	if ge.Status != http.StatusBadGateway {

@@ -223,9 +223,32 @@ To change the OpenClaw data directory, set the `OPENCLAW_HOME` environment varia
 | `OPENCLAW_HOME` | OpenClaw installation path (source of truth for `refresh.sh` and installer) |
 | `OPENCLAW_GATEWAY_TOKEN` | Gateway bearer token loaded from `ai.dotenvPath` |
 | `OPENCLAW_DASHBOARD_DIR` | Override the dashboard runtime directory |
+| `OPENCLAW_DASHBOARD_ALLOW_NON_LOOPBACK` | Set to the literal value `1` to permit non-loopback bind hosts (e.g., `0.0.0.0`). Required for containerized deployments where the bind has to be reachable from outside the container. Off by default; see Security below. |
 | `DASHBOARD_PORT` | Override the HTTP listen port (takes precedence over `server.port` in config) |
 | `DASHBOARD_BIND` | Override the HTTP bind address (takes precedence over `server.host` in config) |
 | `DASHBOARD_AI_TOKEN_OPTIONAL` | When `ai.enabled=true` but `OPENCLAW_GATEWAY_TOKEN` is missing, set to `1` to downgrade the startup fatal to a warning (useful for dev gateways without auth). Default unset; only the literal value `1` enables the bypass. |
+
+## Security
+
+The dashboard is designed to run on a developer or operator's local machine.
+A few hard rules are enforced at startup or per-request:
+
+- **Loopback-only bind by default.** `--bind`/`DASHBOARD_BIND` accept only
+  `127.0.0.1`, `localhost`, `::1`, or empty. Anything else aborts startup
+  unless `OPENCLAW_DASHBOARD_ALLOW_NON_LOOPBACK=1` is set. Rationale: the
+  chat rate-limit map grows unbounded between cleanup cycles, so exposing the
+  HTTP surface to a public network turns it into a DoS surface.
+- **Container deployment.** Set `OPENCLAW_DASHBOARD_ALLOW_NON_LOOPBACK=1` and
+  bind to `0.0.0.0` so the published port works, or use
+  `docker run --network=host` and keep the loopback bind (Linux only).
+- **HTML response headers.** The `/` handler sets
+  `Content-Security-Policy: default-src 'self'; …; connect-src 'self'; frame-ancestors 'none'; …`,
+  plus `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, and
+  `Referrer-Policy: no-referrer`. Inline scripts still need `'unsafe-inline'`
+  (the SPA inlines its bundles), but cross-origin exfiltration and
+  clickjacking are blocked.
+- **Gateway token redaction.** `appchat.CallGateway` strips the bearer token
+  from any 5xx response body before surfacing the error to the browser.
 
 ## Data Flow
 

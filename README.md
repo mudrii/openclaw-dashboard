@@ -178,9 +178,24 @@ make build
 
 ### Docker
 
+The dashboard binds to `127.0.0.1` by default. Container deployments must
+either opt into a non-loopback bind explicitly or share the host network
+namespace — port-publishing alone won't work, because the container's own
+loopback is private.
+
 ```bash
 docker build -t openclaw-dashboard .
-docker run -p 8080:8080 -v ~/.openclaw:/home/dashboard/.openclaw openclaw-dashboard
+
+# Opt-in to LAN bind (sets OPENCLAW_DASHBOARD_ALLOW_NON_LOOPBACK=1):
+docker run -p 8080:8080 \
+  -e OPENCLAW_DASHBOARD_ALLOW_NON_LOOPBACK=1 \
+  -v ~/.openclaw:/home/dashboard/.openclaw \
+  openclaw-dashboard
+
+# OR share host network (Linux only, preserves loopback-only design):
+docker run --network=host \
+  -v ~/.openclaw:/home/dashboard/.openclaw \
+  openclaw-dashboard
 ```
 
 ### Nix Flake
@@ -406,6 +421,8 @@ is usually the repo root. For `install.sh` installs it is
 | `system.swap.critical` | `95` | Swap critical threshold (%) |
 | `system.disk.warn` | `80` | Disk warn threshold (%) |
 | `system.disk.critical` | `95` | Disk critical threshold (%) |
+
+Full key list, env-var overrides, and the security policy (loopback enforcement, CSP headers, gateway token redaction) live in [docs/CONFIGURATION.md](docs/CONFIGURATION.md). Maintainer infrastructure tasks (`flake.lock`, Docker digest pin, GitHub branch protection) are in [docs/INFRA-CHECKLIST.md](docs/INFRA-CHECKLIST.md).
 
 ### Top Metrics Bar
 

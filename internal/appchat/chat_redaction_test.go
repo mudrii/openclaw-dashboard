@@ -2,6 +2,7 @@ package appchat
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -26,8 +27,8 @@ func TestCallGateway_NoChoicesIsError(t *testing.T) {
 	if !strings.Contains(err.Error(), "no choices") {
 		t.Fatalf("expected 'no choices' in error, got %q", err.Error())
 	}
-	ge, ok := err.(*GatewayError)
-	if !ok {
+	var ge *GatewayError
+	if !errors.As(err, &ge) {
 		t.Fatalf("expected *GatewayError, got %T", err)
 	}
 	if ge.Status != http.StatusBadGateway {

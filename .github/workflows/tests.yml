@@ -6,16 +6,25 @@ on:
   pull_request:
     branches: [main]
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   lint:
     name: GolangCI-Lint
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v5
 
       - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
+          cache: true
 
       - uses: golangci/golangci-lint-action@v9
         with:
@@ -23,13 +32,19 @@ jobs:
 
   test:
     name: Go test suite
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
     steps:
       - uses: actions/checkout@v5
 
       - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
+          cache: true
 
       - name: Run vet
         run: go vet ./...
@@ -40,9 +55,30 @@ jobs:
       - name: Build binary
         run: go build -ldflags="-s -w" -o openclaw-dashboard ./cmd/openclaw-dashboard
 
+  govulncheck:
+    name: govulncheck
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Install govulncheck
+        # Pinned so a govulncheck release doesn't shift CI behavior unannounced.
+        # Bump via dependabot or manual edit; rerun locally first to verify.
+        run: go install golang.org/x/vuln/cmd/govulncheck@v1.3.0
+
+      - name: Scan stdlib + module
+        run: govulncheck ./...
+
   lint-shell:
     name: Lint shell scripts
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v5
 

@@ -117,39 +117,56 @@ func SeedHomebrewRuntimeDir(binDir string) (string, bool, error) {
 	return runtimeDir, true, nil
 }
 
-// CopyIfMissing copies src to dst only if dst does not already exist. The
-// existence check and creation are performed atomically via O_CREATE|O_EXCL,
-// so concurrent first-run callers race safely: exactly one writer materializes
-// the file and the rest observe it as already present.
+// CopyIfMissing copies src to dst only if dst does not already exist.
+// The file is fully written to a temp sibling, fsynced, then published with
+// os.Link, which is atomic on POSIX filesystems and fails with fs.ErrExist if
+// another writer won the race. The parent directory is fsynced so the new
+// name survives a crash. Concurrent callers race safely: exactly one writer
+// materializes the file and the rest observe it as already present.
 func CopyIfMissing(src, dst string, mode os.FileMode) error {
 	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
 		return err
 	}
-	f, err := os.OpenFile(dst, os.O_CREATE|os.O_EXCL|os.O_WRONLY, mode)
+	if _, err := os.Stat(dst); err == nil {
+		return nil
+	} else if !errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
+	tmp, err := openTempSibling(dst, mode)
 	if err != nil {
+		return err
+	}
+	tmpName := tmp.Name()
+	if err := streamCopy(src, tmp); err != nil {
+		_ = tmp.Close()
+		_ = os.Remove(tmpName)
+		return err
+	}
+	if err := tmp.Sync(); err != nil {
+		_ = tmp.Close()
+		_ = os.Remove(tmpName)
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		_ = os.Remove(tmpName)
+		return err
+	}
+	if err := os.Link(tmpName, dst); err != nil {
+		_ = os.Remove(tmpName)
 		if errors.Is(err, fs.ErrExist) {
 			return nil
 		}
 		return err
 	}
-	// We own dst exclusively. Stream src into it; on any failure remove the
-	// empty/partial file so the next call retries cleanly.
-	if err := streamCopy(src, f); err != nil {
-		_ = f.Close()
-		_ = os.Remove(dst)
-		return err
-	}
-	if err := f.Sync(); err != nil {
-		_ = f.Close()
-		_ = os.Remove(dst)
-		return err
-	}
-	return f.Close()
+	syncErr := syncDir(filepath.Dir(dst))
+	_ = os.Remove(tmpName)
+	return syncErr
 }
 
 // CopyFile writes src to dst atomically via temp-file + rename. Readers
 // observe either the prior contents of dst or the new contents — never an
-// intermediate truncated state.
+// intermediate truncated state. The parent directory is fsynced so the new
+// name survives a crash.
 func CopyFile(src, dst string, mode os.FileMode) error {
 	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
 		return err
@@ -175,6 +192,21 @@ func CopyFile(src, dst string, mode os.FileMode) error {
 	}
 	if err := os.Rename(tmpName, dst); err != nil {
 		_ = os.Remove(tmpName)
+		return err
+	}
+	return syncDir(filepath.Dir(dst))
+}
+
+// syncDir fsyncs the directory referenced by path so that any rename or link
+// metadata persists across a crash. Filesystems that reject directory Sync
+// (some tmpfs configurations, non-Unix) are treated as best-effort.
+func syncDir(path string) error {
+	d, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = d.Close() }()
+	if err := d.Sync(); err != nil && !errors.Is(err, fs.ErrInvalid) {
 		return err
 	}
 	return nil
@@ -244,8 +276,14 @@ func DetectVersion(ctx context.Context, dir string) string {
 			}
 		}
 	}
-	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
+	// Honor a tighter caller deadline if one is set; otherwise cap at 5s so a
+	// missing git binary or hung describe can never block startup indefinitely.
+	const gitTimeout = 5 * time.Second
+	if d, ok := ctx.Deadline(); !ok || time.Until(d) > gitTimeout {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, gitTimeout)
+		defer cancel()
+	}
 	cmd := exec.CommandContext(ctx, "git", "describe", "--tags", "--abbrev=0")
 	cmd.Dir = dir
 	out, err := cmd.Output()

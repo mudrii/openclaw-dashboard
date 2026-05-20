@@ -8,7 +8,9 @@ jobs:
   label:
     name: Apply template label
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     permissions:
+      contents: read
       issues: write
     steps:
       - name: Validate issue is not blank

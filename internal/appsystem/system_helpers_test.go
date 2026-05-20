@@ -128,11 +128,14 @@ func TestParseOpenclawStatusJSON(t *testing.T) {
 		}
 	})
 
-	t.Run("output with leading log prefix is located by first brace", func(t *testing.T) {
+	t.Run("output with log preamble containing brace recovers JSON object", func(t *testing.T) {
 		out := `[INFO] starting up {ignored} {"currentVersion":"5.0.0"}`
-		_, err := parseOpenclawStatusJSON(out, SystemVersions{})
-		if err == nil {
-			t.Errorf("documented current behavior: first-brace-wins means a log prefix containing '{' breaks parse; want non-nil err, got nil")
+		got, err := parseOpenclawStatusJSON(out, SystemVersions{})
+		if err != nil {
+			t.Errorf("err: want nil (scan should advance past '{ignored}'), got %v", err)
+		}
+		if got.CurrentVersion != "5.0.0" {
+			t.Errorf("CurrentVersion: want %q, got %q", "5.0.0", got.CurrentVersion)
 		}
 	})
 }
@@ -170,11 +173,13 @@ func TestDecodeJSONObjectFromOutput(t *testing.T) {
 		}
 	})
 
-	t.Run("log line containing brace before JSON object — first-brace-wins (current behavior)", func(t *testing.T) {
+	t.Run("log line containing brace before JSON object — scan past invalid object", func(t *testing.T) {
 		var m map[string]any
-		err := decodeJSONObjectFromOutput(`[INFO] starting up {wrong} {"k":"v"}`, &m)
-		if err == nil {
-			t.Errorf("documented current behavior: function locates FIRST '{', which here begins an invalid token; want non-nil err, got nil (m=%v)", m)
+		if err := decodeJSONObjectFromOutput(`[INFO] starting up {wrong} {"k":"v"}`, &m); err != nil {
+			t.Errorf("err: want nil (scan should advance past invalid '{wrong}'), got %v", err)
+		}
+		if m["k"] != "v" {
+			t.Errorf("k: want %q, got %v", "v", m["k"])
 		}
 	})
 

@@ -22,9 +22,12 @@ Zero-dependency Go HTTP server with embedded SPA frontend for OpenClaw bot metri
 
 ## Environment
 
-- Go 1.26.1 on darwin/arm64
+- Go 1.26 (toolchain `go1.26.0` per `go.mod`), darwin/arm64 + linux/amd64+arm64
 - Treat `go.mod`, `toolchain`, CI config as the source of truth
 - Prefer `make` targets over raw commands when a Makefile exists
+- `make check` is the canonical gate: `vet`, `lint` (golangci-lint with `gosec` + `errorlint` enabled), `test -race`, `govulncheck`
+- `CGO_ENABLED=0` is set across all four build paths (`Makefile`, `Dockerfile`, `.goreleaser.yml`, `flake.nix`); keep it that way
+- Loopback-only HTTP bind is enforced at startup; container deployments opt in via `OPENCLAW_DASHBOARD_ALLOW_NON_LOOPBACK=1`
 
 ## Commands
 

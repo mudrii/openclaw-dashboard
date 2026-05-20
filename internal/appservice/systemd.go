@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -86,6 +87,12 @@ func (sb *systemdBackend) ctl(args ...string) ([]byte, error) {
 }
 
 func (sb *systemdBackend) Install(cfg InstallConfig) error {
+	if err := validateAbsPath(cfg.BinPath); err != nil {
+		return fmt.Errorf("BinPath: %w", err)
+	}
+	if err := validateAbsPath(cfg.WorkDir); err != nil {
+		return fmt.Errorf("WorkDir: %w", err)
+	}
 	if err := os.MkdirAll(sb.unitDir, 0o755); err != nil {
 		return fmt.Errorf("create systemd user dir: %w", err)
 	}
@@ -158,8 +165,12 @@ func (sb *systemdBackend) Uninstall() error {
 	if _, err := os.Stat(p); errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("service not installed (unit file not found: %s)", p)
 	}
-	_, _ = sb.ctl("stop", systemdUnitName)
-	_, _ = sb.ctl("disable", systemdUnitName)
+	if out, err := sb.ctl("stop", systemdUnitName); err != nil {
+		slog.Warn("systemd stop during uninstall failed", "output", strings.TrimSpace(string(out)), "error", err)
+	}
+	if out, err := sb.ctl("disable", systemdUnitName); err != nil {
+		slog.Warn("systemd disable during uninstall failed", "output", strings.TrimSpace(string(out)), "error", err)
+	}
 	if err := os.Remove(p); err != nil {
 		return fmt.Errorf("remove unit file: %w", err)
 	}

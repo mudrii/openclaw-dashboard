@@ -3,6 +3,7 @@ package appchat
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -117,8 +118,8 @@ func TestCallGateway_ServerError(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error on 500 response")
 	}
-	ge, ok := err.(*GatewayError)
-	if !ok {
+	var ge *GatewayError
+	if !errors.As(err, &ge) {
 		t.Fatalf("expected GatewayError, got %T", err)
 	}
 	if ge.Status != http.StatusBadGateway {
@@ -143,8 +144,8 @@ func TestCallGateway_Timeout(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected timeout error")
 	}
-	ge, ok := err.(*GatewayError)
-	if !ok {
+	var ge *GatewayError
+	if !errors.As(err, &ge) {
 		t.Fatalf("expected GatewayError, got %T", err)
 	}
 	if ge.Status != http.StatusGatewayTimeout {

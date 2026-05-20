@@ -11,6 +11,12 @@ linters:
     - staticcheck
     - unused
     - gocritic
+    # Security-sensitive code (subprocess in appservice/exec.go,
+    # apprefresh/refresh_git.go, gateway token redaction in appchat/chat.go,
+    # loopback-bind in main.go) is now scanned. errorlint catches errors.Is/As
+    # misuse, which matters across the wrap-with-%w error chain.
+    - gosec
+    - errorlint
 
   settings:
     errcheck:
@@ -20,6 +26,30 @@ linters:
         - diagnostic
       disabled-checks:
         - filepathJoin
+    gosec:
+      excludes:
+        # G104 (errors unhandled) is already covered by errcheck; double-reporting
+        # creates noise.
+        - G104
+        # G204 (subprocess with variable) — false positive on appservice.runCmd
+        # and friends where the command name is constant ("launchctl",
+        # "systemctl", "git") and args are validated upstream.
+        - G204
+        # G301 (dir perms ≥0750) — runtime directories under ~/.openclaw and
+        # the staged build context are 0o755 by intent: world-traversable so
+        # service users + Homebrew can read them. Tightening breaks deployment.
+        - G301
+        # G304 (file inclusion via variable) — config paths and dotenv paths are
+        # operator-controlled, not attacker-controlled. The trust boundary is
+        # at config loading, not at file open.
+        - G304
+        # G115 (integer overflow uint64→int64) — disk byte counts and similar
+        # syscall outputs are bounded well below int64 max in practice.
+        - G115
+        # G705 (XSS via taint analysis) — w.Write(data) emits dashboard data
+        # bytes read from disk, not browser-injected content. The data.json
+        # producer is the same trust domain as the dashboard binary.
+        - G705
 
   exclusions:
     rules:
@@ -27,3 +57,4 @@ linters:
         linters:
           - errcheck
           - gocritic
+          - gosec

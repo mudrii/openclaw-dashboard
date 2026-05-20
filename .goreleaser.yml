@@ -22,7 +22,7 @@ builds:
       - -s -w -X github.com/mudrii/openclaw-dashboard.BuildVersion={{ .Version }}
 
 archives:
-  - formats: [tar.gz]
+  - format: tar.gz
     name_template: "{{ .ProjectName }}-{{ .Os }}-{{ .Arch }}"
     files:
       - README.md
@@ -40,6 +40,28 @@ archives:
 
 checksum:
   name_template: checksums-sha256.txt
+
+# SBOM accompanying every archive — consumers can audit the dependency tree
+# even though this project ships zero third-party deps today.
+sboms:
+  - artifacts: archive
+
+# Keyless cosign signature on the checksums file. Activates only when running
+# in a workflow that has OIDC permission (release.yml grants id-token: write).
+# Local goreleaser builds skip signing because COSIGN_EXPERIMENTAL is unset.
+signs:
+  - cmd: cosign
+    env:
+      - COSIGN_EXPERIMENTAL=1
+    certificate: "${artifact}.pem"
+    args:
+      - sign-blob
+      - "--output-certificate=${certificate}"
+      - "--output-signature=${signature}"
+      - "${artifact}"
+      - --yes
+    artifacts: checksum
+    output: true
 
 changelog:
   sort: asc
