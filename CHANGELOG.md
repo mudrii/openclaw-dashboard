@@ -1,5 +1,75 @@
 # Changelog
 
+## v2026.5.21 — 2026-05-20
+
+Same-day patch. Closes the toolchain CVEs surfaced by the v2026.5.20 CI gate,
+rolls up three dependabot bumps (`actions/checkout`, `actions/create-github-app-token`,
+`alpine`), and applies the tier-1/tier-2 follow-ups from the post-merge risk audit.
+
+### Security
+
+- **Go toolchain `go1.26.0` → `go1.26.3`** — `go.mod toolchain` directive bumped
+  so `setup-go` in CI fetches the patched stdlib. Closes 5 govulncheck advisories
+  (net.Dialer NUL byte panic, x509 name-constraint panic, url.Parse, tls.Conn
+  CVEs) that were live on the previous release.
+- **`install.sh` SHA-256 verification** — installer now downloads
+  `checksums-sha256.txt` alongside the archive and verifies the SHA before
+  unpacking. Previously trusted GitHub's TLS only.
+- **`install.sh` explicit-tag URL** — resolves the redirect from
+  `releases/latest` to a `releases/download/v…/` URL before downloading, so
+  the brief window between tag push and `latest` promotion never serves a
+  404 or a stale archive.
+- **`install.sh` source-build fallback embeds `-X BuildVersion`** — when
+  curl falls back to `go build` from `archive/main.tar.gz`, the binary now
+  reports the resolved release tag instead of an empty version string.
+- **`validateLoopbackBind` opt-in audit log** — when
+  `OPENCLAW_DASHBOARD_ALLOW_NON_LOOPBACK=1` engages, the dashboard now emits
+  `slog.Warn("loopback-only policy bypassed via env override", …)` so the
+  bypass is visible in the unit's journal.
+- **`appruntime.openTempSibling` explicit `Fchmod`** — temp files now apply
+  the caller-requested mode after open so a process umask (e.g., 0o077
+  under systemd) cannot strip group/other bits.
+
+### Fixed
+
+- **`internal/appsystem/system_collect_linux.go`** — `fmt.Errorf("read /proc/meminfo: %w", err)`
+  replaces the previous `%v` so error chains stay unwrapped (errorlint).
+- **`appservice.systemd.Uninstall`** — filters benign systemctl output
+  ("not loaded" / "not active") so routine uninstalls no longer log
+  spurious `slog.Warn` lines.
+- **`appservice.systemd.Install`** — explicit comment documents why
+  `LogPath` is not validated (systemd captures stdout/err to journal,
+  not a file). Prevents a future drive-by "fix" from adding a useless check.
+
+### Infrastructure
+
+- **`actions/checkout` v5 → v6** — across 4 workflow files (release.yml,
+  tests.yml ×4 jobs).
+- **`actions/create-github-app-token` v2 → v3** — closes the Node.js 20
+  deprecation warning from the previous release.
+- **`alpine` 3.21 → 3.23** — runtime image bump in `Dockerfile`.
+- **`anchore/sbom-action/download-syft@v0` → `@v0.24.0`** — exact pin so
+  dependabot can track major bumps; floating `@v0` would silently
+  disappear when syft v1 → v2.
+- **`release.yml` `attestations: write`** — removed (was granted but no
+  attest-build-provenance step uses it).
+- **`Makefile`** — new `build-debug` target preserving DWARF symbols for
+  panic investigation; `govulncheck` target now runs `go run …@v1.3.0`
+  so first-time contributors do not need a prior `go install`.
+- **`docs/INFRA-CHECKLIST.md`** — new "Sigstore outage runbook" section
+  with recovery options and user-side cosign verification commands.
+
+### Validation
+
+- `go vet`, `gofmt`, `golangci-lint` (gosec + errorlint), `govulncheck`,
+  `go test -race -count=1 -short`, `goreleaser check`, `goreleaser release
+  --snapshot` all clean.
+- Live smoke on `:8081`: 6/6 endpoints respond 200, all 4 security headers
+  present, 50× concurrent /api/refresh + /api/system all 200, rate limiter
+  fires 429 correctly, traversal blocked, graceful shutdown clean.
+- PR #35 (the merge batch that produced this release) passes all 6 required
+  CI checks on both `ubuntu-latest` and `macos-latest`.
+
 ## v2026.5.20 — 2026-05-20
 
 Six-pass audit + hardening cycle. Security, atomicity, supply-chain, and docs all touched. Zero new third-party dependencies; the loopback-only design is preserved.
