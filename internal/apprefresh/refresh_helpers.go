@@ -80,7 +80,7 @@ func sumBucketCosts(m map[string]*TokenBucket) float64 {
 // FilterByDate returns entries whose "date" key compares against targetDate
 // per op ("==" or ">="). Unknown ops return empty.
 func FilterByDate(runs []map[string]any, targetDate, op string) []map[string]any {
-	var out []map[string]any
+	out := make([]map[string]any, 0, len(runs))
 	for _, r := range runs {
 		d, _ := r["date"].(string)
 		switch op {
