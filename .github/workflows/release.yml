@@ -32,7 +32,9 @@ jobs:
         uses: anchore/sbom-action/download-syft@v0
 
       - name: Install cosign (keyless signing)
-        uses: sigstore/cosign-installer@v4
+        # Pin exact: sigstore/cosign-installer does not publish a floating @v4
+        # tag (only @v2 and @v3 exist as moving majors). Bump via dependabot.
+        uses: sigstore/cosign-installer@v4.1.2
 
       - name: Mint homebrew-tap token
         uses: actions/create-github-app-token@v2
