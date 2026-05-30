@@ -43,3 +43,6 @@ coverage.html
 # Local Claude settings
 .claude/settings.local.json
 graphify-out/
+
+# understand-anything dashboard runtime log
+.understand-anything/.dashboard.log
