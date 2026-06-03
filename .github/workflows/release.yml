@@ -42,7 +42,12 @@ jobs:
         uses: actions/create-github-app-token@v3
         id: tap-token
         with:
-          app-id: ${{ secrets.HOMEBREW_TAP_APP_ID }}
+          # `client-id` replaces the deprecated `app-id` input. The existing
+          # HOMEBREW_TAP_APP_ID secret (the numeric App ID) is still valid here:
+          # GitHub accepts either the numeric App ID or the App's Client ID as
+          # the JWT issuer when authenticating as a GitHub App, so no secret
+          # change is required to silence the deprecation warning.
+          client-id: ${{ secrets.HOMEBREW_TAP_APP_ID }}
           private-key: ${{ secrets.HOMEBREW_TAP_APP_PRIVATE_KEY }}
           owner: mudrii
           repositories: homebrew-tap
