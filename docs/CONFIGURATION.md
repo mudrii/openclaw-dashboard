@@ -49,7 +49,8 @@ the binary reports the installed release version correctly after upgrades.
     "metricsTtlSeconds": 10,
     "versionsTtlSeconds": 300,
     "gatewayTimeoutMs": 5000,
-    "coldPathTimeoutMs": 4000,
+    "coldPathTimeoutMs": 8000,
+    "cpuTimeoutMs": 6000,
     "gatewayPort": 18789,
     "diskPath": "/",
     "warnPercent": 70,
@@ -175,7 +176,8 @@ To change the OpenClaw data directory, set the `OPENCLAW_HOME` environment varia
 | `system.metricsTtlSeconds` | number | `10` | Server-side metrics cache TTL (2-60 seconds) |
 | `system.versionsTtlSeconds` | number | `300` | Version/gateway probe cache TTL (30-3600 seconds) |
 | `system.gatewayTimeoutMs` | number | `5000` | Timeout for gateway liveness probe (200-15000 ms) |
-| `system.coldPathTimeoutMs` | number | `4000` | Overall budget for a cold `/api/system` collection — bounds total wall time when no warm cache is available (200-15000 ms) |
+| `system.coldPathTimeoutMs` | number | `8000` | Overall budget for a cold `/api/system` collection — bounds total wall time when no warm cache is available (200-30000 ms) |
+| `system.cpuTimeoutMs` | number | `6000` | Timeout for CPU sampling on macOS and Linux (500-20000 ms) |
 | `system.gatewayPort` | number | `18789` | Gateway port for health probes (defaults to `ai.gatewayPort`) |
 | `system.diskPath` | string | `"/"` | Filesystem path to report disk usage for |
 | `system.warnPercent` | number | `70` | Global warn threshold (% used) — overridden by per-metric values |

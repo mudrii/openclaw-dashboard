@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	appconfig "github.com/mudrii/openclaw-dashboard/internal/appconfig"
 )
@@ -178,6 +179,53 @@ func TestHandleChat_GatewayError504(t *testing.T) {
 	w := mustPostChat(t, s, `{"question":"ping"}`)
 	if w.Code != http.StatusBadGateway && w.Code != http.StatusGatewayTimeout {
 		t.Fatalf("want 502/504, got %d body=%s", w.Code, w.Body.String())
+	}
+}
+
+// TestChatRateLimiter_PerIPIsolation verifies that exhausting one IP's bucket
+// does not affect requests from a different IP address.
+func TestChatRateLimiter_PerIPIsolation(t *testing.T) {
+	var rl chatRateLimiter
+	// Exhaust IP A completely (consume all tokens + one denied).
+	for range chatRateLimit {
+		rl.allow("192.168.1.1")
+	}
+	if rl.allow("192.168.1.1") {
+		t.Fatal("IP A should be rate-limited after exhausting bucket")
+	}
+	// IP B must be unaffected.
+	if !rl.allow("192.168.1.2") {
+		t.Error("IP B should not be affected by IP A's rate limit")
+	}
+}
+
+// TestChatRateLimiter_WindowReset verifies that a bucket refills after the
+// rate window elapses. It back-dates lastReset directly to avoid real sleeps.
+func TestChatRateLimiter_WindowReset(t *testing.T) {
+	var rl chatRateLimiter
+	ip := "10.0.0.1"
+
+	// Exhaust the bucket.
+	for range chatRateLimit {
+		rl.allow(ip)
+	}
+	if rl.allow(ip) {
+		t.Fatal("bucket should be exhausted")
+	}
+
+	// Back-date the bucket's lastReset to simulate window expiry.
+	v, ok := rl.entries.Load(ip)
+	if !ok {
+		t.Fatal("bucket not found in entries map")
+	}
+	bucket := v.(*rateBucket)
+	bucket.mu.Lock()
+	bucket.lastReset = time.Now().Add(-chatRateWindow - time.Second)
+	bucket.mu.Unlock()
+
+	// First request after window expiry must be allowed.
+	if !rl.allow(ip) {
+		t.Error("request should be allowed after window reset")
 	}
 }
 

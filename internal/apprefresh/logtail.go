@@ -13,6 +13,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 	"unicode"
 
@@ -98,11 +99,37 @@ func ReadMergedLogs(openclawPath string, sources []string, globalLimit int) ([]L
 			}
 		}
 		if len(sourceRecords) > 0 {
+			slices.SortFunc(sourceRecords, compareLogRecords)
+			sourceRecords = dedupeSortedLogRecords(sourceRecords)
 			perSourceRecords = append(perSourceRecords, sourceRecords)
 		}
 	}
 
 	return mergeLatestRecords(perSourceRecords, globalLimit), nil
+}
+
+type logRecordDedupKey struct {
+	source      string
+	timestampMs int64
+	raw         string
+}
+
+func dedupeSortedLogRecords(records []LogRecord) []LogRecord {
+	seen := make(map[logRecordDedupKey]struct{}, len(records))
+	out := records[:0]
+	for _, record := range records {
+		key := logRecordDedupKey{
+			source:      record.Source,
+			timestampMs: record.TimestampMs,
+			raw:         record.Raw,
+		}
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, record)
+	}
+	return out
 }
 
 func mergeLatestRecords(perSourceRecords [][]LogRecord, globalLimit int) []LogRecord {
@@ -297,7 +324,12 @@ func ParseLogTimestamp(candidates ...string) (time.Time, string) {
 		if c == "" {
 			continue
 		}
-		if match := reLogPrefix.FindStringSubmatch(c); len(match) >= 2 {
+		// Recurse only when the extracted prefix is strictly shorter than the
+		// candidate — i.e. real progress was made by stripping trailing content.
+		// When c is already a bare timestamp the layout loop above could not
+		// parse (e.g. a syntactically-shaped but invalid "2026-13-45T25:61:99"),
+		// match[1] == c and recursing would loop forever → stack overflow.
+		if match := reLogPrefix.FindStringSubmatch(c); len(match) >= 2 && match[1] != c {
 			return ParseLogTimestamp(match[1])
 		}
 	}
@@ -486,20 +518,23 @@ func ResolveLogPath(openclawPath, source string) (string, bool) {
 	return filepath.Join(openclawPath, clean), true
 }
 
-func resolveLogPath(openclawPath, source string) (string, bool) {
-	return ResolveLogPath(openclawPath, source)
-}
-
 // logFallbackRootsFunc is overridable so tests can disable home-dir lookup
 // and stay hermetic. Production callers must not reassign it.
-var logFallbackRootsFunc = defaultLogFallbackRoots
+var (
+	logFallbackRootsMu   sync.RWMutex
+	logFallbackRootsFunc = defaultLogFallbackRoots
+)
 
 // LogFallbackRoots returns directories to search for log files when the primary
 // path under openclawPath is missing. OpenClaw 2026.5.18+ writes logs to the
 // platform standard log directory, so the dashboard needs to look outside
 // ~/.openclaw to find the live file.
 func LogFallbackRoots() []string {
-	return logFallbackRootsFunc()
+	logFallbackRootsMu.RLock()
+	fn := logFallbackRootsFunc
+	logFallbackRootsMu.RUnlock()
+	roots := fn()
+	return append([]string(nil), roots...)
 }
 
 func defaultLogFallbackRoots() []string {
@@ -514,6 +549,8 @@ func defaultLogFallbackRoots() []string {
 // Pass nil to revert to the platform default. Intended for tests; production
 // code should leave this alone.
 func SetLogFallbackRoots(fn func() []string) {
+	logFallbackRootsMu.Lock()
+	defer logFallbackRootsMu.Unlock()
 	if fn == nil {
 		logFallbackRootsFunc = defaultLogFallbackRoots
 		return

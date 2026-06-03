@@ -133,6 +133,12 @@ func TestCollectTokenUsageWithCache_ReusesUnchangedFileSummary(t *testing.T) {
 	}
 }
 
+func TestJSONNumericFieldsAlwaysPresent(t *testing.T) {
+	assertJSONKeys(t, LogRecord{}, "timestamp")
+	assertJSONKeys(t, TokenBucket{}, "calls", "input", "output", "cacheRead", "totalTokens", "cost")
+	assertJSONKeys(t, TokenUsageEntry{}, "inputRaw", "outputRaw", "cacheReadRaw", "totalTokensRaw")
+}
+
 func TestCollectSessions_CachesLiveModelLookup(t *testing.T) {
 	prevFetcher := fetchLiveSessionModels
 	defer func() { fetchLiveSessionModels = prevFetcher }()
@@ -317,6 +323,23 @@ func TestParseOpenclawConfig_SortsMapBackedLists(t *testing.T) {
 	for _, p := range plugins {
 		if p["enabled"] != true {
 			t.Errorf("plugin %v: enabled = %v, want true (default when omitted)", p["name"], p["enabled"])
+		}
+	}
+}
+
+func assertJSONKeys(t *testing.T, v any, keys ...string) {
+	t.Helper()
+	data, err := json.Marshal(v)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got map[string]any
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatal(err)
+	}
+	for _, key := range keys {
+		if _, ok := got[key]; !ok {
+			t.Fatalf("marshaled %T missing key %q: %s", v, key, data)
 		}
 	}
 }

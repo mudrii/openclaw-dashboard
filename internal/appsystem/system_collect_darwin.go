@@ -11,6 +11,8 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+
+	"github.com/mudrii/openclaw-dashboard/internal/appconfig"
 )
 
 // Pre-compiled regexes — compiled once at startup, not per-call.
@@ -33,7 +35,7 @@ var (
 
 func collectCPU(ctx context.Context, timeoutMs int) SystemCPU {
 	if timeoutMs <= 0 {
-		timeoutMs = 6000
+		timeoutMs = appconfig.DefaultCPUTimeoutMs
 	}
 	// Use -l 2 for accuracy: first sample is boot average; second is current delta.
 	out, err := runWithTimeout(ctx, timeoutMs, "/usr/bin/top", "-l", "2", "-n", "0", "-s", "1")

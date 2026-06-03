@@ -12,9 +12,17 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/mudrii/openclaw-dashboard/internal/appconfig"
 )
 
-func collectCPU(ctx context.Context, _ int) SystemCPU {
+func collectCPU(ctx context.Context, timeoutMs int) SystemCPU {
+	if timeoutMs <= 0 {
+		timeoutMs = appconfig.DefaultCPUTimeoutMs
+	}
+	cpuCtx, cancel := context.WithTimeout(ctx, time.Duration(timeoutMs)*time.Millisecond)
+	defer cancel()
+
 	content1, err := os.ReadFile("/proc/stat")
 	if err != nil {
 		e := fmt.Sprintf("read /proc/stat: %v", err)
@@ -28,7 +36,7 @@ func collectCPU(ctx context.Context, _ int) SystemCPU {
 
 	select {
 	case <-time.After(200 * time.Millisecond):
-	case <-ctx.Done():
+	case <-cpuCtx.Done():
 		e := "cpu sampling cancelled"
 		return SystemCPU{Cores: runtime.NumCPU(), Error: &e}
 	}

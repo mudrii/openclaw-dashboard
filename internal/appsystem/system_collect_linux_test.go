@@ -2,7 +2,12 @@
 
 package appsystem
 
-import "testing"
+import (
+	"context"
+	"strings"
+	"testing"
+	"time"
+)
 
 // B4: Guard against uint64 underflow when MemAvailable > MemTotal
 // (kernel race / virtualized environments can briefly report this).
@@ -70,5 +75,21 @@ func TestSwapFromMeminfo_TypicalCase(t *testing.T) {
 	wantUsed := int64((4096 - 1024) * 1024)
 	if got.UsedBytes != wantUsed {
 		t.Fatalf("UsedBytes = %d, want %d", got.UsedBytes, wantUsed)
+	}
+}
+
+func TestCollectCPU_HonorsTimeout(t *testing.T) {
+	start := time.Now()
+	got := collectCPU(context.Background(), 1)
+	elapsed := time.Since(start)
+
+	if got.Error == nil {
+		t.Fatalf("expected timeout error, got nil")
+	}
+	if !strings.Contains(*got.Error, "cancelled") {
+		t.Fatalf("error = %q, want cancellation", *got.Error)
+	}
+	if elapsed > 150*time.Millisecond {
+		t.Fatalf("collectCPU took %v, want timeout before 200ms sample delay", elapsed)
 	}
 }

@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "scripts/graphify-hook.sh --mode gemini"
+            "command": "python -c \"import sys,pathlib,json;e=pathlib.Path('graphify-out/graph.json').exists();d={'decision':'allow'};e and d.update({'additionalContext':'graphify: knowledge graph at graphify-out/. For focused questions, run `graphify query \"<question>\"` (scoped subgraph, usually much smaller than GRAPH_REPORT.md) instead of grepping raw files. Read GRAPH_REPORT.md only for broad architecture context.'});sys.stdout.write(json.dumps(d))\""
           }
         ]
       }

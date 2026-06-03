@@ -1,5 +1,85 @@
 # Changelog
 
+## v2026.6.1 — 2026-06-03
+
+Closes the "dashboard blank sections" work (issues #25/#26 follow-ups) and
+layers a round of correctness + observability hardening surfaced by a full
+multi-pass code review. No breaking changes.
+
+### Security
+
+- **Go toolchain `go1.26.3` → `go1.26.4`** — `go.mod toolchain` directive
+  bumped so CI fetches the patched stdlib. Closes 2 govulncheck advisories
+  that were reachable from this code: `GO-2026-5039` (net/textproto arbitrary
+  inputs in errors, via `appchat.CallGateway` → `io.ReadAll`) and
+  `GO-2026-5037` (crypto/x509 inefficient hostname parsing, via
+  `appservice.FormatStatus`). `make check` (incl. govulncheck) is clean.
+
+### Fixed
+
+- **`ParseLogTimestamp` infinite recursion → stack overflow** —
+  `internal/apprefresh/logtail.go` recursed on the regex-extracted timestamp
+  prefix without a progress check. A log line with a shape-valid but
+  semantically-invalid timestamp (e.g. `2026-13-45T25:61:99`) made the
+  extracted prefix equal the input, recursing forever and crashing the
+  collector. The recursion now fires only on strict progress (`match[1] != c`).
+  Regression test `TestParseLogTimestamp_InvalidShapeNoInfiniteRecursion`.
+- **`liveSessionModelCache` waiter deadlock on panic** —
+  `internal/apprefresh/session_model_cache.go` cleared `refreshing` and
+  broadcast only on the success path, so a panic in the in-flight fetch left
+  `refreshing=true` and every `cond.Wait()` caller blocked forever. The fetch
+  now runs in `refreshAndStore` whose `defer` always clears `refreshing` and
+  wakes waiters. Regression test `TestLiveSessionModelCache_PanicDoesNotHangWaiters`.
+- **Linux CPU timeout honored** — `internal/appsystem/system_collect_linux.go`
+  `collectCPU` previously ignored `cpuTimeoutMs`; it now derives a context
+  deadline from the configured value (matching the darwin collector).
+- **Blank dashboard sections** (3f201f9) — the refresh collector now always
+  emits numeric fields and the frontend renders plugins by name, so panels no
+  longer render empty when a value is zero or a plugin lacks a display label.
+- **Multi-root log fallback** (b65a8b0) — log discovery now falls back across
+  multiple roots for the OpenClaw 2026.5.18+ log-directory migration.
+
+### Changed
+
+- **Configurable CPU sampling timeout** (59adae0) — new `system.cpuTimeoutMs`
+  config field (default `6000`, clamp range `500`–`20000`) bounding the CPU
+  sampling command on darwin and the sampling window on linux. The
+  `system.coldPathTimeoutMs` default is raised to `8000` (clamp range
+  `200`–`30000`).
+- **Token-usage cache discards are observable** — a corrupt, version-mismatched,
+  or nil-files cache now logs `slog.Warn` before recomputing instead of
+  discarding silently, so schema drift on rollout is visible.
+- **Shared system HTTP client backstop** — `sharedSystemHTTPClient` gains a
+  30s `Timeout` as defense-in-depth; every call site already passes a per-call
+  context deadline.
+- **`--refresh` CLI bounded** — the one-shot refresh is wrapped in a 2-minute
+  timeout so a hung OpenClaw subprocess cannot block the CLI indefinitely
+  (SIGINT/SIGTERM still cancel earlier).
+
+### Internal
+
+- Named constants replace magic literals: `DefaultCPUTimeoutMs`,
+  `DefaultColdPathTimeoutMs` (`internal/appconfig`), and
+  `httpReadTimeout`/`httpWriteTimeout`/`httpIdleTimeout` (`main.go`).
+- New `doc.go` documents the root-package facade pattern.
+- `logRecordDedupKey` declared before its first use.
+
+### Tests
+
+- Added regression and coverage tests: invalid-shape timestamp recursion guard,
+  session-model-cache panic-no-hang, token-usage cache recompute (corrupt /
+  version-mismatch / nil-files), `resolveVersion`, `localIP` IPv4 contract,
+  bracketed-IPv6 loopback rejection, rate-limiter per-IP isolation / window
+  reset / concurrency, SIGTERM graceful shutdown, and `waitExit` non-zero-exit
+  assertion.
+
+### Documentation
+
+- `CLAUDE.md` toolchain reference corrected `go1.26.0` → `go1.26.3`.
+- `README.md` and `docs/CONFIGURATION.md` reflect `coldPathTimeoutMs` 8000 /
+  [200, 30000] and `cpuTimeoutMs` 6000 / [500, 20000].
+- The issue #25/#26 fix plan carries a superseded-values admonition.
+
 ## v2026.5.22 — 2026-05-20
 
 Single-fix patch.

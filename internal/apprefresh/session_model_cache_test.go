@@ -69,3 +69,42 @@ func TestLiveSessionModelCache_Singleflight(t *testing.T) {
 		t.Errorf("expected 1 fetch under contention, got %d", calls)
 	}
 }
+
+// TestLiveSessionModelCache_PanicDoesNotHangWaiters guards the refreshAndStore
+// defer: if the in-flight fetch panics, refreshing must be cleared and waiters
+// woken so cond.Wait() callers retry instead of blocking forever. Without the
+// fix, the first refresher panics with refreshing stuck true and every waiter
+// deadlocks — this test would then time out.
+func TestLiveSessionModelCache_PanicDoesNotHangWaiters(t *testing.T) {
+	t.Parallel()
+
+	c := newLiveSessionModelCache()
+	c.fetchFn = func(ctx context.Context, _ func(ctx context.Context, name string, args ...string) *exec.Cmd, _ string) map[string]string {
+		panic("simulated fetch failure")
+	}
+	c.resolveOpenclaw = func() string { return "x" }
+
+	now := time.Now()
+	const callers = 8
+	done := make(chan struct{}, callers)
+	for range callers {
+		go func() {
+			// Each caller recovers its own propagated panic; the contract under
+			// test is that no caller hangs, not that the panic is suppressed.
+			defer func() {
+				_ = recover()
+				done <- struct{}{}
+			}()
+			_ = c.fetch(context.Background(), now, time.Hour)
+		}()
+	}
+
+	deadline := time.After(5 * time.Second)
+	for i := 0; i < callers; i++ {
+		select {
+		case <-done:
+		case <-deadline:
+			t.Fatalf("waiter hung: only %d/%d callers returned — refreshing not cleared on panic", i, callers)
+		}
+	}
+}

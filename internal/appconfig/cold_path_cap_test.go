@@ -42,3 +42,32 @@ func TestColdPathTimeoutMs_Clamp(t *testing.T) {
 		})
 	}
 }
+
+func TestCPUTimeoutMs_Clamp(t *testing.T) {
+	tests := []struct {
+		name string
+		in   int
+		want int
+	}{
+		{"below 500 resets to default", 499, 6000},
+		{"500 accepted (lower bound)", 500, 500},
+		{"in-range value preserved", 7000, 7000},
+		{"upper bound 20000 accepted", 20000, 20000},
+		{"above 20000 resets to default", 20001, 6000},
+		{"absurd value resets to default", 999999, 6000},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			content := []byte(`{"system":{"cpuTimeoutMs":` + strconv.Itoa(tc.in) + `}}`)
+			if err := os.WriteFile(filepath.Join(dir, "config.json"), content, 0o600); err != nil {
+				t.Fatalf("write fixture: %v", err)
+			}
+			cfg := Load(dir)
+			if cfg.System.CPUTimeoutMs != tc.want {
+				t.Errorf("input %d: want %d, got %d", tc.in, tc.want, cfg.System.CPUTimeoutMs)
+			}
+		})
+	}
+}

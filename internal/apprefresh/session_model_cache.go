@@ -73,14 +73,27 @@ func (c *liveSessionModelCache) fetch(ctx context.Context, now time.Time, ttl ti
 	}
 	c.mu.Unlock()
 
+	return c.refreshAndStore(ctx, now, ttl)
+}
+
+// refreshAndStore performs the actual (slow, lock-free) fetch and stores the
+// result. The deferred cleanup always clears refreshing and wakes waiters —
+// even if callFetch panics — so cond.Wait() callers can never hang forever on
+// a refresher that died mid-flight.
+func (c *liveSessionModelCache) refreshAndStore(ctx context.Context, now time.Time, ttl time.Duration) (cached map[string]string) {
+	defer func() {
+		c.mu.Lock()
+		c.refreshing = false
+		c.cond.Broadcast()
+		c.mu.Unlock()
+	}()
+
 	models := c.callFetch(ctx)
 
 	c.mu.Lock()
 	c.models = maps.Clone(models)
 	c.expiresAt = now.Add(ttl)
-	c.refreshing = false
-	c.cond.Broadcast()
-	cached := maps.Clone(c.models)
+	cached = maps.Clone(c.models)
 	c.mu.Unlock()
 	return cached
 }

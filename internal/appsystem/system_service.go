@@ -62,7 +62,12 @@ type SystemService struct {
 	binPath string
 }
 
-var sharedSystemHTTPClient = &http.Client{}
+// sharedSystemHTTPClient is reused across all system probes (gateway healthz/
+// readyz, npm version). Every call site already wraps requests in a per-call
+// context deadline (1.5–3s); the client-level Timeout is a defense-in-depth
+// backstop, set well above any per-call deadline so it never interferes yet
+// still bounds a future caller that forgets to pass a deadlined context.
+var sharedSystemHTTPClient = &http.Client{Timeout: 30 * time.Second}
 
 // maxJSONResponseBytes caps every JSON body we decode from the gateway or npm
 // registry. 64KB is comfortably above any payload these endpoints emit, while
@@ -177,7 +182,7 @@ func (s *SystemService) GetJSON(ctx context.Context) (int, []byte) {
 func (s *SystemService) refresh(ctx context.Context) ([]byte, bool) {
 	coldPath := time.Duration(s.cfg.ColdPathTimeoutMs) * time.Millisecond
 	if coldPath <= 0 {
-		coldPath = 4 * time.Second
+		coldPath = time.Duration(appconfig.DefaultColdPathTimeoutMs) * time.Millisecond
 	}
 	coldCtx, cancel := context.WithTimeout(ctx, coldPath)
 	defer cancel()
