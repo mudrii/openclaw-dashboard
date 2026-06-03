@@ -8,7 +8,7 @@ import (
 	"runtime"
 )
 
-func collectCPU(ctx context.Context) SystemCPU {
+func collectCPU(ctx context.Context, _ int) SystemCPU {
 	e := fmt.Sprintf("unsupported platform: %s", runtime.GOOS)
 	return SystemCPU{Cores: runtime.NumCPU(), Error: &e}
 }
@@ -23,6 +23,6 @@ func collectSwap(ctx context.Context) SystemSwap {
 	return SystemSwap{Error: &e}
 }
 
-func collectCPURAMSwapParallel(ctx context.Context) (SystemCPU, SystemRAM, SystemSwap) {
-	return collectCPU(ctx), collectRAM(ctx), collectSwap(ctx)
+func collectCPURAMSwapParallel(ctx context.Context, cpuTimeoutMs int) (SystemCPU, SystemRAM, SystemSwap) {
+	return collectCPU(ctx, cpuTimeoutMs), collectRAM(ctx), collectSwap(ctx)
 }

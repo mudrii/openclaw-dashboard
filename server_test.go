@@ -3,6 +3,7 @@ package dashboard
 import (
 	"context"
 	"encoding/json"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -626,7 +627,10 @@ func TestValidateLoopbackBind(t *testing.T) {
 		}
 	}
 
-	rejected := []string{"0.0.0.0", "192.168.1.10", "::", "10.0.0.1", "example.com"}
+	// Bracketed IPv6 ("[::1]") is rejected by design: --bind expects a bare
+	// host (net.JoinHostPort adds brackets itself), so the bracketed form is
+	// malformed input and failing closed is the safe direction.
+	rejected := []string{"0.0.0.0", "192.168.1.10", "::", "10.0.0.1", "example.com", "[::1]", "[::1]:5001"}
 	for _, h := range rejected {
 		err := validateLoopbackBind(h)
 		if err == nil {
@@ -636,6 +640,27 @@ func TestValidateLoopbackBind(t *testing.T) {
 		if !strings.Contains(err.Error(), "non-loopback") {
 			t.Errorf("validateLoopbackBind(%q) error = %q, want substring %q", h, err.Error(), "non-loopback")
 		}
+	}
+}
+
+// TestLocalIP_EmptyOrValidNonLoopbackIPv4 pins localIP's contract without
+// depending on host network config: the result is either "" (no usable
+// interface) or a parseable IPv4 that is not loopback. Guards against a
+// regression that returns an IPv6, a loopback, or a malformed string.
+func TestLocalIP_EmptyOrValidNonLoopbackIPv4(t *testing.T) {
+	got := localIP()
+	if got == "" {
+		return // no non-loopback interface on this host — acceptable
+	}
+	ip := net.ParseIP(got)
+	if ip == nil {
+		t.Fatalf("localIP() = %q, not a valid IP", got)
+	}
+	if ip.To4() == nil {
+		t.Errorf("localIP() = %q, want IPv4", got)
+	}
+	if ip.IsLoopback() {
+		t.Errorf("localIP() = %q, must not be loopback", got)
 	}
 }
 

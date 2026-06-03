@@ -13,6 +13,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 	"unicode"
 
@@ -22,7 +23,7 @@ import (
 type LogRecord struct {
 	Source      string    `json:"source,omitempty"`
 	SeenAt      string    `json:"seenAt,omitempty"`
-	TimestampMs int64     `json:"timestamp,omitempty"`
+	TimestampMs int64     `json:"timestamp"`
 	Severity    string    `json:"severity,omitempty"`
 	Message     string    `json:"message,omitempty"`
 	Line        string    `json:"line,omitempty"`
@@ -73,40 +74,62 @@ func ReadMergedLogs(openclawPath string, sources []string, globalLimit int) ([]L
 
 	perSourceRecords := make([][]LogRecord, 0, len(sources))
 	for _, source := range sources {
-		path, ok := resolveLogPath(openclawPath, source)
-		if !ok {
-			continue
-		}
-
-		stat, err := os.Stat(path)
-		if err != nil {
-			continue
-		}
-
-		lines, err := readTailLines(path, globalLimit)
-		if err != nil {
-			continue
-		}
-
-		sourceRecords := make([]LogRecord, 0, len(lines))
-		for _, line := range lines {
-			record, ok := parseLogLine(line, path, stat.ModTime())
-			if !ok {
+		candidates := candidateLogPaths(openclawPath, source)
+		sourceRecords := make([]LogRecord, 0)
+		for _, path := range candidates {
+			stat, err := os.Stat(path)
+			if err != nil {
 				continue
 			}
-			record.Source = source
-			record.Raw = line
-			if record.TimestampMs == 0 {
-				record.TimestampMs = stat.ModTime().UnixMilli()
+			lines, err := readTailLines(path, globalLimit)
+			if err != nil {
+				continue
 			}
-			sourceRecords = append(sourceRecords, record)
+			for _, line := range lines {
+				record, ok := parseLogLine(line, path, stat.ModTime())
+				if !ok {
+					continue
+				}
+				record.Source = source
+				record.Raw = line
+				if record.TimestampMs == 0 {
+					record.TimestampMs = stat.ModTime().UnixMilli()
+				}
+				sourceRecords = append(sourceRecords, record)
+			}
 		}
 		if len(sourceRecords) > 0 {
+			slices.SortFunc(sourceRecords, compareLogRecords)
+			sourceRecords = dedupeSortedLogRecords(sourceRecords)
 			perSourceRecords = append(perSourceRecords, sourceRecords)
 		}
 	}
 
 	return mergeLatestRecords(perSourceRecords, globalLimit), nil
+}
+
+type logRecordDedupKey struct {
+	source      string
+	timestampMs int64
+	raw         string
+}
+
+func dedupeSortedLogRecords(records []LogRecord) []LogRecord {
+	seen := make(map[logRecordDedupKey]struct{}, len(records))
+	out := records[:0]
+	for _, record := range records {
+		key := logRecordDedupKey{
+			source:      record.Source,
+			timestampMs: record.TimestampMs,
+			raw:         record.Raw,
+		}
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, record)
+	}
+	return out
 }
 
 func mergeLatestRecords(perSourceRecords [][]LogRecord, globalLimit int) []LogRecord {
@@ -301,7 +324,12 @@ func ParseLogTimestamp(candidates ...string) (time.Time, string) {
 		if c == "" {
 			continue
 		}
-		if match := reLogPrefix.FindStringSubmatch(c); len(match) >= 2 {
+		// Recurse only when the extracted prefix is strictly shorter than the
+		// candidate — i.e. real progress was made by stripping trailing content.
+		// When c is already a bare timestamp the layout loop above could not
+		// parse (e.g. a syntactically-shaped but invalid "2026-13-45T25:61:99"),
+		// match[1] == c and recursing would loop forever → stack overflow.
+		if match := reLogPrefix.FindStringSubmatch(c); len(match) >= 2 && match[1] != c {
 			return ParseLogTimestamp(match[1])
 		}
 	}
@@ -490,8 +518,65 @@ func ResolveLogPath(openclawPath, source string) (string, bool) {
 	return filepath.Join(openclawPath, clean), true
 }
 
-func resolveLogPath(openclawPath, source string) (string, bool) {
-	return ResolveLogPath(openclawPath, source)
+// logFallbackRootsFunc is overridable so tests can disable home-dir lookup
+// and stay hermetic. Production callers must not reassign it.
+var (
+	logFallbackRootsMu   sync.RWMutex
+	logFallbackRootsFunc = defaultLogFallbackRoots
+)
+
+// LogFallbackRoots returns directories to search for log files when the primary
+// path under openclawPath is missing. OpenClaw 2026.5.18+ writes logs to the
+// platform standard log directory, so the dashboard needs to look outside
+// ~/.openclaw to find the live file.
+func LogFallbackRoots() []string {
+	logFallbackRootsMu.RLock()
+	fn := logFallbackRootsFunc
+	logFallbackRootsMu.RUnlock()
+	roots := fn()
+	return append([]string(nil), roots...)
+}
+
+func defaultLogFallbackRoots() []string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return nil
+	}
+	return []string{filepath.Join(home, "Library", "Logs", "openclaw")}
+}
+
+// SetLogFallbackRoots overrides the directory list returned by LogFallbackRoots.
+// Pass nil to revert to the platform default. Intended for tests; production
+// code should leave this alone.
+func SetLogFallbackRoots(fn func() []string) {
+	logFallbackRootsMu.Lock()
+	defer logFallbackRootsMu.Unlock()
+	if fn == nil {
+		logFallbackRootsFunc = defaultLogFallbackRoots
+		return
+	}
+	logFallbackRootsFunc = fn
+}
+
+// candidateLogPaths returns paths to try for a given source, in priority order:
+// the primary path under openclawPath followed by each fallback root from
+// LogFallbackRoots(). Callers should read every existing candidate so log
+// data is merged when OpenClaw rotates or migrates log locations (e.g.
+// 2026.5.18+ moved gateway logs from ~/.openclaw/logs/ to
+// ~/Library/Logs/openclaw/).
+func candidateLogPaths(openclawPath, source string) []string {
+	out := make([]string, 0, 2)
+	if path, ok := ResolveLogPath(openclawPath, source); ok {
+		out = append(out, path)
+	}
+	base := strings.TrimPrefix(filepath.Clean(filepath.FromSlash(source)), "logs"+string(filepath.Separator))
+	if base == "" || filepath.IsAbs(base) || strings.HasPrefix(base, "..") {
+		return out
+	}
+	for _, root := range LogFallbackRoots() {
+		out = append(out, filepath.Join(root, base))
+	}
+	return out
 }
 
 func GetLogRuntimeConfig(cfg appconfig.Config) map[string]any {

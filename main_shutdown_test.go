@@ -4,6 +4,7 @@ package dashboard
 
 import (
 	"errors"
+	"fmt"
 	"net"
 	"os"
 	"os/exec"
@@ -56,6 +57,28 @@ func TestShutdownSequence(t *testing.T) {
 			t.Fatalf("signal: %v", err)
 		}
 
+		if err := waitExit(cmd, 6*time.Second); err != nil {
+			t.Fatalf("expected clean exit within 6s: %v", err)
+		}
+	})
+
+	t.Run("single SIGTERM exits within 6s", func(t *testing.T) {
+		port3 := freePort(t)
+		cmd := exec.Command(bin, "--bind", "127.0.0.1", "--port", strconv.Itoa(port3))
+		cmd.Env = append(os.Environ(), "DASHBOARD_AI_TOKEN_OPTIONAL=1")
+		cmd.Stdout = os.Stderr
+		cmd.Stderr = os.Stderr
+		cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+		if err := cmd.Start(); err != nil {
+			t.Fatalf("start: %v", err)
+		}
+		t.Cleanup(func() { _ = cmd.Process.Kill() })
+
+		waitListening(t, port3, 5*time.Second)
+
+		if err := cmd.Process.Signal(syscall.SIGTERM); err != nil {
+			t.Fatalf("signal: %v", err)
+		}
 		if err := waitExit(cmd, 6*time.Second); err != nil {
 			t.Fatalf("expected clean exit within 6s: %v", err)
 		}
@@ -121,20 +144,38 @@ func waitListening(t *testing.T, port int, timeout time.Duration) {
 	t.Fatalf("server never started listening on %s", addr)
 }
 
-// waitExit waits up to timeout for the command to exit. Returns nil on a normal
-// or signal-induced exit, error on timeout or unexpected wait failure.
+// waitExit waits up to timeout for the command to exit with code 0.
+// Returns nil only on a clean exit (code 0); returns an error for non-zero
+// exit codes, unexpected wait failures, or timeout.
 func waitExit(cmd *exec.Cmd, timeout time.Duration) error {
 	done := make(chan error, 1)
 	go func() { done <- cmd.Wait() }()
 	select {
 	case err := <-done:
-		// ExitError is fine — we only care that the process terminated cleanly.
+		if err == nil {
+			return nil // exit code 0 — clean shutdown
+		}
 		var exitErr *exec.ExitError
-		if err == nil || errors.As(err, &exitErr) {
-			return nil
+		if errors.As(err, &exitErr) {
+			return fmt.Errorf("process exited with code %d", exitErr.ExitCode())
 		}
 		return err
 	case <-time.After(timeout):
 		return errors.New("timeout waiting for process exit")
+	}
+}
+
+// TestWaitExit_RejectsNonZeroExit verifies that waitExit returns an error
+// when the child process exits with a non-zero status code.
+func TestWaitExit_RejectsNonZeroExit(t *testing.T) {
+	if testing.Short() {
+		t.Skip("subprocess test; skipped under -short")
+	}
+	cmd := exec.Command("sh", "-c", "exit 1")
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	if err := waitExit(cmd, 2*time.Second); err == nil {
+		t.Error("waitExit should return error for non-zero exit; got nil")
 	}
 }

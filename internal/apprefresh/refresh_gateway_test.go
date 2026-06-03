@@ -97,7 +97,8 @@ func TestCollectGatewayHealth_NilContextDoesNotPanic(t *testing.T) {
 	// nil. This case proves the substitution path does not panic on the
 	// pgrep timeout setup.
 	stubPgrep(t, "", nil)
-	gw := collectGatewayHealth(nil, 0) //nolint:staticcheck // intentional nil ctx
+	var ctx context.Context
+	gw := collectGatewayHealth(ctx, 0)
 	if gw["status"] != "offline" {
 		t.Fatalf("status: want offline, got %v", gw["status"])
 	}

@@ -101,8 +101,23 @@ func loadTokenUsageCache(path string) tokenUsageCache {
 	if err != nil {
 		return cache
 	}
-	if err := json.Unmarshal(data, &cache); err != nil || cache.Version != tokenUsageCacheVersion || cache.Files == nil {
-		return tokenUsageCache{Version: tokenUsageCacheVersion, Files: map[string]tokenUsageFileSummary{}}
+	fresh := tokenUsageCache{Version: tokenUsageCacheVersion, Files: map[string]tokenUsageFileSummary{}}
+	if err := json.Unmarshal(data, &cache); err != nil {
+		// Corrupt cache: recompute from scratch. Surfaced so a recurring parse
+		// failure (disk corruption, truncated write) is visible, not silent.
+		slog.Warn("[dashboard] loadTokenUsageCache: corrupt cache, recomputing", "path", path, "error", err)
+		return fresh
+	}
+	if cache.Version != tokenUsageCacheVersion {
+		// Schema evolved: discarding is correct, but log it so a version bump
+		// that unexpectedly invalidates every cache on rollout is observable.
+		slog.Warn("[dashboard] loadTokenUsageCache: version mismatch, recomputing",
+			"path", path, "got", cache.Version, "want", tokenUsageCacheVersion)
+		return fresh
+	}
+	if cache.Files == nil {
+		slog.Warn("[dashboard] loadTokenUsageCache: nil files map, recomputing", "path", path)
+		return fresh
 	}
 	return cache
 }

@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -219,6 +220,23 @@ func TestParseLogTimestamp_NoCandidates(t *testing.T) {
 	}
 }
 
+// TestParseLogTimestamp_InvalidShapeNoInfiniteRecursion guards the recursion
+// fix: a string the prefix regex accepts on shape but time.Parse rejects on
+// value (bad month/day/time) must not recurse forever. Before the fix this
+// caused a stack overflow because the extracted prefix equalled the input.
+func TestParseLogTimestamp_InvalidShapeNoInfiniteRecursion(t *testing.T) {
+	for _, raw := range []string{
+		"2026-13-45T25:61:99",
+		"2026-99-99 99:99:99.999999999",
+		"0000-00-00T00:00:00+99:99",
+	} {
+		ts, seen := ParseLogTimestamp(raw)
+		if !ts.IsZero() || seen != "" {
+			t.Errorf("%q: want zero/empty (unparseable), got %v/%q", raw, ts, seen)
+		}
+	}
+}
+
 // TestParseLogTimestamp_TZLessUsesLocal guards against regression of the bug
 // where time.Parse on a TZ-less layout defaulted to UTC. Gateway logs are
 // emitted in local time; if the parser interprets them as UTC, chart buckets
@@ -348,5 +366,141 @@ func TestResolveLogPath_Accepts(t *testing.T) {
 	want := filepath.Join("/base", "logs/gateway.log")
 	if p != want {
 		t.Errorf("got %q, want %q", p, want)
+	}
+}
+
+func TestCandidateLogPaths_FallbackPriorityAndGuards(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "fallback")
+	SetLogFallbackRoots(func() []string { return []string{root} })
+	t.Cleanup(func() { SetLogFallbackRoots(nil) })
+
+	got := candidateLogPaths("/base", "logs/gateway.log")
+	want := []string{
+		filepath.Join("/base", "logs", "gateway.log"),
+		filepath.Join(root, "gateway.log"),
+	}
+	if len(got) != len(want) {
+		t.Fatalf("candidateLogPaths len = %d, want %d: %v", len(got), len(want), got)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("candidateLogPaths[%d] = %q, want %q", i, got[i], want[i])
+		}
+	}
+
+	for _, source := range []string{"../outside.log", "/absolute.log"} {
+		if got := candidateLogPaths("/base", source); len(got) != 0 {
+			t.Fatalf("candidateLogPaths(%q) = %v, want empty", source, got)
+		}
+	}
+}
+
+func TestReadMergedLogs_SortsSingleSourceAcrossPrimaryAndFallback(t *testing.T) {
+	openclawDir := t.TempDir()
+	fallbackDir := t.TempDir()
+	SetLogFallbackRoots(func() []string { return []string{fallbackDir} })
+	t.Cleanup(func() { SetLogFallbackRoots(nil) })
+
+	writeLogLines(t, filepath.Join(openclawDir, "logs", "gateway.log"),
+		"2026-04-13T10:00:00Z primary oldest",
+		"2026-04-13T10:00:04Z primary newest",
+	)
+	writeLogLines(t, filepath.Join(fallbackDir, "gateway.log"),
+		"2026-04-13T10:00:01Z fb a",
+		"2026-04-13T10:00:02Z fb b",
+		"2026-04-13T10:00:03Z fb c",
+	)
+
+	records, err := ReadMergedLogs(openclawDir, []string{"logs/gateway.log"}, 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(records) != 3 {
+		t.Fatalf("len(records) = %d, want 3", len(records))
+	}
+	wantMessages := []string{"fb b", "fb c", "primary newest"}
+	for i, want := range wantMessages {
+		if records[i].Message != want {
+			t.Fatalf("records[%d].Message = %q, want %q", i, records[i].Message, want)
+		}
+		if i > 0 && records[i-1].TimestampMs > records[i].TimestampMs {
+			t.Fatalf("records out of order at %d: %d > %d", i, records[i-1].TimestampMs, records[i].TimestampMs)
+		}
+	}
+}
+
+func TestReadMergedLogs_DedupesOverlappingPrimaryAndFallbackLines(t *testing.T) {
+	openclawDir := t.TempDir()
+	fallbackDir := t.TempDir()
+	SetLogFallbackRoots(func() []string { return []string{fallbackDir} })
+	t.Cleanup(func() { SetLogFallbackRoots(nil) })
+
+	overlap := "2026-04-13T10:00:02Z shared migration line"
+	writeLogLines(t, filepath.Join(openclawDir, "logs", "gateway.log"),
+		"2026-04-13T10:00:01Z primary only",
+		overlap,
+	)
+	writeLogLines(t, filepath.Join(fallbackDir, "gateway.log"),
+		overlap,
+		"2026-04-13T10:00:03Z fallback only",
+	)
+
+	records, err := ReadMergedLogs(openclawDir, []string{"logs/gateway.log"}, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantMessages := []string{"primary only", "shared migration line", "fallback only"}
+	if len(records) != len(wantMessages) {
+		t.Fatalf("len(records) = %d, want %d: %+v", len(records), len(wantMessages), records)
+	}
+	for i, want := range wantMessages {
+		if records[i].Message != want {
+			t.Fatalf("records[%d].Message = %q, want %q", i, records[i].Message, want)
+		}
+	}
+}
+
+func TestLogFallbackRoots_ReturnsCopy(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "logs")
+	SetLogFallbackRoots(func() []string { return []string{root} })
+	t.Cleanup(func() { SetLogFallbackRoots(nil) })
+
+	got := LogFallbackRoots()
+	if len(got) != 1 || got[0] != root {
+		t.Fatalf("LogFallbackRoots() = %v, want [%q]", got, root)
+	}
+	got[0] = "mutated"
+
+	got = LogFallbackRoots()
+	if len(got) != 1 || got[0] != root {
+		t.Fatalf("LogFallbackRoots() after caller mutation = %v, want [%q]", got, root)
+	}
+}
+
+func TestLogFallbackRoots_ConcurrentAccess(t *testing.T) {
+	t.Cleanup(func() { SetLogFallbackRoots(nil) })
+
+	var wg sync.WaitGroup
+	for i := 0; i < 20; i++ {
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			SetLogFallbackRoots(func() []string { return []string{"/tmp/openclaw-logs"} })
+		}()
+		go func() {
+			defer wg.Done()
+			_ = candidateLogPaths("/tmp/openclaw", "logs/gateway.log")
+		}()
+	}
+	wg.Wait()
+}
+
+func writeLogLines(t *testing.T, path string, lines ...string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(strings.Join(lines, "\n")+"\n"), 0o644); err != nil {
+		t.Fatal(err)
 	}
 }

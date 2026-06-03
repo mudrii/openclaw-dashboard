@@ -30,6 +30,36 @@ func writeRepoRefreshScript(t *testing.T, dir string) {
 	}
 }
 
+// TestResolveVersion_BuildVersionStripsV verifies the link-time BuildVersion
+// takes precedence over on-disk detection and has its leading "v" stripped.
+func TestResolveVersion_BuildVersionStripsV(t *testing.T) {
+	prev := BuildVersion
+	t.Cleanup(func() { BuildVersion = prev })
+	BuildVersion = "v2.3.4"
+
+	// dir is irrelevant when BuildVersion is set — pass an empty temp dir to
+	// prove detection is not consulted.
+	if got := resolveVersion(context.Background(), t.TempDir()); got != "2.3.4" {
+		t.Errorf("resolveVersion = %q, want %q", got, "2.3.4")
+	}
+}
+
+// TestResolveVersion_FallbackToDetect verifies that with no BuildVersion the
+// version comes from detectVersion (here, a VERSION file in the dir).
+func TestResolveVersion_FallbackToDetect(t *testing.T) {
+	prev := BuildVersion
+	t.Cleanup(func() { BuildVersion = prev })
+	BuildVersion = ""
+
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "VERSION"), []byte("v9.9.9\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := resolveVersion(context.Background(), dir); got != "9.9.9" {
+		t.Errorf("resolveVersion = %q, want %q", got, "9.9.9")
+	}
+}
+
 func TestDetectVersion_VersionFile(t *testing.T) {
 	dir := t.TempDir()
 	os.WriteFile(filepath.Join(dir, "VERSION"), []byte("2.5.0\n"), 0644)

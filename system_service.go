@@ -50,6 +50,9 @@ func boolFromAny(v any) (bool, bool) {
 	return appsystem.BoolFromAny(v)
 }
 
+// expireMetricsCacheForTest is a package-visible test-only seam: it back-dates
+// the metrics cache timestamp so the next GetJSON treats the cache as stale and
+// refreshes. Not part of the public CLI surface.
 func expireMetricsCacheForTest(s *SystemService) {
 	if s != nil {
 		s.SetMetricsTimestampForTest(time.Now().Add(-1 * time.Hour))

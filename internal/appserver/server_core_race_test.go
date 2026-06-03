@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strconv"
 	"sync"
 	"testing"
 	"time"
@@ -85,5 +86,41 @@ func TestGetDataCached_ConcurrentReadWriteRace(t *testing.T) {
 
 	time.Sleep(500 * time.Millisecond)
 	close(stop)
+	wg.Wait()
+}
+
+// TestChatRateLimiter_ConcurrentSameIP exercises chatRateLimiter.allow under
+// heavy concurrency from the same IP. The race detector catches any unsynchronised
+// access to rateBucket fields during the LoadOrStore → Lock path.
+func TestChatRateLimiter_ConcurrentSameIP(t *testing.T) {
+	var rl chatRateLimiter
+	const goroutines = 200
+	var wg sync.WaitGroup
+	for range goroutines {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			rl.allow("10.0.0.1")
+		}()
+	}
+	wg.Wait()
+	// Exactly chatRateLimit allows should have returned true.
+	// We don't assert the count here — the race detector is the real oracle.
+}
+
+// TestChatRateLimiter_ConcurrentManyIPs exercises concurrent access from
+// distinct IPs to stress-test the sync.Map insertion path.
+func TestChatRateLimiter_ConcurrentManyIPs(t *testing.T) {
+	var rl chatRateLimiter
+	const goroutines = 200
+	var wg sync.WaitGroup
+	for i := range goroutines {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			ip := "10.0." + strconv.Itoa(i/256) + "." + strconv.Itoa(i%256)
+			rl.allow(ip)
+		}()
+	}
 	wg.Wait()
 }

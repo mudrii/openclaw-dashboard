@@ -27,6 +27,19 @@ var indexHTML []byte
 // BuildVersion is set at link time.
 var BuildVersion string
 
+// refreshCLITimeout bounds a one-shot `--refresh` invocation so a hung
+// OpenClaw subprocess cannot block the CLI indefinitely. SIGINT/SIGTERM
+// still cancel earlier via the signal-aware parent context.
+const refreshCLITimeout = 2 * time.Minute
+
+// HTTP server timeouts. WriteTimeout is generous because AI chat responses
+// stream from the gateway and can be slow; IdleTimeout caps keep-alive reuse.
+const (
+	httpReadTimeout  = 30 * time.Second
+	httpWriteTimeout = 90 * time.Second
+	httpIdleTimeout  = 120 * time.Second
+)
+
 // Main runs the dashboard CLI and returns a process exit code.
 func Main() int {
 	cmdCtx, stopSignals := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
@@ -144,7 +157,9 @@ func Main() int {
 		}
 		fmt.Printf("Dashboard dir: %s\n", dir)
 		fmt.Printf("OpenClaw path: %s\n", openclawPath)
-		if err := refreshCollectorFunc(cmdCtx, dir, openclawPath, cfg); err != nil {
+		refreshCtx, cancelRefresh := context.WithTimeout(cmdCtx, refreshCLITimeout)
+		defer cancelRefresh()
+		if err := refreshCollectorFunc(refreshCtx, dir, openclawPath, cfg); err != nil {
 			fmt.Fprintf(os.Stderr, "refresh failed: %v\n", err)
 			return 1
 		}
@@ -187,9 +202,9 @@ func Main() int {
 	httpSrv := &http.Server{
 		Addr:         addr,
 		Handler:      srv,
-		ReadTimeout:  30 * time.Second,
-		WriteTimeout: 90 * time.Second, // chat streaming can be slow
-		IdleTimeout:  120 * time.Second,
+		ReadTimeout:  httpReadTimeout,
+		WriteTimeout: httpWriteTimeout,
+		IdleTimeout:  httpIdleTimeout,
 	}
 
 	fmt.Printf("[dashboard] v%s\n", version)

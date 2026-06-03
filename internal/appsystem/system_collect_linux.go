@@ -12,9 +12,17 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/mudrii/openclaw-dashboard/internal/appconfig"
 )
 
-func collectCPU(ctx context.Context) SystemCPU {
+func collectCPU(ctx context.Context, timeoutMs int) SystemCPU {
+	if timeoutMs <= 0 {
+		timeoutMs = appconfig.DefaultCPUTimeoutMs
+	}
+	cpuCtx, cancel := context.WithTimeout(ctx, time.Duration(timeoutMs)*time.Millisecond)
+	defer cancel()
+
 	content1, err := os.ReadFile("/proc/stat")
 	if err != nil {
 		e := fmt.Sprintf("read /proc/stat: %v", err)
@@ -28,7 +36,7 @@ func collectCPU(ctx context.Context) SystemCPU {
 
 	select {
 	case <-time.After(200 * time.Millisecond):
-	case <-ctx.Done():
+	case <-cpuCtx.Done():
 		e := "cpu sampling cancelled"
 		return SystemCPU{Cores: runtime.NumCPU(), Error: &e}
 	}
@@ -106,7 +114,7 @@ func swapFromMeminfo(info map[string]uint64) SystemSwap {
 
 // collectCPURAMSwapParallel runs all three Linux collectors concurrently.
 // /proc/meminfo is read once and shared between RAM and Swap collectors.
-func collectCPURAMSwapParallel(ctx context.Context) (SystemCPU, SystemRAM, SystemSwap) {
+func collectCPURAMSwapParallel(ctx context.Context, cpuTimeoutMs int) (SystemCPU, SystemRAM, SystemSwap) {
 	// Read /proc/meminfo once — shared by RAM and Swap to avoid double I/O
 	// and ensure both metrics come from the same kernel snapshot.
 	info, meminfoErr := collectMeminfo()
@@ -116,7 +124,7 @@ func collectCPURAMSwapParallel(ctx context.Context) (SystemCPU, SystemRAM, Syste
 	var swap SystemSwap
 	var wg sync.WaitGroup
 	wg.Add(3)
-	go func() { defer wg.Done(); cpu = collectCPU(ctx) }()
+	go func() { defer wg.Done(); cpu = collectCPU(ctx, cpuTimeoutMs) }()
 	go func() {
 		defer wg.Done()
 		if meminfoErr != nil {

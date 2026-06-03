@@ -32,7 +32,12 @@ dashboard-go-*
 # Build artifacts
 dist/
 promo-*.png
+dashboard-*.png
 dashboard-server
+
+# Local agent/tooling scratch (not part of the repo)
+.antigravitycli/
+.playwright-mcp/
 
 # Go test/profile leftovers
 *.test

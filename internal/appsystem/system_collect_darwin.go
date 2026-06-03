@@ -11,6 +11,8 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+
+	"github.com/mudrii/openclaw-dashboard/internal/appconfig"
 )
 
 // Pre-compiled regexes — compiled once at startup, not per-call.
@@ -31,9 +33,12 @@ var (
 	reVmCompressor = reVmPages("Pages occupied by compressor:")
 )
 
-func collectCPU(ctx context.Context) SystemCPU {
+func collectCPU(ctx context.Context, timeoutMs int) SystemCPU {
+	if timeoutMs <= 0 {
+		timeoutMs = appconfig.DefaultCPUTimeoutMs
+	}
 	// Use -l 2 for accuracy: first sample is boot average; second is current delta.
-	out, err := runWithTimeout(ctx, 4000, "/usr/bin/top", "-l", "2", "-n", "0", "-s", "1")
+	out, err := runWithTimeout(ctx, timeoutMs, "/usr/bin/top", "-l", "2", "-n", "0", "-s", "1")
 	if err != nil {
 		e := fmt.Sprintf("top failed: %v", err)
 		return SystemCPU{Cores: runtime.NumCPU(), Error: &e}
@@ -98,13 +103,13 @@ func collectSwap(ctx context.Context) SystemSwap {
 
 // collectCPURAMSwapParallel runs all three Darwin collectors concurrently.
 // Called by system_service.go refresh() instead of sequential calls.
-func collectCPURAMSwapParallel(ctx context.Context) (SystemCPU, SystemRAM, SystemSwap) {
+func collectCPURAMSwapParallel(ctx context.Context, cpuTimeoutMs int) (SystemCPU, SystemRAM, SystemSwap) {
 	var cpu SystemCPU
 	var ram SystemRAM
 	var swap SystemSwap
 	var wg sync.WaitGroup
 	wg.Add(3)
-	go func() { defer wg.Done(); cpu = collectCPU(ctx) }()
+	go func() { defer wg.Done(); cpu = collectCPU(ctx, cpuTimeoutMs) }()
 	go func() { defer wg.Done(); ram = collectRAM(ctx) }()
 	go func() { defer wg.Done(); swap = collectSwap(ctx) }()
 	wg.Wait()

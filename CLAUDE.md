@@ -22,7 +22,7 @@ Zero-dependency Go HTTP server with embedded SPA frontend for OpenClaw bot metri
 
 ## Environment
 
-- Go 1.26 (toolchain `go1.26.0` per `go.mod`), darwin/arm64 + linux/amd64+arm64
+- Go 1.26 (toolchain `go1.26.4` per `go.mod`), darwin/arm64 + linux/amd64+arm64
 - Treat `go.mod`, `toolchain`, CI config as the source of truth
 - Prefer `make` targets over raw commands when a Makefile exists
 - `make check` is the canonical gate: `vet`, `lint` (golangci-lint with `gosec` + `errorlint` enabled), `test -race`, `govulncheck`
@@ -119,4 +119,11 @@ Scopes: `refresh`, `server`, `system`, `chat`, `config`, `service`, `runtime`, `
 Premature abstractions · swallowed errors · context misuse · goroutine leaks · unsafe shared state · unnecessary deps · behavior-changing go fix applied blindly · transport in domain · missing tests · secrets in code · pre-1.24 patterns when go.mod allows modern · magic values · giant mixed-responsibility functions
 
 ## graphify
-See [docs/graphify.md](docs/graphify.md) for the canonical knowledge-graph workflow and rules.
+
+This project has a knowledge graph at graphify-out/ with god nodes, community structure, and cross-file relationships.
+
+Rules:
+- For codebase questions, first run `graphify query "<question>"` when graphify-out/graph.json exists. Use `graphify path "<A>" "<B>"` for relationships and `graphify explain "<concept>"` for focused concepts. These return a scoped subgraph, usually much smaller than GRAPH_REPORT.md or raw grep output.
+- If graphify-out/wiki/index.md exists, use it for broad navigation instead of raw source browsing.
+- Read graphify-out/GRAPH_REPORT.md only for broad architecture review or when query/path/explain do not surface enough context.
+- After modifying code, run `graphify update .` to keep the graph current (AST-only, no API cost).

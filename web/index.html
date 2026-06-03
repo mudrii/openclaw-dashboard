@@ -1379,7 +1379,7 @@ const Renderer = {
       const c=COLORS[i%COLORS.length];
       grad+=`${c} ${cum}% ${cum+pct}%,`;
       cum+=pct;
-      legend+=`<div class="donut-legend-item"><span class="donut-legend-dot" style="background:${c}"></span>${esc(d.model)} $${d.cost.toFixed(0)} (${Math.round(pct)}%)</div>`;
+      legend+=`<div class="donut-legend-item"><span class="donut-legend-dot" style="background:${c}"></span>${esc(d.model)} $${(d.cost||0).toFixed(0)} (${Math.round(pct)}%)</div>`;
     });
     $('donut').style.background=`conic-gradient(${grad.slice(0,-1)})`;
     $('donutCenter').textContent='$'+total.toFixed(0);
@@ -1633,7 +1633,7 @@ const Renderer = {
     const plugins = AC.plugins||[];
     const skills  = (AC.skills||[]).filter(s=>s.enabled);
     $('capsPanelInner').innerHTML = [
-      plugins.length ? `<div style="margin-bottom:6px"><div style="font-size:9px;color:var(--muted);margin-bottom:3px">Plugins</div>${plugins.map(p=>badge(p,true)).join('')}</div>` : '',
+      plugins.length ? `<div style="margin-bottom:6px"><div style="font-size:9px;color:var(--muted);margin-bottom:3px">Plugins</div>${plugins.map(p=>badge(p.name, p.enabled)).join('')}</div>` : '',
       skills.length  ? `<div style="margin-bottom:6px"><div style="font-size:9px;color:var(--muted);margin-bottom:3px">Active Skills</div>${skills.map(s=>badge(s.name,true)).join('')}</div>` : '',
       `<div style="margin-top:6px;display:flex;gap:8px;flex-wrap:wrap">
         ${badge('TTS', AC.tts)}
@@ -1803,11 +1803,12 @@ const Renderer = {
 
   renderTokenTbl(bodyId,data,accentColor){
   data=data||[];
-  const max=Math.max(...data.map(u=>u.cost))||1;
+  const max=Math.max(...data.map(u=>u.cost||0))||1;
   $(bodyId).innerHTML=data.map(u=>{
-    const pct=Math.round(u.cost/max*100);
-    return `<tr class="dr"><td class="w">${esc(u.model)}</td><td class="r">${u.calls.toLocaleString()}</td><td class="r">${u.input}</td><td class="r">${u.output}</td><td class="r">${u.cacheRead}</td><td class="r" style="color:var(--textStrong);font-weight:500">${u.totalTokens}</td><td class="r cost">$${u.cost.toFixed(2)}</td><td><div class="usage-bar"><div class="usage-fill" style="width:${pct}%;background:${accentColor}"></div></div></td></tr>`;
-  }).join('')+(data.length?`<tr class="total-row"><td class="w">TOTAL</td><td class="r">${data.reduce((a,u)=>a+u.calls,0).toLocaleString()}</td><td colspan="4"></td><td class="r cost">$${data.reduce((a,u)=>a+u.cost,0).toFixed(2)}</td><td></td></tr>`:'');
+    const cost=u.cost||0;
+    const pct=Math.round(cost/max*100);
+    return `<tr class="dr"><td class="w">${esc(u.model)}</td><td class="r">${(u.calls||0).toLocaleString()}</td><td class="r">${esc(u.input||'')}</td><td class="r">${esc(u.output||'')}</td><td class="r">${esc(u.cacheRead||'')}</td><td class="r" style="color:var(--textStrong);font-weight:500">${esc(u.totalTokens||'')}</td><td class="r cost">$${cost.toFixed(2)}</td><td><div class="usage-bar"><div class="usage-fill" style="width:${pct}%;background:${accentColor}"></div></div></td></tr>`;
+  }).join('')+(data.length?`<tr class="total-row"><td class="w">TOTAL</td><td class="r">${data.reduce((a,u)=>a+(u.calls||0),0).toLocaleString()}</td><td colspan="4"></td><td class="r cost">$${data.reduce((a,u)=>a+(u.cost||0),0).toFixed(2)}</td><td></td></tr>`:'');
   },
 
   setTabCls4(prefix,tab,cls){
@@ -1852,8 +1853,9 @@ const Renderer = {
     const labelY=p[1]-(isSmall?12:8);
     const labelColor=isSmall?'var(--textStrong)':'var(--dim)';
     const labelSize=isSmall?10:8;
-    const label=`<text x="${p[0]}" y="${labelY}" text-anchor="middle" fill="${labelColor}" font-size="${labelSize}" font-weight="${isSmall?600:400}">$${d.total.toFixed(d.total<1?2:0)}</text>`;
-    return `<circle cx="${p[0]}" cy="${p[1]}" r="${r}" fill="var(--accent)"${stroke}><title>${esc(d.label)}: $${d.total.toFixed(2)}</title></circle>${label}`;
+    const total=d.total||0;
+    const label=`<text x="${p[0]}" y="${labelY}" text-anchor="middle" fill="${labelColor}" font-size="${labelSize}" font-weight="${isSmall?600:400}">$${total.toFixed(total<1?2:0)}</text>`;
+    return `<circle cx="${p[0]}" cy="${p[1]}" r="${r}" fill="var(--accent)"${stroke}><title>${esc(d.label)}: $${total.toFixed(2)}</title></circle>${label}`;
   }).join('');
   const yLabels=Array.from({length:5},(_, i)=>{const v=maxY*i/4;const y=P.t+ch-ch*i/4;return `<text x="${P.l-6}" y="${y+3}" text-anchor="end" fill="var(--dim)" font-size="9">$${v.toFixed(0)}</text><line x1="${P.l}" y1="${y}" x2="${W-P.r}" y2="${y}" stroke="var(--border)" stroke-dasharray="2"/>`}).join('');
   const nth=Math.ceil(data.length/7);
@@ -2029,7 +2031,7 @@ const SystemBar = {
     sp('sysCpu','CPU',d.cpu?.error?null:(d.cpu?.percent??null),tCpu);
     sp('sysRam','RAM',ramErr?null:(d.ram?.percent??null),tRam,!ramErr&&d.ram?.totalBytes>0?'RAM '+this.fmt(d.ram.usedBytes)+'/'+this.fmt(d.ram.totalBytes):null);
     sp('sysSwap','Swap',swapErr?null:(d.swap?.percent??null),tSwap);
-    sp('sysDisk','Disk',d.disk?.error?null:(d.disk?.percent??null),tDisk,d.disk?.totalBytes>0?'Disk used '+this.fmt(d.disk.usedBytes)+'/'+this.fmt(d.disk.totalBytes)+' ('+d.disk.percent.toFixed(1)+'%)':null);
+    sp('sysDisk','Disk',d.disk?.error?null:(d.disk?.percent??null),tDisk,(!d.disk?.error && d.disk?.totalBytes>0)?'Disk used '+this.fmt(d.disk.usedBytes)+'/'+this.fmt(d.disk.totalBytes)+' ('+(d.disk.percent??0).toFixed(1)+'%)':null);
     const ocData=d.openclaw||{};
     const ocStatus=ocData.status||{};
     const rawInst=ocStatus.currentVersion||d.versions?.openclaw||'?';
