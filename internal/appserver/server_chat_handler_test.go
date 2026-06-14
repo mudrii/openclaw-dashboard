@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -284,6 +285,96 @@ func TestHandleChat_SanitizesHistoryBeforeGatewayRequest(t *testing.T) {
 	}
 	if got.Messages[3] != (gatewayMessage{Role: "user", Content: "current question"}) {
 		t.Fatalf("current question message = %#v", got.Messages[3])
+	}
+}
+
+// TestHandleChat_BodyCapBoundary pins the exact body-size boundary. The handler
+// reads LimitReader(maxBodyBytes+1) then rejects len > maxBodyBytes, so a body of
+// exactly maxBodyBytes is accepted and maxBodyBytes+1 is rejected with 413. A
+// success gateway is wired so the exact-size case reaches 200, proving it passed
+// the cap rather than failing for an unrelated reason.
+func TestHandleChat_BodyCapBoundary(t *testing.T) {
+	dir := t.TempDir()
+	writeMinimalDataJSON(t, dir)
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/v1/chat/completions", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"ok"}}]}`))
+	})
+	gw := httptest.NewServer(mux)
+	t.Cleanup(gw.Close)
+	s := chatTestServer(t, dir, gatewayPort(t, gw))
+
+	// Build a valid-JSON body whose total length is exactly target bytes. The
+	// question stays short (the 2000-char question cap is a separate gate); the
+	// padding goes into an unknown "_pad" key that json.Unmarshal ignores, so
+	// the only gate the exact-max body can trip is the body cap itself.
+	bodyOfSize := func(target int) string {
+		const envelope = `{"question":"hi","_pad":""}`
+		pad := target - len(envelope)
+		if pad < 0 {
+			t.Fatalf("target %d smaller than envelope", target)
+		}
+		return `{"question":"hi","_pad":"` + strings.Repeat("a", pad) + `"}`
+	}
+
+	tests := []struct {
+		name     string
+		size     int
+		wantCode int
+	}{
+		{name: "exactly maxBodyBytes is accepted", size: maxBodyBytes, wantCode: http.StatusOK},
+		{name: "maxBodyBytes+1 is rejected", size: maxBodyBytes + 1, wantCode: http.StatusRequestEntityTooLarge},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			body := bodyOfSize(tc.size)
+			if len(body) != tc.size {
+				t.Fatalf("constructed body len = %d, want %d", len(body), tc.size)
+			}
+			w := mustPostChat(t, s, body)
+			if w.Code != tc.wantCode {
+				t.Fatalf("body size %d: got %d, want %d (body=%s)", tc.size, w.Code, tc.wantCode, w.Body.String())
+			}
+		})
+	}
+}
+
+// timeoutRoundTripper returns a *url.Error whose Timeout() reports true,
+// reproducing an http.Client.Timeout firing without any wall-clock sleep or
+// real network. CallGateway classifies this as a 504 GatewayTimeout.
+type timeoutRoundTripper struct{}
+
+func (timeoutRoundTripper) RoundTrip(r *http.Request) (*http.Response, error) {
+	return nil, &url.Error{Op: "Post", URL: r.URL.String(), Err: timeoutErr{}}
+}
+
+type timeoutErr struct{}
+
+func (timeoutErr) Error() string   { return "request timed out" }
+func (timeoutErr) Timeout() bool   { return true }
+func (timeoutErr) Temporary() bool { return true }
+
+// TestHandleChat_GatewayTimeoutReturns504 drives the real CallGateway timeout
+// classification (a *url.Error with Timeout()==true) through handleChat and
+// asserts the 504 status plus the user-facing "gateway timed out" message.
+func TestHandleChat_GatewayTimeoutReturns504(t *testing.T) {
+	dir := t.TempDir()
+	writeMinimalDataJSON(t, dir)
+	s := chatTestServer(t, dir, 1)
+	s.httpClient = &http.Client{Transport: timeoutRoundTripper{}}
+
+	w := mustPostChat(t, s, `{"question":"ping"}`)
+	if w.Code != http.StatusGatewayTimeout {
+		t.Fatalf("want 504, got %d body=%s", w.Code, w.Body.String())
+	}
+	var out map[string]string
+	if err := json.Unmarshal(w.Body.Bytes(), &out); err != nil {
+		t.Fatalf("invalid JSON response %q: %v", w.Body.String(), err)
+	}
+	if out["error"] != "gateway timed out" {
+		t.Errorf("error = %q, want %q", out["error"], "gateway timed out")
 	}
 }
 

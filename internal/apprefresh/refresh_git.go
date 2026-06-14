@@ -2,7 +2,6 @@ package apprefresh
 
 import (
 	"context"
-	"os/exec"
 	"strings"
 	"time"
 )
@@ -16,7 +15,7 @@ func collectGitLog(ctx context.Context, openclawPath string) []map[string]any {
 	}
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	out, err := exec.CommandContext(ctx, "git", "-C", openclawPath, "log",
+	out, err := execCommandContext(ctx, "git", "-C", openclawPath, "log",
 		"--oneline", "-5", "--format=%h|%s|%ar").Output()
 	if err != nil {
 		return gitLog

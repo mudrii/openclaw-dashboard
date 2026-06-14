@@ -293,9 +293,7 @@ func TestJSONFetchers_BodyCapAt64KB(t *testing.T) {
 		// FetchLatestNpmVersion hits a hardcoded npm URL; redirect it to our
 		// oversized-body server via the shared client's transport. A body past
 		// the 64KB cap truncates mid-string, so JSON decode fails → "".
-		old := sharedSystemHTTPClient
-		sharedSystemHTTPClient = &http.Client{Transport: &rewriteTransport{target: srv.URL}}
-		t.Cleanup(func() { sharedSystemHTTPClient = old })
+		swapSharedSystemHTTPClient(t, &http.Client{Transport: &rewriteTransport{target: srv.URL}})
 		v := FetchLatestNpmVersion(context.Background(), 1000)
 		if v != "" {
 			t.Fatalf("expected empty version on oversized body, got %q", v)
@@ -312,9 +310,7 @@ func TestJSONFetchers_BodyCapAt64KB(t *testing.T) {
 		}))
 		t.Cleanup(okSrv.Close)
 
-		old := sharedSystemHTTPClient
-		sharedSystemHTTPClient = &http.Client{Transport: &rewriteTransport{target: okSrv.URL}}
-		t.Cleanup(func() { sharedSystemHTTPClient = old })
+		swapSharedSystemHTTPClient(t, &http.Client{Transport: &rewriteTransport{target: okSrv.URL}})
 		v := FetchLatestNpmVersion(context.Background(), 1000)
 		if v != "2026.4.11" {
 			t.Fatalf("expected version 2026.4.11 from sub-cap body, got %q", v)
