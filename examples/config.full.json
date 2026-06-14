@@ -27,13 +27,27 @@
     "maxHistory": 6,
     "dotenvPath": "~/.openclaw/.env"
   },
+  "logs": {
+    "enabled": true,
+    "tailLines": 200,
+    "fastRefreshMs": 3000,
+    "errorWindowHours": 24,
+    "maxErrorSignatures": 1000,
+    "systemdUnit": "openclaw-gateway",
+    "sources": [
+      "logs/gateway.log",
+      "logs/gateway.err.log"
+    ]
+  },
   "system": {
     "enabled": true,
     "pollSeconds": 10,
     "metricsTtlSeconds": 10,
     "versionsTtlSeconds": 300,
     "gatewayTimeoutMs": 5000,
-    "coldPathTimeoutMs": 4000,
+    "coldPathTimeoutMs": 8000,
+    "cpuTimeoutMs": 6000,
+    "deepStatus": false,
     "gatewayPort": 18789,
     "diskPath": "/",
     "warnPercent": 70,
