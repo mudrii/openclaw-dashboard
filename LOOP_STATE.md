@@ -288,3 +288,49 @@ when neither present. Meaningful (distinguishes old vs new precedence).
 **Gate.** `make check` green (vet, lint 0, `test -race`, govulncheck), `gofmt -l` empty.
 
 **Remaining.** INT-4 (next), INT-3, INT-5.
+
+---
+
+## 2026-06-14 — INT-4 (live model catalog) — PARTIAL (1/2): display-name catalog
+
+**Task.** Source model display names from openclaw (`models list --json`) instead of
+a frozen hardcoded switch, so current/future model ids get real names. Contract
+confirmed against openclaw source (`commands/models/list.model-row.ts`): rows are
+`{key, name, contextWindow?, contextTokens?, …}`, id field is `key`.
+
+**Slice 1/2 (RED→GREEN).** Display-name catalog.
+- `parseModelCatalog(out)` — pure parser; key→name; accepts `{count,models:[…]}`
+  and bare `[…]`; skips rows without a name; malformed → empty.
+- `modelCatalogCache` — TTL + singleflight cache mirroring `liveSessionModelCache`,
+  injectable `runner`/`resolveOpenclaw`; `models list --json`, 10s timeout, 5m TTL.
+- `modelCatalogNames atomic.Pointer[map]` snapshot + `setModelCatalogNames` /
+  `catalogDisplayName` — lock-free read so ctx-free pure `ModelName` can consult it.
+- `refreshModelCatalog(ctx,now,ttl)` wired into `collectDashboardData` (before
+  sessions/token usage use ModelName); publishes only when non-empty (failed fetch
+  keeps prior snapshot).
+
+**KEY DESIGN DEVIATION (justified, vs PLAN's "cache-first").** ModelName consults
+the catalog in its **default branch only** — curated switch names win, catalog fills
+the unknown-model gap. Reason: caught by a real test failure — openclaw's `name` for
+many models is the bare id (e.g. `gpt-5.3-codex`), so cache-first REGRESSED curated
+names ("GPT-5.3 Codex" → "gpt-5.3-codex"). Curated-first preserves quality AND adds
+catalog names for ids the switch doesn't know — the actual INT-4 intent.
+
+**Files.** `model_catalog_cache.go` (new) · `refresh.go` (ModelName default-branch
+consult + refresh wiring) · `model_catalog_cache_test.go` (new).
+
+**Tests delta.** +4 funcs (ParseModelCatalog [4 subtests], ModelName_ConsultsCatalog,
+ModelCatalogCache_FetchWithStubRunner, _RunnerErrorYieldsEmpty).
+
+**Facade.** None — `ModelName` signature unchanged (pure, no ctx); catalog symbols
+unexported.
+
+**Note (test global).** Collector tests shell out to real `openclaw` and may publish
+a catalog snapshot; benign because ModelName is curated-first (no unit test asserts a
+default-case raw-id passthrough for a live key). `-race` suite green.
+
+**Gate.** `make check` green (vet, lint 0, `test -race`, govulncheck), `gofmt -l` empty.
+
+**RUNTIME-VERIFY.** Live name resolution needs a running openclaw with `models list
+--json`. **Next slice (2/2).** Feed `contextWindow`/`contextTokens` from the catalog
+into `lookupModelLimits` for accurate context-usage bars.

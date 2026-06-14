@@ -146,6 +146,12 @@ func ModelName(model string) string {
 	case strings.Contains(ml, "gpt-4"):
 		return "GPT-4"
 	default:
+		// Curated names above take priority; for ids the switch does not know,
+		// consult the live catalog (openclaw models list --json) so current and
+		// future models still get a real display name instead of the raw id.
+		if name, ok := catalogDisplayName(model); ok {
+			return name
+		}
 		return model
 	}
 }
@@ -239,6 +245,10 @@ func collectDashboardData(ctx context.Context, dashboardDir, openclawPath string
 
 	// Wait for gateway before building sessions (sessions need gateway map)
 	cwg.Wait()
+
+	// Refresh the live model display-name catalog (TTL-cached) so ModelName,
+	// used below by sessions and token usage, resolves current model ids.
+	refreshModelCatalog(ctx, now, 5*time.Minute)
 
 	// Sessions
 	knownSIDs := map[string]string{}
