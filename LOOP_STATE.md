@@ -221,3 +221,31 @@ deep payload shape (eventLoop/lastHeartbeat presence) needs a live `openclaw sta
 **Next slice (3/3).** web/index.html SystemBar tiles (task counts, event-loop
 utilization gauge, plugin-warning badge, last-heartbeat age) → make build + human
 visual check.
+
+---
+
+## 2026-06-14 — INT-2 — DONE (code), frontend needs human visual check
+
+**Slice 3/3.** Runtime Health card in web/index.html.
+- New full-width "📊 Runtime Health" panel (#runtimeHealthPanel) above Agent Bindings.
+- SystemBar.render populates it from `d.openclaw.status.{tasks,eventLoop,
+  pluginCompatibility,lastHeartbeat,channelSummary}`: task active/total + failures +
+  byStatus breakdown; event-loop degraded/healthy + utilization% (color-graded) +
+  delay p99 + reasons; plugin-warning count; last-heartbeat age; channel summary.
+- Each block optional → renders only when present; lean status shows a hint to
+  enable System.DeepStatus for event-loop/heartbeat.
+- Built with `replaceChildren` + per-row `textContent` (NOT innerHTML) so all
+  server-derived strings are inert — satisfies the repo XSS hook and is genuinely
+  injection-safe (diverges from the file's `_kv`/innerHTML convention deliberately).
+
+**Files.** `web/index.html` (card markup + SystemBar render).
+
+**Facade/tests.** None (pure presentation; backend data + parse already tested in 1/3).
+
+**Gate.** `make build` OK (frontend re-embedded), `make check` green.
+
+**NEEDS HUMAN VISUAL CHECK.** Runtime Health card layout/colors not visually validated.
+**RUNTIME-VERIFY.** Live data population needs a running openclaw (lean for tasks/
+plugin/channels; `--deep` for event-loop/heartbeat).
+
+**INT-2 COMPLETE** (3/3 slices). **Remaining.** FIX-2 (next), FIX-3, INT-4, INT-3, INT-5.
