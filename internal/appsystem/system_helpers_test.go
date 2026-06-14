@@ -137,6 +137,64 @@ func TestParseOpenclawStatusJSON(t *testing.T) {
 			t.Errorf("CurrentVersion: want %q, got %q", "5.0.0", got.CurrentVersion)
 		}
 	})
+
+	t.Run("rich INT-2 blocks parsed", func(t *testing.T) {
+		out := `{
+			"currentVersion":"2.0.0",
+			"tasks":{"total":10,"active":3,"terminal":7,"failures":1,
+				"byStatus":{"queued":2,"running":1,"succeeded":6,"failed":1},
+				"byRuntime":{"subagent":4,"cli":3,"cron":3}},
+			"eventLoop":{"degraded":true,"reasons":["delay"],"intervalMs":1000,
+				"delayP99Ms":12.5,"delayMaxMs":40,"utilization":0.42,"cpuCoreRatio":0.8},
+			"pluginCompatibility":{"count":2,"warnings":["a deprecated","b deprecated"]},
+			"channelSummary":["telegram: ok","slack: ok"],
+			"lastHeartbeat":{"ts":"2026-06-14T00:00:00Z","status":"ok","channel":"telegram"}
+		}`
+		got, err := parseOpenclawStatusJSON(out, SystemVersions{})
+		if err != nil {
+			t.Fatalf("err: want nil, got %v", err)
+		}
+		if got.Tasks == nil {
+			t.Fatalf("Tasks: want non-nil")
+		}
+		if got.Tasks.Total != 10 || got.Tasks.Active != 3 || got.Tasks.Failures != 1 {
+			t.Errorf("Tasks totals = %+v", got.Tasks)
+		}
+		if got.Tasks.ByStatus["succeeded"] != 6 || got.Tasks.ByRuntime["subagent"] != 4 {
+			t.Errorf("Tasks nested counts = %+v", got.Tasks)
+		}
+		if got.EventLoop == nil {
+			t.Fatalf("EventLoop: want non-nil")
+		}
+		if !got.EventLoop.Degraded || got.EventLoop.Utilization != 0.42 || got.EventLoop.DelayP99Ms != 12.5 {
+			t.Errorf("EventLoop = %+v", got.EventLoop)
+		}
+		if len(got.EventLoop.Reasons) != 1 || got.EventLoop.Reasons[0] != "delay" {
+			t.Errorf("EventLoop.Reasons = %v", got.EventLoop.Reasons)
+		}
+		if got.PluginCompatibility == nil {
+			t.Errorf("PluginCompatibility: want non-nil loose map")
+		}
+		if len(got.ChannelSummary) != 2 || got.ChannelSummary[0] != "telegram: ok" {
+			t.Errorf("ChannelSummary = %v", got.ChannelSummary)
+		}
+		if got.LastHeartbeat == nil || got.LastHeartbeat["channel"] != "telegram" {
+			t.Errorf("LastHeartbeat = %v", got.LastHeartbeat)
+		}
+	})
+
+	t.Run("minimal JSON leaves rich blocks nil (back-compat)", func(t *testing.T) {
+		out := `{"currentVersion":"2.0.0"}`
+		got, err := parseOpenclawStatusJSON(out, SystemVersions{})
+		if err != nil {
+			t.Fatalf("err: want nil, got %v", err)
+		}
+		if got.Tasks != nil || got.EventLoop != nil || got.PluginCompatibility != nil ||
+			got.LastHeartbeat != nil || got.ChannelSummary != nil {
+			t.Errorf("rich blocks must be nil for minimal JSON: tasks=%v el=%v pc=%v hb=%v cs=%v",
+				got.Tasks, got.EventLoop, got.PluginCompatibility, got.LastHeartbeat, got.ChannelSummary)
+		}
+	})
 }
 
 // TestDecodeJSONObjectFromOutput documents decodeJSONObjectFromOutput behavior including the first-brace-wins limitation.

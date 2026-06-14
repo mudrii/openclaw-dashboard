@@ -148,3 +148,42 @@ loop-observable. Code + stubbed tests shipped; needs human/runtime check on a Li
 host with openclaw-gateway.service running.
 
 **Remaining.** INT-2 (next), FIX-2, FIX-3, INT-4, INT-3, INT-5.
+
+---
+
+## 2026-06-14 — INT-2 (runtime-health + task-queue panel) — PARTIAL (1/3): backend types + parse
+
+**Task.** Surface the rich blocks the dashboard already discards from
+`openclaw status --json`: task queue, event-loop health, plugin-compat warnings,
+last heartbeat, channel summary. Decision SETTLED: lean default + System.DeepStatus
+toggle (this slice does the parse; toggle is next slice).
+
+**Slice 1/3 (RED→GREEN).** Extend `SystemOpenclawStatus` + additive parse:
+- New typed `SystemOpenclawTasks` {total,active,terminal,failures,
+  byStatus/byRuntime map[string]int} and `SystemOpenclawEventLoop`
+  {degraded,reasons[],intervalMs,delayP99Ms,delayMaxMs,utilization,cpuCoreRatio}.
+- `SystemOpenclawStatus` gains `*Tasks`, `*EventLoop` (pointer+omitempty → absent
+  blocks omitted), `PluginCompatibility`/`LastHeartbeat` map[string]any (loose,
+  matches Security precedent), `ChannelSummary []string`.
+- `parseOpenclawStatusJSON` extended additively via generic `decodeStatusField[T]`
+  (re-marshal sub-object → typed struct; malformed block → nil, never fails the
+  whole parse). Loose maps pass through; channelSummary via stringSliceFromAny.
+
+**Value now.** tasks/pluginCompatibility/channelSummary are lean-status blocks →
+already flow to /api/system through SystemResponse.Openclaw.Status. eventLoop /
+lastHeartbeat are deep-only → need the toggle (next slice) to appear.
+
+**Files.** `appsystem/system_types.go` (+2 types, +5 fields) ·
+`appsystem/system_service.go` (additive parse + decodeStatusField) ·
+`system_helpers_test.go` (+2 subtests: rich blocks parsed, minimal→nil back-compat).
+
+**Tests delta.** +2 subtests under TestParseOpenclawStatusJSON.
+
+**Facade.** None — new types reached through the already-aliased SystemOpenclawStatus.
+
+**Gate.** `make check` green (vet, lint 0, `test -race`, govulncheck), `gofmt -l` empty.
+
+**Next slices.** (2/3) `System.DeepStatus` config toggle gating a deep flag on the
+`openclaw status --json` invocation (exact deep CLI flag = runtime-verify). (3/3)
+web/index.html SystemBar tiles: task counts, event-loop utilization gauge,
+plugin-warning badge, last-heartbeat age → make build + human visual check.

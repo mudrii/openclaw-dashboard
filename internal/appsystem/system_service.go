@@ -617,7 +617,40 @@ func parseOpenclawStatusJSON(output string, versions SystemVersions) (SystemOpen
 	if sec, ok := raw["security"].(map[string]any); ok {
 		status.Security = sec
 	}
+	// INT-2: additive rich blocks. Typed sub-objects (tasks, eventLoop) are
+	// re-decoded from their raw value; loose blocks pass through as maps. Any
+	// absent or malformed block is left nil so minimal status output is
+	// back-compatible.
+	status.Tasks = decodeStatusField[SystemOpenclawTasks](raw, "tasks")
+	status.EventLoop = decodeStatusField[SystemOpenclawEventLoop](raw, "eventLoop")
+	if pc, ok := raw["pluginCompatibility"].(map[string]any); ok {
+		status.PluginCompatibility = pc
+	}
+	if hb, ok := raw["lastHeartbeat"].(map[string]any); ok {
+		status.LastHeartbeat = hb
+	}
+	status.ChannelSummary = stringSliceFromAny(raw["channelSummary"])
 	return status, nil
+}
+
+// decodeStatusField re-decodes a named sub-object of the parsed status map into
+// a typed struct, returning nil when the key is absent or its value does not
+// decode. Used for the typed INT-2 blocks (tasks, eventLoop) so a malformed
+// block degrades to "not shown" rather than failing the whole status parse.
+func decodeStatusField[T any](raw map[string]any, key string) *T {
+	v, ok := raw[key]
+	if !ok {
+		return nil
+	}
+	b, err := json.Marshal(v)
+	if err != nil {
+		return nil
+	}
+	var out T
+	if err := json.Unmarshal(b, &out); err != nil {
+		return nil
+	}
+	return &out
 }
 
 // decodeJSONObjectFromOutput finds the first '{'-prefixed substring of output
