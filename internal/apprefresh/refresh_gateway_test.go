@@ -185,6 +185,29 @@ func TestFormatUptimeSince(t *testing.T) {
 	}
 }
 
+// TestSetGatewayMemory covers the rss → human-readable formatting at the
+// KB/MB/GB boundaries used by both the lock and pgrep metadata paths.
+func TestSetGatewayMemory(t *testing.T) {
+	cases := []struct {
+		rssKB      int
+		wantMemory string
+	}{
+		{512, "512 KB"},
+		{2048, "2 MB"},
+		{2097152, "2.0 GB"},
+	}
+	for _, tc := range cases {
+		gw := map[string]any{}
+		setGatewayMemory(gw, tc.rssKB)
+		if gw["rss"] != tc.rssKB {
+			t.Errorf("rss = %v, want %d", gw["rss"], tc.rssKB)
+		}
+		if gw["memory"] != tc.wantMemory {
+			t.Errorf("rssKB %d: memory = %v, want %q", tc.rssKB, gw["memory"], tc.wantMemory)
+		}
+	}
+}
+
 // stubHealthz replaces the HTTP probe with a deterministic fake.
 func stubHealthz(t *testing.T, ok bool) {
 	t.Helper()

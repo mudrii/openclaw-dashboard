@@ -82,3 +82,47 @@ func TestLaunchd_Status_ZeroPortSkipsProbe(t *testing.T) {
 		t.Errorf("probeFunc consulted despite port==0 guard")
 	}
 }
+
+// TestLaunchd_Install_RejectsRelativePaths covers the validateAbsPath early
+// returns (launchd.go:108-117): a relative BinPath/WorkDir/LogPath must abort
+// Install with a field-named error before any launchctl/filesystem work.
+func TestLaunchd_Install_RejectsRelativePaths(t *testing.T) {
+	base := InstallConfig{
+		BinPath: "/usr/local/bin/openclaw-dashboard",
+		WorkDir: "/home/user/.openclaw/dashboard",
+		LogPath: "/home/user/.openclaw/dashboard/server.log",
+		Host:    "127.0.0.1",
+		Port:    9090,
+	}
+	cases := []struct {
+		field  string
+		mutate func(*InstallConfig)
+	}{
+		{"BinPath", func(c *InstallConfig) { c.BinPath = "relative/bin" }},
+		{"WorkDir", func(c *InstallConfig) { c.WorkDir = "relative/work" }},
+		{"LogPath", func(c *InstallConfig) { c.LogPath = "relative/s.log" }},
+	}
+	for _, tc := range cases {
+		t.Run(tc.field, func(t *testing.T) {
+			var called bool
+			lb := &launchdBackend{
+				ctx:      context.Background(),
+				plistDir: t.TempDir(),
+				runCmd: func(context.Context, string, ...string) ([]byte, error) {
+					called = true
+					return nil, nil
+				},
+				probeFunc: func(string) bool { return false },
+			}
+			cfg := base
+			tc.mutate(&cfg)
+			err := lb.Install(cfg)
+			if err == nil || !strings.Contains(err.Error(), tc.field) {
+				t.Fatalf("Install err = %v, want error naming %q", err, tc.field)
+			}
+			if called {
+				t.Errorf("launchctl invoked despite invalid %s", tc.field)
+			}
+		})
+	}
+}

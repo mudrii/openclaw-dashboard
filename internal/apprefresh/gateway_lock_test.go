@@ -68,6 +68,23 @@ func TestCollectGatewayHealth_LockMissFallsBackToPgrep(t *testing.T) {
 	}
 }
 
+// TestGatewayLockConfigPath covers both branches of the config-path resolution:
+// the OPENCLAW_CONFIG_PATH override and the default <openclawPath>/openclaw.json.
+func TestGatewayLockConfigPath(t *testing.T) {
+	t.Run("env override wins", func(t *testing.T) {
+		t.Setenv("OPENCLAW_CONFIG_PATH", "/custom/oc.json")
+		if got := gatewayLockConfigPath("/ignored"); got != "/custom/oc.json" {
+			t.Errorf("got %q, want /custom/oc.json", got)
+		}
+	})
+	t.Run("default joins openclawPath", func(t *testing.T) {
+		t.Setenv("OPENCLAW_CONFIG_PATH", "")
+		if got := gatewayLockConfigPath("/home/.openclaw"); got != "/home/.openclaw/openclaw.json" {
+			t.Errorf("got %q, want /home/.openclaw/openclaw.json", got)
+		}
+	})
+}
+
 // TestGatewayLockFilename pins the openclaw lock filename scheme:
 // gateway.<sha256(configPath)[:8]>.lock (infra/gateway-lock.ts).
 func TestGatewayLockFilename(t *testing.T) {

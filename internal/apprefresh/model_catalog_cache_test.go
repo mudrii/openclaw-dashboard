@@ -3,9 +3,62 @@ package apprefresh
 import (
 	"context"
 	"os/exec"
+	"sync"
 	"testing"
 	"time"
 )
+
+// TestModelCatalogCache_Singleflight proves the TTL cache collapses concurrent
+// refreshes into a single underlying fetch and hands every waiter the same
+// catalog — exercising the cond.Wait waiter path.
+func TestModelCatalogCache_Singleflight(t *testing.T) {
+	t.Parallel()
+
+	var calls int
+	var mu sync.Mutex
+	started := make(chan struct{})
+	release := make(chan struct{})
+	c := newModelCatalogCache()
+	c.resolveOpenclaw = func() string { return "x" }
+	c.runner = func(ctx context.Context, _ string, _ ...string) *exec.Cmd {
+		mu.Lock()
+		calls++
+		if calls == 1 {
+			close(started)
+		}
+		mu.Unlock()
+		select {
+		case <-release:
+		case <-ctx.Done():
+		}
+		return exec.CommandContext(ctx, "printf", `{"models":[{"key":"m/n","name":"Em En"}]}`)
+	}
+
+	now := time.Now()
+	results := make([]modelCatalog, 20)
+	var wg sync.WaitGroup
+	for i := 0; i < 20; i++ {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			results[idx] = c.fetch(context.Background(), now, time.Hour)
+		}(i)
+	}
+	<-started
+	close(release)
+	wg.Wait()
+
+	mu.Lock()
+	defer mu.Unlock()
+	if calls != 1 {
+		t.Errorf("expected 1 fetch under contention, got %d", calls)
+	}
+	for i, r := range results {
+		if r.names["m/n"] != "Em En" {
+			t.Errorf("waiter %d got %v, want m/n=Em En", i, r.names)
+		}
+	}
+}
 
 // TestParseModelCatalog covers the `openclaw models list --json` parser: it maps
 // each row's key → display name, tolerates the bare-array form, and ignores rows
