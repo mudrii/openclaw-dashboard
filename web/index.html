@@ -1826,8 +1826,11 @@ const Renderer = {
     if(!data.length){
       // Clear any previously-rendered chart so a populated→empty transition
       // does not leave stale bars/lines on screen. replaceChildren() empties
-      // the node without parsing any HTML.
-      ['costChart','modelChart','subagentChart'].forEach(function(id){var el=$(id);if(el)el.replaceChildren();});
+      // the node without parsing any HTML. The _svgCache entry must also be
+      // invalidated: patchSvg skips identical HTML, so without this delete a
+      // later render of byte-identical chart HTML would be suppressed and the
+      // chart would stay permanently blank after data returns.
+      ['costChart','modelChart','subagentChart'].forEach(function(id){var el=$(id);if(el)el.replaceChildren();delete Renderer._svgCache[id];});
       return;
     }
     Renderer.renderCostChart('costChart',data);
@@ -2041,7 +2044,7 @@ const SystemBar = {
     sp('sysDisk','Disk',d.disk?.error?null:(d.disk?.percent??null),tDisk,(!d.disk?.error && d.disk?.totalBytes>0)?'Disk used '+this.fmt(d.disk.usedBytes)+'/'+this.fmt(d.disk.totalBytes)+' ('+(d.disk.percent??0).toFixed(1)+'%)':null);
     const ocData=d.openclaw||{};
     const ocStatus=ocData.status||{};
-    const rawInst=ocStatus.currentVersion||d.versions?.openclaw||'?';
+    const rawInst=String(ocStatus.currentVersion||d.versions?.openclaw||'?');
     // Strip all leading "OpenClaw " prefixes — some builds or data paths embed one or more
     const inst=rawInst.replace(/^(OpenClaw\s+)+/i,'').trim();
     // Normalize for comparison: strip commit/build parenthetical e.g. " (3caab92)"
@@ -2097,15 +2100,23 @@ const SystemBar = {
       const gwFailingDeps = Array.isArray(gwRuntime.failing) ? gwRuntime.failing : [];
       const gwReadyAlertEl = $('gw-readiness-alert');
       if (gwLive && !gwReady && gwState.source === 'runtime') {
-        const depStr = gwFailingDeps.length ? gwFailingDeps.map(f => esc(f)).join(', ') : '';
+        const depStr = gwFailingDeps.length ? gwFailingDeps.join(', ') : '';
         const alertMsg = depStr ? 'Gateway not ready: ' + depStr : 'Gateway not ready';
         if (gwReadyAlertEl) {
-          gwReadyAlertEl.querySelector('.alert-msg').innerHTML = alertMsg;
+          // textContent (not innerHTML) so server-derived dependency names can
+          // never be interpreted as markup.
+          gwReadyAlertEl.querySelector('.alert-msg').textContent = alertMsg;
         } else {
           const alertEl = document.createElement('div');
           alertEl.id = 'gw-readiness-alert';
           alertEl.className = 'alert-item alert-medium';
-          alertEl.innerHTML = '<span class="alert-icon">🟡</span><span class="alert-msg">' + alertMsg + '</span>';
+          const icon = document.createElement('span');
+          icon.className = 'alert-icon';
+          icon.textContent = '🟡';
+          const msg = document.createElement('span');
+          msg.className = 'alert-msg';
+          msg.textContent = alertMsg;
+          alertEl.append(icon, msg);
           const as = $('alertsSection');
           if (as) as.insertAdjacentElement('afterbegin', alertEl);
         }
@@ -2139,10 +2150,12 @@ const SystemBar = {
   },
   async fetch() {
     if(this._inflight)return; this._inflight=true;
-    // 6000ms client timeout; backend cold-path budget is ~4000ms, this allows
-    // a small margin for marshal + network jitter before declaring degraded.
+    // 9000ms client timeout: must exceed the backend cold-path budget
+    // (ColdPathTimeoutMs default 8000ms) plus margin for marshal + network
+    // jitter, so a healthy-but-slow cold path is not aborted client-side and
+    // falsely painted "degraded".
     const ctl=new AbortController();
-    const t=setTimeout(()=>ctl.abort(),6000);
+    const t=setTimeout(()=>ctl.abort(),9000);
     try{
       const r=await fetch('/api/system',{signal:ctl.signal});
       if(r.ok){this.render(await r.json());}

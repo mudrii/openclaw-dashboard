@@ -134,8 +134,11 @@ func saveTokenUsageCache(path string, cache tokenUsageCache) {
 	tmp := path + ".tmp"
 	// 0o600 matches data.json + plist + systemd unit writers; cache holds
 	// per-session token/cost data that should not be world-readable.
-	if err := os.WriteFile(tmp, data, 0o600); err != nil {
+	// writeFileSync fsyncs before the rename below for durability parity with
+	// the data.json writer.
+	if err := writeFileSync(tmp, data, 0o600); err != nil {
 		slog.Error("[dashboard] saveTokenUsageCache: write failed", "path", tmp, "error", err)
+		_ = os.Remove(tmp)
 		return
 	}
 	if err := os.Rename(tmp, path); err != nil {

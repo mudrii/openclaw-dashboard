@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 )
@@ -283,8 +284,8 @@ func CallGateway(ctx context.Context, system string, history []Message, question
 		return "", &GatewayError{Status: http.StatusBadGateway, Msg: fmt.Errorf("marshal error: %w", err).Error()}
 	}
 
-	url := "http://localhost:" + strconv.Itoa(port) + "/v1/chat/completions"
-	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(body))
+	endpoint := "http://localhost:" + strconv.Itoa(port) + "/v1/chat/completions"
+	req, err := http.NewRequestWithContext(ctx, "POST", endpoint, bytes.NewReader(body))
 	if err != nil {
 		return "", &GatewayError{Status: http.StatusBadGateway, Msg: fmt.Errorf("request error: %w", err).Error()}
 	}
@@ -293,8 +294,13 @@ func CallGateway(ctx context.Context, system string, history []Message, question
 
 	resp, err := client.Do(req)
 	if err != nil {
+		// http.Client.Timeout surfaces as a *url.Error whose cause is neither
+		// context.DeadlineExceeded nor Canceled, so it must be classified via
+		// Timeout() to report 504 rather than 502.
+		var urlErr *url.Error
 		if errors.Is(err, context.DeadlineExceeded) ||
-			errors.Is(err, context.Canceled) {
+			errors.Is(err, context.Canceled) ||
+			(errors.As(err, &urlErr) && urlErr.Timeout()) {
 			return "", &GatewayError{Status: http.StatusGatewayTimeout, Msg: "Gateway timed out — model took too long to respond"}
 		}
 		return "", &GatewayError{Status: http.StatusBadGateway, Msg: redactToken(fmt.Errorf("gateway unreachable: %w", err).Error(), token)}

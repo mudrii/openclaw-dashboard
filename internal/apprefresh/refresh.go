@@ -154,12 +154,6 @@ func ModelName(model string) string {
 // dashboard JSON payload. Most work is delegated to refresh_*.go siblings.
 func collectDashboardData(ctx context.Context, dashboardDir, openclawPath string, cfg appconfig.Config) map[string]any {
 	now := time.Now()
-	// Windows are inclusive of today, so "7d" spans today + 6 prior days and
-	// "30d" spans today + 29 prior — matching the 30-bucket daily chart
-	// (refresh_chart.go counts i := 29; i >= 0). Using -7/-30 here counted an
-	// extra calendar day, inflating the 7d/30d totals versus the chart.
-	date7d := now.AddDate(0, 0, -6).Format("2006-01-02")
-	date30d := now.AddDate(0, 0, -29).Format("2006-01-02")
 	tzName := cfg.Timezone
 	if tzName == "" {
 		tzName = "UTC"
@@ -171,6 +165,14 @@ func collectDashboardData(ctx context.Context, dashboardDir, openclawPath string
 	}
 	now = now.In(loc)
 	todayStr := now.Format("2006-01-02")
+	// Windows are inclusive of today in the configured timezone: "7d" spans
+	// today + 6 prior days and "30d" today + 29 prior — matching the 30-bucket
+	// daily chart (refresh_chart.go counts i := 29; i >= 0) and todayStr, all of
+	// which derive from the loc-zoned now. These must be computed AFTER
+	// now.In(loc); doing so earlier skews the window by a day whenever the host
+	// zone differs from cfg.Timezone across a midnight boundary.
+	date7d := now.AddDate(0, 0, -6).Format("2006-01-02")
+	date30d := now.AddDate(0, 0, -29).Format("2006-01-02")
 
 	basePath := filepath.Join(openclawPath, "agents")
 	configPath := filepath.Join(openclawPath, "openclaw.json")
