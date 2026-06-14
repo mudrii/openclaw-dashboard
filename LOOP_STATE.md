@@ -361,3 +361,44 @@ with window assertions; cache fetch tests updated to struct return.
 
 **INT-4 COMPLETE** (2/2). **RUNTIME-VERIFY:** live windows need running openclaw.
 **Remaining.** INT-3 (next), INT-5.
+
+---
+
+## 2026-06-14 — INT-3 (gateway metadata via lock file) — DONE (code), runtime-verify on non-npm install
+
+**Task.** Correct pid/uptime/RSS on every install layout (homebrew/binary/bun/source),
+not just npm. openclaw writes an install-independent lock file
+`<tmpdir>/openclaw-<uid>/gateway.<sha256(configPath)[:8]>.lock` carrying
+`{pid, createdAt, configPath, startTime?}` (confirmed in openclaw `infra/gateway-lock.ts`
++ `config/paths.ts`). /healthz stays the liveness signal; pgrep is last-resort.
+
+**RED→GREEN.**
+- `gatewayLockFilename(configPath)` — pure; `gateway.<sha256[:8]>.lock`.
+- `parseGatewayLock(data)` — pure; requires pid>0; createdAt best-effort (zero on
+  bad/absent time).
+- `gatewayLockConfigPath` (OPENCLAW_CONFIG_PATH or <openclawPath>/openclaw.json),
+  `gatewayLockDir` (<tmpdir>/openclaw-<uid>), `pidAlive` (syscall.Kill(pid,0), func-var
+  seam), `readGatewayLockMeta(openclawPath)` (read+parse+liveness, func-var seam).
+- `collectGatewayHealthWithLock(ctx, openclawPath, port)` — lock-first metadata
+  (pid/uptime-from-createdAt/RSS); falls back to the existing pgrep path on lock miss.
+  `collectGatewayHealth(ctx, port)` now delegates with openclawPath="" (existing ~10
+  gateway tests untouched — additive). Wired refresh.go to pass openclawPath.
+- Extracted `setGatewayMemory` (shared rss formatting), added `collectGatewayRSS`
+  (`ps -o rss=`) and `formatUptimeSince` (compact d/h/m).
+
+**Files.** `gateway_lock.go` (new) · `refresh_gateway.go` (lock-aware variant +
+helpers) · `refresh.go` (wire openclawPath) · `gateway_lock_test.go` (new).
+
+**Tests delta.** +4 funcs (GatewayLockFilename, ParseGatewayLock [4 subtests],
+CollectGatewayHealth_LockProvidesPID, _LockMissFallsBackToPgrep).
+
+**Facade.** None (all unexported; collectGatewayHealth not root-faceted).
+
+**Gate.** `make check` green (vet, lint 0, `test -race`, govulncheck), `gofmt -l` empty,
+`GOOS=linux go build ./...` ok (syscall.Kill/os.Getuid exist on darwin+linux, the only
+targets — no build tags needed).
+
+**RUNTIME-VERIFY (flagged).** Real lock-file pid/uptime needs a live non-npm openclaw
+install; code + stubbed tests shipped.
+
+**Remaining.** INT-5 (next, last).

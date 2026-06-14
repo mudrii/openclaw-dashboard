@@ -98,6 +98,15 @@ func parseReadyzFailing(body []byte) []string {
 //
 // Best-effort: all failures collapse to status=offline.
 func collectGatewayHealth(ctx context.Context, gatewayPort int) map[string]any {
+	return collectGatewayHealthWithLock(ctx, "", gatewayPort)
+}
+
+// collectGatewayHealthWithLock is collectGatewayHealth with the openclaw state
+// dir so it can read the gateway lock file (INT-3). The lock supplies an
+// install-independent pid + uptime (homebrew/binary/bun/source, not just npm);
+// when no usable lock exists it falls back to the pgrep metadata path. The
+// /healthz liveness signal is unchanged.
+func collectGatewayHealthWithLock(ctx context.Context, openclawPath string, gatewayPort int) map[string]any {
 	gw := map[string]any{
 		"status": "offline",
 		"pid":    nil,
@@ -117,6 +126,23 @@ func collectGatewayHealth(ctx context.Context, gatewayPort int) map[string]any {
 		probeCtx, probeCancel := context.WithTimeout(ctx, 2*time.Second)
 		httpOnline = healthzProbe(probeCtx, gatewayPort)
 		probeCancel()
+	}
+
+	// INT-3: prefer the gateway lock for pid/uptime metadata. It carries the
+	// live pid on every install layout, where the pgrep cmdline pattern only
+	// matches npm. A live lock pid means online regardless of pgrep.
+	if openclawPath != "" {
+		if lk, ok := readGatewayLockMeta(openclawPath); ok {
+			gw["pid"] = lk.pid
+			gw["status"] = "online"
+			if !lk.createdAt.IsZero() {
+				gw["uptime"] = formatUptimeSince(lk.createdAt)
+			}
+			psCtx, psCancel := context.WithTimeout(ctx, 5*time.Second)
+			collectGatewayRSS(psCtx, strconv.Itoa(lk.pid), gw)
+			psCancel()
+			return gw
+		}
 	}
 
 	pgrepCtx, pgrepCancel := context.WithTimeout(ctx, 5*time.Second)
@@ -170,15 +196,49 @@ func collectGatewayHealth(ctx context.Context, gatewayPort int) map[string]any {
 	if len(parts) >= 2 {
 		gw["uptime"] = strings.TrimSpace(parts[0])
 		rssKB, _ := strconv.Atoi(parts[1])
-		gw["rss"] = rssKB
-		switch {
-		case rssKB > 1048576:
-			gw["memory"] = fmt.Sprintf("%.1f GB", float64(rssKB)/1048576)
-		case rssKB > 1024:
-			gw["memory"] = fmt.Sprintf("%.0f MB", float64(rssKB)/1024)
-		default:
-			gw["memory"] = fmt.Sprintf("%d KB", rssKB)
-		}
+		setGatewayMemory(gw, rssKB)
 	}
 	return gw
+}
+
+// setGatewayMemory records the resident set size (KB) and its human-readable form.
+func setGatewayMemory(gw map[string]any, rssKB int) {
+	gw["rss"] = rssKB
+	switch {
+	case rssKB > 1048576:
+		gw["memory"] = fmt.Sprintf("%.1f GB", float64(rssKB)/1048576)
+	case rssKB > 1024:
+		gw["memory"] = fmt.Sprintf("%.0f MB", float64(rssKB)/1024)
+	default:
+		gw["memory"] = fmt.Sprintf("%d KB", rssKB)
+	}
+}
+
+// collectGatewayRSS reads the resident set size for a pid via ps and records it.
+// Best-effort: a ps failure leaves memory/rss at their defaults.
+func collectGatewayRSS(ctx context.Context, pid string, gw map[string]any) {
+	psOut, err := exec.CommandContext(ctx, "ps", "-p", pid, "-o", "rss=").Output()
+	if err != nil {
+		return
+	}
+	if rssKB, err := strconv.Atoi(strings.TrimSpace(string(psOut))); err == nil {
+		setGatewayMemory(gw, rssKB)
+	}
+}
+
+// formatUptimeSince renders elapsed time since the gateway lock's createdAt as a
+// compact d/h/m string, matching the dashboard's coarse uptime display.
+func formatUptimeSince(createdAt time.Time) string {
+	d := time.Since(createdAt)
+	if d < 0 {
+		d = 0
+	}
+	switch {
+	case d >= 24*time.Hour:
+		return fmt.Sprintf("%dd %dh", int(d.Hours())/24, int(d.Hours())%24)
+	case d >= time.Hour:
+		return fmt.Sprintf("%dh %dm", int(d.Hours()), int(d.Minutes())%60)
+	default:
+		return fmt.Sprintf("%dm", int(d.Minutes()))
+	}
 }
