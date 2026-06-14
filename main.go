@@ -351,6 +351,15 @@ func runServiceCmd(cmd string, opts serviceCmdOpts) int {
 		fmt.Fprintln(os.Stderr, "Usage: openclaw-dashboard [service] install|uninstall|start|stop|restart|status")
 		return 1
 	}
+	// install bakes the bind host into the service unit; reject a non-loopback
+	// bind now so the failure surfaces at install time rather than later when
+	// the daemon refuses to start under the loopback-only policy.
+	if cmd == "install" {
+		if err := validateLoopbackBind(*bind); err != nil {
+			fmt.Fprintf(os.Stderr, "[dashboard] %v\n", err)
+			return 1
+		}
+	}
 	return action(opts, *bind, *port)
 }
 

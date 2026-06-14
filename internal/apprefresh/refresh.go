@@ -31,7 +31,8 @@ func RunRefreshCollector(ctx context.Context, dashboardDir, openclawPath string,
 	tmpPath := filepath.Join(dashboardDir, "data.json.tmp")
 	finalPath := filepath.Join(dashboardDir, "data.json")
 
-	if err := os.WriteFile(tmpPath, out, 0o600); err != nil {
+	if err := writeFileSync(tmpPath, out, 0o600); err != nil {
+		_ = os.Remove(tmpPath)
 		return fmt.Errorf("write data.json.tmp: %w", err)
 	}
 	if err := os.Rename(tmpPath, finalPath); err != nil {
@@ -39,6 +40,25 @@ func RunRefreshCollector(ctx context.Context, dashboardDir, openclawPath string,
 		return fmt.Errorf("rename data.json.tmp: %w", err)
 	}
 	return nil
+}
+
+// writeFileSync writes data to path and fsyncs it before returning, so a crash
+// or power loss between the write and the subsequent rename cannot leave a
+// zero-length or truncated file once the rename is observed.
+func writeFileSync(path string, data []byte, perm os.FileMode) error {
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, perm)
+	if err != nil {
+		return err
+	}
+	if _, err := f.Write(data); err != nil {
+		_ = f.Close()
+		return err
+	}
+	if err := f.Sync(); err != nil {
+		_ = f.Close()
+		return err
+	}
+	return f.Close()
 }
 
 var reStripTelegramID = regexp.MustCompile(`(?i)\s*\bid\b[\s:=\-]*\d+`)
@@ -134,8 +154,12 @@ func ModelName(model string) string {
 // dashboard JSON payload. Most work is delegated to refresh_*.go siblings.
 func collectDashboardData(ctx context.Context, dashboardDir, openclawPath string, cfg appconfig.Config) map[string]any {
 	now := time.Now()
-	date7d := now.AddDate(0, 0, -7).Format("2006-01-02")
-	date30d := now.AddDate(0, 0, -30).Format("2006-01-02")
+	// Windows are inclusive of today, so "7d" spans today + 6 prior days and
+	// "30d" spans today + 29 prior — matching the 30-bucket daily chart
+	// (refresh_chart.go counts i := 29; i >= 0). Using -7/-30 here counted an
+	// extra calendar day, inflating the 7d/30d totals versus the chart.
+	date7d := now.AddDate(0, 0, -6).Format("2006-01-02")
+	date30d := now.AddDate(0, 0, -29).Format("2006-01-02")
 	tzName := cfg.Timezone
 	if tzName == "" {
 		tzName = "UTC"

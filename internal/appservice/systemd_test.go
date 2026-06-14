@@ -230,7 +230,8 @@ func TestSystemd_Status_running(t *testing.T) {
 		runCmd: func(_ context.Context, name string, args ...string) ([]byte, error) {
 			joined := name + " " + strings.Join(args, " ")
 			if strings.Contains(joined, "show") {
-				return []byte("ActiveState=active\nMainPID=55555\nActiveEnterTimestamp=2026-04-08 10:00:00 UTC\n"), nil
+				// systemd's default timestamp format carries a leading weekday.
+				return []byte("ActiveState=active\nMainPID=55555\nActiveEnterTimestamp=Wed 2026-04-08 10:00:00 UTC\n"), nil
 			}
 			if name == "journalctl" {
 				return []byte("line1\nline2\n"), nil
@@ -259,6 +260,9 @@ func TestSystemd_Status_running(t *testing.T) {
 	}
 	if !st.AutoStart {
 		t.Error("expected AutoStart=true (unit file exists)")
+	}
+	if st.Uptime <= 0 {
+		t.Error("expected Uptime > 0 parsed from weekday-prefixed ActiveEnterTimestamp")
 	}
 }
 

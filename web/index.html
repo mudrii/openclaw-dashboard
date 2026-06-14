@@ -257,7 +257,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'SF Pro','Helvetica Neue',sans
 // FOUC bootstrap: read localStorage before body renders to prevent flash
 (function(){
   var STORAGE_KEY='ocDash:collapse:v2';
-  var DEFAULTS={'alerts':false,'health':false,'cost':false,'charts':false,'crons':false,'sessions':false,'usage':false,'subagent':false,'logs':false,'errors':false,'agent-config':false};
+  var DEFAULTS={'alerts':false,'health':false,'cost':false,'charts':false,'crons':false,'sessions':false,'usage':false,'subagent':false,'logs':false,'errors':false,'agent-config':true};
   var state=Object.assign({},DEFAULTS);
   try{
     var raw=localStorage.getItem(STORAGE_KEY);
@@ -1372,7 +1372,7 @@ const Renderer = {
 
     // Donut (CSS conic-gradient)
     const bd=D.costBreakdown||[];
-    const total=bd.reduce((a,d)=>a+d.cost,0)||1;
+    const total=bd.reduce((a,d)=>a+(d.cost||0),0)||1;
     let grad='',cum=0,legend='';
     bd.forEach((d,i)=>{
       const pct=d.cost/total*100;
@@ -1434,8 +1434,9 @@ const Renderer = {
     $('subCostLbl').textContent='Total: $'+srCost.toFixed(2);
     $('srEmpty').style.display=runs.length?'none':'block';
     Renderer.reconcileRows('srBody', runs.slice(0,20), r => r.task+'-'+r.timestamp, r => {
-      const dur=r.durationSec>=3600?(r.durationSec/3600).toFixed(1)+'h':r.durationSec>=60?Math.round(r.durationSec/60)+'m':r.durationSec+'s';
-      return `<tr class="dr"><td class="w" style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(r.task)}</td><td>${esc(r.model)}</td><td class="r cost">$${r.cost.toFixed(4)}</td><td class="r">${dur}</td><td><span class="badge badge-ok">${esc(r.status)}</span></td><td>${esc(r.timestamp)}</td></tr>`;
+      const ds=r.durationSec||0;
+      const dur=ds>=3600?(ds/3600).toFixed(1)+'h':ds>=60?Math.round(ds/60)+'m':ds+'s';
+      return `<tr class="dr"><td class="w" style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(r.task)}</td><td>${esc(r.model)}</td><td class="r cost">$${(r.cost||0).toFixed(4)}</td><td class="r">${dur}</td><td><span class="badge badge-ok">${esc(r.status)}</span></td><td>${esc(r.timestamp)}</td></tr>`;
     });
   }
 
@@ -1822,7 +1823,13 @@ const Renderer = {
     $('cTab7').className='tab-btn'+(chartDays===7?' active':'');
     $('cTab30').className='tab-btn'+(chartDays===30?' active':'');
     const data=(D.dailyChart||[]).slice(-chartDays);
-    if(!data.length)return;
+    if(!data.length){
+      // Clear any previously-rendered chart so a populated→empty transition
+      // does not leave stale bars/lines on screen. replaceChildren() empties
+      // the node without parsing any HTML.
+      ['costChart','modelChart','subagentChart'].forEach(function(id){var el=$(id);if(el)el.replaceChildren();});
+      return;
+    }
     Renderer.renderCostChart('costChart',data);
     Renderer.renderModelChart('modelChart',data);
     Renderer.renderSubagentChart('subagentChart',data);
@@ -2154,7 +2161,7 @@ const SECTION_KEYS = ['alerts','health','cost','charts','crons','sessions','usag
 const Sections = {
   _state: {},
   STORAGE_KEY: 'ocDash:collapse:v2',
-  DEFAULTS: {'alerts':false,'health':false,'cost':false,'charts':false,'crons':false,'sessions':false,'usage':false,'subagent':false,'logs':false,'errors':false,'agent-config':false},
+  DEFAULTS: {'alerts':false,'health':false,'cost':false,'charts':false,'crons':false,'sessions':false,'usage':false,'subagent':false,'logs':false,'errors':false,'agent-config':true},
 
   loadState() {
     var merged = Object.assign({}, this.DEFAULTS);

@@ -250,8 +250,14 @@ func (sb *systemdBackend) Status() (ServiceStatus, error) {
 		st.PID = n
 	}
 	if ts, ok := props["ActiveEnterTimestamp"]; ok && ts != "" {
-		if t, err := time.Parse("2006-01-02 15:04:05 MST", ts); err == nil {
-			st.Uptime = time.Since(t)
+		// systemd's default ActiveEnterTimestamp carries a leading weekday
+		// (e.g. "Tue 2026-04-08 10:00:00 UTC"). Try the weekday layout first,
+		// then fall back to the bare form for non-default --timestamp settings.
+		for _, layout := range []string{"Mon 2006-01-02 15:04:05 MST", "2006-01-02 15:04:05 MST"} {
+			if t, err := time.Parse(layout, ts); err == nil {
+				st.Uptime = time.Since(t)
+				break
+			}
 		}
 	}
 

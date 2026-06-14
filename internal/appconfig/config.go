@@ -257,6 +257,12 @@ func Load(dir string) Config {
 	if len(cfg.Logs.Sources) == 0 && len(cfg.Logs.LogSources) > 0 {
 		cfg.Logs.Sources = append([]string{}, cfg.Logs.LogSources...)
 	}
+	if len(cfg.Logs.Sources) == 0 {
+		// An empty/omitted sources list falls back to the built-in defaults so
+		// the log feed is never silently left with zero sources, consistent
+		// with how every other Logs field clamps to a sane default.
+		cfg.Logs.Sources = append([]string{}, Default().Logs.Sources...)
+	}
 	if cfg.Logs.TailLines <= 0 && cfg.Logs.LogTailLines > 0 {
 		cfg.Logs.TailLines = cfg.Logs.LogTailLines
 	}

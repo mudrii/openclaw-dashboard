@@ -542,7 +542,7 @@ Code-review fixes (waves 1–4) and security hardening pass. No new features.
 
 ### Added
 
-- **Collapsible sections** — 9 collapsible dashboard sections with right-aligned chevron toggles, localStorage persistence, FOUC prevention, Expand All / Collapse All buttons, and full ARIA keyboard navigation
+- **Collapsible sections** — 11 collapsible dashboard sections with right-aligned chevron toggles, localStorage persistence, FOUC prevention, Expand All / Collapse All buttons, and full ARIA keyboard navigation
 - **OpenClaw version freshness** — Version pill in the top metrics bar is colour-coded: green (up to date), yellow (1 release behind), red (2+ releases behind); latest version polled from npm registry
 - **npm latest version check** — `/api/system` now returns `versions.latest` (best-effort, non-blocking)
 

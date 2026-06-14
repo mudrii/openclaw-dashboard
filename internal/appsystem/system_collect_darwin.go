@@ -188,5 +188,11 @@ func parseSwapUsage(output string) (used int64, total int64, err error) {
 	}
 	total = toBytes(m[1], m[2])
 	used = toBytes(m[3], m[4])
+	// macOS can momentarily report used > total during swap compression/resize;
+	// clamp so the derived percentage never exceeds 100 (mirrors the linux
+	// meminfo underflow guards).
+	if used > total {
+		used = total
+	}
 	return used, total, nil
 }
