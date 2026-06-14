@@ -249,3 +249,42 @@ visual check.
 plugin/channels; `--deep` for event-loop/heartbeat).
 
 **INT-2 COMPLETE** (3/3 slices). **Remaining.** FIX-2 (next), FIX-3, INT-4, INT-3, INT-5.
+
+---
+
+## 2026-06-14 — FIX-2 (per-agent models from agents.list[]) — ALREADY DONE (PLAN stale)
+
+**Finding.** FIX-2's production fix already exists: `loadAgentDefaultModels`
+(refresh_sessions.go:123-137) already has the `agents.list[]` pass keyed by
+`entry.id`, `agentModelPrimary` already handles both `string` and `{primary}`
+model shapes (146-155), and the main/work/group backfill (138-142) is preserved.
+Implemented in earlier audit work (pre-loop), so PLAN.md (which assumed the
+list[] loop was missing) is stale here.
+
+**Coverage.** Already fully tested — `agent_default_models_test.go:144`
+("agents list string and object models populate per-agent defaults") covers
+PLAN's exact design: list[] string-model, object-model, `default:true`, plus
+main/work/group backfill. Default path covered by sibling subtests.
+
+**Action.** None (no production change; verified all 8 subtests pass). Marked DONE.
+
+---
+
+## 2026-06-14 — FIX-3 (cron status precedence) — DONE (code pre-existed; added precedence test)
+
+**Finding.** Production fix already in place: `refresh_crons.go:116-121` reads the
+canonical `lastRunStatus` first, falls back to deprecated `lastStatus`, defaults
+to `"none"` — exactly FIX-3's design. Pre-existing from earlier audit work.
+
+**Gap closed.** The distinguishing precedence branch was UNtested — existing cron
+tests only seed the legacy `lastStatus` input key, never `lastRunStatus`, so the
+canonical-wins behavior had no coverage. Added
+`TestCollectCrons_LastRunStatusPrecedence` (3 subtests): canonical lastRunStatus
+wins over lastStatus, fallback to lastStatus when canonical absent, `"none"` default
+when neither present. Meaningful (distinguishes old vs new precedence).
+
+**Files.** `cron_state_test.go` (+1 test func, 3 subtests). No production change.
+
+**Gate.** `make check` green (vet, lint 0, `test -race`, govulncheck), `gofmt -l` empty.
+
+**Remaining.** INT-4 (next), INT-3, INT-5.

@@ -192,6 +192,54 @@ func TestCollectCrons_SidecarMalformed(t *testing.T) {
 	}
 }
 
+// TestCollectCrons_LastRunStatusPrecedence locks FIX-3: the dashboard reads
+// openclaw's canonical lastRunStatus in preference to the deprecated lastStatus
+// alias (aligning with openclaw's own readers and future-proofing against alias
+// removal), falls back to lastStatus when only the alias is present, and defaults
+// to "none" when neither is set.
+func TestCollectCrons_LastRunStatusPrecedence(t *testing.T) {
+	build := func(t *testing.T, state map[string]any) map[string]any {
+		t.Helper()
+		dir := t.TempDir()
+		cronPath := filepath.Join(dir, "jobs.json")
+		jobs := map[string]any{"jobs": []any{map[string]any{
+			"id":       "j1",
+			"name":     "n",
+			"enabled":  true,
+			"schedule": map[string]any{"kind": "cron", "expr": "0 0 * * *"},
+			"state":    state,
+		}}}
+		b, _ := json.Marshal(jobs)
+		if err := os.WriteFile(cronPath, b, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		crons := CollectCrons(cronPath, time.UTC)
+		if len(crons) != 1 {
+			t.Fatalf("want 1 cron, got %d", len(crons))
+		}
+		return crons[0]
+	}
+
+	t.Run("canonical lastRunStatus wins over deprecated lastStatus", func(t *testing.T) {
+		c := build(t, map[string]any{"lastRunStatus": "ok", "lastStatus": "fail"})
+		if c["lastStatus"] != "ok" {
+			t.Errorf("lastStatus = %v, want ok (canonical lastRunStatus must win)", c["lastStatus"])
+		}
+	})
+	t.Run("falls back to lastStatus when lastRunStatus absent", func(t *testing.T) {
+		c := build(t, map[string]any{"lastStatus": "fail"})
+		if c["lastStatus"] != "fail" {
+			t.Errorf("lastStatus = %v, want fail (legacy fallback)", c["lastStatus"])
+		}
+	})
+	t.Run("neither present yields none", func(t *testing.T) {
+		c := build(t, map[string]any{})
+		if c["lastStatus"] != "none" {
+			t.Errorf("lastStatus = %v, want none (default)", c["lastStatus"])
+		}
+	})
+}
+
 // TestCollectCrons_BothPresent_SidecarWins: when inline state and sidecar both have
 // values for the same job id, sidecar wins (it is the live runtime state).
 func TestCollectCrons_BothPresent_SidecarWins(t *testing.T) {
