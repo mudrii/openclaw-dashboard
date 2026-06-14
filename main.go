@@ -356,11 +356,12 @@ func runServiceCmd(cmd string, opts serviceCmdOpts) int {
 
 func serviceInstall(opts serviceCmdOpts, bind string, port int) int {
 	cfg := appservice.InstallConfig{
-		BinPath: opts.binPath,
-		WorkDir: opts.dir,
-		LogPath: filepath.Join(opts.dir, "server.log"),
-		Host:    bind,
-		Port:    port,
+		BinPath:          opts.binPath,
+		WorkDir:          opts.dir,
+		LogPath:          filepath.Join(opts.dir, "server.log"),
+		Host:             bind,
+		Port:             port,
+		AllowNonLoopback: os.Getenv("OPENCLAW_DASHBOARD_ALLOW_NON_LOOPBACK") == "1",
 	}
 	if err := appservice.ValidateLoopbackBind(cfg.Host); err != nil {
 		fmt.Fprintf(os.Stderr, "[dashboard] %v\n", err)

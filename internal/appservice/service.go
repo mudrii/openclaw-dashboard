@@ -76,11 +76,12 @@ type runCmdFunc func(ctx context.Context, name string, args ...string) ([]byte, 
 
 // InstallConfig holds parameters baked into the service unit file at install time.
 type InstallConfig struct {
-	BinPath string // absolute path to the openclaw-dashboard binary
-	WorkDir string // dashboard runtime directory (config.json lives here)
-	LogPath string // stdout/stderr log file path
-	Host    string // --bind value
-	Port    int    // --port value
+	BinPath          string // absolute path to the openclaw-dashboard binary
+	WorkDir          string // dashboard runtime directory (config.json lives here)
+	LogPath          string // stdout/stderr log file path
+	Host             string // --bind value
+	Port             int    // --port value
+	AllowNonLoopback bool   // persist non-loopback bind override into service env
 }
 
 // ServiceStatus is the parsed state returned by Backend.Status.

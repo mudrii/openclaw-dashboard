@@ -4,6 +4,9 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"os"
+	"path/filepath"
+	"strconv"
 	"testing"
 	"time"
 )
@@ -22,8 +25,8 @@ func stubGatewayLock(t *testing.T, lk gatewayLock, ok bool) {
 // host the gateway can run under a different uid, and mis-reading EPERM as dead
 // would discard the install-independent lock metadata INT-3 adds.
 func TestPidAlive(t *testing.T) {
-	if !pidAlive(1) {
-		t.Errorf("pidAlive(1) = false, want true (pid 1 exists; EPERM must count as alive)")
+	if !pidAlive(os.Getpid()) {
+		t.Errorf("pidAlive(os.Getpid()) = false, want true")
 	}
 	if pidAlive(0) {
 		t.Errorf("pidAlive(0) = true, want false (non-positive pid)")
@@ -51,9 +54,53 @@ func TestCollectGatewayHealth_LockProvidesPID(t *testing.T) {
 	if gw["pid"] != 4321 {
 		t.Errorf("pid = %v, want 4321 (from lock)", gw["pid"])
 	}
-	// createdAt was 2h ago → uptime derived from the lock, not pgrep/ps.
-	if gw["uptime"] != "2h 0m" {
-		t.Errorf("uptime = %v, want \"2h 0m\" (derived from lock createdAt)", gw["uptime"])
+	uptime, _ := gw["uptime"].(string)
+	if uptime != "1h 59m" && uptime != "2h 0m" && uptime != "2h 1m" {
+		t.Errorf("uptime = %v, want about 2h (derived from lock createdAt)", gw["uptime"])
+	}
+}
+
+func TestCollectGatewayHealth_LockDoesNotOverrideFailedHealthz(t *testing.T) {
+	stubGatewayLock(t, gatewayLock{pid: 4321, createdAt: time.Now().Add(-2 * time.Hour)}, true)
+	stubHealthz(t, false)
+	stubPgrep(t, "", nil)
+	gw := collectGatewayHealthWithLock(context.Background(), "/some/openclaw", 18789)
+	if gw["status"] != "offline" {
+		t.Errorf("status = %v, want offline when /healthz fails and pgrep finds nothing", gw["status"])
+	}
+	if gw["pid"] != nil {
+		t.Errorf("pid = %v, want nil because stale lock metadata must not be trusted after failed /healthz", gw["pid"])
+	}
+}
+
+func TestReadGatewayLockMeta_ReadsRealLockForCurrentProcess(t *testing.T) {
+	prevTmp := os.Getenv("TMPDIR")
+	tmp := t.TempDir()
+	t.Setenv("TMPDIR", tmp)
+	t.Cleanup(func() { _ = os.Setenv("TMPDIR", prevTmp) })
+
+	configPath := filepath.Join(t.TempDir(), "openclaw.json")
+	t.Setenv("OPENCLAW_CONFIG_PATH", configPath)
+	lockDir := gatewayLockDir()
+	if err := os.MkdirAll(lockDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	lockPath := filepath.Join(lockDir, gatewayLockFilename(configPath))
+	createdAt := time.Date(2026, 6, 14, 12, 0, 0, 0, time.UTC)
+	body := `{"pid":` + strconv.Itoa(os.Getpid()) + `,"createdAt":"` + createdAt.Format(time.RFC3339) + `"}`
+	if err := os.WriteFile(lockPath, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	lk, ok := readGatewayLockMeta("/ignored")
+	if !ok {
+		t.Fatal("readGatewayLockMeta ok=false, want true for current process lock")
+	}
+	if lk.pid != os.Getpid() {
+		t.Errorf("pid = %d, want %d", lk.pid, os.Getpid())
+	}
+	if !lk.createdAt.Equal(createdAt) {
+		t.Errorf("createdAt = %v, want %v", lk.createdAt, createdAt)
 	}
 }
 

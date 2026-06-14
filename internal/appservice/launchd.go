@@ -47,6 +47,10 @@ var plistTmpl = template.Must(template.New("plist").Funcs(template.FuncMap{
     <string>{{xmlText .PathEnv}}</string>
     <key>OPENCLAW_HOME</key>
     <string>{{xmlText .OpenclawHome}}</string>
+{{- if .AllowNonLoopback}}
+    <key>OPENCLAW_DASHBOARD_ALLOW_NON_LOOPBACK</key>
+    <string>1</string>
+{{- end}}
   </dict>
   <key>RunAtLoad</key>
   <true/>
@@ -61,15 +65,16 @@ var plistTmpl = template.Must(template.New("plist").Funcs(template.FuncMap{
 `))
 
 type plistData struct {
-	Label        string
-	BinPath      string
-	Host         string
-	Port         int
-	WorkDir      string
-	LogPath      string
-	HomeDir      string
-	PathEnv      string
-	OpenclawHome string
+	Label            string
+	BinPath          string
+	Host             string
+	Port             int
+	WorkDir          string
+	LogPath          string
+	HomeDir          string
+	PathEnv          string
+	OpenclawHome     string
+	AllowNonLoopback bool
 }
 
 type launchdBackend struct {
@@ -123,15 +128,16 @@ func (lb *launchdBackend) Install(cfg InstallConfig) error {
 		return fmt.Errorf("resolve OPENCLAW_HOME: %w", err)
 	}
 	data := plistData{
-		Label:        launchdLabel,
-		BinPath:      cfg.BinPath,
-		Host:         cfg.Host,
-		Port:         cfg.Port,
-		WorkDir:      cfg.WorkDir,
-		LogPath:      cfg.LogPath,
-		HomeDir:      userHomeDir(),
-		PathEnv:      launchdPathEnv(),
-		OpenclawHome: openclawHome,
+		Label:            launchdLabel,
+		BinPath:          cfg.BinPath,
+		Host:             cfg.Host,
+		Port:             cfg.Port,
+		WorkDir:          cfg.WorkDir,
+		LogPath:          cfg.LogPath,
+		HomeDir:          userHomeDir(),
+		PathEnv:          launchdPathEnv(),
+		OpenclawHome:     openclawHome,
+		AllowNonLoopback: cfg.AllowNonLoopback,
 	}
 	var buf bytes.Buffer
 	if err := plistTmpl.Execute(&buf, data); err != nil {

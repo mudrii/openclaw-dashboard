@@ -84,6 +84,35 @@ func TestReadMergedLogsWithUnit_JournaldFallback(t *testing.T) {
 	}
 }
 
+func TestReadMergedLogsWithUnit_JournaldFallbackRunsOnceForGatewaySources(t *testing.T) {
+	SetLogFallbackRoots(func() []string { return nil })
+	t.Cleanup(func() { SetLogFallbackRoots(nil) })
+	forceJournald(t, true)
+
+	calls := 0
+	prev := journaldRunner
+	journaldRunner = func(_ context.Context, _ string, _ int) ([]byte, error) {
+		calls++
+		return []byte(`{"PRIORITY":"3","MESSAGE":"once","__REALTIME_TIMESTAMP":"1700000000000000"}`), nil
+	}
+	t.Cleanup(func() { journaldRunner = prev })
+
+	tmp := t.TempDir()
+	recs, err := ReadMergedLogsWithUnit(tmp, []string{"logs/gateway.log", "logs/gateway.err.log"}, 50, "openclaw-gateway")
+	if err != nil {
+		t.Fatalf("err = %v", err)
+	}
+	if calls != 1 {
+		t.Fatalf("journaldRunner calls = %d, want 1", calls)
+	}
+	if len(recs) != 1 {
+		t.Fatalf("got %d records, want 1 from journald", len(recs))
+	}
+	if recs[0].Message != "once" {
+		t.Errorf("message = %q, want once", recs[0].Message)
+	}
+}
+
 // TestReadMergedLogsWithUnit_DisabledSkipsJournald proves macOS behavior is
 // unchanged: with journald disabled, no shell-out happens and an absent file
 // yields no records (the runner must not even be consulted).
@@ -141,6 +170,15 @@ func TestResolveSystemdUnit_Precedence(t *testing.T) {
 			t.Errorf("got %q, want openclaw-gateway-work", got)
 		}
 	})
+}
+
+func TestSystemdUnitNameAddsServiceSuffixOnce(t *testing.T) {
+	if got := systemdUnitName("foo"); got != "foo.service" {
+		t.Errorf("systemdUnitName(foo) = %q, want foo.service", got)
+	}
+	if got := systemdUnitName("foo.service"); got != "foo.service" {
+		t.Errorf("systemdUnitName(foo.service) = %q, want foo.service", got)
+	}
 }
 
 // TestParseJournaldLine_PriorityMapping pins the journald PRIORITY (syslog

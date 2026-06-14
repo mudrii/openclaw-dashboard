@@ -3,6 +3,9 @@ package apprefresh
 import (
 	"context"
 	"errors"
+	"net"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"slices"
 	"strconv"
@@ -159,6 +162,33 @@ func TestReadyzProbe_PortZeroReturnsFalse(t *testing.T) {
 	}
 	if failing != nil {
 		t.Errorf("failing = %v for port 0, want nil", failing)
+	}
+}
+
+func TestReadyzProbe_ParsesFailingFromHTTP503(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/readyz" {
+			t.Fatalf("path = %q, want /readyz", r.URL.Path)
+		}
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_, _ = w.Write([]byte(`{"ready":false,"failing":["telegram"]}`))
+	}))
+	t.Cleanup(srv.Close)
+	_, portStr, err := net.SplitHostPort(srv.Listener.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	port, err := strconv.Atoi(portStr)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	failing, ok := readyzProbe(context.Background(), port)
+	if !ok {
+		t.Fatal("ok = false, want true for parseable 503 readiness body")
+	}
+	if !slices.Equal(failing, []string{"telegram"}) {
+		t.Errorf("failing = %v, want [telegram]", failing)
 	}
 }
 

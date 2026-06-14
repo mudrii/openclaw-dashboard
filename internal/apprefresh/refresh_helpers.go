@@ -58,6 +58,20 @@ func asObj(v any) map[string]any {
 	return nil
 }
 
+func stringSliceFromAny(v any) []string {
+	arr, ok := v.([]any)
+	if !ok {
+		return nil
+	}
+	out := make([]string, 0, len(arr))
+	for _, it := range arr {
+		if s, ok := it.(string); ok && s != "" {
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
 func aliasOrID(aliases map[string]string, id string) string {
 	if a, ok := aliases[id]; ok {
 		return a

@@ -309,7 +309,7 @@ The `/api/chat` endpoint accepts `{"question": "...", "history": [...]}` and for
 
 ### Frontend Module Structure
 
-The entire frontend lives in a single `<script>` tag inside `web/index.html` — zero dependencies, no build step. The JS is organized into 7 plain objects:
+The entire frontend lives in a single `<script>` tag inside `web/index.html` — zero dependencies, no build step. The JS is organized into small plain-object modules:
 
 ```
 ┌─────────────────────────────────────────────┐
@@ -335,13 +335,17 @@ The entire frontend lives in a single `<script>` tag inside `web/index.html` —
 
 | Module | Responsibility |
 |--------|----------------|
-| **State** | Single source of truth — holds `data`, `prev`, `tabs`, `countdown`. Produces immutable deep-frozen snapshots for each render cycle. |
+| **State** | Single source of truth — holds `data`, `prev`, `tabs`, `countdown`, and tab state. Produces immutable deep-frozen snapshots for each render cycle. |
 | **DataLayer** | Stateless fetch with `_reqId` counter for out-of-order protection. Returns parsed JSON or `null`. |
+| **LogTail** | Incremental log polling, filtering, pause/fast modes, and merged log rendering. |
+| **ErrorFeed** | Error-signature feed derived from `/api/errors`, including sort/window controls. |
 | **DirtyChecker** | Computes 13 boolean dirty flags by comparing current snapshot against `State.prev`. Uses `stableSnapshot()` to strip volatile timestamps from crons/sessions. |
 | **Renderer** | Pure DOM side-effects. Receives frozen snapshot + pre-computed flags, dispatches to 14 section renderers. Owns the agent hierarchy tree, recent-finished buffer, and all chart SVG rendering. |
+| **SystemBar** | Polls `/api/system`, renders host/runtime health, and feeds gateway readiness state back into the main health and alert panels. |
 | **Theme** | Self-contained theme engine — loads `themes.json`, applies CSS variables, persists choice to `localStorage`. |
+| **Sections** | Collapsible-section state and persistence. |
 | **Chat** | AI chat panel — manages history, sends stateless requests to `/api/chat`. |
-| **App** | Wiring layer — `init()` starts theme + timer + first fetch; `renderNow()` captures snapshot → computes flags → schedules render via `requestAnimationFrame`; `commitPrev(snap)` runs inside rAF to prevent fetch/paint races. |
+| **OCUI / App** | UI command handlers plus wiring layer — theme, timers, data refresh, render scheduling, and event handlers. |
 
 All inline `onclick` handlers route through `window.OCUI` — a thin namespace that calls `State.setTab()` / `App.renderNow()`. No bare globals remain outside the module objects and top-level utilities (`$`, `esc`, `safeColor`, `relTime`).
 

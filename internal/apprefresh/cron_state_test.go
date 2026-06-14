@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 	"time"
 )
@@ -221,6 +222,7 @@ func TestCollectCrons_DeliveryAndFlapping(t *testing.T) {
 		c := build(t, map[string]any{
 			"lastRunStatus":      "fail",
 			"lastDeliveryStatus": "not-delivered",
+			"lastDiagnostics":    []any{"telegram timeout", "retry scheduled"},
 			"consecutiveErrors":  float64(4),
 			"consecutiveSkipped": float64(1),
 		})
@@ -232,6 +234,13 @@ func TestCollectCrons_DeliveryAndFlapping(t *testing.T) {
 		}
 		if c["flapping"] != true {
 			t.Errorf("flapping = %v, want true (consecutiveErrors >= threshold)", c["flapping"])
+		}
+		gotDiagnostics, ok := c["lastDiagnostics"].([]string)
+		if !ok {
+			t.Fatalf("lastDiagnostics type = %T, want []string", c["lastDiagnostics"])
+		}
+		if !slices.Equal(gotDiagnostics, []string{"telegram timeout", "retry scheduled"}) {
+			t.Errorf("lastDiagnostics = %v, want diagnostics from sidecar", gotDiagnostics)
 		}
 	})
 

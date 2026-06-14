@@ -65,6 +65,28 @@ func TestSystemd_Install_writesUnitFile(t *testing.T) {
 	}
 }
 
+func TestSystemd_Install_PersistsNonLoopbackOverride(t *testing.T) {
+	sb, dir := newTestSystemd(t)
+	t.Setenv("OPENCLAW_HOME", "/srv/openclaw")
+	cfg := InstallConfig{
+		BinPath:          "/usr/local/bin/openclaw-dashboard",
+		WorkDir:          "/home/user/.openclaw/dashboard",
+		Host:             "0.0.0.0",
+		Port:             9090,
+		AllowNonLoopback: true,
+	}
+	if err := sb.Install(cfg); err != nil {
+		t.Fatalf("Install: %v", err)
+	}
+	data, err := os.ReadFile(filepath.Join(dir, "openclaw-dashboard.service"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), `Environment="OPENCLAW_DASHBOARD_ALLOW_NON_LOOPBACK=1"`) {
+		t.Fatalf("unit missing non-loopback override env:\n%s", data)
+	}
+}
+
 func TestSystemd_Install_quotesPathsWithSpaces(t *testing.T) {
 	sb, dir := newTestSystemd(t)
 	cfg := InstallConfig{

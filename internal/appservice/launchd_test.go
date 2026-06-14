@@ -72,6 +72,36 @@ func TestLaunchd_Install_writesPlist(t *testing.T) {
 	}
 }
 
+func TestLaunchd_Install_PersistsNonLoopbackOverride(t *testing.T) {
+	lb, dir := newTestLaunchd(t)
+	t.Setenv("HOME", "/home/user")
+	t.Setenv("OPENCLAW_HOME", "/srv/openclaw")
+	cfg := InstallConfig{
+		BinPath:          "/usr/local/bin/openclaw-dashboard",
+		WorkDir:          "/home/user/.openclaw/dashboard",
+		LogPath:          "/home/user/.openclaw/dashboard/server.log",
+		Host:             "0.0.0.0",
+		Port:             9090,
+		AllowNonLoopback: true,
+	}
+	if err := lb.Install(cfg); err != nil {
+		t.Fatalf("Install failed: %v", err)
+	}
+	data, err := os.ReadFile(filepath.Join(dir, "com.openclaw.dashboard.plist"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	content := string(data)
+	for _, want := range []string{
+		"<key>OPENCLAW_DASHBOARD_ALLOW_NON_LOOPBACK</key>",
+		"<string>1</string>",
+	} {
+		if !strings.Contains(content, want) {
+			t.Fatalf("plist missing %q\n%s", want, content)
+		}
+	}
+}
+
 func TestLaunchd_Install_callsLaunchctl(t *testing.T) {
 	var calls []string
 	dir := t.TempDir()

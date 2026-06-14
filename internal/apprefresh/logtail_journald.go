@@ -19,12 +19,12 @@ const defaultSystemdUnit = "openclaw-gateway"
 // It is a func var so tests can force-enable the Linux-only path on any host.
 var journaldEnabled = func() bool { return runtime.GOOS == "linux" }
 
-// journaldRunner executes `journalctl --user -u <unit>.service -o json` and
+// journaldRunner executes `journalctl --user -u <unit> -o json` and
 // returns the raw output. Stubbed in tests. A missing binary or any other
 // failure is returned as an error and collapses to an empty source upstream.
 var journaldRunner = func(ctx context.Context, unit string, lines int) ([]byte, error) {
 	return exec.CommandContext(ctx, "journalctl",
-		"--user", "-u", unit+".service",
+		"--user", "-u", systemdUnitName(unit),
 		"-o", "json", "--no-pager",
 		"-n", strconv.Itoa(lines),
 	).Output()
@@ -47,6 +47,17 @@ func ResolveSystemdUnit(configUnit string) string {
 		unit += "-" + profile
 	}
 	return unit
+}
+
+func systemdUnitName(unit string) string {
+	unit = strings.TrimSpace(unit)
+	if unit == "" {
+		unit = defaultSystemdUnit
+	}
+	if strings.HasSuffix(unit, ".service") {
+		return unit
+	}
+	return unit + ".service"
 }
 
 // collectJournaldRecords runs the journald collector for one source and returns

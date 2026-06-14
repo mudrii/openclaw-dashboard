@@ -30,6 +30,22 @@ func writeFakeOclawBin(t *testing.T, stdout string, exitCode int) string {
 	return bin
 }
 
+func writeArgCheckingOclawBin(t *testing.T, stdout string, exitCode int, wantArgs ...string) string {
+	t.Helper()
+	dir := t.TempDir()
+	bin := filepath.Join(dir, "openclaw")
+	check := ""
+	for i, arg := range wantArgs {
+		check += fmt.Sprintf("[ \"${%d}\" = %q ] || exit 64\n", i+1, arg)
+	}
+	check += fmt.Sprintf("[ \"$#\" -eq %d ] || exit 64\n", len(wantArgs))
+	script := "#!/bin/sh\n" + check + fmt.Sprintf("printf '%%s' %q\nexit %d\n", stdout, exitCode)
+	if err := os.WriteFile(bin, []byte(script), 0o755); err != nil {
+		t.Fatalf("write arg-checking oclaw bin: %v", err)
+	}
+	return bin
+}
+
 // gatewayStatusJSON is a canned `openclaw status --json` body with the INT-2
 // rich blocks. eventLoop is deep-status only; the fake bin emits it regardless,
 // so deepStatus=false must still parse tasks/pluginCompatibility while the lean
@@ -70,7 +86,7 @@ func TestCollectOpenclawRuntime(t *testing.T) {
 
 	t.Run("deepStatus populates tasks and eventLoop", func(t *testing.T) {
 		_, port := newGatewayHTTPTestServer(t, true)
-		bin := writeFakeOclawBin(t, gatewayStatusDeepJSON, 0)
+		bin := writeArgCheckingOclawBin(t, gatewayStatusDeepJSON, 0, "status", "--json", "--deep")
 
 		oc := CollectOpenclawRuntime(ctx, bin, 1000, port, SystemVersions{}, true)
 
@@ -96,7 +112,7 @@ func TestCollectOpenclawRuntime(t *testing.T) {
 
 	t.Run("lean status leaves eventLoop nil but keeps tasks", func(t *testing.T) {
 		_, port := newGatewayHTTPTestServer(t, true)
-		bin := writeFakeOclawBin(t, gatewayStatusLeanJSON, 0)
+		bin := writeArgCheckingOclawBin(t, gatewayStatusLeanJSON, 0, "status", "--json")
 
 		oc := CollectOpenclawRuntime(ctx, bin, 1000, port, SystemVersions{}, false)
 

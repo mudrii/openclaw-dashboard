@@ -1413,7 +1413,9 @@ const Renderer = {
       const ds=c.lastDeliveryStatus;
       const dsColor=ds==='delivered'?'var(--green)':ds==='not-delivered'?'var(--red)':ds==='unknown'?'var(--yellow)':'var(--dim)';
       const dsBadge=(ds&&ds!=='not-requested')?` <span style="font-size:9px;color:${dsColor}" data-tip="delivery: ${esc(ds)}">●</span>`:'';
-      const flap=c.flapping?` <span style="font-size:8px;font-weight:700;color:var(--red)" data-tip="${esc(String(c.consecutiveErrors||0))} consecutive errors">⚡FLAPPING</span>`:'';
+      const diagnostics=Array.isArray(c.lastDiagnostics)?c.lastDiagnostics.filter(Boolean).join(' · '):'';
+      const flapTip=diagnostics||(`${String(c.consecutiveErrors||0)} consecutive errors`);
+      const flap=c.flapping?` <span style="font-size:8px;font-weight:700;color:var(--red)" data-tip="${esc(flapTip)}">⚡FLAPPING</span>`:'';
       return `<tr class="dr"><td><span class="sd ${dotCls}"${tip}></span>${esc(st)||'—'}${dsBadge}${flap}</td><td class="w">${esc(c.name)}</td><td>${esc(c.schedule)}</td><td>${esc(c.lastRun||'—')}</td><td>${esc(c.nextRun||'—')}</td><td class="r">${dur}</td><td>${esc(c.model||'—')}</td></tr>`;
     });
     if (cronContainer) cronContainer.scrollTop = cronScrollTop;

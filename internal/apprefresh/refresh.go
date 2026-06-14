@@ -87,6 +87,9 @@ func TrimLabel(s string) string {
 // ModelName returns the human-friendly display name for a model identifier.
 // Falls back to the raw id when no friendly name is known.
 func ModelName(model string) string {
+	if name, ok := catalogDisplayName(model); ok {
+		return name
+	}
 	ml := strings.ToLower(model)
 	if strings.Contains(ml, "/") {
 		parts := strings.SplitN(ml, "/", 2)
@@ -146,12 +149,6 @@ func ModelName(model string) string {
 	case strings.Contains(ml, "gpt-4"):
 		return "GPT-4"
 	default:
-		// Curated names above take priority; for ids the switch does not know,
-		// consult the live catalog (openclaw models list --json) so current and
-		// future models still get a real display name instead of the raw id.
-		if name, ok := catalogDisplayName(model); ok {
-			return name
-		}
 		return model
 	}
 }

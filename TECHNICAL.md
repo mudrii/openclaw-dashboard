@@ -499,6 +499,11 @@ Each setting resolves through a priority chain (highest wins):
 | `crons[].lastDurationMs` | `number` | Last run duration in ms |
 | `crons[].nextRun` | `string` | Formatted next run timestamp or `""` |
 | `crons[].model` | `string` | Model from job payload |
+| `crons[].lastDeliveryStatus` | `string` | Last delivery outcome from sidecar state |
+| `crons[].lastDiagnostics` | `array` | Diagnostic strings for the last run/delivery |
+| `crons[].consecutiveErrors` | `number` | Consecutive failing runs |
+| `crons[].consecutiveSkipped` | `number` | Consecutive skipped deliveries/runs |
+| `crons[].flapping` | `boolean` | True when consecutive errors cross the flapping threshold |
 
 ### Sub-Agent Activity
 
@@ -601,7 +606,7 @@ openclaw-dashboard uninstall
 # or: openclaw-dashboard service <cmd>
 ```
 
-`install` bakes `--bind` and `--port` (defaulting to values from `config.json` and env vars) into the generated plist / unit file. `openclaw-dashboard uninstall` preserves config and data; `uninstall.sh` removes the runtime directory after deregistering the service.
+`install` bakes `--bind` and `--port` (defaulting to values from `config.json` and env vars) into the generated plist / unit file. If `OPENCLAW_DASHBOARD_ALLOW_NON_LOOPBACK=1` is required for the chosen bind host, that override is persisted into the service environment as well. `openclaw-dashboard uninstall` preserves config and data; `uninstall.sh` removes the runtime directory after deregistering the service.
 
 **Implementation:**
 - Platform selection: Go build tags (`//go:build darwin`, `//go:build linux`, `//go:build !darwin && !linux`)
@@ -696,7 +701,7 @@ systemctl --user status openclaw-dashboard
 | Concern | Details |
 |---------|---------|
 | **Default bind** | `127.0.0.1` — localhost only, safe |
-| **LAN mode** | `--bind 0.0.0.0` exposes the dashboard to the local network with **no authentication** |
+| **LAN mode** | `OPENCLAW_DASHBOARD_ALLOW_NON_LOOPBACK=1 --bind 0.0.0.0` exposes the dashboard to the local network with **no authentication** |
 | **CORS** | Allows localhost/127.0.0.1 origins; fallback header is `http://localhost:8080` |
 | **No HTTPS** | Plain HTTP only; use a reverse proxy for TLS |
 | **Sensitive data in data.json** | Session keys, model usage, costs, cron config, gateway PID |
@@ -796,7 +801,7 @@ make check
 2. Add render logic in the `render()` function
 3. If it needs new data, add extraction logic in `internal/apprefresh` (inside `collectDashboardData` or helpers it calls)
 4. Add the new key to the `map[string]any` returned from `collectDashboardData`
-5. Optionally add a `panels.<name>` toggle in `config.json`
+5. If visibility should become configurable, add and document an explicit config schema field first; unknown `panels.*` keys are currently unsupported and logged as config warnings.
 
 ### Adding a New Alert Type
 

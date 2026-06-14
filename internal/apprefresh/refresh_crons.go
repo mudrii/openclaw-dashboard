@@ -125,6 +125,7 @@ func CollectCrons(cronPath string, loc *time.Location) []map[string]any {
 		}
 		// INT-5: richer sidecar state — delivery outcome + flapping signal.
 		deliveryStatus := jsonStrDefault(state, "lastDeliveryStatus", "")
+		lastDiagnostics := stringSliceFromAny(state["lastDiagnostics"])
 		consecutiveErrors, _ := state["consecutiveErrors"].(float64)
 		consecutiveSkipped, _ := state["consecutiveSkipped"].(float64)
 		// Flapping keys on errors only — a skipped run (deduped/throttled) is not
@@ -168,6 +169,7 @@ func CollectCrons(cronPath string, loc *time.Location) []map[string]any {
 			"nextRun":            nextRunStr,
 			"model":              model,
 			"lastDeliveryStatus": deliveryStatus,
+			"lastDiagnostics":    lastDiagnostics,
 			"consecutiveErrors":  int(consecutiveErrors),
 			"consecutiveSkipped": int(consecutiveSkipped),
 			"flapping":           flapping,

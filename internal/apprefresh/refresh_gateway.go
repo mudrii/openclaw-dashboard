@@ -128,20 +128,23 @@ func collectGatewayHealthWithLock(ctx context.Context, openclawPath string, gate
 		probeCancel()
 	}
 
-	// INT-3: prefer the gateway lock for pid/uptime metadata. It carries the
-	// live pid on every install layout, where the pgrep cmdline pattern only
-	// matches npm. A live lock pid means online regardless of pgrep.
+	// INT-3: prefer the gateway lock for pid/uptime metadata only when liveness
+	// is already trustworthy. With a configured port, /healthz remains the
+	// source of truth; a stale lock whose pid was reused must not mark the
+	// gateway online after healthz just failed.
 	if openclawPath != "" {
 		if lk, ok := readGatewayLockMeta(openclawPath); ok {
-			gw["pid"] = lk.pid
-			gw["status"] = "online"
-			if !lk.createdAt.IsZero() {
-				gw["uptime"] = formatUptimeSince(lk.createdAt)
+			if gatewayPort <= 0 || httpOnline {
+				gw["pid"] = lk.pid
+				gw["status"] = "online"
+				if !lk.createdAt.IsZero() {
+					gw["uptime"] = formatUptimeSince(lk.createdAt)
+				}
+				psCtx, psCancel := context.WithTimeout(ctx, 5*time.Second)
+				collectGatewayRSS(psCtx, strconv.Itoa(lk.pid), gw)
+				psCancel()
+				return gw
 			}
-			psCtx, psCancel := context.WithTimeout(ctx, 5*time.Second)
-			collectGatewayRSS(psCtx, strconv.Itoa(lk.pid), gw)
-			psCancel()
-			return gw
 		}
 	}
 

@@ -3,6 +3,7 @@ package apprefresh
 import (
 	"context"
 	"os/exec"
+	"slices"
 	"sync"
 	"testing"
 	"time"
@@ -141,9 +142,15 @@ func TestModelName_ConsultsCatalog(t *testing.T) {
 	prev := modelCatalogNames.Load()
 	t.Cleanup(func() { modelCatalogNames.Store(prev) })
 
-	setModelCatalogNames(map[string]string{"vendor/brand-new-9000": "Brand New 9000"})
+	setModelCatalogNames(map[string]string{
+		"vendor/brand-new-9000":         "Brand New 9000",
+		"google/gemini-3-flash-preview": "Gemini 3 Flash Preview",
+	})
 	if got := ModelName("vendor/brand-new-9000"); got != "Brand New 9000" {
 		t.Errorf("catalog hit: got %q, want Brand New 9000", got)
+	}
+	if got := ModelName("google/gemini-3-flash-preview"); got != "Gemini 3 Flash Preview" {
+		t.Errorf("catalog should override known-family hardcoded fallback: got %q", got)
 	}
 	// Miss → hardcoded switch still applies.
 	if got := ModelName("anthropic/claude-opus-4-6"); got != "Claude Opus 4.6" {
@@ -158,7 +165,12 @@ func TestModelCatalogCache_FetchWithStubRunner(t *testing.T) {
 	c := newModelCatalogCache()
 	c.resolveOpenclaw = func() string { return "openclaw" }
 	c.runner = func(ctx context.Context, name string, args ...string) *exec.Cmd {
-		// Echo a fixed catalog regardless of args.
+		if name != "openclaw" {
+			t.Fatalf("runner name = %q, want openclaw", name)
+		}
+		if !slices.Equal(args, []string{"models", "list", "--json"}) {
+			t.Fatalf("runner args = %v, want [models list --json]", args)
+		}
 		return exec.CommandContext(ctx, "printf", `%s`,
 			`{"models":[{"key":"m/n","name":"Em En"}]}`)
 	}
