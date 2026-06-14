@@ -8,6 +8,10 @@ import (
 	"time"
 )
 
+// cronFlappingThreshold is the consecutiveErrors count at or above which a cron
+// job is flagged as flapping (unstable) in the dashboard.
+const cronFlappingThreshold = 3
+
 // loadCronStateSidecar reads jobs-state.json (introduced in OpenClaw v2026.4.20)
 // and returns a job-id → state map. Returns nil when the file is absent or invalid;
 // callers fall back to inline state.
@@ -119,6 +123,12 @@ func CollectCrons(cronPath string, loc *time.Location) []map[string]any {
 		if lastStatus == "" {
 			lastStatus = jsonStrDefault(state, "lastStatus", "none")
 		}
+		// INT-5: richer sidecar state — delivery outcome + flapping signal.
+		deliveryStatus := jsonStrDefault(state, "lastDeliveryStatus", "")
+		consecutiveErrors, _ := state["consecutiveErrors"].(float64)
+		consecutiveSkipped, _ := state["consecutiveSkipped"].(float64)
+		flapping := int(consecutiveErrors) >= cronFlappingThreshold
+
 		lastRunMs, _ := state["lastRunAtMs"].(float64)
 		nextRunMs, _ := state["nextRunAtMs"].(float64)
 		durationMs, _ := state["lastDurationMs"].(float64)
@@ -144,16 +154,20 @@ func CollectCrons(cronPath string, loc *time.Location) []map[string]any {
 		id := jsonStr(jm, "id")
 
 		crons = append(crons, map[string]any{
-			"id":             id,
-			"name":           name,
-			"agentId":        agentID,
-			"schedule":       schedStr,
-			"enabled":        enabled,
-			"lastRun":        lastRunStr,
-			"lastStatus":     lastStatus,
-			"lastDurationMs": int(durationMs),
-			"nextRun":        nextRunStr,
-			"model":          model,
+			"id":                 id,
+			"name":               name,
+			"agentId":            agentID,
+			"schedule":           schedStr,
+			"enabled":            enabled,
+			"lastRun":            lastRunStr,
+			"lastStatus":         lastStatus,
+			"lastDurationMs":     int(durationMs),
+			"nextRun":            nextRunStr,
+			"model":              model,
+			"lastDeliveryStatus": deliveryStatus,
+			"consecutiveErrors":  int(consecutiveErrors),
+			"consecutiveSkipped": int(consecutiveSkipped),
+			"flapping":           flapping,
 		})
 	}
 	return crons

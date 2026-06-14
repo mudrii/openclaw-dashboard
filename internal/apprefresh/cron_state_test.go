@@ -192,6 +192,64 @@ func TestCollectCrons_SidecarMalformed(t *testing.T) {
 	}
 }
 
+// TestCollectCrons_DeliveryAndFlapping covers INT-5: the dashboard surfaces the
+// sidecar delivery status and a flapping indicator derived from consecutiveErrors.
+func TestCollectCrons_DeliveryAndFlapping(t *testing.T) {
+	build := func(t *testing.T, state map[string]any) map[string]any {
+		t.Helper()
+		dir := t.TempDir()
+		cronPath := filepath.Join(dir, "jobs.json")
+		jobs := map[string]any{"jobs": []any{map[string]any{
+			"id":       "j1",
+			"name":     "n",
+			"enabled":  true,
+			"schedule": map[string]any{"kind": "cron", "expr": "0 0 * * *"},
+			"state":    state,
+		}}}
+		b, _ := json.Marshal(jobs)
+		if err := os.WriteFile(cronPath, b, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		crons := CollectCrons(cronPath, time.UTC)
+		if len(crons) != 1 {
+			t.Fatalf("want 1 cron, got %d", len(crons))
+		}
+		return crons[0]
+	}
+
+	t.Run("delivery status surfaced and flapping set above threshold", func(t *testing.T) {
+		c := build(t, map[string]any{
+			"lastRunStatus":      "fail",
+			"lastDeliveryStatus": "not-delivered",
+			"consecutiveErrors":  float64(4),
+			"consecutiveSkipped": float64(1),
+		})
+		if c["lastDeliveryStatus"] != "not-delivered" {
+			t.Errorf("lastDeliveryStatus = %v, want not-delivered", c["lastDeliveryStatus"])
+		}
+		if c["consecutiveErrors"] != 4 {
+			t.Errorf("consecutiveErrors = %v, want 4", c["consecutiveErrors"])
+		}
+		if c["flapping"] != true {
+			t.Errorf("flapping = %v, want true (consecutiveErrors >= threshold)", c["flapping"])
+		}
+	})
+
+	t.Run("healthy job is not flapping", func(t *testing.T) {
+		c := build(t, map[string]any{
+			"lastRunStatus":      "ok",
+			"lastDeliveryStatus": "delivered",
+			"consecutiveErrors":  float64(0),
+		})
+		if c["flapping"] != false {
+			t.Errorf("flapping = %v, want false", c["flapping"])
+		}
+		if c["lastDeliveryStatus"] != "delivered" {
+			t.Errorf("lastDeliveryStatus = %v, want delivered", c["lastDeliveryStatus"])
+		}
+	})
+}
+
 // TestCollectCrons_LastRunStatusPrecedence locks FIX-3: the dashboard reads
 // openclaw's canonical lastRunStatus in preference to the deprecated lastStatus
 // alias (aligning with openclaw's own readers and future-proofing against alias

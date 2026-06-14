@@ -1307,7 +1307,7 @@ const DirtyChecker = {
       alerts: this.sectionChanged(['alerts']),
       health: true,
       cost: this.sectionChanged(['totalCostToday','totalCostAllTime','projectedMonthly','subagentCostToday','subagentCostAllTime','costBreakdown']),
-      crons: !prevD || this.stableSnapshot(D.crons, ['lastStatus','name','schedule','lastDurationMs','lastError','model']) !== this.stableSnapshot(prevD.crons, ['lastStatus','name','schedule','lastDurationMs','lastError','model']),
+      crons: !prevD || this.stableSnapshot(D.crons, ['lastStatus','name','schedule','lastDurationMs','lastError','model','lastDeliveryStatus','flapping']) !== this.stableSnapshot(prevD.crons, ['lastStatus','name','schedule','lastDurationMs','lastError','model','lastDeliveryStatus','flapping']),
       sessions: !prevD || this.stableSnapshot(D.sessions, ['key','name','model','type','contextPct','totalTokens','active','spawnedBy','label','subject']) !== this.stableSnapshot(prevD.sessions, ['key','name','model','type','contextPct','totalTokens','active','spawnedBy','label','subject']),
       usage: this.sectionChanged(['tokenUsage','tokenUsageToday','tokenUsage7d','tokenUsage30d','subagentUsage','subagentUsageToday','subagentUsage7d','subagentUsage30d']) || snap.tabs.usage !== State.prevTabs.usage,
       subRuns: (!prevD || ['subagentRuns','subagentRuns7d','subagentRuns30d','subagentRunsToday'].some(k => this.stableSnapshot(D[k], ['task','model','cost','durationSec','status']) !== this.stableSnapshot((prevD||{})[k], ['task','model','cost','durationSec','status']))) || snap.tabs.subRuns !== State.prevTabs.subRuns,
@@ -1409,7 +1409,12 @@ const Renderer = {
       const dotCls=st==='ok'?'sd-ok':st==='error'?'sd-error':st==='none'?'sd-none':'sd-pending';
       const tip=c.lastError?` data-tip="${esc(c.lastError)}"`:'';
       const dur=c.lastDurationMs?((c.lastDurationMs/1000).toFixed(1)+'s'):'—';
-      return `<tr class="dr"><td><span class="sd ${dotCls}"${tip}></span>${esc(st)||'—'}</td><td class="w">${esc(c.name)}</td><td>${esc(c.schedule)}</td><td>${esc(c.lastRun||'—')}</td><td>${esc(c.nextRun||'—')}</td><td class="r">${dur}</td><td>${esc(c.model||'—')}</td></tr>`;
+      // INT-5: delivery outcome dot + flapping badge.
+      const ds=c.lastDeliveryStatus;
+      const dsColor=ds==='delivered'?'var(--green)':ds==='not-delivered'?'var(--red)':ds==='unknown'?'var(--yellow)':'var(--dim)';
+      const dsBadge=(ds&&ds!=='not-requested')?` <span style="font-size:9px;color:${dsColor}" data-tip="delivery: ${esc(ds)}">●</span>`:'';
+      const flap=c.flapping?` <span style="font-size:8px;font-weight:700;color:var(--red)" data-tip="${esc(String(c.consecutiveErrors||0))} consecutive errors">⚡FLAPPING</span>`:'';
+      return `<tr class="dr"><td><span class="sd ${dotCls}"${tip}></span>${esc(st)||'—'}${dsBadge}${flap}</td><td class="w">${esc(c.name)}</td><td>${esc(c.schedule)}</td><td>${esc(c.lastRun||'—')}</td><td>${esc(c.nextRun||'—')}</td><td class="r">${dur}</td><td>${esc(c.model||'—')}</td></tr>`;
     });
     if (cronContainer) cronContainer.scrollTop = cronScrollTop;
   }

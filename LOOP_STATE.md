@@ -402,3 +402,50 @@ targets — no build tags needed).
 install; code + stubbed tests shipped.
 
 **Remaining.** INT-5 (next, last).
+
+---
+
+## 2026-06-14 — INT-5 (cron delivery + flapping view) — DONE (code), frontend needs human visual check
+
+**Task.** Surface whether scheduled jobs delivered output and which are unstable —
+the dashboard ignored `lastDeliveryStatus`, `consecutiveErrors`, `consecutiveSkipped`
+from `jobs-state.json` (cron/types.ts).
+
+**RED→GREEN (backend).** `CollectCrons` now emits `lastDeliveryStatus`,
+`consecutiveErrors`, `consecutiveSkipped`, and a derived `flapping` flag
+(`consecutiveErrors >= cronFlappingThreshold`, =3). Additive to the cron map.
+
+**Frontend (human-gated).** Cron table Status cell gains a delivery-outcome dot
+(green delivered / red not-delivered / yellow unknown / dim otherwise) and a red
+⚡FLAPPING badge with a consecutive-errors tooltip. Added `lastDeliveryStatus`/
+`flapping` to the cron change-detection snapshot so the panel re-renders on change.
+
+**Files.** `refresh_crons.go` (+const, +4 emitted fields) · `cron_state_test.go`
+(+TestCollectCrons_DeliveryAndFlapping, 2 subtests) · `web/index.html` (badges +
+snapshot keys).
+
+**Tests delta.** +1 func (2 subtests). **Facade.** None.
+
+**Gate.** `make check` green (vet, lint 0, `test -race`, govulncheck), `gofmt -l` empty,
+`make build` OK (frontend re-embedded).
+
+**NEEDS HUMAN VISUAL CHECK.** Cron delivery/flapping badges. **RUNTIME-VERIFY.** Live
+delivery/flapping data needs a running openclaw with cron jobs that have delivery state.
+
+================================================================================
+## ALL 8 PLAN TASKS COMPLETE (code) — 2026-06-14
+================================================================================
+
+INT-1 ✓ · FIX-1 ✓ · INT-2 ✓ · FIX-2 ✓ (pre-existing) · FIX-3 ✓ · INT-4 ✓ · INT-3 ✓ · INT-5 ✓
+
+**Human-gated remainder (NOT loop-doable):**
+- VISUAL CHECK (web/index.html, //go:embed — binary rebuilt, not visually validated):
+  INT-1 channel Health color · INT-2 Runtime Health card · INT-5 cron delivery/flapping badges.
+- RUNTIME-VERIFY (needs live openclaw, some Linux/systemd):
+  FIX-1 journald population (Linux) · INT-1 /readyz failing[] · INT-2 deep `--deep` payload ·
+  INT-4 live model names + context windows · INT-3 lock-file pid/uptime on non-npm install ·
+  INT-5 live delivery/flapping state.
+
+graphify left stale throughout (known false-deletion gotcha). PLAN.md notes FIX-2 was
+already implemented pre-loop (stale plan). All ticks: make check green, atomic commits on
+feature_fix, local HEAD == upstream.
