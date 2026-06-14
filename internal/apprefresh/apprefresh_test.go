@@ -67,8 +67,14 @@ func TestCollectTokenUsageWithCache_HandlesLargeJSONLLine(t *testing.T) {
 	)
 
 	got := modelsAll["GPT-5"]
-	if got == nil || got.Total != 100 {
-		t.Fatalf("expected oversized JSONL line to be counted, got %+v", got)
+	if got == nil {
+		t.Fatalf("expected oversized JSONL line to be counted, got nil")
+	}
+	if got.Total != 100 || got.Input != 60 || got.Output != 40 || got.CacheRead != 0 {
+		t.Errorf("token fields mismatch: %+v (want Total=100 Input=60 Output=40 CacheRead=0)", got)
+	}
+	if got.Cost != 0.12 {
+		t.Errorf("cost = %v, want 0.12", got.Cost)
 	}
 }
 
@@ -114,22 +120,42 @@ func TestCollectTokenUsageWithCache_ReusesUnchangedFileSummary(t *testing.T) {
 	}
 
 	first := run()
-	if first["GPT-5"] == nil || first["GPT-5"].Total != 100 {
-		t.Fatalf("expected initial parse to count tokens, got %+v", first["GPT-5"])
+	if first["GPT-5"] == nil {
+		t.Fatalf("expected initial parse to count tokens, got nil")
+	}
+	if first["GPT-5"].Total != 100 || first["GPT-5"].Input != 60 ||
+		first["GPT-5"].Output != 40 || first["GPT-5"].CacheRead != 0 || first["GPT-5"].Cost != 0.12 {
+		t.Fatalf("initial parse fields mismatch: %+v", first["GPT-5"])
 	}
 
-	if err := os.Chmod(filePath, 0o000); err != nil {
+	// The cache key is (size, mtimeNs). Prove reuse by overwriting the file body
+	// with DIFFERENT token counts but the SAME byte length, then restoring the
+	// original mtime. If the cache is honored, the second run must report the
+	// ORIGINAL totals (100), not the new body's totals — because the (size,
+	// mtime) key is unchanged so the file is never re-parsed.
+	origInfo, err := os.Stat(filePath)
+	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() {
-		if err := os.Chmod(filePath, 0o644); err != nil {
-			t.Logf("restore perms on %s: %v", filePath, err)
-		}
-	})
+	// Same byte length as the original line, but different token counts
+	// (totalTokens 999, input 59) and cost (9.99).
+	mutated := `{"timestamp":"2026-03-22T10:00:00Z","message":{"role":"assistant","model":"openai/gpt-5","usage":{"totalTokens":999,"input":59,"output":40,"cacheRead":0,"cost":{"total":9.99}}}}` + "\n"
+	if len(mutated) != len(line) {
+		t.Fatalf("test setup error: mutated len %d != original len %d", len(mutated), len(line))
+	}
+	if err := os.WriteFile(filePath, []byte(mutated), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(filePath, origInfo.ModTime(), origInfo.ModTime()); err != nil {
+		t.Fatal(err)
+	}
 
 	second := run()
 	if second["GPT-5"] == nil || second["GPT-5"].Total != 100 {
-		t.Fatalf("expected cached summary to be reused, got %+v", second["GPT-5"])
+		t.Fatalf("expected cached summary reuse (old total 100), got %+v", second["GPT-5"])
+	}
+	if second["GPT-5"].Input != 60 {
+		t.Errorf("expected cached input 60 (not re-parsed 599), got %d", second["GPT-5"].Input)
 	}
 }
 

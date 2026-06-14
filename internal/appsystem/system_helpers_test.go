@@ -2,7 +2,6 @@ package appsystem
 
 import (
 	"encoding/json"
-	"strings"
 	"testing"
 )
 
@@ -154,12 +153,11 @@ func TestDecodeJSONObjectFromOutput(t *testing.T) {
 
 	t.Run("no brace returns error", func(t *testing.T) {
 		var m map[string]any
-		err := decodeJSONObjectFromOutput("no json here", &m)
-		if err == nil {
+		// No sentinel exists for this path; assert only that an error is
+		// returned, not its exact text (CLAUDE.md: avoid brittle error-text
+		// assertions that break on harmless message edits).
+		if err := decodeJSONObjectFromOutput("no json here", &m); err == nil {
 			t.Errorf("err: want non-nil, got nil")
-		}
-		if err != nil && !strings.Contains(err.Error(), "json object not found") {
-			t.Errorf("err text: want contains %q, got %q", "json object not found", err.Error())
 		}
 	})
 

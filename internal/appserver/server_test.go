@@ -7,7 +7,6 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	appconfig "github.com/mudrii/openclaw-dashboard/internal/appconfig"
@@ -157,8 +156,14 @@ func TestSendJSON_MarshalError(t *testing.T) {
 	if w.Code != http.StatusInternalServerError {
 		t.Errorf("expected 500 on marshal error, got %d", w.Code)
 	}
-	if !strings.Contains(w.Body.String(), "internal server error") {
-		t.Errorf("expected internal server error message, got %q", w.Body.String())
+	// Assert the contract — valid JSON carrying an "error" key — rather than the
+	// exact human-readable string, which is not part of the wire contract.
+	var out map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &out); err != nil {
+		t.Fatalf("expected valid JSON error body, got %q (err=%v)", w.Body.String(), err)
+	}
+	if _, ok := out["error"]; !ok {
+		t.Errorf("expected an \"error\" key in body, got %v", out)
 	}
 }
 

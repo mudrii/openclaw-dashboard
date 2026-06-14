@@ -149,22 +149,32 @@ func TestReadMergedLogs_MergesAndSorts(t *testing.T) {
 	if err != nil {
 		t.Fatalf("readMergedLogs failed: %v", err)
 	}
+
+	// Assert merge invariants rather than an exact per-index Source sequence:
+	// the contract is "the N newest entries across sources, in ascending time".
 	if len(records) != 3 {
 		t.Fatalf("expected 3 records after limit, got %d", len(records))
 	}
-
-	wantSources := []string{"logs/cron.log", "logs/gateway.log", "logs/cron.log"}
-	for i, record := range records {
-		if record.Source != wantSources[i] {
-			t.Fatalf("record[%d].Source = %q, want %q", i, record.Source, wantSources[i])
+	for i := 1; i < len(records); i++ {
+		if records[i-1].TimestampMs >= records[i].TimestampMs {
+			t.Fatalf("timestamps not strictly ascending at %d: %d >= %d",
+				i, records[i-1].TimestampMs, records[i].TimestampMs)
 		}
 	}
-
-	if records[0].TimestampMs >= records[1].TimestampMs {
-		t.Fatalf("expected ordered timestamps to be ascending, got %d >= %d", records[0].TimestampMs, records[1].TimestampMs)
+	// The 3 newest of the 4 lines are: cron@:01, gateway@:02, cron@:03.
+	wantMessages := map[string]bool{
+		"cron run started":     true,
+		"gateway request done": true,
+		"cron run done":        true,
 	}
-	if records[1].TimestampMs >= records[2].TimestampMs {
-		t.Fatalf("expected ordered timestamps to be ascending, got %d >= %d", records[1].TimestampMs, records[2].TimestampMs)
+	for _, record := range records {
+		if !wantMessages[record.Message] {
+			t.Fatalf("unexpected message %q in newest-3 window", record.Message)
+		}
+		delete(wantMessages, record.Message)
+	}
+	if len(wantMessages) != 0 {
+		t.Fatalf("missing expected messages: %v", wantMessages)
 	}
 }
 
@@ -240,6 +250,12 @@ func TestHandleLogs_SourceAlias(t *testing.T) {
 	for _, entry := range payload.Entries {
 		if !strings.Contains(strings.ToLower(entry.Source), "gateway") {
 			t.Fatalf("expected gateway-only entries, got source=%q", entry.Source)
+		}
+		// Alias filter must exclude the cron source entirely, not merely include
+		// gateway: a broken filter that returns everything would still satisfy
+		// the gateway-contains check above.
+		if strings.Contains(strings.ToLower(entry.Source), "cron") {
+			t.Fatalf("cron source leaked through gateway alias filter: source=%q", entry.Source)
 		}
 		if entry.Message == "" {
 			t.Fatal("expected non-empty message")

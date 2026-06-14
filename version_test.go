@@ -95,6 +95,9 @@ func TestDetectVersion_EmptyVersionFile(t *testing.T) {
 }
 
 func TestDetectVersion_VersionFilePrecedesGitTag(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not available")
+	}
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "VERSION"), []byte("2026.3.5-beta-runtime-observability\n"), 0644); err != nil {
 		t.Fatalf("write VERSION: %v", err)

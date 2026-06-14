@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -146,17 +147,31 @@ func TestHandleChat_SuccessHitsGateway(t *testing.T) {
 	dir := t.TempDir()
 	writeMinimalDataJSON(t, dir)
 
-	// Spin a fake gateway on a free localhost port matching the handler's URL shape.
+	// Fake gateway via httptest (ready listener — no busy-wait needed). The
+	// handler builds http://localhost:<port>/v1/chat/completions, and
+	// httptest.Server binds 127.0.0.1:<port> which localhost resolves to.
 	mux := http.NewServeMux()
 	mux.HandleFunc("/v1/chat/completions", func(w http.ResponseWriter, r *http.Request) {
+		// Assert the server forwards the gateway token and configured model so
+		// dropping either would fail this test.
+		if auth := r.Header.Get("Authorization"); auth != "Bearer tok" {
+			t.Errorf("Authorization = %q, want %q", auth, "Bearer tok")
+		}
+		var body struct {
+			Model string `json:"model"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Errorf("decode gateway request body: %v", err)
+		}
+		if body.Model != "test-model" {
+			t.Errorf("request model = %q, want %q", body.Model, "test-model")
+		}
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{"choices":[{"message":{"content":"hello back"}}]}`))
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"hello back"}}]}`))
 	})
-	port := freePort(t)
-	srv := &http.Server{Addr: "127.0.0.1:" + itoa(port), Handler: mux}
-	go func() { _ = srv.ListenAndServe() }()
-	t.Cleanup(func() { _ = srv.Close() })
-	waitListening(t, port)
+	gw := httptest.NewServer(mux)
+	t.Cleanup(gw.Close)
+	port := gatewayPort(t, gw)
 
 	s := chatTestServer(t, dir, port)
 	w := mustPostChat(t, s, `{"question":"ping"}`)
@@ -170,15 +185,17 @@ func TestHandleChat_SuccessHitsGateway(t *testing.T) {
 	}
 }
 
-func TestHandleChat_GatewayError504(t *testing.T) {
+func TestHandleChat_GatewayError502(t *testing.T) {
 	dir := t.TempDir()
 	writeMinimalDataJSON(t, dir)
-	// Point at a port that nothing listens on → connection refused, fast.
-	s := chatTestServer(t, dir, 1) // port 1 is privileged, refused for unprivileged user
+	// freePort returns a port we opened then immediately closed — nothing is
+	// listening, so the connection is refused fast and deterministically. A
+	// refused dial (not a timeout) surfaces as 502 Bad Gateway.
+	s := chatTestServer(t, dir, freePort(t))
 
 	w := mustPostChat(t, s, `{"question":"ping"}`)
-	if w.Code != http.StatusBadGateway && w.Code != http.StatusGatewayTimeout {
-		t.Fatalf("want 502/504, got %d body=%s", w.Code, w.Body.String())
+	if w.Code != http.StatusBadGateway {
+		t.Fatalf("want 502, got %d body=%s", w.Code, w.Body.String())
 	}
 }
 
@@ -242,40 +259,16 @@ func freePort(t *testing.T) int {
 	return port
 }
 
-func itoa(n int) string {
-	return strings.TrimSpace(formatInt(n))
-}
-
-func formatInt(n int) string {
-	if n == 0 {
-		return "0"
-	}
-	neg := n < 0
-	if neg {
-		n = -n
-	}
-	var buf [20]byte
-	i := len(buf)
-	for n > 0 {
-		i--
-		buf[i] = byte('0' + n%10)
-		n /= 10
-	}
-	if neg {
-		i--
-		buf[i] = '-'
-	}
-	return string(buf[i:])
-}
-
-func waitListening(t *testing.T, port int) {
+// gatewayPort extracts the integer port a running httptest.Server is bound to.
+func gatewayPort(t *testing.T, srv *httptest.Server) int {
 	t.Helper()
-	for i := 0; i < 50; i++ {
-		c, err := net.Dial("tcp", "127.0.0.1:"+itoa(port))
-		if err == nil {
-			_ = c.Close()
-			return
-		}
+	_, portStr, err := net.SplitHostPort(strings.TrimPrefix(srv.URL, "http://"))
+	if err != nil {
+		t.Fatalf("parse httptest URL %q: %v", srv.URL, err)
 	}
-	t.Fatalf("gateway did not start listening on port %d", port)
+	port, err := strconv.Atoi(portStr)
+	if err != nil {
+		t.Fatalf("parse port %q: %v", portStr, err)
+	}
+	return port
 }

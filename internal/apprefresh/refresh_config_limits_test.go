@@ -1,35 +1,50 @@
 package apprefresh
 
 import (
+	"encoding/json"
 	"testing"
 )
+
+// mustUnmarshalOC decodes a JSON config into the loosely-typed map shape that
+// production uses (numbers become float64), so tests reflect production-decoded
+// types rather than hand-built int literals.
+func mustUnmarshalOC(t *testing.T, jsonStr string) map[string]any {
+	t.Helper()
+	var oc map[string]any
+	if err := json.Unmarshal([]byte(jsonStr), &oc); err != nil {
+		t.Fatalf("unmarshal config: %v", err)
+	}
+	return oc
+}
 
 // TestLookupModelLimits pins the lookup against the openclaw.json registry shape
 // (models.providers[provider].models[]). Returns nil for unknown ids; correct
 // values when the id matches one of the provider's model entries.
 func TestLookupModelLimits(t *testing.T) {
-	oc := map[string]any{
-		"models": map[string]any{
-			"providers": map[string]any{
-				"minimax": map[string]any{
-					"models": []any{
-						map[string]any{"id": "MiniMax-M2.7", "contextWindow": 196608, "maxTokens": 16384},
-						map[string]any{"id": "MiniMax-M2.5", "contextWindow": 196608, "maxTokens": 16384},
-					},
+	// Built via json.Unmarshal so contextWindow/maxTokens are float64 just as
+	// they are when openclaw.json is read at runtime.
+	oc := mustUnmarshalOC(t, `{
+		"models": {
+			"providers": {
+				"minimax": {
+					"models": [
+						{"id": "MiniMax-M2.7", "contextWindow": 196608, "maxTokens": 16384},
+						{"id": "MiniMax-M2.5", "contextWindow": 196608, "maxTokens": 16384}
+					]
 				},
-				"kimi": map[string]any{
-					"models": []any{
-						map[string]any{"id": "k2p5", "contextWindow": 131072, "maxTokens": 8192},
-					},
-				},
-			},
-		},
-	}
+				"kimi": {
+					"models": [
+						{"id": "k2p5", "contextWindow": 131072, "maxTokens": 8192}
+					]
+				}
+			}
+		}
+	}`)
 
 	t.Run("known model returns limits", func(t *testing.T) {
 		ctx, max := lookupModelLimits(oc, "minimax/MiniMax-M2.7")
-		if ctx != 196608 || max != 16384 {
-			t.Errorf("want (196608, 16384), got (%v, %v)", ctx, max)
+		if ctx != float64(196608) || max != float64(16384) {
+			t.Errorf("want (196608, 16384) as float64, got (%v, %v) [%T, %T]", ctx, max, ctx, max)
 		}
 	})
 
@@ -63,8 +78,8 @@ func TestLookupModelLimits(t *testing.T) {
 
 	t.Run("kimi/k2p5 returns its limits", func(t *testing.T) {
 		ctx, max := lookupModelLimits(oc, "kimi/k2p5")
-		if ctx != 131072 || max != 8192 {
-			t.Errorf("want (131072, 8192), got (%v, %v)", ctx, max)
+		if ctx != float64(131072) || max != float64(8192) {
+			t.Errorf("want (131072, 8192) as float64, got (%v, %v)", ctx, max)
 		}
 	})
 }
@@ -135,35 +150,36 @@ func TestParseMemoryPolicy(t *testing.T) {
 // integration-level check that the Phase B parser additions wired through
 // end-to-end.
 func TestParseOpenclawConfig_SurfacesPrimaryModelLimits(t *testing.T) {
-	oc := map[string]any{
-		"agents": map[string]any{
-			"defaults": map[string]any{
-				"model": map[string]any{"primary": "minimax/MiniMax-M2.7"},
-				"models": map[string]any{
-					"minimax/MiniMax-M2.7": map[string]any{"alias": "MiniMax M2.7"},
+	// Decoded from JSON so numeric limits are float64, matching runtime.
+	oc := mustUnmarshalOC(t, `{
+		"agents": {
+			"defaults": {
+				"model": {"primary": "minimax/MiniMax-M2.7"},
+				"models": {
+					"minimax/MiniMax-M2.7": {"alias": "MiniMax M2.7"}
 				},
-				"memorySearch": map[string]any{
+				"memorySearch": {
 					"enabled": true,
-					"sources": []any{"memory", "sessions"},
-				},
-			},
+					"sources": ["memory", "sessions"]
+				}
+			}
 		},
-		"models": map[string]any{
-			"providers": map[string]any{
-				"minimax": map[string]any{
-					"models": []any{
-						map[string]any{"id": "MiniMax-M2.7", "contextWindow": 196608, "maxTokens": 16384},
-					},
-				},
-			},
-		},
-	}
+		"models": {
+			"providers": {
+				"minimax": {
+					"models": [
+						{"id": "MiniMax-M2.7", "contextWindow": 196608, "maxTokens": 16384}
+					]
+				}
+			}
+		}
+	}`)
 	_, _, _, _, ac := parseOpenclawConfig(oc, "")
-	if ac["contextWindow"] != 196608 {
-		t.Errorf("contextWindow: want 196608, got %v", ac["contextWindow"])
+	if ac["contextWindow"] != float64(196608) {
+		t.Errorf("contextWindow: want 196608 (float64), got %v [%T]", ac["contextWindow"], ac["contextWindow"])
 	}
-	if ac["maxOutputTokens"] != 16384 {
-		t.Errorf("maxOutputTokens: want 16384, got %v", ac["maxOutputTokens"])
+	if ac["maxOutputTokens"] != float64(16384) {
+		t.Errorf("maxOutputTokens: want 16384 (float64), got %v", ac["maxOutputTokens"])
 	}
 	mp, ok := ac["memoryPolicy"].(map[string]any)
 	if !ok {

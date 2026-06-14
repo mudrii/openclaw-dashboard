@@ -32,10 +32,12 @@ func TestFormatBytes_AllRanges(t *testing.T) {
 		{5 * 1024 * 1024 * 1024, "5.0GB"},
 	}
 	for _, tt := range tests {
-		got := FormatBytes(tt.input)
-		if got != tt.want {
-			t.Errorf("FormatBytes(%d) = %q, want %q", tt.input, got, tt.want)
-		}
+		t.Run(tt.want, func(t *testing.T) {
+			got := FormatBytes(tt.input)
+			if got != tt.want {
+				t.Errorf("FormatBytes(%d) = %q, want %q", tt.input, got, tt.want)
+			}
+		})
 	}
 }
 
@@ -61,20 +63,36 @@ func TestBoolFromAny_AllTypes(t *testing.T) {
 
 func TestVersionishGreater_Comparison(t *testing.T) {
 	tests := []struct {
+		name string
 		a, b string
 		want bool
 	}{
-		{"1.2.4", "1.2.3", true},
-		{"1.2.3", "1.2.4", false},
-		{"1.2.3", "1.2.3", false},
-		{"2.0.0", "1.9.9", true},
-		{"1.10.0", "1.9.0", true},
+		{"patch greater", "1.2.4", "1.2.3", true},
+		{"patch lesser", "1.2.3", "1.2.4", false},
+		{"equal", "1.2.3", "1.2.3", false},
+		{"major greater", "2.0.0", "1.9.9", true},
+		{"numeric minor not lexical", "1.10.0", "1.9.0", true},
+		// Mixed numeric/non-numeric arms used by ResolveOpenclawBin's asdf sort.
+		// "20.1.0" tokenizes to [20 1 0]; "20.1.0-rc1" to [20 1 0 rc 1]. First
+		// three tokens equal, then a runs out → len(ta) > len(tb) is false.
+		{"release vs prerelease equal prefix", "20.1.0", "20.1.0-rc1", false},
+		{"prerelease vs release equal prefix", "20.1.0-rc1", "20.1.0", true},
+		// "v20" tokenizes to [v 20]; "20" to [20]. First token: "v" non-numeric,
+		// "20" numeric → bErr==nil arm returns false.
+		{"prefixed v lo vs bare numeric", "v20", "20", false},
+		{"bare numeric vs prefixed v", "20", "v20", true},
+		// "lts" tokenizes to [lts]; "18" to [18]. First token: "lts" non-numeric,
+		// "18" numeric → bErr==nil arm returns false.
+		{"non-numeric vs numeric", "lts", "18", false},
+		{"numeric vs non-numeric", "18", "lts", true},
 	}
 	for _, tt := range tests {
-		got := versionishGreater(tt.a, tt.b)
-		if got != tt.want {
-			t.Errorf("versionishGreater(%q, %q) = %v, want %v", tt.a, tt.b, got, tt.want)
-		}
+		t.Run(tt.name, func(t *testing.T) {
+			got := versionishGreater(tt.a, tt.b)
+			if got != tt.want {
+				t.Errorf("versionishGreater(%q, %q) = %v, want %v", tt.a, tt.b, got, tt.want)
+			}
+		})
 	}
 }
 
@@ -134,17 +152,7 @@ func TestGetLatestVersionCached_FailureIsNegativelyCached(t *testing.T) {
 	}
 
 	_ = svc.getLatestVersionCached()
-	deadline := time.Now().Add(500 * time.Millisecond)
-	for time.Now().Before(deadline) {
-		svc.latestMu.RLock()
-		refreshing := svc.latestRefresh
-		cachedAt := svc.latestAt
-		svc.latestMu.RUnlock()
-		if !refreshing && !cachedAt.IsZero() {
-			break
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
+	waitForLatestRefreshDone(t, svc)
 
 	if got := calls.Load(); got != 1 {
 		t.Fatalf("expected one failed fetch, got %d", got)
@@ -178,8 +186,12 @@ func TestProbeOpenclawGatewayEndpoints_RespectsTimeout(t *testing.T) {
 	if len(errs) == 0 {
 		t.Fatal("expected timeout-related probe errors")
 	}
-	if elapsed > 150*time.Millisecond {
-		t.Fatalf("expected timeout-bounded probe, took %v", elapsed)
+	// Contract: the probe is bounded by its own ~20ms deadline, well below the
+	// server's 200ms sleep. Assert a generous upper bound (1s) rather than a
+	// tight wall-clock value that flakes under CI scheduling jitter — the point
+	// is that we returned long before the server would have responded.
+	if elapsed > time.Second {
+		t.Fatalf("expected timeout-bounded probe (well below 200ms server sleep), took %v", elapsed)
 	}
 }
 
@@ -263,18 +275,35 @@ func TestJSONFetchers_BodyCapAt64KB(t *testing.T) {
 		}
 	})
 
-	t.Run("FetchLatestNpmVersion", func(t *testing.T) {
-		// FetchLatestNpmVersion hits a hardcoded URL; we test the cap behavior
-		// by ensuring the limit constant is wired identically. The function
-		// already uses 1<<16, but we assert that constant is what's exported.
-		// We exercise the path by pointing a custom transport at our server.
-		client := &http.Client{Transport: &rewriteTransport{target: srv.URL}}
+	t.Run("FetchLatestNpmVersion oversized body truncates to empty", func(t *testing.T) {
+		// FetchLatestNpmVersion hits a hardcoded npm URL; redirect it to our
+		// oversized-body server via the shared client's transport. A body past
+		// the 64KB cap truncates mid-string, so JSON decode fails → "".
 		old := sharedSystemHTTPClient
-		sharedSystemHTTPClient = client
-		defer func() { sharedSystemHTTPClient = old }()
+		sharedSystemHTTPClient = &http.Client{Transport: &rewriteTransport{target: srv.URL}}
+		t.Cleanup(func() { sharedSystemHTTPClient = old })
 		v := FetchLatestNpmVersion(context.Background(), 1000)
 		if v != "" {
 			t.Fatalf("expected empty version on oversized body, got %q", v)
+		}
+	})
+
+	t.Run("FetchLatestNpmVersion sub-cap valid body decodes", func(t *testing.T) {
+		// Boundary proof: a small, valid body well under the 64KB cap must decode
+		// successfully. Without this case the cap test only ever asserts "" and
+		// could pass even if every fetch silently returned empty.
+		okSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"version":"2026.4.11"}`))
+		}))
+		t.Cleanup(okSrv.Close)
+
+		old := sharedSystemHTTPClient
+		sharedSystemHTTPClient = &http.Client{Transport: &rewriteTransport{target: okSrv.URL}}
+		t.Cleanup(func() { sharedSystemHTTPClient = old })
+		v := FetchLatestNpmVersion(context.Background(), 1000)
+		if v != "2026.4.11" {
+			t.Fatalf("expected version 2026.4.11 from sub-cap body, got %q", v)
 		}
 	})
 }

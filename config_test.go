@@ -163,10 +163,10 @@ func TestReadDotenv_MissingFile(t *testing.T) {
 }
 
 func TestExpandHome(t *testing.T) {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		t.Skip("cannot get home dir")
-	}
+	// Pin HOME so expansion is deterministic and independent of the runner's
+	// real home directory.
+	home := t.TempDir()
+	t.Setenv("HOME", home)
 
 	result := expandHome("~/test/path")
 	expected := filepath.Join(home, "test/path")

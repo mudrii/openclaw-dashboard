@@ -61,10 +61,8 @@ func TestCopyFile_DstParentReadOnly(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error when dst parent is read-only")
 	}
-	if !strings.Contains(strings.ToLower(err.Error()), "permission") &&
-		!strings.Contains(strings.ToLower(err.Error()), "denied") &&
-		!strings.Contains(err.Error(), "open") {
-		t.Logf("error text (informational): %v", err)
+	if !errors.Is(err, fs.ErrPermission) {
+		t.Fatalf("expected fs.ErrPermission, got %v", err)
 	}
 
 	// Restore perms so we can inspect for leaks.
@@ -280,8 +278,9 @@ func TestSeedHomebrewRuntimeDir_ConcurrentSafe(t *testing.T) {
 // TestResolveOpenclawPath_EnvOverride covers the OPENCLAW_HOME branch and
 // tilde expansion.
 func TestResolveOpenclawPath_EnvOverride(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
 	t.Setenv("OPENCLAW_HOME", "~/custom-openclaw")
-	home, _ := os.UserHomeDir()
 	want := filepath.Join(home, "custom-openclaw")
 	if got := ResolveOpenclawPath(); got != want {
 		t.Errorf("got %q, want %q", got, want)
@@ -290,11 +289,9 @@ func TestResolveOpenclawPath_EnvOverride(t *testing.T) {
 
 // TestResolveOpenclawPath_DefaultHome covers the default ~/.openclaw branch.
 func TestResolveOpenclawPath_DefaultHome(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
 	t.Setenv("OPENCLAW_HOME", "")
-	home, err := os.UserHomeDir()
-	if err != nil {
-		t.Skip("no user home")
-	}
 	want := filepath.Join(home, ".openclaw")
 	if got := ResolveOpenclawPath(); got != want {
 		t.Errorf("got %q, want %q", got, want)
