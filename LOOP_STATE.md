@@ -187,3 +187,37 @@ lastHeartbeat are deep-only → need the toggle (next slice) to appear.
 `openclaw status --json` invocation (exact deep CLI flag = runtime-verify). (3/3)
 web/index.html SystemBar tiles: task counts, event-loop utilization gauge,
 plugin-warning badge, last-heartbeat age → make build + human visual check.
+
+---
+
+## 2026-06-14 — INT-2 — PARTIAL (2/3): System.DeepStatus toggle
+
+**Slice 2/3 (RED→GREEN).** Opt-in deep status invocation.
+- Confirmed via openclaw source (`cli/profile.test.ts`, `cli/channels-cli.ts`):
+  the flag is `openclaw status --deep` (adds event-loop + last-heartbeat).
+- `statusArgs(deep bool)` helper — `[status --json]` / `[status --json --deep]`
+  (pure, unit-tested).
+- `CollectOpenclawRuntime` gains a trailing `deepStatus bool`; invocation uses
+  `statusArgs(deepStatus)`. Threaded from `s.cfg.DeepStatus` (s.cfg IS SystemConfig).
+- Root facade wrapper `collectOpenclawRuntime` signature updated to match
+  (deliberate facade change — CollectOpenclawRuntime is root-re-exported).
+- `SystemConfig.DeepStatus` config field (additive, omitempty, default false = lean).
+
+**Files.** `appsystem/system_service.go` (statusArgs + param + wire) ·
+`appconfig/config.go` (+DeepStatus) · `system_service.go` (root wrapper) ·
+`system_helpers_test.go` (+TestStatusArgs) · `system_test.go` (4 existing call
+sites get trailing `false` — mechanical compile fix).
+
+**Tests delta.** +1 func (TestStatusArgs). 4 existing root tests updated to new arity.
+
+**Facade.** Root wrapper signature updated (CollectOpenclawRuntime re-exported).
+
+**Gate.** `make check` green (vet, lint 0, `test -race`, govulncheck), `gofmt -l` empty.
+
+**RUNTIME-VERIFY (flagged).** `--deep` flag name confirmed in openclaw source but the
+deep payload shape (eventLoop/lastHeartbeat presence) needs a live `openclaw status
+--json --deep` run to confirm end to end.
+
+**Next slice (3/3).** web/index.html SystemBar tiles (task counts, event-loop
+utilization gauge, plugin-warning badge, last-heartbeat age) → make build + human
+visual check.

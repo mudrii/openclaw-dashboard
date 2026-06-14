@@ -291,7 +291,7 @@ exit 1
 		t.Fatalf("write fake openclaw: %v", err)
 	}
 
-	oc := collectOpenclawRuntime(context.Background(), fake, 1500, port, SystemVersions{Openclaw: "2026.3.7", Latest: "2026.3.8"})
+	oc := collectOpenclawRuntime(context.Background(), fake, 1500, port, SystemVersions{Openclaw: "2026.3.7", Latest: "2026.3.8"}, false)
 	if !oc.Gateway.Live || !oc.Gateway.Ready {
 		t.Fatalf("expected gateway live+ready true, got %+v", oc.Gateway)
 	}
@@ -813,7 +813,7 @@ exit 1
 	os.WriteFile(fake, []byte(script), 0o755)
 
 	inputVersions := SystemVersions{Openclaw: "2026.3.9-test", Latest: "2026.3.10"}
-	oc := collectOpenclawRuntime(context.Background(), fake, 1500, port, inputVersions)
+	oc := collectOpenclawRuntime(context.Background(), fake, 1500, port, inputVersions, false)
 
 	// The versions from the caller should be used as fallback
 	if oc.Status.CurrentVersion != "2026.3.9-test" {
@@ -855,7 +855,7 @@ exit 1
 	os.WriteFile(fake, []byte(script), 0o755)
 
 	inputVersions := SystemVersions{Openclaw: "2026.3.9-old", Latest: "2026.3.10-old"}
-	oc := collectOpenclawRuntime(context.Background(), fake, 1500, port, inputVersions)
+	oc := collectOpenclawRuntime(context.Background(), fake, 1500, port, inputVersions, false)
 
 	// status --json values should override caller-provided versions
 	if oc.Status.CurrentVersion != "2026.3.11-live" {
@@ -1025,7 +1025,7 @@ exit 1
 	}
 
 	inputVer := SystemVersions{Openclaw: "2026.3.8-fallback", Latest: "2026.3.10"}
-	oc := collectOpenclawRuntime(context.Background(), fake, 2000, port, inputVer)
+	oc := collectOpenclawRuntime(context.Background(), fake, 2000, port, inputVer, false)
 
 	// I2 fix: version fields should be extracted from stdout even on non-zero exit
 	if oc.Status.CurrentVersion != "2026.3.9" {

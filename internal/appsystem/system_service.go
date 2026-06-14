@@ -209,7 +209,7 @@ func (s *SystemService) refresh(ctx context.Context) ([]byte, bool) {
 		// so serializing them would double the cold-path wall time. We pass
 		// SystemVersions{} here and patch openclaw.Status.{Current,Latest}Version
 		// from `ver` after wg.Wait() once both goroutines have finished.
-		openclaw = CollectOpenclawRuntime(coldCtx, oclawBin, s.cfg.GatewayTimeoutMs, s.cfg.GatewayPort, SystemVersions{})
+		openclaw = CollectOpenclawRuntime(coldCtx, oclawBin, s.cfg.GatewayTimeoutMs, s.cfg.GatewayPort, SystemVersions{}, s.cfg.DeepStatus)
 	}()
 	go func() { defer wg.Done(); disk = CollectDiskRoot(s.cfg.DiskPath) }()
 	go func() {
@@ -435,7 +435,18 @@ func CollectVersionsLocal(ctx context.Context, dashVer string, timeoutMs int, ga
 	return v
 }
 
-func CollectOpenclawRuntime(ctx context.Context, oclawBin string, timeoutMs int, gatewayPort int, versions SystemVersions) SystemOpenclaw {
+// statusArgs builds the `openclaw status` argv. Deep status (--deep) adds the
+// event-loop and last-heartbeat blocks but is slower, so it is opt-in via
+// System.DeepStatus.
+func statusArgs(deep bool) []string {
+	args := []string{"status", "--json"}
+	if deep {
+		args = append(args, "--deep")
+	}
+	return args
+}
+
+func CollectOpenclawRuntime(ctx context.Context, oclawBin string, timeoutMs int, gatewayPort int, versions SystemVersions, deepStatus bool) SystemOpenclaw {
 	openclaw := SystemOpenclaw{
 		Gateway: SystemOpenclawGateway{},
 		Status: SystemOpenclawStatus{
@@ -464,7 +475,7 @@ func CollectOpenclawRuntime(ctx context.Context, oclawBin string, timeoutMs int,
 	}()
 	go func() {
 		defer wg.Done()
-		out, err := runWithTimeout(ctx, timeoutMs, oclawBin, "status", "--json")
+		out, err := runWithTimeout(ctx, timeoutMs, oclawBin, statusArgs(deepStatus)...)
 		// I2 fix: attempt to parse stdout even on non-zero exit — CLIs often emit valid JSON while
 		// subprocess stdout is parsed regardless of returncode. Many CLIs emit valid JSON to
 		// stdout while exiting non-zero (e.g., status reported but gateway connect failed).

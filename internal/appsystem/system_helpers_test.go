@@ -5,6 +5,20 @@ import (
 	"testing"
 )
 
+// TestStatusArgs covers the INT-2 deep-status toggle: the lean invocation is
+// `status --json`; enabling deep appends `--deep` (openclaw's flag for the
+// event-loop/heartbeat blocks), which is slower so it is opt-in.
+func TestStatusArgs(t *testing.T) {
+	lean := statusArgs(false)
+	if len(lean) != 2 || lean[0] != "status" || lean[1] != "--json" {
+		t.Errorf("lean args = %v, want [status --json]", lean)
+	}
+	deep := statusArgs(true)
+	if len(deep) != 3 || deep[2] != "--deep" {
+		t.Errorf("deep args = %v, want [status --json --deep]", deep)
+	}
+}
+
 // TestInt64FromAny exercises int64FromAny across supported and unsupported input types.
 func TestInt64FromAny(t *testing.T) {
 	cases := []struct {

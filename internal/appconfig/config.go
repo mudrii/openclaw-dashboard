@@ -86,6 +86,10 @@ type SystemConfig struct {
 	MetricsTTLSeconds  int  `json:"metricsTtlSeconds"`
 	VersionsTTLSeconds int  `json:"versionsTtlSeconds"`
 	GatewayTimeoutMs   int  `json:"gatewayTimeoutMs"`
+	// DeepStatus opts into `openclaw status --json --deep`, which adds the
+	// event-loop and last-heartbeat blocks at the cost of a slower status call.
+	// Default off (lean status: task queue + plugin-compat + channel summary).
+	DeepStatus bool `json:"deepStatus,omitempty"`
 	// ColdPathTimeoutMs bounds the worst-case wall time of a cold /api/system
 	// collection (no warm cache). Each subcollector still has its own per-probe
 	// timeout; this is the overall budget that prevents a slow gateway from
