@@ -92,17 +92,36 @@ The refresh collector (`internal/apprefresh`, invoked by `openclaw-dashboard --r
 | `openclaw.json` | Bot config: models, skills, compaction mode |
 | `agents/*/sessions/sessions.json` | Session metadata (keys, tokens, context, model, timestamps) |
 | `agents/*/sessions/*.jsonl` + `.jsonl.deleted.*` | Per-message token usage and cost data |
-| `cron/jobs.json` | Cron job definitions, schedules, state, last run status |
+| `cron/jobs.json` + `cron/jobs-state.json` | Cron definitions, schedules, run status, **delivery status, consecutive errors/skips** (flapping) |
 | `.git/` (via `git log`) | Last 5 commits (hash, message, relative time) |
-| Process table (`pgrep` + `ps`) | Gateway PID, uptime, RSS memory |
+| Gateway lock file + process table | Gateway PID, uptime, RSS memory |
+| `journalctl --user` (Linux) | Gateway logs when systemd routes them to journald (no file to tail) |
+| `openclaw models list --json` | Live model display names + context windows (TTL-cached) |
 
 ### Gateway Detection
 
+Process metadata (PID/uptime/RSS) is read first from openclaw's install-independent
+lock file (`<tmpdir>/openclaw-<uid>/gateway.<sha256(configPath)[:8]>.lock`, payload
+`{pid, createdAt, …}`), which is correct on every install layout. When no usable lock
+exists, the dashboard falls back to:
+
 ```bash
-pgrep -f openclaw-gateway
+pgrep -f "openclaw/dist/index.js gateway"   # npm layout
 ```
 
-If a PID is found, a follow-up `ps -p <pid> -o etime=,rss=` extracts uptime and RSS memory.
+If a PID is found (lock or pgrep), a follow-up `ps -p <pid> -o rss=` (or `etime=,rss=`
+on the pgrep path) extracts RSS memory; the lock path derives uptime from `createdAt`.
+The HTTP `/healthz` probe remains the authoritative liveness signal.
+
+### Linux journald Log Fallback
+
+On systemd hosts the gateway's systemd `--user` unit emits no `StandardOutput=`
+directive, so gateway output goes to journald and there is no file to tail. When a
+configured log source has no file on disk, the collector synthesizes log records from
+`journalctl --user -u <unit>.service -o json --no-pager` (mapping `PRIORITY`→severity,
+`MESSAGE`→message, `__REALTIME_TIMESTAMP`→time). The unit resolves from
+`OPENCLAW_SYSTEMD_UNIT` > `logs.systemdUnit` > `openclaw-gateway` (with an
+`OPENCLAW_PROFILE` suffix). Gated on `runtime.GOOS == "linux"`; macOS is unaffected.
 
 ### Runtime Observability (`/api/system` — `openclaw` block)
 
@@ -112,9 +131,22 @@ In addition to the `data.json` pipeline, the `/api/system` endpoint includes a l
 |--------|---------------|
 | `GET /healthz` | `live`, `uptimeMs`, `healthEndpointOk` |
 | `GET /readyz` | `ready`, `failing[]`, `readyEndpointOk` |
-| `openclaw status --json` | `currentVersion`, `latestVersion`, `connectLatencyMs`, `security` |
+| `openclaw status --json` | `currentVersion`, `latestVersion`, `connectLatencyMs`, `security`, `tasks`, `eventLoop`, `pluginCompatibility`, `lastHeartbeat`, `channelSummary` |
 
 The `readyz` endpoint returns a `503` body with JSON when some dependencies are failing. `fetchJSONMapAllowStatus` accepts configurable HTTP status codes so the body is parsed rather than discarded.
+
+The rich `status --json` blocks (`tasks`, `eventLoop`, `pluginCompatibility`,
+`lastHeartbeat`, `channelSummary`) feed the **Runtime Health** panel. They parse
+additively — minimal status still parses, and absent blocks are omitted. `eventLoop`
+and `lastHeartbeat` are deep-status-only: set `system.deepStatus=true` to invoke
+`openclaw status --json --deep` (slower). Lean status already provides the task queue,
+plugin-compatibility warnings, and channel summary.
+
+**Channel health (apprefresh `/readyz`).** Separately from the appsystem block above,
+the refresh collector has its own `/readyz` probe whose `failing[]` drives per-channel
+health: a channel whose config key is in `failing[]` is marked
+`connected=false, health="unhealthy"` (overriding the session-activity heuristic);
+non-channel reasons are ignored and probe failure falls back to the heuristic.
 
 The frontend's `SystemBar._gatewayState(d)` helper decides whether to trust the runtime data or fall back to the `versions.gateway` status field from `data.json`. Runtime is trusted when any of these signals is present: `healthEndpointOk`, `readyEndpointOk`, `uptimeMs > 0`, or `failing.length > 0`.
 
@@ -132,7 +164,7 @@ All aggregation and collector processing now runs under `internal/apprefresh/`.
 
 ### Model Name Normalization
 
-The `modelName()` function maps raw provider/model IDs (e.g., `anthropic/claude-opus-4-6`) to friendly display names (e.g., `Claude Opus 4.6`). It strips the provider prefix and matches against known substrings:
+The `ModelName()` function maps raw provider/model IDs (e.g., `anthropic/claude-opus-4-6`) to friendly display names (e.g., `Claude Opus 4.6`). It strips the provider prefix and matches against known substrings:
 
 | Pattern | Display Name |
 |---------|-------------|
@@ -145,7 +177,15 @@ The `modelName()` function maps raw provider/model IDs (e.g., `anthropic/claude-
 | `minimax-m2.5` | MiniMax M2.5 |
 | `k2p5`, `kimi` | Kimi K2.5 |
 | `gpt-5.3-codex` | GPT-5.3 Codex |
-| *(fallback)* | Raw model string |
+| *(unknown id)* | Live catalog name, else raw model string |
+
+**Live model catalog.** A TTL-cached snapshot of `openclaw models list --json`
+(`model_catalog_cache.go`, mirroring the session-model cache) supplies display names
+and context windows for current/future models. The curated switch above wins; the
+catalog is consulted only in the fallback (unknown-id) branch — openclaw's `name` is
+often the bare id, so curated-first avoids regressing nice names. `lookupModelLimits`
+also consults the catalog's context window when the `openclaw.json` model registry has
+no entry for a model.
 
 ### Session Type Detection
 

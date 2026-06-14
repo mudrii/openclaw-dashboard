@@ -1,5 +1,61 @@
 # Changelog
 
+## Unreleased (branch `feature_fix`)
+
+Closes the openclaw-dashboard fixes & integration plan (`PLAN.md`): 3 fixes + 5
+new-feature integrations validated against the openclaw repo. All backend logic is
+test-driven and `make check`-clean; frontend panels (channel health color, Runtime
+Health card, cron delivery/flapping badges) are re-embedded and **pending human
+visual check**. Several features additionally need **runtime-verify** against a live
+openclaw (some Linux/systemd). No breaking changes — every new field/config is
+additive and back-compatible.
+
+### Added
+
+- **Live channel health from `/readyz`** (INT-1) — a new `/readyz` probe in
+  `apprefresh` extracts the gateway's `failing[]` and marks those channels
+  `connected=false, health="unhealthy"`, overriding the session-activity heuristic.
+  Non-channel reasons (`startup-sidecars`) are ignored; probe failure falls back to
+  the heuristic. Channel cards color the Health value red when failing.
+- **Runtime Health panel from `status --json`** (INT-2) — `SystemOpenclawStatus`
+  now parses the task-queue, event-loop, plugin-compatibility, last-heartbeat, and
+  channel-summary blocks (additive; minimal status still parses). A new Runtime
+  Health card renders task counts, an event-loop utilization gauge, a plugin-warning
+  badge, last-heartbeat age, and the channel summary. New `system.deepStatus` config
+  (default off) opts into `openclaw status --json --deep` for the event-loop and
+  last-heartbeat blocks; lean status already provides the rest.
+- **Linux journald log fallback** (FIX-1) — on systemd hosts the gateway logs to
+  journald (no file to tail), so the Logs panel and error feed were empty. When a
+  source has no file on disk, records are synthesized from
+  `journalctl --user -u <unit>.service -o json` (PRIORITY→severity,
+  `__REALTIME_TIMESTAMP`→time). New `logs.systemdUnit` config (env
+  `OPENCLAW_SYSTEMD_UNIT` overrides, `OPENCLAW_PROFILE` adds a suffix). macOS
+  unchanged.
+- **Live model catalog** (INT-4) — model display names and context-window limits
+  come from `openclaw models list --json` (TTL + singleflight cache mirroring the
+  session-model cache). `ModelName` consults the catalog for ids its curated switch
+  does not know (curated names still win); `lookupModelLimits` falls back to the
+  catalog's context window when the openclaw.json registry has no entry.
+- **Install-independent gateway metadata** (INT-3) — gateway PID/uptime/RSS are read
+  from openclaw's lock file
+  (`<tmpdir>/openclaw-<uid>/gateway.<sha256(configPath)[:8]>.lock`), correct on every
+  install layout (homebrew/binary/bun/source), not just npm. `/healthz` remains the
+  liveness signal; pgrep is the last-resort fallback.
+- **Cron delivery + flapping** (INT-5) — `CollectCrons` emits `lastDeliveryStatus`,
+  `consecutiveErrors`, `consecutiveSkipped`, and a derived `flapping` flag
+  (`consecutiveErrors >= 3`). The cron table shows a delivery-outcome dot and a red
+  `⚡FLAPPING` badge.
+
+### Fixed
+
+- **Per-agent models from `agents.list[]`** (FIX-2) — confirmed already implemented
+  in `loadAgentDefaultModels` (the `list[]` pass keyed by `entry.id`, string and
+  object model shapes, main/work/group backfill); covered by existing tests. No code
+  change; PLAN entry was stale.
+- **Cron status precedence** (FIX-3) — confirmed the dashboard already prefers the
+  canonical `lastRunStatus` over the deprecated `lastStatus` alias; added the missing
+  precedence test (canonical wins, legacy fallback, `none` default).
+
 ## v2026.6.1 — 2026-06-03
 
 Closes the "dashboard blank sections" work (issues #25/#26 follow-ups) and

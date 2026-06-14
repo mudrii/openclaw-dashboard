@@ -49,6 +49,7 @@ the binary reports the installed release version correctly after upgrades.
     "fastRefreshMs": 3000,
     "errorWindowHours": 24,
     "maxErrorSignatures": 1000,
+    "systemdUnit": "openclaw-gateway",
     "sources": [
       "logs/gateway.log",
       "logs/gateway.err.log"
@@ -62,6 +63,7 @@ the binary reports the installed release version correctly after upgrades.
     "gatewayTimeoutMs": 5000,
     "coldPathTimeoutMs": 8000,
     "cpuTimeoutMs": 6000,
+    "deepStatus": false,
     "gatewayPort": 18789,
     "diskPath": "/",
     "warnPercent": 70,
@@ -189,6 +191,7 @@ To change the OpenClaw data directory, set the `OPENCLAW_HOME` environment varia
 | `system.gatewayTimeoutMs` | number | `5000` | Timeout for gateway liveness probe (200-15000 ms) |
 | `system.coldPathTimeoutMs` | number | `8000` | Overall budget for a cold `/api/system` collection — bounds total wall time when no warm cache is available (200-30000 ms) |
 | `system.cpuTimeoutMs` | number | `6000` | Timeout for CPU sampling on macOS and Linux (500-20000 ms) |
+| `system.deepStatus` | boolean | `false` | Opt into `openclaw status --json --deep`. Lean status (default) returns the task queue, plugin-compatibility warnings, and channel summary; deep status additionally returns the event-loop health and last-heartbeat blocks at the cost of a slower status call. Surfaced in the Runtime Health panel. |
 | `system.gatewayPort` | number | `18789` | Gateway port for health probes (defaults to `ai.gatewayPort`) |
 | `system.diskPath` | string | `"/"` | Filesystem path to report disk usage for |
 | `system.warnPercent` | number | `70` | Global warn threshold (% used) — overridden by per-metric values |
@@ -201,6 +204,18 @@ To change the OpenClaw data directory, set the `OPENCLAW_HOME` environment varia
 | `system.swap.critical` | number | `95` | Swap critical threshold (%) |
 | `system.disk.warn` | number | `80` | Disk warn threshold (%) |
 | `system.disk.critical` | number | `95` | Disk critical threshold (%) |
+
+### Logs
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `logs.enabled` | boolean | `true` | Enable/disable the Logs panel and error feed |
+| `logs.tailLines` | number | `200` | Lines tailed per source |
+| `logs.fastRefreshMs` | number | `3000` | Logs panel fast-refresh interval (ms) |
+| `logs.errorWindowHours` | number | `24` | Window for the error-signature feed |
+| `logs.maxErrorSignatures` | number | `1000` | Cap on distinct error signatures tracked |
+| `logs.sources` | string[] | `["logs/gateway.log", "logs/gateway.err.log"]` | Log files to tail (relative to the OpenClaw home) |
+| `logs.systemdUnit` | string | `"openclaw-gateway"` | Systemd `--user` unit name for the Linux journald fallback. When a log source has no file on disk (the systemd gateway logs to journald, not a file), the dashboard reads `journalctl --user -u <unit>.service -o json`. Overridable by the `OPENCLAW_SYSTEMD_UNIT` env var; `OPENCLAW_PROFILE` appends a `-<profile>` suffix. Linux only; ignored on macOS. |
 
 ### AI Chat
 
@@ -235,6 +250,9 @@ To change the OpenClaw data directory, set the `OPENCLAW_HOME` environment varia
 |----------|-------------|
 | `OPENCLAW_HOME` | OpenClaw installation path (source of truth for `refresh.sh` and installer) |
 | `OPENCLAW_GATEWAY_TOKEN` | Gateway bearer token loaded from `ai.dotenvPath` |
+| `OPENCLAW_SYSTEMD_UNIT` | Overrides the systemd unit name used for the Linux journald log fallback (default `openclaw-gateway`). Takes precedence over `logs.systemdUnit`. |
+| `OPENCLAW_PROFILE` | When set, appends a `-<profile>` suffix to the resolved systemd unit name (matches openclaw's per-profile unit naming). |
+| `OPENCLAW_CONFIG_PATH` | Overrides the openclaw config path used to locate the gateway lock file (default `<OPENCLAW_HOME>/openclaw.json`). The lock supplies install-independent gateway PID/uptime/RSS. |
 | `OPENCLAW_DASHBOARD_DIR` | Override the dashboard runtime directory |
 | `OPENCLAW_DASHBOARD_ALLOW_NON_LOOPBACK` | Set to the literal value `1` to permit non-loopback bind hosts (e.g., `0.0.0.0`). Required for containerized deployments where the bind has to be reachable from outside the container. Off by default; see Security below. |
 | `DASHBOARD_PORT` | Override the HTTP listen port (takes precedence over `server.port` in config) |

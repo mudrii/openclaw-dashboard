@@ -58,8 +58,8 @@ Browser
 
 - `appconfig` owns config parsing and normalization.
 - `appruntime` owns path resolution, version detection, and Homebrew runtime seeding.
-- `apprefresh` owns data collection from OpenClaw sessions, crons, git history, and token logs.
-- `appsystem` owns live host metrics and gateway/runtime probes.
+- `apprefresh` owns data collection from OpenClaw sessions, crons (incl. delivery/flapping state), git history, and token logs; the gateway lock + `/readyz` channel-health probe; the Linux journald log fallback; and the live model-name/context-window catalog.
+- `appsystem` owns live host metrics and gateway/runtime probes, including the rich `openclaw status --json` blocks (task queue, event-loop, plugin-compat, heartbeat) gated by `system.deepStatus`.
 - `appchat` owns prompt construction and OpenAI-compatible gateway requests.
 - `appserver` owns HTTP routing, caching, rate limiting, refresh coordination, and log/error feed endpoints.
 - `appservice` owns service lifecycle management: install, uninstall, start, stop, restart, and status via launchd (macOS) or systemd (Linux).
