@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strconv"
 	"testing"
+	"time"
 )
 
 // stubPgrep replaces pgrepGateway with a deterministic fake and returns a
@@ -142,6 +143,43 @@ func TestParseReadyzFailing(t *testing.T) {
 			got := parseReadyzFailing([]byte(tc.body))
 			if !slices.Equal(got, tc.want) {
 				t.Errorf("parseReadyzFailing(%q) = %v, want %v", tc.body, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestReadyzProbe_PortZeroReturnsFalse proves the probe-failure contract used by
+// the INT-1 fallback: with no configured port the real readyzProbe returns
+// (nil, false) without any network call, so collectDashboardData passes nil
+// failing[] to backfillChannelConnectivity and the activity heuristic stands.
+func TestReadyzProbe_PortZeroReturnsFalse(t *testing.T) {
+	failing, ok := readyzProbe(context.Background(), 0)
+	if ok {
+		t.Errorf("ok = true for port 0, want false")
+	}
+	if failing != nil {
+		t.Errorf("failing = %v for port 0, want nil", failing)
+	}
+}
+
+// TestFormatUptimeSince covers the INT-3 lock-derived uptime formatting across
+// its day/hour/minute branches and the future-timestamp clamp.
+func TestFormatUptimeSince(t *testing.T) {
+	now := time.Now()
+	cases := []struct {
+		name string
+		when time.Time
+		want string
+	}{
+		{"minutes", now.Add(-30 * time.Minute), "30m"},
+		{"hours", now.Add(-90 * time.Minute), "1h 30m"},
+		{"days", now.Add(-25 * time.Hour), "1d 1h"},
+		{"future clamps to zero", now.Add(2 * time.Hour), "0m"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := formatUptimeSince(tc.when); got != tc.want {
+				t.Errorf("formatUptimeSince = %q, want %q", got, tc.want)
 			}
 		})
 	}

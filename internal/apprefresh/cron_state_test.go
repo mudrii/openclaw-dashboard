@@ -248,6 +248,21 @@ func TestCollectCrons_DeliveryAndFlapping(t *testing.T) {
 			t.Errorf("lastDeliveryStatus = %v, want delivered", c["lastDeliveryStatus"])
 		}
 	})
+
+	// Pin the threshold boundary (cronFlappingThreshold == 3) so an off-by-one
+	// regression (`> 3` instead of `>= 3`) is caught.
+	t.Run("flapping boundary: exactly at threshold is flapping", func(t *testing.T) {
+		c := build(t, map[string]any{"consecutiveErrors": float64(3)})
+		if c["flapping"] != true {
+			t.Errorf("consecutiveErrors=3: flapping = %v, want true (>= threshold)", c["flapping"])
+		}
+	})
+	t.Run("flapping boundary: one below threshold is not flapping", func(t *testing.T) {
+		c := build(t, map[string]any{"consecutiveErrors": float64(2)})
+		if c["flapping"] != false {
+			t.Errorf("consecutiveErrors=2: flapping = %v, want false (below threshold)", c["flapping"])
+		}
+	})
 }
 
 // TestCollectCrons_LastRunStatusPrecedence locks FIX-3: the dashboard reads

@@ -16,6 +16,27 @@ func stubGatewayLock(t *testing.T, lk gatewayLock, ok bool) {
 	t.Cleanup(func() { readGatewayLockMeta = prev })
 }
 
+// TestPidAlive covers the real syscall seam, including the EPERM case: pid 1
+// (launchd/init) always exists but is owned by root, so a non-root signal-0
+// probe returns EPERM — which must be treated as ALIVE, not dead. On a shared
+// host the gateway can run under a different uid, and mis-reading EPERM as dead
+// would discard the install-independent lock metadata INT-3 adds.
+func TestPidAlive(t *testing.T) {
+	if !pidAlive(1) {
+		t.Errorf("pidAlive(1) = false, want true (pid 1 exists; EPERM must count as alive)")
+	}
+	if pidAlive(0) {
+		t.Errorf("pidAlive(0) = true, want false (non-positive pid)")
+	}
+	if pidAlive(-5) {
+		t.Errorf("pidAlive(-5) = true, want false (negative pid)")
+	}
+	// A pid that is essentially guaranteed not to exist → ESRCH → dead.
+	if pidAlive(2147483600) {
+		t.Errorf("pidAlive(huge) = true, want false (no such process)")
+	}
+}
+
 // TestCollectGatewayHealth_LockProvidesPID proves INT-3: when the gateway lock
 // names a live pid, the dashboard uses it for metadata (status online, pid set)
 // without depending on pgrep matching the install-specific cmdline. pgrep is
@@ -29,6 +50,10 @@ func TestCollectGatewayHealth_LockProvidesPID(t *testing.T) {
 	}
 	if gw["pid"] != 4321 {
 		t.Errorf("pid = %v, want 4321 (from lock)", gw["pid"])
+	}
+	// createdAt was 2h ago → uptime derived from the lock, not pgrep/ps.
+	if gw["uptime"] != "2h 0m" {
+		t.Errorf("uptime = %v, want \"2h 0m\" (derived from lock createdAt)", gw["uptime"])
 	}
 }
 

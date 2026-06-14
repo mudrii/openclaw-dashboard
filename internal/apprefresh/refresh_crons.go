@@ -127,6 +127,9 @@ func CollectCrons(cronPath string, loc *time.Location) []map[string]any {
 		deliveryStatus := jsonStrDefault(state, "lastDeliveryStatus", "")
 		consecutiveErrors, _ := state["consecutiveErrors"].(float64)
 		consecutiveSkipped, _ := state["consecutiveSkipped"].(float64)
+		// Flapping keys on errors only — a skipped run (deduped/throttled) is not
+		// an instability signal. consecutiveSkipped is surfaced separately for the
+		// UI but intentionally does not feed the flapping flag.
 		flapping := int(consecutiveErrors) >= cronFlappingThreshold
 
 		lastRunMs, _ := state["lastRunAtMs"].(float64)

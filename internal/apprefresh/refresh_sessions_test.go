@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 
@@ -20,6 +21,17 @@ func TestRunRefreshCollector_ReadyzFailingMarksChannelUnhealthy(t *testing.T) {
 		return []string{"telegram"}, true
 	}
 	t.Cleanup(func() { readyzProbe = prev })
+	// Hermetic: stub every exec/HTTP seam the collector touches so the test
+	// never shells out to a real openclaw/pgrep/gateway and never leaks a live
+	// model-catalog snapshot into the package globals other tests read.
+	stubPgrep(t, "", nil)
+	stubHealthz(t, false)
+	prevRunner := defaultModelCatalogCache.runner
+	defaultModelCatalogCache.runner = func(ctx context.Context, name string, args ...string) *exec.Cmd {
+		return exec.CommandContext(ctx, "printf", "")
+	}
+	t.Cleanup(func() { defaultModelCatalogCache.runner = prevRunner })
+	t.Cleanup(resetModelCatalogForTest)
 
 	tmp := t.TempDir()
 	dashboardDir := filepath.Join(tmp, "dashboard")

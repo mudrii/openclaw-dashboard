@@ -97,6 +97,25 @@ func journaldPrioritySeverity(priority string) (string, bool) {
 	}
 }
 
+// decodeJournaldMessage extracts the MESSAGE field, which journald emits either
+// as a plain string or — when the payload is not valid UTF-8 — as a JSON array
+// of byte values. Both forms are decoded to a trimmed string; anything else
+// yields "".
+func decodeJournaldMessage(raw json.RawMessage) string {
+	if len(raw) == 0 {
+		return ""
+	}
+	var s string
+	if err := json.Unmarshal(raw, &s); err == nil {
+		return strings.TrimSpace(s)
+	}
+	var bytesArr []byte
+	if err := json.Unmarshal(raw, &bytesArr); err == nil {
+		return strings.TrimSpace(string(bytesArr))
+	}
+	return ""
+}
+
 // parseJournaldLine parses a single `journalctl -o json` object into a
 // LogRecord. It maps PRIORITY → severity (falling back to message-based
 // classification when PRIORITY is absent or out of range) and the microsecond
@@ -105,20 +124,21 @@ func journaldPrioritySeverity(priority string) (string, bool) {
 // left for the caller to populate, mirroring ReadMergedLogs's file path.
 func parseJournaldLine(line string) (LogRecord, bool) {
 	var payload struct {
-		Message  string `json:"MESSAGE"`
-		Priority string `json:"PRIORITY"`
-		Realtime string `json:"__REALTIME_TIMESTAMP"`
+		Message  json.RawMessage `json:"MESSAGE"`
+		Priority string          `json:"PRIORITY"`
+		Realtime string          `json:"__REALTIME_TIMESTAMP"`
 	}
 	if err := json.Unmarshal([]byte(line), &payload); err != nil {
 		return LogRecord{}, false
 	}
-	if payload.Message == "" {
+	message := decodeJournaldMessage(payload.Message)
+	if message == "" {
 		return LogRecord{}, false
 	}
 
 	severity, ok := journaldPrioritySeverity(payload.Priority)
 	if !ok {
-		severity = classifySeverity(payload.Message, "")
+		severity = classifySeverity(message, "")
 	}
 
 	var ts time.Time
@@ -128,7 +148,7 @@ func parseJournaldLine(line string) (LogRecord, bool) {
 
 	rec := LogRecord{
 		Severity:  severity,
-		Message:   payload.Message,
+		Message:   message,
 		Timestamp: ts,
 	}
 	if !ts.IsZero() {

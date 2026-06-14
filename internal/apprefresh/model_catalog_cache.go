@@ -33,6 +33,20 @@ func setModelCatalogNames(m map[string]string) { modelCatalogNames.Store(&m) }
 // setModelCatalogWindows publishes a new context-window snapshot for lookupModelLimits.
 func setModelCatalogWindows(m map[string]int) { modelCatalogWindows.Store(&m) }
 
+// resetModelCatalogForTest clears the published snapshots and the default cache
+// so a test cannot leak catalog state into another test via the package globals
+// that pure ModelName/lookupModelLimits read. Call from t.Cleanup.
+func resetModelCatalogForTest() {
+	modelCatalogNames.Store(nil)
+	modelCatalogWindows.Store(nil)
+	defaultModelCatalogCache.mu.Lock()
+	defaultModelCatalogCache.expiresAt = time.Time{}
+	defaultModelCatalogCache.catalog = modelCatalog{}
+	defaultModelCatalogCache.refreshing = false
+	defaultModelCatalogCache.cond = sync.NewCond(&defaultModelCatalogCache.mu)
+	defaultModelCatalogCache.mu.Unlock()
+}
+
 // catalogDisplayName returns the live display name for a model id, if the
 // current catalog snapshot knows it.
 func catalogDisplayName(model string) (string, bool) {

@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -71,7 +72,12 @@ var pidAlive = func(pid int) bool {
 	if pid <= 0 {
 		return false
 	}
-	return syscall.Kill(pid, 0) == nil
+	// signal 0 performs an existence/permission check: nil means the process
+	// exists and we may signal it; EPERM means it exists but is owned by another
+	// user (e.g. the gateway running under a different uid on a shared host) —
+	// both mean alive. Only ESRCH ("no such process") means dead.
+	err := syscall.Kill(pid, 0)
+	return err == nil || errors.Is(err, syscall.EPERM)
 }
 
 // readGatewayLockMeta reads the gateway lock for this install and returns the
@@ -90,5 +96,9 @@ var readGatewayLockMeta = func(openclawPath string) (gatewayLock, bool) {
 	if !ok || !pidAlive(lk.pid) {
 		return gatewayLock{}, false
 	}
+	// Note: PID reuse is not defended against — if the gateway died uncleanly and
+	// the OS recycled its pid, the lock would report the unrelated process. This
+	// is low-likelihood (openclaw removes the lock on clean exit) and /healthz
+	// remains the authoritative liveness signal; the lock only supplies metadata.
 	return lk, true
 }

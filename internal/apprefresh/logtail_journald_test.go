@@ -227,6 +227,21 @@ func TestParseJournaldLine_MissingTimestampStillParses(t *testing.T) {
 	}
 }
 
+// TestParseJournaldLine_MessageAsByteArray covers journald's representation of a
+// non-UTF-8 MESSAGE as a JSON array of byte values; it must decode to the string
+// rather than dropping the line.
+func TestParseJournaldLine_MessageAsByteArray(t *testing.T) {
+	// [104,105] == "hi"
+	line := `{"PRIORITY":"6","MESSAGE":[104,105],"__REALTIME_TIMESTAMP":"1700000000000000"}`
+	rec, ok := parseJournaldLine(line)
+	if !ok {
+		t.Fatalf("ok=false, want true for byte-array MESSAGE")
+	}
+	if rec.Message != "hi" {
+		t.Errorf("message = %q, want %q", rec.Message, "hi")
+	}
+}
+
 // TestParseJournaldLine_Degenerate covers malformed JSON and an absent MESSAGE:
 // both must report ok=false so the caller skips the line rather than emitting an
 // empty record.
