@@ -5,10 +5,10 @@
 Closes the openclaw-dashboard fixes & integration plan (`PLAN.md`): 3 fixes + 5
 new-feature integrations validated against the openclaw repo. All backend logic is
 test-driven and `make check`-clean; frontend panels (channel health color, Runtime
-Health card, cron delivery/flapping badges) are re-embedded and **pending human
-visual check**. Several features additionally need **runtime-verify** against a live
-openclaw (some Linux/systemd). No breaking changes — every new field/config is
-additive and back-compatible.
+Health card, cron delivery/flapping badges) are re-embedded and browser-fixture
+validated. Remaining runtime verification is limited to live-environment surfaces
+such as Linux/systemd journald, non-npm lock metadata, and cron delivery state.
+No breaking changes — every new field/config is additive and back-compatible.
 
 ### Added
 

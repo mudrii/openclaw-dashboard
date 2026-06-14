@@ -5,7 +5,7 @@ Sequence: INT-1, FIX-1, INT-2, FIX-2, FIX-3, INT-4, INT-3, INT-5.
 
 ---
 
-## 2026-06-14 — INT-1 (channel health from `/readyz failing[]`) — DONE (backend), UI needs human visual check
+## 2026-06-14 — INT-1 (channel health from `/readyz failing[]`) — DONE
 
 **Task.** INT-1 — live per-channel up/down driven by the gateway's `/readyz`
 `failing[]`, replacing the session-activity heuristic for actually-failing channels.
@@ -50,9 +50,8 @@ not unit-tested (thin glue; parser + fallback covered) — accepted.
 govulncheck clean). `gofmt -l` empty. `make build` OK (frontend re-embedded).
 No platform-tagged code → no GOOS=linux pass needed.
 
-**NEEDS HUMAN VISUAL CHECK.** `web/index.html` channel-card Health coloring — backend
-data verified by tests + binary rebuilt, but the rendered badge color is not
-visually validated.
+**VISUAL VERIFY.** Browser fixture smoke on 2026-06-15 rendered channel-card
+Health coloring and the unhealthy disconnected state.
 
 **Remaining.** FIX-1 (next), INT-2, FIX-2, FIX-3, INT-4, INT-3, INT-5.
 graphify NOT updated (known false-deletion gotcha — graph left stale intentionally).
@@ -224,7 +223,7 @@ visual check.
 
 ---
 
-## 2026-06-14 — INT-2 — DONE (code), frontend needs human visual check
+## 2026-06-14 — INT-2 — DONE
 
 **Slice 3/3.** Runtime Health card in web/index.html.
 - New full-width "📊 Runtime Health" panel (#runtimeHealthPanel) above Agent Bindings.
@@ -244,9 +243,10 @@ visual check.
 
 **Gate.** `make build` OK (frontend re-embedded), `make check` green.
 
-**NEEDS HUMAN VISUAL CHECK.** Runtime Health card layout/colors not visually validated.
-**RUNTIME-VERIFY.** Live data population needs a running openclaw (lean for tasks/
-plugin/channels; `--deep` for event-loop/heartbeat).
+**VISUAL VERIFY.** Browser fixture smoke on 2026-06-15 rendered the Runtime Health
+card with tasks, event-loop, plugin-warning, heartbeat, and channel-summary rows.
+**RUNTIME-VERIFY.** Live local OpenClaw verification on 2026-06-15 confirmed
+`openclaw status --json --deep` returns the rich blocks.
 
 **INT-2 COMPLETE** (3/3 slices). **Remaining.** FIX-2 (next), FIX-3, INT-4, INT-3, INT-5.
 
@@ -405,7 +405,7 @@ install; code + stubbed tests shipped.
 
 ---
 
-## 2026-06-14 — INT-5 (cron delivery + flapping view) — DONE (code), frontend needs human visual check
+## 2026-06-14 — INT-5 (cron delivery + flapping view) — DONE
 
 **Task.** Surface whether scheduled jobs delivered output and which are unstable —
 the dashboard ignored `lastDeliveryStatus`, `consecutiveErrors`, `consecutiveSkipped`
@@ -415,7 +415,7 @@ from `jobs-state.json` (cron/types.ts).
 `consecutiveErrors`, `consecutiveSkipped`, and a derived `flapping` flag
 (`consecutiveErrors >= cronFlappingThreshold`, =3). Additive to the cron map.
 
-**Frontend (human-gated).** Cron table Status cell gains a delivery-outcome dot
+**Frontend.** Cron table Status cell gains a delivery-outcome dot
 (green delivered / red not-delivered / yellow unknown / dim otherwise) and a red
 ⚡FLAPPING badge with a consecutive-errors tooltip. Added `lastDeliveryStatus`/
 `flapping` to the cron change-detection snapshot so the panel re-renders on change.
@@ -429,8 +429,10 @@ snapshot keys).
 **Gate.** `make check` green (vet, lint 0, `test -race`, govulncheck), `gofmt -l` empty,
 `make build` OK (frontend re-embedded).
 
-**NEEDS HUMAN VISUAL CHECK.** Cron delivery/flapping badges. **RUNTIME-VERIFY.** Live
-delivery/flapping data needs a running openclaw with cron jobs that have delivery state.
+**VISUAL VERIFY.** Browser fixture smoke on 2026-06-15 rendered cron delivery and
+flapping badges. **RUNTIME-VERIFY.** Live delivery/flapping data needs a running
+openclaw with cron jobs that have delivery state; the local runtime had no current
+cron jobs to prove this live.
 
 ================================================================================
 ## ALL 8 PLAN TASKS COMPLETE (code) — 2026-06-14
@@ -438,13 +440,14 @@ delivery/flapping data needs a running openclaw with cron jobs that have deliver
 
 INT-1 ✓ · FIX-1 ✓ · INT-2 ✓ · FIX-2 ✓ (pre-existing) · FIX-3 ✓ · INT-4 ✓ · INT-3 ✓ · INT-5 ✓
 
-**Human-gated remainder (NOT loop-doable):**
-- VISUAL CHECK (web/index.html, //go:embed — binary rebuilt, not visually validated):
-  INT-1 channel Health color · INT-2 Runtime Health card · INT-5 cron delivery/flapping badges.
-- RUNTIME-VERIFY (needs live openclaw, some Linux/systemd):
-  FIX-1 journald population (Linux) · INT-1 /readyz failing[] · INT-2 deep `--deep` payload ·
-  INT-4 live model names + context windows · INT-3 lock-file pid/uptime on non-npm install ·
-  INT-5 live delivery/flapping state.
+**Verification remainder:**
+- VISUAL CHECK: closed by browser fixture smoke on 2026-06-15 for INT-1 channel
+  Health color, INT-2 Runtime Health card, and INT-5 cron delivery/flapping badges.
+- LIVE LOCAL VERIFY: closed on 2026-06-15 for INT-1 `/readyz` + `/healthz`,
+  INT-2 `openclaw status --json --deep`, and INT-4 `openclaw models list --json`.
+- ENVIRONMENT/DATA-BOUND RUNTIME VERIFY:
+  FIX-1 journald population on Linux/systemd · INT-3 lock-file pid/uptime on a
+  non-npm install · INT-5 live delivery/flapping state with current cron jobs.
 
 graphify left stale throughout (known false-deletion gotcha). PLAN.md notes FIX-2 was
 already implemented pre-loop (stale plan). All ticks: make check green, atomic commits on

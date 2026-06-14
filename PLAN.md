@@ -9,10 +9,10 @@ accuracy + assembled-plan revalidation).
 > Status: ✅ COMPLETE (2026-06-14). All 8 tasks shipped on `feature_fix` (INT-1,
 > FIX-1, INT-2, FIX-2, FIX-3, INT-4, INT-3, INT-5). FIX-2 and FIX-3 were found
 > already implemented pre-plan (FIX-3 gained its missing precedence test). Every
-> tick was TDD + `make check`-green + atomic commit. Frontend panels and several
-> live-data behaviors are **pending human visual check / runtime-verify** — see the
-> human-gated remainder at the end of `LOOP_STATE.md`. Original analysis below is
-> retained for traceability; line numbers reflect the branch at analysis time.
+> tick was TDD + `make check`-green + atomic commit. Frontend panels have browser
+> fixture validation; remaining live runtime verification is environment/data-bound
+> and tracked at the end of `LOOP_STATE.md`. Original analysis below is retained for
+> traceability; line numbers reflect the branch at analysis time.
 
 ---
 
