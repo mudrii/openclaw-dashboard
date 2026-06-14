@@ -127,55 +127,149 @@ func TestLaunchd_Uninstall(t *testing.T) {
 	}
 }
 
-func TestLaunchd_Lifecycle(t *testing.T) {
-	tests := []struct {
-		name        string
-		op          func(*launchdBackend) error
-		wantInCalls []string
-	}{
-		{
-			"Start",
-			(*launchdBackend).Start,
-			[]string{"launchctl start com.openclaw.dashboard"},
+// stubLaunchd builds a backend whose runCmd dispatches by launchctl verb,
+// letting tests model realistic command outcomes (success vs failure) without
+// asserting exact argument strings or call order. verbResults maps a verb
+// ("start", "stop", "load", ...) to the (output, error) the stub should return.
+func stubLaunchd(t *testing.T, verbResults map[string]stubResult) *launchdBackend {
+	t.Helper()
+	return &launchdBackend{
+		plistDir: t.TempDir(),
+		runCmd: func(_ context.Context, name string, args ...string) ([]byte, error) {
+			verb := ""
+			if name == "launchctl" && len(args) > 0 {
+				verb = args[0]
+			}
+			if r, ok := verbResults[verb]; ok {
+				return r.out, r.err
+			}
+			return nil, nil
 		},
-		{
-			"Stop",
-			(*launchdBackend).Stop,
-			[]string{"launchctl stop com.openclaw.dashboard"},
-		},
-		{
-			"Restart",
-			(*launchdBackend).Restart,
-			[]string{"launchctl stop com.openclaw.dashboard", "launchctl start com.openclaw.dashboard"},
-		},
+		probeFunc: func(string) bool { return false },
 	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			var calls []string
-			lb := &launchdBackend{
-				plistDir: t.TempDir(),
-				runCmd: func(_ context.Context, name string, args ...string) ([]byte, error) {
-					calls = append(calls, strings.Join(append([]string{name}, args...), " "))
-					return nil, nil
-				},
-			}
-			if err := tc.op(lb); err != nil {
-				t.Fatalf("%s: %v", tc.name, err)
-			}
-			for _, want := range tc.wantInCalls {
-				found := false
-				for _, c := range calls {
-					if strings.Contains(c, want) {
-						found = true
-						break
-					}
-				}
-				if !found {
-					t.Errorf("%s: %q not in calls: %v", tc.name, want, calls)
-				}
-			}
+}
+
+type stubResult struct {
+	out []byte
+	err error
+}
+
+func TestLaunchd_Start(t *testing.T) {
+	t.Run("succeeds when launchctl start exits 0", func(t *testing.T) {
+		lb := stubLaunchd(t, nil)
+		if err := lb.Start(); err != nil {
+			t.Errorf("Start: %v", err)
+		}
+	})
+
+	t.Run("surfaces launchctl failure output", func(t *testing.T) {
+		lb := stubLaunchd(t, map[string]stubResult{
+			"start": {out: []byte("Could not find service"), err: errors.New("exit status 113")},
 		})
-	}
+		err := lb.Start()
+		if err == nil {
+			t.Fatal("expected Start to error on launchctl failure")
+		}
+		if !strings.Contains(err.Error(), "Could not find service") {
+			t.Errorf("error should include launchctl output, got: %v", err)
+		}
+	})
+}
+
+func TestLaunchd_Stop(t *testing.T) {
+	t.Run("succeeds when launchctl stop exits 0", func(t *testing.T) {
+		lb := stubLaunchd(t, nil)
+		if err := lb.Stop(); err != nil {
+			t.Errorf("Stop: %v", err)
+		}
+	})
+
+	t.Run("surfaces launchctl failure output", func(t *testing.T) {
+		lb := stubLaunchd(t, map[string]stubResult{
+			"stop": {out: []byte("no such process"), err: errors.New("exit status 3")},
+		})
+		err := lb.Stop()
+		if err == nil {
+			t.Fatal("expected Stop to error on launchctl failure")
+		}
+		if !strings.Contains(err.Error(), "no such process") {
+			t.Errorf("error should include launchctl output, got: %v", err)
+		}
+	})
+}
+
+func TestLaunchd_Restart(t *testing.T) {
+	t.Run("succeeds even when the prior stop fails (service not running)", func(t *testing.T) {
+		// Restart ignores the stop error and depends only on start succeeding.
+		lb := stubLaunchd(t, map[string]stubResult{
+			"stop": {err: errors.New("exit status 3")}, // not running
+		})
+		if err := lb.Restart(); err != nil {
+			t.Errorf("Restart should ignore stop failure, got: %v", err)
+		}
+	})
+
+	t.Run("fails when the underlying start fails", func(t *testing.T) {
+		lb := stubLaunchd(t, map[string]stubResult{
+			"start": {out: []byte("load failed"), err: errors.New("exit status 1")},
+		})
+		err := lb.Restart()
+		if err == nil {
+			t.Fatal("expected Restart to error when start fails")
+		}
+		if !strings.Contains(err.Error(), "load failed") {
+			t.Errorf("error should include start output, got: %v", err)
+		}
+	})
+}
+
+func TestLaunchd_New(t *testing.T) {
+	t.Run("New returns a configured launchd backend", func(t *testing.T) {
+		t.Setenv("HOME", t.TempDir())
+		b, err := New()
+		if err != nil {
+			t.Fatalf("New: %v", err)
+		}
+		lb, ok := b.(*launchdBackend)
+		if !ok {
+			t.Fatalf("New returned %T, want *launchdBackend", b)
+		}
+		if lb.runCmd == nil {
+			t.Error("runCmd should be wired")
+		}
+		if lb.probeFunc == nil {
+			t.Error("probeFunc should be wired")
+		}
+		if !strings.HasSuffix(lb.plistDir, filepath.Join("Library", "LaunchAgents")) {
+			t.Errorf("plistDir = %q, want a .../Library/LaunchAgents path", lb.plistDir)
+		}
+	})
+
+	t.Run("NewWithContext binds the provided context", func(t *testing.T) {
+		t.Setenv("HOME", t.TempDir())
+		type ctxKey struct{}
+		ctx := context.WithValue(context.Background(), ctxKey{}, "v")
+		b, err := NewWithContext(ctx)
+		if err != nil {
+			t.Fatalf("NewWithContext: %v", err)
+		}
+		lb := b.(*launchdBackend)
+		if lb.ctx.Value(ctxKey{}) != "v" {
+			t.Error("NewWithContext did not retain the caller context")
+		}
+	})
+
+	t.Run("NewWithContext tolerates a nil context", func(t *testing.T) {
+		t.Setenv("HOME", t.TempDir())
+		//nolint:staticcheck // exercising the nil-ctx fallback
+		b, err := NewWithContext(nil)
+		if err != nil {
+			t.Fatalf("NewWithContext(nil): %v", err)
+		}
+		if b.(*launchdBackend).ctx == nil {
+			t.Error("ctx should default to non-nil")
+		}
+	})
 }
 
 func TestLaunchd_Status_notInstalled(t *testing.T) {

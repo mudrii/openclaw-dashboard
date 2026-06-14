@@ -165,7 +165,10 @@ func TestCallGateway_Timeout(t *testing.T) {
 func TestCallGateway_EmptyModel(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var payload CompletionPayload
-		json.NewDecoder(r.Body).Decode(&payload)
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Errorf("decode gateway request body: %v", err)
+			return
+		}
 		if payload.Model != "" {
 			t.Errorf("expected empty model, got %q", payload.Model)
 		}

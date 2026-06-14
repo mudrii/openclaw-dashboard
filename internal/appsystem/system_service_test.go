@@ -425,13 +425,32 @@ func TestGetJSON_AtomicStaleDecision(t *testing.T) {
 
 	wg.Wait()
 
-	// Verify invariant on every observation.
+	// Verify invariants on every observation.
+	//
+	// Each gen is written with a freshness keyed to its parity: the seed (gen 1)
+	// and every odd gen are published fresh (metricsAt = now, payload says
+	// stale:false); every even gen is published stale (metricsAt = 1h ago,
+	// stalePayload says stale:true). Because the writer swaps payload bytes and
+	// metricsAt atomically under metricsMu, the stale flag a reader observes must
+	// match the parity of the gen baked into the same bytes — otherwise the
+	// reader saw the stale flag from one generation and the payload from another
+	// (a torn read).
+	var total int
 	for ri, rs := range results {
+		total += len(rs)
 		for _, o := range rs {
 			if o.gen > o.latestSeen {
 				t.Errorf("reader %d: observed gen %d > latest %d (torn read from future)", ri, o.gen, o.latestSeen)
 			}
+			wantStale := o.gen%2 == 0
+			if o.stale != wantStale {
+				t.Errorf("reader %d: gen %d observed stale=%v, want stale=%v (stale flag must match the payload its gen came from)",
+					ri, o.gen, o.stale, wantStale)
+			}
 		}
+	}
+	if total == 0 {
+		t.Fatal("no observations recorded — readers never executed, invariant unproven")
 	}
 }
 
@@ -460,9 +479,13 @@ func TestSystemService_BackoffOnHardFail(t *testing.T) {
 		t.Fatalf("body = %q, want stale payload", string(body))
 	}
 
-	// Brief sleep — even if a goroutine were spawned it would have started by now.
-	time.Sleep(50 * time.Millisecond)
-
+	// The no-kick decision is synchronous: GetJSON sets metricsRefresh=true and
+	// spawns the background goroutine inside the same locked section that
+	// classifies the cache state, *before* it returns. With hardFailUntil in the
+	// future, the back-off guard suppresses that branch, so metricsRefresh is
+	// never set. By the time GetJSON has returned the decision is final — no
+	// sleep is needed to "wait for" a goroutine that the synchronous guard
+	// guarantees was never launched.
 	s.metricsMu.RLock()
 	defer s.metricsMu.RUnlock()
 	if s.metricsRefresh {

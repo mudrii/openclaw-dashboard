@@ -179,7 +179,9 @@ func TestHandleChat_SuccessHitsGateway(t *testing.T) {
 		t.Fatalf("want 200, got %d body=%s", w.Code, w.Body.String())
 	}
 	var out map[string]string
-	_ = json.Unmarshal(w.Body.Bytes(), &out)
+	if err := json.Unmarshal(w.Body.Bytes(), &out); err != nil {
+		t.Fatalf("unmarshal response body %q: %v", w.Body.String(), err)
+	}
 	if out["answer"] != "hello back" {
 		t.Errorf("want answer 'hello back', got %q", out["answer"])
 	}

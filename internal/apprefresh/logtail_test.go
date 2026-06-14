@@ -202,15 +202,6 @@ func TestNormalizeErrorSignature(t *testing.T) {
 		}
 	})
 
-	t.Run("timestamp prefix known bug", func(t *testing.T) {
-		// Known bug: the numeric mask (\b\d+\b) runs before the timestamp-prefix
-		// mask, and digits embedded inside a timestamp (e.g. "t10:", "00z") are
-		// not on word boundaries, so they survive as raw multi-digit runs. The
-		// timestamp is never collapsed to <ts>. Skipped rather than pinning the
-		// buggy output; fixing it requires reordering substitutions in
-		// NormalizeErrorSignature.
-		t.Skip("known bug: substitution order leaks digits inside timestamps")
-	})
 }
 
 func TestParseLogTimestamp_RFC3339(t *testing.T) {

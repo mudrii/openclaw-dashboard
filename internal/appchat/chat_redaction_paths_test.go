@@ -41,7 +41,10 @@ const redactSecret = "sk-CALLGW-SECRET-9999"
 // assertGatewayErr fails if err is nil, leaks the token, or has the wrong
 // status. Every CallGateway error path runs the surfaced message through
 // redactToken, so the token must never appear regardless of whether the raw
-// message happened to contain it.
+// message happened to contain it. For the read/parse/unreachable paths the
+// stdlib error text never echoes the body, so the token is already absent and
+// this check is a no-op guard; only TestCallGateway_HTTPErrorBodyRedacted
+// exercises an actual redaction substitution.
 func assertGatewayErr(t *testing.T, err error, status int) {
 	t.Helper()
 	if err == nil {
@@ -59,13 +62,14 @@ func assertGatewayErr(t *testing.T, err error, status int) {
 	}
 }
 
-// TestCallGateway_ReadErrorRedacted forces an io.ReadAll failure by promising a
-// Content-Length larger than the bytes actually written, then hijacking and
-// closing the connection mid-body. Observed behavior: the read error is
-// "read error: unexpected EOF" (stdlib does not echo body bytes), so the token
-// is absent; the redaction call is a no-op but the security property — no
-// token in the surfaced message — holds. Status is 502.
-func TestCallGateway_ReadErrorRedacted(t *testing.T) {
+// TestCallGateway_ReadErrorClassification forces an io.ReadAll failure by
+// promising a Content-Length larger than the bytes actually written, then
+// hijacking and closing the connection mid-body. This exercises CallGateway's
+// ERROR CLASSIFICATION, not redaction: the surfaced message is classified as a
+// "read error" with status 502. The stdlib error text ("unexpected EOF") never
+// echoes body bytes, so the token is already absent — the assertGatewayErr
+// token check is a no-op here, asserted only as a defense-in-depth guard.
+func TestCallGateway_ReadErrorClassification(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		hj, ok := w.(http.Hijacker)
 		if !ok {
@@ -93,11 +97,13 @@ func TestCallGateway_ReadErrorRedacted(t *testing.T) {
 	}
 }
 
-// TestCallGateway_ParseErrorRedacted returns a 200 with a non-JSON body that
-// embeds the token. Observed behavior: json.Unmarshal's error reports the
-// offending character/position but does not echo the body, so the token does
-// not reach the message; redaction holds it absent. Status is 502.
-func TestCallGateway_ParseErrorRedacted(t *testing.T) {
+// TestCallGateway_ParseErrorClassification returns a 200 with a non-JSON body
+// that embeds the token. This exercises ERROR CLASSIFICATION: the failure is
+// classified as a "parse error" with status 502. json.Unmarshal's error reports
+// the offending character/position but does not echo the body, so the token
+// never reaches the message — redaction is a no-op and the token check only
+// guards that the body is not accidentally surfaced.
+func TestCallGateway_ParseErrorClassification(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte("not json " + redactSecret))
@@ -112,11 +118,12 @@ func TestCallGateway_ParseErrorRedacted(t *testing.T) {
 	}
 }
 
-// TestCallGateway_UnreachableRedacted points at a closed port. Observed
-// behavior: the dial failure surfaces as "gateway unreachable: ..." carrying
-// the endpoint URL (not the token); redaction holds the token absent. Status
-// is 502.
-func TestCallGateway_UnreachableRedacted(t *testing.T) {
+// TestCallGateway_UnreachableClassification points at a closed port. This
+// exercises ERROR CLASSIFICATION: the dial failure is classified as "gateway
+// unreachable" with status 502. The surfaced message carries the endpoint URL,
+// not the token, so redaction is a no-op and the token check only guards that
+// the message stays token-free.
+func TestCallGateway_UnreachableClassification(t *testing.T) {
 	// Grab a free port then close the listener so the connection is refused.
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {

@@ -132,28 +132,32 @@ func TestHandleSystem_Enabled(t *testing.T) {
 	refreshFn := func(ctx context.Context, d, o string, cfg appconfig.Config) error { return nil }
 	s := NewServer(dir, "1.0.0-test", cfg, "", []byte("<html><head></head><body></body></html>"), ctx, refreshFn)
 
-	// Prime the cache deterministically: the first GetJSON collects metrics
-	// synchronously (cold path). On a dev/CI host at least one collector
-	// succeeds, yielding a 200 + payload that is then cached. We assert the
-	// handler propagates that status and body and sets Cache-Control no-cache.
-	// A forced non-200 from the enabled path is skipped: GetJSON has no seam to
-	// make all collectors fail deterministically in-test.
+	// The enabled path is data-dependent: GetJSON collects host metrics
+	// synchronously on first call (cold path) and, on most dev/CI hosts, at
+	// least one collector succeeds → 200 + cached payload. We cannot force a
+	// deterministic 200 here: metricsPayload is unexported in package appsystem
+	// and the only test seam (SetMetricsTimestampForTest) sets the timestamp, not
+	// the bytes — priming the payload from this package would require a new
+	// exported seam, i.e. a production change, which is out of scope for a
+	// tests-only fix. So we read whatever status the host yields and assert the
+	// handler's status/body propagation against THAT value, plus the headers and
+	// HEAD contract that must hold on every enabled response regardless of status.
 	status, body := s.systemSvc.GetJSON(context.Background())
-	if status != http.StatusOK {
-		t.Skipf("system collectors did not yield 200 on this host (status=%d); enabled-non-200 has no deterministic seam", status)
-	}
 
-	t.Run("GET propagates status + body, Cache-Control no-cache", func(t *testing.T) {
+	t.Run("GET propagates status + body, Content-Type + Cache-Control", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/api/system", nil)
 		w := httptest.NewRecorder()
 		s.ServeHTTP(w, req)
 
 		if w.Code != status {
-			t.Fatalf("want %d, got %d", status, w.Code)
+			t.Fatalf("want %d (from systemSvc.GetJSON), got %d", status, w.Code)
 		}
 		if w.Body.String() != string(body) {
 			t.Errorf("body not propagated from systemSvc.GetJSON")
 		}
+		// Headers are status-independent: the enabled handler always emits JSON
+		// content type and no-cache, so these assertions hold on 200 and on a
+		// degraded 503 alike — they never vanish on a host where probes fail.
 		if ct := w.Header().Get("Content-Type"); ct != "application/json" {
 			t.Errorf("Content-Type = %q, want application/json", ct)
 		}
@@ -536,38 +540,42 @@ func TestChatRateLimiter_Cleanup(t *testing.T) {
 func TestPreWarm_RunsExactlyOneRefresh(t *testing.T) {
 	dir := t.TempDir()
 	var calls atomic.Int64
-	done := make(chan struct{})
 	s := newTestServerForRefresh(t, dir, func(ctx context.Context, d, o string, cfg appconfig.Config) error {
 		calls.Add(1)
-		close(done)
 		return nil
 	})
 
 	before := s.lastRefresh
+
+	// PreWarm spawns the refresh worker. Capture the refreshDone channel under
+	// the lock the moment PreWarm returns. runRefresh closes this channel from
+	// its deferred cleanup (server_refresh.go) — *after* it has reset
+	// refreshRunning and (on success) advanced lastRefresh. So a closed
+	// refreshDone is the deterministic "settled" signal, with no sleep or
+	// busy-poll on unexported fields. If the worker already finished before we
+	// grabbed the lock, refreshDone is nil and the work is already settled.
 	s.PreWarm()
-
-	select {
-	case <-done:
-	case <-time.After(3 * time.Second):
-		t.Fatal("PreWarm did not trigger a refresh")
+	s.mu.Lock()
+	doneCh := s.refreshDone
+	s.mu.Unlock()
+	if doneCh != nil {
+		select {
+		case <-doneCh:
+		case <-time.After(5 * time.Second):
+			t.Fatal("refresh did not complete: refreshDone never closed")
+		}
 	}
 
-	// Wait for runRefresh to finish updating lastRefresh.
-	deadline := time.Now().Add(2 * time.Second)
-	for {
-		s.mu.Lock()
-		advanced := s.lastRefresh.After(before)
-		running := s.refreshRunning
-		s.mu.Unlock()
-		if advanced && !running {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatal("lastRefresh did not advance after PreWarm")
-		}
-		time.Sleep(time.Millisecond)
+	s.mu.Lock()
+	advanced := s.lastRefresh.After(before)
+	running := s.refreshRunning
+	s.mu.Unlock()
+	if !advanced {
+		t.Error("lastRefresh did not advance after PreWarm")
 	}
-
+	if running {
+		t.Error("refreshRunning still set after refreshDone closed")
+	}
 	if got := calls.Load(); got != 1 {
 		t.Errorf("refreshFn called %d times, want exactly 1", got)
 	}
