@@ -42,12 +42,21 @@ func TestLiveSessionModelCache_Singleflight(t *testing.T) {
 
 	var calls int
 	var mu sync.Mutex
+	started := make(chan struct{})
+	release := make(chan struct{})
 	c := newLiveSessionModelCache()
 	c.fetchFn = func(ctx context.Context, _ func(ctx context.Context, name string, args ...string) *exec.Cmd, _ string) map[string]string {
 		mu.Lock()
 		calls++
+		if calls == 1 {
+			close(started)
+		}
 		mu.Unlock()
-		time.Sleep(20 * time.Millisecond)
+		select {
+		case <-release:
+		case <-ctx.Done():
+			return map[string]string{}
+		}
 		return map[string]string{"k": "v"}
 	}
 	c.resolveOpenclaw = func() string { return "x" }
@@ -61,6 +70,8 @@ func TestLiveSessionModelCache_Singleflight(t *testing.T) {
 			_ = c.fetch(context.Background(), now, time.Hour)
 		}()
 	}
+	<-started
+	close(release)
 	wg.Wait()
 
 	mu.Lock()

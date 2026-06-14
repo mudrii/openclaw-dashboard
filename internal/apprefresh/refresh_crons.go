@@ -113,11 +113,11 @@ func CollectCrons(cronPath string, loc *time.Location) []map[string]any {
 				state = sc
 			}
 		}
-		// Sidecar exposes both lastStatus and lastRunStatus; prefer lastStatus for
-		// continuity with the legacy schema, fall back to lastRunStatus.
-		lastStatus := jsonStrDefault(state, "lastStatus", "")
+		// OpenClaw's canonical field is lastRunStatus; lastStatus is a
+		// deprecated alias kept only as a legacy fallback.
+		lastStatus := jsonStrDefault(state, "lastRunStatus", "")
 		if lastStatus == "" {
-			lastStatus = jsonStrDefault(state, "lastRunStatus", "none")
+			lastStatus = jsonStrDefault(state, "lastStatus", "none")
 		}
 		lastRunMs, _ := state["lastRunAtMs"].(float64)
 		nextRunMs, _ := state["nextRunAtMs"].(float64)

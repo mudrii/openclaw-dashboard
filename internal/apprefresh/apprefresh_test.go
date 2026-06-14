@@ -79,6 +79,57 @@ func TestCollectTokenUsageWithCache_HandlesLargeJSONLLine(t *testing.T) {
 	}
 }
 
+func TestCollectTokenUsageWithCache_CountsDeletedSubagentJSONL(t *testing.T) {
+	basePath := filepath.Join(t.TempDir(), "agents")
+	sessionDir := filepath.Join(basePath, "main", "sessions")
+	if err := os.MkdirAll(sessionDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	line := `{"timestamp":"2026-03-22T10:00:00Z","message":{"role":"assistant","model":"openai/gpt-5","usage":{"totalTokens":100,"input":60,"output":40,"cacheRead":0,"cost":{"total":0.12}}}}` + "\n"
+	if err := os.WriteFile(filepath.Join(sessionDir, "sub1.jsonl.deleted.123"), []byte(line), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	modelsAll := map[string]*TokenBucket{}
+	modelsToday := map[string]*TokenBucket{}
+	models7d := map[string]*TokenBucket{}
+	models30d := map[string]*TokenBucket{}
+	subagentAll := map[string]*TokenBucket{}
+	subagentToday := map[string]*TokenBucket{}
+	subagent7d := map[string]*TokenBucket{}
+	subagent30d := map[string]*TokenBucket{}
+	dailyCosts := map[string]map[string]float64{}
+	dailyTokens := map[string]map[string]int{}
+	dailyCalls := map[string]map[string]int{}
+	dailySubagentCosts := map[string]float64{}
+	dailySubagentCount := map[string]int{}
+
+	runs := CollectTokenUsageWithCache(
+		filepath.Join(t.TempDir(), "token-cache.json"),
+		basePath, time.UTC, "2026-03-22", "2026-03-16", "2026-02-21",
+		map[string]string{"sub1": "subagent"},
+		map[string]string{"sub1": "agent:main:subagent:task"},
+		map[string]string{},
+		modelsAll, modelsToday, models7d, models30d,
+		subagentAll, subagentToday, subagent7d, subagent30d,
+		dailyCosts, dailyTokens, dailyCalls, dailySubagentCosts, dailySubagentCount,
+	)
+
+	if got := modelsAll["GPT-5"]; got == nil || got.Total != 100 {
+		t.Fatalf("modelsAll GPT-5 = %+v, want total 100", got)
+	}
+	if got := subagentAll["GPT-5"]; got == nil || got.Total != 100 {
+		t.Fatalf("subagentAll GPT-5 = %+v, want total 100", got)
+	}
+	if len(runs) != 1 {
+		t.Fatalf("subagent runs = %d, want 1", len(runs))
+	}
+	if runs[0]["task"] != "agent:main:subagent:task" {
+		t.Errorf("run task = %v, want agent:main:subagent:task", runs[0]["task"])
+	}
+}
+
 func TestCollectTokenUsageWithCache_ReusesUnchangedFileSummary(t *testing.T) {
 	tmp := t.TempDir()
 	basePath := filepath.Join(tmp, "agents")

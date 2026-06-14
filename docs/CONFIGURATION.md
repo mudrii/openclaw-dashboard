@@ -43,6 +43,17 @@ the binary reports the installed release version correctly after upgrades.
     "maxHistory": 6,
     "dotenvPath": "~/.openclaw/.env"
   },
+  "logs": {
+    "enabled": true,
+    "tailLines": 200,
+    "fastRefreshMs": 3000,
+    "errorWindowHours": 24,
+    "maxErrorSignatures": 1000,
+    "sources": [
+      "logs/gateway.log",
+      "logs/gateway.err.log"
+    ]
+  },
   "system": {
     "enabled": true,
     "pollSeconds": 10,

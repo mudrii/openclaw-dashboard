@@ -124,4 +124,17 @@ func TestUniqueTempPath(t *testing.T) {
 			t.Errorf("expected uniqueTempPath to skip occupied %q", first)
 		}
 	})
+
+	t.Run("errors when every candidate is occupied", func(t *testing.T) {
+		dir := t.TempDir()
+		for i := 0; i < 1000; i++ {
+			p := filepath.Join(dir, fmt.Sprintf(".unit.conf.tmp-%d-%d", os.Getpid(), i))
+			if err := os.WriteFile(p, nil, 0o600); err != nil {
+				t.Fatalf("seed candidate %d: %v", i, err)
+			}
+		}
+		if _, err := uniqueTempPath(dir, "unit.conf"); err == nil {
+			t.Fatal("expected exhausted temp path error")
+		}
+	})
 }

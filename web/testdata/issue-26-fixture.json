@@ -1,0 +1,100 @@
+{
+  "dashboard": {
+    "botName": "Fixture Dashboard",
+    "botEmoji": "*",
+    "lastRefresh": "2026-06-14 10:00:00 UTC",
+    "gateway": {
+      "status": "online",
+      "pid": 4242,
+      "uptime": "2h",
+      "memory": "128 MB",
+      "port": 18789
+    },
+    "compactionMode": "auto",
+    "sessionCount": 0,
+    "totalCostToday": 0,
+    "subagentCostToday": 0,
+    "totalCostAllTime": 0,
+    "subagentCostAllTime": 0,
+    "projectedMonthly": 0,
+    "sessions": [],
+    "crons": [],
+    "skills": [],
+    "gitLog": [],
+    "alerts": [
+      {
+        "severity": "critical",
+        "icon": "!",
+        "message": "Gateway is offline"
+      }
+    ],
+    "dailyChart": [],
+    "availableModels": [],
+    "agentConfig": {
+      "primaryModel": "GPT-5",
+      "primaryModelId": "openai/gpt-5",
+      "fallbacks": [],
+      "agents": [],
+      "skills": [],
+      "bindings": [],
+      "channels": [],
+      "channelStatus": {},
+      "gateway": {
+        "port": 18789,
+        "mode": "http",
+        "bind": "127.0.0.1",
+        "authMode": "bearer",
+        "tailscale": "off"
+      },
+      "subagentConfig": {}
+    }
+  },
+  "system": {
+    "ok": true,
+    "stale": false,
+    "pollSeconds": 10,
+    "cpu": {
+      "percent": 12.5
+    },
+    "ram": {
+      "usedBytes": 1024,
+      "totalBytes": 4096,
+      "percent": 25
+    },
+    "swap": {
+      "percent": 0
+    },
+    "disk": {
+      "usedBytes": 2048,
+      "totalBytes": 8192,
+      "percent": 25
+    },
+    "versions": {
+      "openclaw": "2026.6.14",
+      "latest": "2026.6.14",
+      "gateway": {
+        "status": "online",
+        "version": "2026.6.14",
+        "pid": 4242,
+        "uptime": "2h",
+        "memory": "128 MB"
+      }
+    },
+    "openclaw": {
+      "status": {
+        "currentVersion": "2026.6.14",
+        "latestVersion": "2026.6.14",
+        "connectLatencyMs": 12
+      },
+      "gateway": {
+        "live": true,
+        "ready": false,
+        "readyEndpointOk": true,
+        "uptimeMs": 7200000,
+        "failing": [
+          "slack<script>alert(1)</script>"
+        ]
+      }
+    }
+  }
+}

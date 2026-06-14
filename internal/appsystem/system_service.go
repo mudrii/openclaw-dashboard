@@ -698,22 +698,18 @@ func ParseGatewayStatusJSON(ctx context.Context, output string) SystemGateway {
 		} `json:"service"`
 		Version string `json:"version"`
 	}
-	// Find first JSON object in output (may have leading non-JSON lines)
-	start := strings.Index(output, "{")
-	if start >= 0 {
-		if err := json.Unmarshal([]byte(output[start:]), &result); err == nil {
-			// Prefer runtime.Status == "running" over just Loaded
-			status := "offline"
-			if result.Service.Runtime.Status == "running" || result.Service.Loaded {
-				status = "online"
-			}
-			gw := SystemGateway{Version: result.Version, Status: status, PID: result.Service.Runtime.PID}
-			// Get uptime + memory from /proc or ps if we have a PID
-			if gw.PID > 0 {
-				gw.Uptime, gw.Memory = GetProcessInfo(ctx, gw.PID)
-			}
-			return gw
+	if err := decodeJSONObjectFromOutput(output, &result); err == nil {
+		// Prefer runtime.Status == "running" over just Loaded
+		status := "offline"
+		if result.Service.Runtime.Status == "running" || result.Service.Loaded {
+			status = "online"
 		}
+		gw := SystemGateway{Version: result.Version, Status: status, PID: result.Service.Runtime.PID}
+		// Get uptime + memory from /proc or ps if we have a PID
+		if gw.PID > 0 {
+			gw.Uptime, gw.Memory = GetProcessInfo(ctx, gw.PID)
+		}
+		return gw
 	}
 	// Fallback: text parsing
 	lower := strings.ToLower(output)

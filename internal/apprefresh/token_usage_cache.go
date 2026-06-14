@@ -271,10 +271,10 @@ func applyTokenUsageSummary(
 	subagentRuns *[]map[string]any,
 ) {
 	sid := filepath.Base(path)
-	sid = strings.TrimSuffix(sid, ".jsonl")
 	if idx := strings.Index(sid, ".deleted."); idx >= 0 {
 		sid = sid[:idx]
 	}
+	sid = strings.TrimSuffix(sid, ".jsonl")
 	sessionKey := sidToKey[sid]
 	isSubagent := isSubagentSession(sessionKey, knownSIDs[sid])
 

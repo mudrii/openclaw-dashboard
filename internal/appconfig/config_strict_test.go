@@ -2,9 +2,12 @@ package appconfig
 
 import (
 	"bytes"
+	"encoding/json"
 	"log/slog"
 	"os"
 	"path/filepath"
+	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -33,18 +36,57 @@ func TestLoad_WarnsOnUnknownField(t *testing.T) {
 	}
 
 	var cfg Config
-	withCapturedSlog(t, func() {
+	logs := withCapturedSlog(t, func() {
 		cfg = Load(dir)
 	})
 
 	// Behavior under test: an unknown field is ignored and does not abort the
 	// load. Known sibling fields still bind; the mistyped field leaves its
-	// target at the default. (Whether/how a warning is logged is an
-	// implementation detail and is not asserted here.)
+	// target at the default.
 	if cfg.Timezone != "Europe/Berlin" {
 		t.Errorf("expected Timezone=Europe/Berlin (loaded despite unknown sibling), got %q", cfg.Timezone)
 	}
 	if cfg.AI.GatewayPort != 18789 {
 		t.Errorf("expected default GatewayPort=18789 (typo did not bind), got %d", cfg.AI.GatewayPort)
+	}
+	if !strings.Contains(logs, "[dashboard] unknown config key") || !strings.Contains(logs, "field=ai.gatewayPot") {
+		t.Fatalf("unknown-key warning missing field path; logs:\n%s", logs)
+	}
+}
+
+func TestConfigurationGuideFullExampleMatchesConfigSchema(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "docs", "CONFIGURATION.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(data)
+	start := strings.Index(text, "### Full Example")
+	if start < 0 {
+		t.Fatal("Full Example heading not found")
+	}
+	codeStart := strings.Index(text[start:], "```json")
+	if codeStart < 0 {
+		t.Fatal("Full Example JSON block not found")
+	}
+	codeStart = start + codeStart + len("```json")
+	codeEnd := strings.Index(text[codeStart:], "```")
+	if codeEnd < 0 {
+		t.Fatal("Full Example JSON block is unterminated")
+	}
+	var example map[string]any
+	if err := json.Unmarshal([]byte(text[codeStart:codeStart+codeEnd]), &example); err != nil {
+		t.Fatalf("Full Example JSON is invalid: %v", err)
+	}
+
+	want := jsonFields(reflect.TypeOf(Config{}))
+	for key := range want {
+		if _, ok := example[key]; !ok {
+			t.Errorf("Full Example missing top-level config key %q", key)
+		}
+	}
+	for key := range example {
+		if _, ok := want[key]; !ok {
+			t.Errorf("Full Example includes unknown top-level key %q", key)
+		}
 	}
 }

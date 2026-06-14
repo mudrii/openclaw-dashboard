@@ -90,35 +90,50 @@ func enrichBindings(agentConfig map[string]any, groupNames map[string]string) {
 }
 
 func loadAgentDefaultModels(basePath string) map[string]string {
-	defaults := map[string]string{"main": "unknown", "work": "unknown", "group": "unknown"}
+	defaults := map[string]string{}
 	cfgPath := filepath.Join(basePath, "..", "openclaw.json")
 	data, err := os.ReadFile(cfgPath)
 	if err != nil {
-		return defaults
+		return map[string]string{"main": "unknown", "work": "unknown", "group": "unknown"}
 	}
 	var cfg map[string]any
 	if err := json.Unmarshal(data, &cfg); err != nil {
-		return defaults
+		return map[string]string{"main": "unknown", "work": "unknown", "group": "unknown"}
 	}
 	agents := jsonObj(cfg, "agents")
 	defs := jsonObj(agents, "defaults")
-	primary := jsonStr(jsonObj(defs, "model"), "primary")
+	primary := agentModelPrimary(defs["model"])
 	if primary == "" {
 		primary = "unknown"
 	}
 	for name, v := range agents {
-		if name == "defaults" {
+		if name == "defaults" || name == "list" {
 			continue
 		}
 		vm := asObj(v)
 		if vm == nil {
 			continue
 		}
-		model := jsonStr(jsonObj(vm, "model"), "primary")
+		model := agentModelPrimary(vm["model"])
 		if model == "" {
 			model = primary
 		}
 		defaults[name] = model
+	}
+	for _, entry := range jsonArr(agents, "list") {
+		vm := asObj(entry)
+		if vm == nil {
+			continue
+		}
+		id := jsonStr(vm, "id")
+		if id == "" {
+			continue
+		}
+		model := agentModelPrimary(vm["model"])
+		if model == "" {
+			model = primary
+		}
+		defaults[id] = model
 	}
 	for _, a := range []string{"main", "work", "group"} {
 		if _, ok := defaults[a]; !ok {
@@ -126,6 +141,17 @@ func loadAgentDefaultModels(basePath string) map[string]string {
 		}
 	}
 	return defaults
+}
+
+func agentModelPrimary(v any) string {
+	switch m := v.(type) {
+	case string:
+		return m
+	case map[string]any:
+		return jsonStr(m, "primary")
+	default:
+		return ""
+	}
 }
 
 func getSessionModel(basePath, agentName, sessionID string, agentDefaults map[string]string) string {

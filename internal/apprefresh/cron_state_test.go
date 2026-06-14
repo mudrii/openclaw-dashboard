@@ -379,3 +379,48 @@ func TestCollectCrons_SidecarLastRunStatusFallback(t *testing.T) {
 		t.Errorf("lastDurationMs = %v, want 99", crons[0]["lastDurationMs"])
 	}
 }
+
+func TestCollectCrons_SidecarPrefersCanonicalLastRunStatus(t *testing.T) {
+	dir := t.TempDir()
+	cronPath := filepath.Join(dir, "jobs.json")
+	statePath := filepath.Join(dir, "jobs-state.json")
+
+	id := "canonical-status-job"
+	jobs := map[string]any{
+		"jobs": []any{
+			map[string]any{
+				"id":       id,
+				"name":     "canonical",
+				"enabled":  true,
+				"schedule": map[string]any{"kind": "cron", "expr": "0 0 * * *"},
+				"state": map[string]any{
+					"lastStatus":    "inline-stale",
+					"lastRunStatus": "inline-canonical",
+				},
+			},
+		},
+	}
+	sidecar := map[string]any{
+		"jobs": map[string]any{
+			id: map[string]any{
+				"state": map[string]any{
+					"lastStatus":    "sidecar-stale-alias",
+					"lastRunStatus": "sidecar-canonical",
+				},
+			},
+		},
+	}
+	jb, _ := json.Marshal(jobs)
+	sb, _ := json.Marshal(sidecar)
+	if err := os.WriteFile(cronPath, jb, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(statePath, sb, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	crons := CollectCrons(cronPath, time.UTC)
+	if got := crons[0]["lastStatus"]; got != "sidecar-canonical" {
+		t.Fatalf("lastStatus = %v, want canonical lastRunStatus", got)
+	}
+}

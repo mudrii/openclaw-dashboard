@@ -73,15 +73,10 @@ func TestLoadAgentDefaultModels(t *testing.T) {
 			}
 		}`
 		got := loadAgentDefaultModels(seedConfig(t, cfg))
-		// Observed behavior: an agent present in config but lacking a model
-		// resolves to agents.defaults.model.primary. An agent absent from config
-		// (group, here) keeps the seeded "unknown" — the main/work/group backfill
-		// loop only fires for keys missing from the map, and they are seeded
-		// "unknown" at construction, so they are never missing.
 		want := map[string]string{
 			"main":  "anthropic/opus", // present, no model → defaults.model.primary
 			"work":  "kimi/k2",        // present, explicit model
-			"group": "unknown",        // absent from config → seeded default retained
+			"group": "anthropic/opus", // absent standard agent → defaults.model.primary
 		}
 		if !reflect.DeepEqual(got, want) {
 			t.Errorf("got %v, want %v", got, want)
@@ -131,18 +126,44 @@ func TestLoadAgentDefaultModels(t *testing.T) {
 		}`
 		got := loadAgentDefaultModels(seedConfig(t, cfg))
 		// "research" is included as its own key. work/group are absent from the
-		// config so they retain the seeded "unknown" (see backfill note above).
+		// config so they inherit agents.defaults.model.primary.
 		want := map[string]string{
 			"main":     "openai/gpt",
 			"research": "perplexity/sonar",
-			"work":     "unknown",
-			"group":    "unknown",
+			"work":     "anthropic/opus",
+			"group":    "anthropic/opus",
 		}
 		if !reflect.DeepEqual(got, want) {
 			t.Errorf("got %v, want %v", got, want)
 		}
 		if _, ok := got["research"]; !ok {
 			t.Errorf("extra agent 'research' not included: %v", got)
+		}
+	})
+
+	t.Run("agents list string and object models populate per-agent defaults", func(t *testing.T) {
+		cfg := `{
+			"agents": {
+				"defaults": {"model": {"primary": "anthropic/opus"}},
+				"list": [
+					{"id": "main", "model": {"primary": "openai/gpt-5"}},
+					{"id": "research", "model": "perplexity/sonar"},
+					{"id": "reviewer", "model": {"primary": "anthropic/sonnet"}},
+					{"id": "default-agent", "default": true, "model": {"primary": "google/gemini"}}
+				]
+			}
+		}`
+		got := loadAgentDefaultModels(seedConfig(t, cfg))
+		want := map[string]string{
+			"main":          "openai/gpt-5",
+			"work":          "anthropic/opus",
+			"group":         "anthropic/opus",
+			"research":      "perplexity/sonar",
+			"reviewer":      "anthropic/sonnet",
+			"default-agent": "google/gemini",
+		}
+		if !reflect.DeepEqual(got, want) {
+			t.Errorf("got %v, want %v", got, want)
 		}
 	})
 }

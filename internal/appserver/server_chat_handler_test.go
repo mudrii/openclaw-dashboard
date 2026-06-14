@@ -201,6 +201,92 @@ func TestHandleChat_GatewayError502(t *testing.T) {
 	}
 }
 
+func TestHandleChat_GatewayErrorDoesNotExposeUpstreamBodyOrToken(t *testing.T) {
+	dir := t.TempDir()
+	writeMinimalDataJSON(t, dir)
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/v1/chat/completions", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte("stack trace echoed Bearer tok"))
+	})
+	gw := httptest.NewServer(mux)
+	t.Cleanup(gw.Close)
+
+	s := chatTestServer(t, dir, gatewayPort(t, gw))
+	w := mustPostChat(t, s, `{"question":"ping"}`)
+	if w.Code != http.StatusBadGateway {
+		t.Fatalf("want 502, got %d body=%s", w.Code, w.Body.String())
+	}
+	body := w.Body.String()
+	if strings.Contains(body, "tok") || strings.Contains(body, "stack trace") {
+		t.Fatalf("response leaked upstream body or token: %s", body)
+	}
+	var out map[string]string
+	if err := json.Unmarshal(w.Body.Bytes(), &out); err != nil {
+		t.Fatalf("invalid JSON response: %v", err)
+	}
+	if out["error"] != "gateway unavailable" {
+		t.Errorf("error = %q, want gateway unavailable", out["error"])
+	}
+}
+
+func TestHandleChat_SanitizesHistoryBeforeGatewayRequest(t *testing.T) {
+	dir := t.TempDir()
+	writeMinimalDataJSON(t, dir)
+
+	type gatewayMessage struct {
+		Role    string `json:"role"`
+		Content string `json:"content"`
+	}
+	var got struct {
+		Messages []gatewayMessage `json:"messages"`
+	}
+	mux := http.NewServeMux()
+	mux.HandleFunc("/v1/chat/completions", func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&got); err != nil {
+			t.Errorf("decode gateway request: %v", err)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"ok"}}]}`))
+	})
+	gw := httptest.NewServer(mux)
+	t.Cleanup(gw.Close)
+
+	s := chatTestServer(t, dir, gatewayPort(t, gw))
+	long := strings.Repeat("x", maxHistoryItem+3)
+	body, err := json.Marshal(map[string]any{
+		"question": "current question",
+		"history": []map[string]string{
+			{"role": "user", "content": "old dropped by max history"},
+			{"role": "assistant", "content": "also dropped by max history"},
+			{"role": "tool", "content": "invalid role dropped"},
+			{"role": "user", "content": long},
+			{"role": "assistant", "content": "kept"},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	w := mustPostChat(t, s, string(body))
+	if w.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d body=%s", w.Code, w.Body.String())
+	}
+	if len(got.Messages) != 4 {
+		t.Fatalf("gateway messages = %#v, want system + 2 history + current question", got.Messages)
+	}
+	if got.Messages[1].Role != "user" || len([]rune(got.Messages[1].Content)) != maxHistoryItem {
+		t.Fatalf("history user not truncated on rune boundary: role=%q len=%d", got.Messages[1].Role, len([]rune(got.Messages[1].Content)))
+	}
+	if got.Messages[2] != (gatewayMessage{Role: "assistant", Content: "kept"}) {
+		t.Fatalf("assistant history = %#v, want kept", got.Messages[2])
+	}
+	if got.Messages[3] != (gatewayMessage{Role: "user", Content: "current question"}) {
+		t.Fatalf("current question message = %#v", got.Messages[3])
+	}
+}
+
 // TestChatRateLimiter_PerIPIsolation verifies that exhausting one IP's bucket
 // does not affect requests from a different IP address.
 func TestChatRateLimiter_PerIPIsolation(t *testing.T) {

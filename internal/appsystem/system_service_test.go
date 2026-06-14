@@ -139,6 +139,18 @@ func TestParseGatewayStatusJSON_Offline(t *testing.T) {
 	}
 }
 
+func TestParseGatewayStatusJSON_SkipsInvalidBracePreamble(t *testing.T) {
+	input := `warning: ignored object {not json}
+{"service":{"loaded":true,"runtime":{"status":"running","pid":0}},"version":"3.1.0"}`
+	gw := ParseGatewayStatusJSON(context.Background(), input)
+	if gw.Status != "online" {
+		t.Errorf("expected online, got %q", gw.Status)
+	}
+	if gw.Version != "3.1.0" {
+		t.Errorf("expected version 3.1.0, got %q", gw.Version)
+	}
+}
+
 func TestGetLatestVersionCached_FailureIsNegativelyCached(t *testing.T) {
 	var calls atomic.Int32
 	svc := NewSystemService(appconfig.SystemConfig{
