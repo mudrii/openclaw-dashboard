@@ -15,52 +15,58 @@ import (
 // captureStdout redirects os.Stdout for the duration of fn and returns whatever
 // was written. serviceStatus renders via fmt.Print to the real stdout, so this
 // is the only way to assert the user-visible status output.
-func captureStdout(t *testing.T, fn func()) string {
+func captureStdout(t *testing.T, fn func()) (out string) {
 	t.Helper()
 	orig := os.Stdout
 	r, w, err := os.Pipe()
 	if err != nil {
 		t.Fatalf("pipe: %v", err)
 	}
-	os.Stdout = w
-	t.Cleanup(func() { os.Stdout = orig })
-
 	var buf strings.Builder
 	var wg sync.WaitGroup
+
+	os.Stdout = w
+	defer func() {
+		os.Stdout = orig
+		_ = w.Close()
+		wg.Wait()
+		_ = r.Close()
+		out = buf.String()
+	}()
+
 	wg.Add(1)
 	go func() { defer wg.Done(); _, _ = io.Copy(&buf, r) }()
 
 	fn()
-
-	_ = w.Close()
-	wg.Wait()
-	_ = r.Close()
-	return buf.String()
+	return out
 }
 
 // captureStderr mirrors captureStdout for os.Stderr. The service dispatch writes
 // usage and error diagnostics to stderr via fmt.Fprintf(os.Stderr, ...).
-func captureStderr(t *testing.T, fn func()) string {
+func captureStderr(t *testing.T, fn func()) (out string) {
 	t.Helper()
 	orig := os.Stderr
 	r, w, err := os.Pipe()
 	if err != nil {
 		t.Fatalf("pipe: %v", err)
 	}
-	os.Stderr = w
-	t.Cleanup(func() { os.Stderr = orig })
-
 	var buf strings.Builder
 	var wg sync.WaitGroup
+
+	os.Stderr = w
+	defer func() {
+		os.Stderr = orig
+		_ = w.Close()
+		wg.Wait()
+		_ = r.Close()
+		out = buf.String()
+	}()
+
 	wg.Add(1)
 	go func() { defer wg.Done(); _, _ = io.Copy(&buf, r) }()
 
 	fn()
-
-	_ = w.Close()
-	wg.Wait()
-	_ = r.Close()
-	return buf.String()
+	return out
 }
 
 // fakeBackend records which methods were called and with what args.

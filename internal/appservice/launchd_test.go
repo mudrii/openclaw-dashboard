@@ -261,6 +261,7 @@ func TestLaunchd_New(t *testing.T) {
 
 	t.Run("NewWithContext tolerates a nil context", func(t *testing.T) {
 		t.Setenv("HOME", t.TempDir())
+		//lint:ignore SA1012 exercising the nil-ctx fallback
 		//nolint:staticcheck // exercising the nil-ctx fallback
 		b, err := NewWithContext(nil)
 		if err != nil {

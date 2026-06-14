@@ -27,6 +27,7 @@ func TestExecRun(t *testing.T) {
 	})
 
 	t.Run("nil context is tolerated", func(t *testing.T) {
+		//lint:ignore SA1012 explicitly exercising the nil-ctx fallback path
 		//nolint:staticcheck // explicitly exercising the nil-ctx fallback path
 		out, err := execRun(nil, "echo", "ok")
 		if err != nil {

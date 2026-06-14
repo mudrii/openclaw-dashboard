@@ -89,3 +89,32 @@ func TestFormatUptime(t *testing.T) {
 		})
 	}
 }
+
+func TestValidateLoopbackBind(t *testing.T) {
+	tests := []struct {
+		name    string
+		host    string
+		allow   string
+		wantErr bool
+	}{
+		{name: "empty", host: ""},
+		{name: "ipv4 loopback", host: "127.0.0.1"},
+		{name: "localhost", host: "localhost"},
+		{name: "ipv6 loopback", host: "::1"},
+		{name: "non loopback rejected", host: "0.0.0.0", wantErr: true},
+		{name: "non loopback allowed by env", host: "0.0.0.0", allow: "1"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("OPENCLAW_DASHBOARD_ALLOW_NON_LOOPBACK", tc.allow)
+			err := ValidateLoopbackBind(tc.host)
+			if tc.wantErr && err == nil {
+				t.Fatal("ValidateLoopbackBind returned nil, want error")
+			}
+			if !tc.wantErr && err != nil {
+				t.Fatalf("ValidateLoopbackBind returned error: %v", err)
+			}
+		})
+	}
+}

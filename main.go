@@ -188,7 +188,7 @@ func Main() int {
 	serverCtx, serverCancel := context.WithCancel(cmdCtx)
 	defer serverCancel()
 
-	if err := validateLoopbackBind(*bind); err != nil {
+	if err := appservice.ValidateLoopbackBind(*bind); err != nil {
 		fmt.Fprintf(os.Stderr, "[dashboard] fatal: %v\n", err)
 		return 1
 	}
@@ -351,15 +351,6 @@ func runServiceCmd(cmd string, opts serviceCmdOpts) int {
 		fmt.Fprintln(os.Stderr, "Usage: openclaw-dashboard [service] install|uninstall|start|stop|restart|status")
 		return 1
 	}
-	// install bakes the bind host into the service unit; reject a non-loopback
-	// bind now so the failure surfaces at install time rather than later when
-	// the daemon refuses to start under the loopback-only policy.
-	if cmd == "install" {
-		if err := validateLoopbackBind(*bind); err != nil {
-			fmt.Fprintf(os.Stderr, "[dashboard] %v\n", err)
-			return 1
-		}
-	}
 	return action(opts, *bind, *port)
 }
 
@@ -370,6 +361,10 @@ func serviceInstall(opts serviceCmdOpts, bind string, port int) int {
 		LogPath: filepath.Join(opts.dir, "server.log"),
 		Host:    bind,
 		Port:    port,
+	}
+	if err := appservice.ValidateLoopbackBind(cfg.Host); err != nil {
+		fmt.Fprintf(os.Stderr, "[dashboard] %v\n", err)
+		return 1
 	}
 	if err := opts.backend.Install(cfg); err != nil {
 		fmt.Fprintf(os.Stderr, "[dashboard] install failed: %v\n", err)
@@ -423,31 +418,6 @@ func serviceStatus(opts serviceCmdOpts, _ string, _ int) int {
 	}
 	fmt.Print(appservice.FormatStatus(opts.version, st))
 	return 0
-}
-
-// validateLoopbackBind enforces the loopback-only bind policy. The dashboard's
-// chat rate-limit map grows unbounded between cleanup cycles, so exposing it on
-// a non-loopback interface is a DoS surface. Setting the environment variable
-// OPENCLAW_DASHBOARD_ALLOW_NON_LOOPBACK=1 opts into a non-loopback bind for
-// containerized deployments (Docker, Kubernetes) where the surrounding network
-// boundary is the operator's responsibility. The opt-in is intentionally
-// awkward — there is no CLI flag — so it never gets enabled by accident.
-func validateLoopbackBind(host string) error {
-	switch strings.TrimSpace(host) {
-	case "", "127.0.0.1", "localhost", "::1":
-		return nil
-	}
-	if os.Getenv("OPENCLAW_DASHBOARD_ALLOW_NON_LOOPBACK") == "1" {
-		// Surface the bypass in startup logs so operators reading the unit's
-		// journal can tell the loopback policy was relaxed by env override
-		// rather than silently shipped that way.
-		slog.Warn("loopback-only policy bypassed via env override",
-			"env", "OPENCLAW_DASHBOARD_ALLOW_NON_LOOPBACK=1",
-			"bind", host,
-			"note", "rate-limit map is unbounded between cleanups; ensure a network boundary protects this port")
-		return nil
-	}
-	return fmt.Errorf("non-loopback bind host %q is not supported; this dashboard is loopback-only by design (set OPENCLAW_DASHBOARD_ALLOW_NON_LOOPBACK=1 to override in containerized deployments)", host)
 }
 
 func localIP() string {

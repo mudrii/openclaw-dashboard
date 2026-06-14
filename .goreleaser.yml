@@ -4,7 +4,8 @@ project_name: openclaw-dashboard
 
 before:
   hooks:
-    - go mod verify
+    - go mod tidy
+    - git diff --exit-code -- go.mod go.sum
     - go test -race ./...
 
 builds:
