@@ -42,8 +42,19 @@ func lookupModelLimits(oc map[string]any, modelID string) (contextWindow, maxTok
 			continue
 		}
 		if jsonStr(em, "id") == mid {
-			return em["contextWindow"], em["maxTokens"]
+			cw := em["contextWindow"]
+			if cw == nil {
+				if w, ok := catalogContextWindow(modelID); ok {
+					cw = w
+				}
+			}
+			return cw, em["maxTokens"]
 		}
+	}
+	// No registry entry: the live model catalog can still supply a context
+	// window for stock configs that rely on openclaw's internal catalog.
+	if w, ok := catalogContextWindow(modelID); ok {
+		return w, nil
 	}
 	return nil, nil
 }

@@ -334,3 +334,30 @@ default-case raw-id passthrough for a live key). `-race` suite green.
 **RUNTIME-VERIFY.** Live name resolution needs a running openclaw with `models list
 --json`. **Next slice (2/2).** Feed `contextWindow`/`contextTokens` from the catalog
 into `lookupModelLimits` for accurate context-usage bars.
+
+---
+
+## 2026-06-14 — INT-4 — DONE (2/2): catalog context windows → lookupModelLimits
+
+**Slice 2/2 (RED→GREEN).** Catalog now also supplies context windows.
+- `parseModelCatalog` refactored to return a `modelCatalog{names, windows}` struct;
+  window prefers `contextWindow`, falls back to `contextTokens`. Window captured
+  even for rows without a display name.
+- Cache stores/returns the struct (deep `clone()` for both maps); `refreshModelCatalog`
+  publishes a second `modelCatalogWindows` atomic snapshot.
+- `lookupModelLimits` consults `catalogContextWindow(modelID)` when the openclaw.json
+  registry has no entry (or a nil contextWindow) — registry value still wins when set.
+
+**Files.** `model_catalog_cache.go` (struct + windows snapshot + clone) ·
+`refresh_config.go` (lookupModelLimits catalog fallback) ·
+`model_catalog_cache_test.go` (window assertions + TestLookupModelLimits_CatalogFallback).
+
+**Tests delta.** +1 func (LookupModelLimits_CatalogFallback); parser tests extended
+with window assertions; cache fetch tests updated to struct return.
+
+**Facade.** None (lookupModelLimits unexported; ModelName signature stable).
+
+**Gate.** `make check` green (vet, lint 0, `test -race`, govulncheck), `gofmt -l` empty.
+
+**INT-4 COMPLETE** (2/2). **RUNTIME-VERIFY:** live windows need running openclaw.
+**Remaining.** INT-3 (next), INT-5.

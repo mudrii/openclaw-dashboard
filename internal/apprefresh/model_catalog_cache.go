@@ -11,14 +11,27 @@ import (
 	"time"
 )
 
-// modelCatalogNames is the package-level snapshot of the live model id → display
-// name map. ModelName reads it synchronously (it is pure and ctx-free); the
-// catalog cache publishes into it during collection. A nil snapshot means "no
-// catalog yet" and ModelName relies entirely on its hardcoded switch.
-var modelCatalogNames atomic.Pointer[map[string]string]
+// modelCatalog is the parsed `openclaw models list --json` result: model id
+// (key) → display name and id → context window (tokens).
+type modelCatalog struct {
+	names   map[string]string
+	windows map[string]int
+}
 
-// setModelCatalogNames publishes a new catalog snapshot for ModelName to read.
+// modelCatalogNames / modelCatalogWindows are package-level snapshots of the
+// live catalog. ModelName and lookupModelLimits read them synchronously (both
+// are pure / ctx-free); the catalog cache publishes into them during collection.
+// A nil snapshot means "no catalog yet" → callers rely on their fallbacks.
+var (
+	modelCatalogNames   atomic.Pointer[map[string]string]
+	modelCatalogWindows atomic.Pointer[map[string]int]
+)
+
+// setModelCatalogNames publishes a new display-name snapshot for ModelName.
 func setModelCatalogNames(m map[string]string) { modelCatalogNames.Store(&m) }
+
+// setModelCatalogWindows publishes a new context-window snapshot for lookupModelLimits.
+func setModelCatalogWindows(m map[string]int) { modelCatalogWindows.Store(&m) }
 
 // catalogDisplayName returns the live display name for a model id, if the
 // current catalog snapshot knows it.
@@ -31,11 +44,23 @@ func catalogDisplayName(model string) (string, bool) {
 	return n, ok && n != ""
 }
 
-// parseModelCatalog parses `openclaw models list --json` output into a
-// id(key) → display name map. It accepts both the envelope form
-// {count, models:[…]} and a bare array, and ignores rows without a usable name.
-func parseModelCatalog(out []byte) map[string]string {
-	names := map[string]string{}
+// catalogContextWindow returns the live context window for a model id, if the
+// current catalog snapshot knows it.
+func catalogContextWindow(model string) (int, bool) {
+	p := modelCatalogWindows.Load()
+	if p == nil {
+		return 0, false
+	}
+	w, ok := (*p)[model]
+	return w, ok && w > 0
+}
+
+// parseModelCatalog parses `openclaw models list --json` output into a catalog of
+// id(key) → display name and id → context window. It accepts both the envelope
+// form {count, models:[…]} and a bare array. Names without a value are skipped;
+// the context window prefers contextWindow and falls back to contextTokens.
+func parseModelCatalog(out []byte) modelCatalog {
+	cat := modelCatalog{names: map[string]string{}, windows: map[string]int{}}
 	var rows []any
 	var envelope struct {
 		Models []any `json:"models"`
@@ -43,7 +68,7 @@ func parseModelCatalog(out []byte) map[string]string {
 	if err := json.Unmarshal(out, &envelope); err == nil && envelope.Models != nil {
 		rows = envelope.Models
 	} else if err := json.Unmarshal(out, &rows); err != nil {
-		return names
+		return cat
 	}
 	for _, r := range rows {
 		rm := asObj(r)
@@ -51,12 +76,19 @@ func parseModelCatalog(out []byte) map[string]string {
 			continue
 		}
 		key, _ := rm["key"].(string)
-		name, _ := rm["name"].(string)
-		if key != "" && name != "" {
-			names[key] = name
+		if key == "" {
+			continue
+		}
+		if name, _ := rm["name"].(string); name != "" {
+			cat.names[key] = name
+		}
+		if w, ok := rm["contextWindow"].(float64); ok && w > 0 {
+			cat.windows[key] = int(w)
+		} else if w, ok := rm["contextTokens"].(float64); ok && w > 0 {
+			cat.windows[key] = int(w)
 		}
 	}
-	return names
+	return cat
 }
 
 // modelCatalogCache caches the live model display-name map under a TTL with a
@@ -66,11 +98,17 @@ type modelCatalogCache struct {
 	mu         sync.Mutex
 	cond       *sync.Cond
 	expiresAt  time.Time
-	names      map[string]string
+	catalog    modelCatalog
 	refreshing bool
 
 	resolveOpenclaw func() string
 	runner          func(ctx context.Context, name string, args ...string) *exec.Cmd
+}
+
+// clone returns a deep copy of the catalog so cached state is never shared with
+// callers (who may publish/mutate snapshots).
+func (c modelCatalog) clone() modelCatalog {
+	return modelCatalog{names: maps.Clone(c.names), windows: maps.Clone(c.windows)}
 }
 
 func newModelCatalogCache() *modelCatalogCache {
@@ -83,7 +121,7 @@ func newModelCatalogCache() *modelCatalogCache {
 var defaultModelCatalogCache = newModelCatalogCache()
 
 // fetch returns the cached catalog or refreshes it under the TTL.
-func (c *modelCatalogCache) fetch(ctx context.Context, now time.Time, ttl time.Duration) map[string]string {
+func (c *modelCatalogCache) fetch(ctx context.Context, now time.Time, ttl time.Duration) modelCatalog {
 	if ttl <= 0 {
 		ttl = 5 * time.Minute
 	}
@@ -93,9 +131,9 @@ func (c *modelCatalogCache) fetch(ctx context.Context, now time.Time, ttl time.D
 	}
 	for {
 		if now.Before(c.expiresAt) {
-			names := maps.Clone(c.names)
+			cat := c.catalog.clone()
 			c.mu.Unlock()
-			return names
+			return cat
 		}
 		if !c.refreshing {
 			c.refreshing = true
@@ -107,7 +145,7 @@ func (c *modelCatalogCache) fetch(ctx context.Context, now time.Time, ttl time.D
 	return c.refreshAndStore(ctx, now, ttl)
 }
 
-func (c *modelCatalogCache) refreshAndStore(ctx context.Context, now time.Time, ttl time.Duration) (cached map[string]string) {
+func (c *modelCatalogCache) refreshAndStore(ctx context.Context, now time.Time, ttl time.Duration) (cached modelCatalog) {
 	defer func() {
 		c.mu.Lock()
 		c.refreshing = false
@@ -115,17 +153,17 @@ func (c *modelCatalogCache) refreshAndStore(ctx context.Context, now time.Time, 
 		c.mu.Unlock()
 	}()
 
-	names := c.callFetch(ctx)
+	cat := c.callFetch(ctx)
 
 	c.mu.Lock()
-	c.names = maps.Clone(names)
+	c.catalog = cat.clone()
 	c.expiresAt = now.Add(ttl)
-	cached = maps.Clone(c.names)
+	cached = c.catalog.clone()
 	c.mu.Unlock()
 	return cached
 }
 
-func (c *modelCatalogCache) callFetch(ctx context.Context) map[string]string {
+func (c *modelCatalogCache) callFetch(ctx context.Context) modelCatalog {
 	runner := c.runner
 	if runner == nil {
 		runner = execCommandContext
@@ -142,16 +180,20 @@ func (c *modelCatalogCache) callFetch(ctx context.Context) map[string]string {
 	out, err := runner(ctx, resolve(), "models", "list", "--json").Output()
 	if err != nil {
 		slog.Warn("[dashboard] modelCatalogCache: command failed", "error", err)
-		return map[string]string{}
+		return modelCatalog{names: map[string]string{}, windows: map[string]int{}}
 	}
 	return parseModelCatalog(out)
 }
 
-// refreshModelCatalog refreshes the catalog and publishes the snapshot for
-// ModelName. Best-effort: a failed fetch leaves the previous snapshot in place.
+// refreshModelCatalog refreshes the catalog and publishes the name + context
+// window snapshots for ModelName and lookupModelLimits. Best-effort: a fetch
+// that yields nothing leaves the previous snapshots in place.
 func refreshModelCatalog(ctx context.Context, now time.Time, ttl time.Duration) {
-	names := defaultModelCatalogCache.fetch(ctx, now, ttl)
-	if len(names) > 0 {
-		setModelCatalogNames(names)
+	cat := defaultModelCatalogCache.fetch(ctx, now, ttl)
+	if len(cat.names) > 0 {
+		setModelCatalogNames(cat.names)
+	}
+	if len(cat.windows) > 0 {
+		setModelCatalogWindows(cat.windows)
 	}
 }

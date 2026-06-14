@@ -11,41 +11,74 @@ import (
 // each row's key → display name, tolerates the bare-array form, and ignores rows
 // without a usable name. The id field is `key` (no separate provider/alias).
 func TestParseModelCatalog(t *testing.T) {
-	t.Run("envelope form", func(t *testing.T) {
+	t.Run("envelope form: names and context windows", func(t *testing.T) {
 		out := `{"count":2,"models":[
 			{"key":"anthropic/claude-opus-4-6","name":"Claude Opus 4.6","contextWindow":200000},
 			{"key":"google/gemini-3.1-pro-preview","name":"Gemini 3.1 Pro","contextTokens":1048576}
 		]}`
-		names := parseModelCatalog([]byte(out))
-		if names["anthropic/claude-opus-4-6"] != "Claude Opus 4.6" {
-			t.Errorf("opus name = %q", names["anthropic/claude-opus-4-6"])
+		cat := parseModelCatalog([]byte(out))
+		if cat.names["anthropic/claude-opus-4-6"] != "Claude Opus 4.6" {
+			t.Errorf("opus name = %q", cat.names["anthropic/claude-opus-4-6"])
 		}
-		if names["google/gemini-3.1-pro-preview"] != "Gemini 3.1 Pro" {
-			t.Errorf("gemini name = %q", names["google/gemini-3.1-pro-preview"])
+		if cat.windows["anthropic/claude-opus-4-6"] != 200000 {
+			t.Errorf("opus window = %d, want 200000", cat.windows["anthropic/claude-opus-4-6"])
+		}
+		// contextTokens used when contextWindow absent.
+		if cat.windows["google/gemini-3.1-pro-preview"] != 1048576 {
+			t.Errorf("gemini window = %d, want 1048576 (from contextTokens)", cat.windows["google/gemini-3.1-pro-preview"])
 		}
 	})
 	t.Run("bare array form", func(t *testing.T) {
-		out := `[{"key":"x/y","name":"Fancy Model"}]`
-		names := parseModelCatalog([]byte(out))
-		if names["x/y"] != "Fancy Model" {
-			t.Errorf("name = %q, want Fancy Model", names["x/y"])
+		cat := parseModelCatalog([]byte(`[{"key":"x/y","name":"Fancy Model"}]`))
+		if cat.names["x/y"] != "Fancy Model" {
+			t.Errorf("name = %q, want Fancy Model", cat.names["x/y"])
 		}
 	})
-	t.Run("row without name skipped", func(t *testing.T) {
-		out := `{"models":[{"key":"a/b"},{"key":"c/d","name":"Dee"}]}`
-		names := parseModelCatalog([]byte(out))
-		if _, ok := names["a/b"]; ok {
-			t.Errorf("row without name must be skipped, got %q", names["a/b"])
+	t.Run("row without name skipped; window still captured", func(t *testing.T) {
+		cat := parseModelCatalog([]byte(`{"models":[{"key":"a/b","contextWindow":4096},{"key":"c/d","name":"Dee"}]}`))
+		if _, ok := cat.names["a/b"]; ok {
+			t.Errorf("row without name must be skipped from names, got %q", cat.names["a/b"])
 		}
-		if names["c/d"] != "Dee" {
-			t.Errorf("name = %q, want Dee", names["c/d"])
+		if cat.windows["a/b"] != 4096 {
+			t.Errorf("window a/b = %d, want 4096 (captured even without a name)", cat.windows["a/b"])
+		}
+		if cat.names["c/d"] != "Dee" {
+			t.Errorf("name = %q, want Dee", cat.names["c/d"])
 		}
 	})
 	t.Run("malformed yields empty", func(t *testing.T) {
-		if names := parseModelCatalog([]byte(`{not json`)); len(names) != 0 {
-			t.Errorf("malformed → %v, want empty", names)
+		cat := parseModelCatalog([]byte(`{not json`))
+		if len(cat.names) != 0 || len(cat.windows) != 0 {
+			t.Errorf("malformed → %+v, want empty", cat)
 		}
 	})
+}
+
+// TestLookupModelLimits_CatalogFallback proves the live catalog supplies a
+// context window when the openclaw.json registry has no entry for the model
+// (stock configs that rely on the internal catalog), while the registry value
+// still wins when present.
+func TestLookupModelLimits_CatalogFallback(t *testing.T) {
+	prevW := modelCatalogWindows.Load()
+	t.Cleanup(func() { modelCatalogWindows.Store(prevW) })
+	setModelCatalogWindows(map[string]int{"vendor/new-model": 262144})
+
+	// Registry has no providers block → miss → catalog supplies the window.
+	cw, _ := lookupModelLimits(map[string]any{}, "vendor/new-model")
+	if cw != 262144 {
+		t.Errorf("context window = %v, want 262144 from catalog fallback", cw)
+	}
+
+	// Registry value wins over catalog.
+	oc := map[string]any{"models": map[string]any{"providers": map[string]any{
+		"vendor": map[string]any{"models": []any{
+			map[string]any{"id": "new-model", "contextWindow": float64(99999)},
+		}},
+	}}}
+	cw2, _ := lookupModelLimits(oc, "vendor/new-model")
+	if cw2 != float64(99999) {
+		t.Errorf("context window = %v, want 99999 from registry (registry wins)", cw2)
+	}
 }
 
 // TestModelName_ConsultsCatalog proves ModelName prefers a live catalog display
@@ -76,9 +109,9 @@ func TestModelCatalogCache_FetchWithStubRunner(t *testing.T) {
 		return exec.CommandContext(ctx, "printf", `%s`,
 			`{"models":[{"key":"m/n","name":"Em En"}]}`)
 	}
-	names := c.fetch(context.Background(), time.Now(), time.Minute)
-	if names["m/n"] != "Em En" {
-		t.Fatalf("fetch names = %v, want m/n=Em En", names)
+	cat := c.fetch(context.Background(), time.Now(), time.Minute)
+	if cat.names["m/n"] != "Em En" {
+		t.Fatalf("fetch names = %v, want m/n=Em En", cat.names)
 	}
 }
 
@@ -90,7 +123,7 @@ func TestModelCatalogCache_RunnerErrorYieldsEmpty(t *testing.T) {
 	c.runner = func(ctx context.Context, name string, args ...string) *exec.Cmd {
 		return exec.CommandContext(ctx, "false") // exits non-zero, no output
 	}
-	if names := c.fetch(context.Background(), time.Now(), time.Minute); len(names) != 0 {
-		t.Errorf("runner error → %v, want empty", names)
+	if cat := c.fetch(context.Background(), time.Now(), time.Minute); len(cat.names) != 0 {
+		t.Errorf("runner error → %v, want empty", cat.names)
 	}
 }
