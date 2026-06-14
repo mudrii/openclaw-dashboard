@@ -1348,7 +1348,13 @@ const Renderer = {
   // Alerts — filter "Gateway is offline" when SystemBar has confirmed gateway is online
   if (flags.alerts) {
     const alerts=(D.alerts||[]).filter(a=>!(window._gwOnlineConfirmed && a.message && a.message.includes('Gateway is offline')));
+    // SystemBar injects #gw-readiness-alert into this section on its own timer.
+    // Preserve the live node across this innerHTML rebuild and re-attach it, so
+    // a refresh while the gateway is not-ready does not drop the alert until the
+    // next SystemBar poll (~5s flicker).
+    const gwReadyAlert=$('gw-readiness-alert');
     $('alertsSection').innerHTML=alerts.length?alerts.map(a=>`<div class="alert-item alert-${esc(a.severity)||'low'}"><span class="alert-icon">${esc(a.icon)||'ℹ️'}</span><span class="alert-msg">${esc(a.message)}</span></div>`).join(''):'';
+    if(gwReadyAlert)$('alertsSection').insertAdjacentElement('afterbegin',gwReadyAlert);
   }
 
   // Health — skip gateway-specific fields if SystemBar has already populated them (prevents flicker)
