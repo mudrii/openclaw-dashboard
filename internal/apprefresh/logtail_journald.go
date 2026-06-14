@@ -44,9 +44,16 @@ func ResolveSystemdUnit(configUnit string) string {
 		unit = defaultSystemdUnit
 	}
 	if profile := strings.TrimSpace(os.Getenv("OPENCLAW_PROFILE")); profile != "" {
-		unit += "-" + profile
+		unit = appendSystemdProfile(unit, profile)
 	}
 	return unit
+}
+
+func appendSystemdProfile(unit, profile string) string {
+	if strings.HasSuffix(unit, ".service") {
+		return strings.TrimSuffix(unit, ".service") + "-" + profile + ".service"
+	}
+	return unit + "-" + profile
 }
 
 func systemdUnitName(unit string) string {

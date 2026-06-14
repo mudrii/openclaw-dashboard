@@ -113,6 +113,36 @@ func TestReadMergedLogsWithUnit_JournaldFallbackRunsOnceForGatewaySources(t *tes
 	}
 }
 
+func TestReadMergedLogsWithUnitContext_JournaldUsesCallerContext(t *testing.T) {
+	SetLogFallbackRoots(func() []string { return nil })
+	t.Cleanup(func() { SetLogFallbackRoots(nil) })
+	forceJournald(t, true)
+
+	calls := 0
+	prev := journaldRunner
+	journaldRunner = func(ctx context.Context, _ string, _ int) ([]byte, error) {
+		calls++
+		if ctx.Err() == nil {
+			t.Fatalf("journaldRunner context is not canceled")
+		}
+		return nil, ctx.Err()
+	}
+	t.Cleanup(func() { journaldRunner = prev })
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	recs, err := ReadMergedLogsWithUnitContext(ctx, t.TempDir(), []string{"logs/gateway.log"}, 50, "openclaw-gateway")
+	if err != nil {
+		t.Fatalf("err = %v", err)
+	}
+	if calls != 1 {
+		t.Fatalf("journaldRunner calls = %d, want 1", calls)
+	}
+	if len(recs) != 0 {
+		t.Fatalf("got %d records, want 0", len(recs))
+	}
+}
+
 // TestReadMergedLogsWithUnit_DisabledSkipsJournald proves macOS behavior is
 // unchanged: with journald disabled, no shell-out happens and an absent file
 // yields no records (the runner must not even be consulted).
@@ -168,6 +198,13 @@ func TestResolveSystemdUnit_Precedence(t *testing.T) {
 		t.Setenv("OPENCLAW_PROFILE", "work")
 		if got := ResolveSystemdUnit(""); got != "openclaw-gateway-work" {
 			t.Errorf("got %q, want openclaw-gateway-work", got)
+		}
+	})
+	t.Run("profile suffix before service extension", func(t *testing.T) {
+		t.Setenv("OPENCLAW_SYSTEMD_UNIT", "")
+		t.Setenv("OPENCLAW_PROFILE", "work")
+		if got := ResolveSystemdUnit("custom-gw.service"); got != "custom-gw-work.service" {
+			t.Errorf("got %q, want custom-gw-work.service", got)
 		}
 	})
 }

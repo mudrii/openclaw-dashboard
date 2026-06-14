@@ -107,7 +107,7 @@ elif command -v go >/dev/null 2>&1; then
   # binary reports the same BuildVersion as a downloaded release would.
   build_version="${LATEST_TAG:-dev}"
   curl -fsSL "$REPO/archive/main.tar.gz" | tar -xz --strip-components=1 -C "$INSTALL_DIR"
-  go build \
+  CGO_ENABLED=0 go build \
     -ldflags="-s -w -X github.com/mudrii/openclaw-dashboard.BuildVersion=${build_version}" \
     -o openclaw-dashboard ./cmd/openclaw-dashboard
   echo "✅ Binary built from source (version: ${build_version})"

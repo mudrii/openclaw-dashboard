@@ -3,12 +3,14 @@ package apprefresh
 import (
 	"context"
 	"errors"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"slices"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 )
@@ -165,6 +167,26 @@ func TestReadyzProbe_PortZeroReturnsFalse(t *testing.T) {
 	}
 }
 
+func TestReadyzProbe_NilContextDoesNotPanic(t *testing.T) {
+	prev := gatewayProbeDo
+	gatewayProbeDo = func(req *http.Request) (*http.Response, error) {
+		if req.Context() == nil {
+			t.Fatalf("request context is nil")
+		}
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader(`{"ready":true}`)),
+		}, nil
+	}
+	t.Cleanup(func() { gatewayProbeDo = prev })
+
+	var ctx context.Context
+	_, ok := readyzProbe(ctx, 1)
+	if !ok {
+		t.Fatal("ok = false, want true")
+	}
+}
+
 func TestReadyzProbe_ParsesFailingFromHTTP503(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/readyz" {
@@ -189,6 +211,33 @@ func TestReadyzProbe_ParsesFailingFromHTTP503(t *testing.T) {
 	}
 	if !slices.Equal(failing, []string{"telegram"}) {
 		t.Errorf("failing = %v, want [telegram]", failing)
+	}
+}
+
+func TestReadyzProbe_AttachesTimeout(t *testing.T) {
+	prev := gatewayProbeDo
+	gatewayProbeDo = func(req *http.Request) (*http.Response, error) {
+		deadline, ok := req.Context().Deadline()
+		if !ok {
+			t.Fatalf("readyz request context has no deadline")
+		}
+		remaining := time.Until(deadline)
+		if remaining <= 0 || remaining > gatewayReadyzProbeTimeout {
+			t.Fatalf("readyz deadline in %s, want within %s", remaining, gatewayReadyzProbeTimeout)
+		}
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader(`{"ready":true}`)),
+		}, nil
+	}
+	t.Cleanup(func() { gatewayProbeDo = prev })
+
+	failing, ok := readyzProbe(context.Background(), 1)
+	if !ok {
+		t.Fatal("ok = false, want true")
+	}
+	if failing != nil {
+		t.Fatalf("failing = %v, want nil", failing)
 	}
 }
 

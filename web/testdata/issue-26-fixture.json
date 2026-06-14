@@ -18,7 +18,26 @@
     "subagentCostAllTime": 0,
     "projectedMonthly": 0,
     "sessions": [],
-    "crons": [],
+    "crons": [
+      {
+        "name": "nightly-report",
+        "schedule": "*/5 * * * *",
+        "lastStatus": "error",
+        "lastError": "telegram timeout",
+        "lastRun": "2026-06-14 09:55",
+        "nextRun": "2026-06-14 10:00",
+        "lastDurationMs": 1234,
+        "model": "GPT-5",
+        "lastDeliveryStatus": "not-delivered",
+        "lastDiagnostics": [
+          "telegram timeout",
+          "retry scheduled"
+        ],
+        "consecutiveErrors": 4,
+        "consecutiveSkipped": 0,
+        "flapping": true
+      }
+    ],
     "skills": [],
     "gitLog": [],
     "alerts": [
@@ -37,8 +56,26 @@
       "agents": [],
       "skills": [],
       "bindings": [],
-      "channels": [],
-      "channelStatus": {},
+      "channels": [
+        "slack",
+        "telegram"
+      ],
+      "channelStatus": {
+        "slack": {
+          "enabled": true,
+          "configured": true,
+          "connected": false,
+          "health": "unhealthy",
+          "error": "slack token expired"
+        },
+        "telegram": {
+          "enabled": true,
+          "configured": true,
+          "connected": true,
+          "health": "healthy",
+          "error": ""
+        }
+      },
       "gateway": {
         "port": 18789,
         "mode": "http",
@@ -84,7 +121,48 @@
       "status": {
         "currentVersion": "2026.6.14",
         "latestVersion": "2026.6.14",
-        "connectLatencyMs": 12
+        "connectLatencyMs": 12,
+        "tasks": {
+          "total": 8,
+          "active": 2,
+          "terminal": 6,
+          "failures": 1,
+          "byStatus": {
+            "queued": 1,
+            "running": 2,
+            "failed": 1
+          },
+          "byRuntime": {
+            "subagent": 3,
+            "cron": 2
+          }
+        },
+        "eventLoop": {
+          "degraded": true,
+          "reasons": [
+            "timer lag"
+          ],
+          "intervalMs": 1000,
+          "delayP99Ms": 42,
+          "delayMaxMs": 80,
+          "utilization": 0.64,
+          "cpuCoreRatio": 0.2
+        },
+        "pluginCompatibility": {
+          "count": 1,
+          "warnings": [
+            "legacy plugin API"
+          ]
+        },
+        "lastHeartbeat": {
+          "ts": "2026-06-14T09:59:15Z",
+          "status": "ok",
+          "channel": "telegram"
+        },
+        "channelSummary": [
+          "slack failing",
+          "telegram ok"
+        ]
       },
       "gateway": {
         "live": true,

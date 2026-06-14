@@ -41,6 +41,10 @@ var healthzProbe = func(ctx context.Context, port int) bool {
 	return resp.StatusCode >= 200 && resp.StatusCode < 300
 }
 
+const gatewayReadyzProbeTimeout = 2 * time.Second
+
+var gatewayProbeDo = http.DefaultClient.Do
+
 // readyzProbe issues a GET to the gateway's /readyz endpoint and returns the
 // list of failing component ids reported by the gateway, plus ok=false when the
 // probe could not be completed (no port, transport error, unparseable body) so
@@ -51,12 +55,17 @@ var readyzProbe = func(ctx context.Context, port int) (failing []string, ok bool
 	if port <= 0 {
 		return nil, false
 	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	ctx, cancel := context.WithTimeout(ctx, gatewayReadyzProbeTimeout)
+	defer cancel()
 	url := "http://127.0.0.1:" + strconv.Itoa(port) + "/readyz"
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, false
 	}
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := gatewayProbeDo(req)
 	if err != nil {
 		return nil, false
 	}

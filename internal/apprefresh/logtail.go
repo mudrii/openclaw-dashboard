@@ -73,17 +73,31 @@ func ReadMergedLogs(openclawPath string, sources []string, globalLimit int) ([]L
 	return ReadMergedLogsWithUnit(openclawPath, sources, globalLimit, ResolveSystemdUnit(""))
 }
 
+// ReadMergedLogsWithContext is ReadMergedLogs with caller cancellation support.
+func ReadMergedLogsWithContext(ctx context.Context, openclawPath string, sources []string, globalLimit int) ([]LogRecord, error) {
+	return ReadMergedLogsWithUnitContext(ctx, openclawPath, sources, globalLimit, ResolveSystemdUnit(""))
+}
+
 // ReadMergedLogsWithUnit is ReadMergedLogs with an explicit systemd unit name
 // for the Linux journald fallback. On Linux, when a source has no log file on
 // disk, gateway output is read from journald (systemd emits no log file) so the
 // Logs panel and error alerts still populate. On other platforms the journald
 // path is skipped entirely.
 func ReadMergedLogsWithUnit(openclawPath string, sources []string, globalLimit int, systemdUnit string) ([]LogRecord, error) {
+	return ReadMergedLogsWithUnitContext(context.Background(), openclawPath, sources, globalLimit, systemdUnit)
+}
+
+// ReadMergedLogsWithUnitContext is ReadMergedLogsWithUnit with caller
+// cancellation support for journald collection.
+func ReadMergedLogsWithUnitContext(ctx context.Context, openclawPath string, sources []string, globalLimit int, systemdUnit string) ([]LogRecord, error) {
 	if globalLimit <= 0 {
 		return nil, nil
 	}
 	if len(sources) == 0 {
 		return nil, nil
+	}
+	if ctx == nil {
+		ctx = context.Background()
 	}
 
 	perSourceRecords := make([][]LogRecord, 0, len(sources))
@@ -117,7 +131,7 @@ func ReadMergedLogsWithUnit(openclawPath string, sources []string, globalLimit i
 		// synthesize records from journalctl (systemd gateway logs have no
 		// file to tail). Skipped on non-Linux and when a file was found.
 		if len(sourceRecords) == 0 && journaldEnabled() && !journaldUsed && isGatewayLogSource(source) {
-			jctx, jcancel := context.WithTimeout(context.Background(), 5*time.Second)
+			jctx, jcancel := context.WithTimeout(ctx, 5*time.Second)
 			sourceRecords = append(sourceRecords, collectJournaldRecords(jctx, systemdUnit, source, globalLimit)...)
 			jcancel()
 			journaldUsed = true

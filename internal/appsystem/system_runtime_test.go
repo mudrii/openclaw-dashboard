@@ -262,7 +262,7 @@ func TestCollectVersionsLocal_FallbackHTTP(t *testing.T) {
 
 		bin := writeFakeOclawBin(t,
 			`{"service":{"loaded":true,"runtime":{"status":"running","pid":0}},"version":"9.9.9"}`, 0)
-		v := CollectVersionsLocal(ctx, "dash-1.0", 200, port, bin)
+		v := CollectVersionsLocal(ctx, "dash-1.0", 1000, port, bin)
 
 		if v.Gateway.Status != "online" {
 			t.Fatalf("Gateway.Status = %q, want online from parsed JSON", v.Gateway.Status)

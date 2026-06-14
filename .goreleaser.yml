@@ -23,8 +23,7 @@ builds:
       - -s -w -X github.com/mudrii/openclaw-dashboard.BuildVersion={{ .Version }}
 
 archives:
-  - formats:
-      - tar.gz
+  - format: tar.gz
     name_template: "{{ .ProjectName }}-{{ .Os }}-{{ .Arch }}"
     files:
       - README.md

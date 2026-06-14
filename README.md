@@ -110,8 +110,10 @@ curl -L https://github.com/mudrii/openclaw-dashboard/releases/latest/download/op
 
 Verify download integrity:
 ```bash
-curl -L https://github.com/mudrii/openclaw-dashboard/releases/latest/download/checksums-sha256.txt -o checksums-sha256.txt
-shasum -a 256 -c checksums-sha256.txt
+archive=openclaw-dashboard-darwin-arm64.tar.gz
+curl -LO "https://github.com/mudrii/openclaw-dashboard/releases/latest/download/${archive}"
+curl -LO https://github.com/mudrii/openclaw-dashboard/releases/latest/download/checksums-sha256.txt
+grep "  ${archive}$" checksums-sha256.txt | shasum -a 256 -c -
 ```
 
 ### One-Line Install
