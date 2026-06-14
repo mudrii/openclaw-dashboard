@@ -1,10 +1,78 @@
 package apprefresh
 
 import (
+	"context"
 	"encoding/json"
+	"os"
+	"os/exec"
+	"runtime"
 	"strconv"
+	"strings"
 	"time"
 )
+
+// defaultSystemdUnit is the systemd --user unit openclaw's gateway runs under
+// when no override is configured (daemon/constants.ts).
+const defaultSystemdUnit = "openclaw-gateway"
+
+// journaldEnabled reports whether the journald fallback should be attempted.
+// It is a func var so tests can force-enable the Linux-only path on any host.
+var journaldEnabled = func() bool { return runtime.GOOS == "linux" }
+
+// journaldRunner executes `journalctl --user -u <unit>.service -o json` and
+// returns the raw output. Stubbed in tests. A missing binary or any other
+// failure is returned as an error and collapses to an empty source upstream.
+var journaldRunner = func(ctx context.Context, unit string, lines int) ([]byte, error) {
+	return exec.CommandContext(ctx, "journalctl",
+		"--user", "-u", unit+".service",
+		"-o", "json", "--no-pager",
+		"-n", strconv.Itoa(lines),
+	).Output()
+}
+
+// ResolveSystemdUnit resolves the gateway's systemd unit name. Precedence:
+// the OPENCLAW_SYSTEMD_UNIT env var (used verbatim) > the configured unit >
+// the default "openclaw-gateway". For the two non-override forms, a non-empty
+// OPENCLAW_PROFILE is appended as a "-<profile>" suffix, mirroring openclaw's
+// per-profile unit naming.
+func ResolveSystemdUnit(configUnit string) string {
+	if env := strings.TrimSpace(os.Getenv("OPENCLAW_SYSTEMD_UNIT")); env != "" {
+		return env
+	}
+	unit := strings.TrimSpace(configUnit)
+	if unit == "" {
+		unit = defaultSystemdUnit
+	}
+	if profile := strings.TrimSpace(os.Getenv("OPENCLAW_PROFILE")); profile != "" {
+		unit += "-" + profile
+	}
+	return unit
+}
+
+// collectJournaldRecords runs the journald collector for one source and returns
+// the parsed records (Source/Raw populated), or nil on any runner error or when
+// no parseable lines are produced.
+func collectJournaldRecords(ctx context.Context, unit, source string, limit int) []LogRecord {
+	out, err := journaldRunner(ctx, unit, limit)
+	if err != nil {
+		return nil
+	}
+	var records []LogRecord
+	for _, line := range strings.Split(string(out), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		record, ok := parseJournaldLine(line)
+		if !ok {
+			continue
+		}
+		record.Source = source
+		record.Raw = line
+		records = append(records, record)
+	}
+	return records
+}
 
 // journaldPrioritySeverity maps a syslog PRIORITY level (0-7, as emitted by
 // `journalctl -o json`) to the dashboard severity vocabulary. journald exports

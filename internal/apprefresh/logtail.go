@@ -5,6 +5,7 @@ import (
 	"bufio"
 	"cmp"
 	"container/heap"
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -63,8 +64,21 @@ var (
 	}
 )
 
-// ReadMergedLogs tails and parses log sources, returning entries in oldest-to-newest order.
+// ReadMergedLogs tails and parses log sources, returning entries in
+// oldest-to-newest order. The systemd unit for the journald fallback is
+// resolved from the environment (OPENCLAW_SYSTEMD_UNIT / OPENCLAW_PROFILE) and
+// the package default; callers with a configured unit should use
+// ReadMergedLogsWithUnit.
 func ReadMergedLogs(openclawPath string, sources []string, globalLimit int) ([]LogRecord, error) {
+	return ReadMergedLogsWithUnit(openclawPath, sources, globalLimit, ResolveSystemdUnit(""))
+}
+
+// ReadMergedLogsWithUnit is ReadMergedLogs with an explicit systemd unit name
+// for the Linux journald fallback. On Linux, when a source has no log file on
+// disk, gateway output is read from journald (systemd emits no log file) so the
+// Logs panel and error alerts still populate. On other platforms the journald
+// path is skipped entirely.
+func ReadMergedLogsWithUnit(openclawPath string, sources []string, globalLimit int, systemdUnit string) ([]LogRecord, error) {
 	if globalLimit <= 0 {
 		return nil, nil
 	}
@@ -97,6 +111,14 @@ func ReadMergedLogs(openclawPath string, sources []string, globalLimit int) ([]L
 				}
 				sourceRecords = append(sourceRecords, record)
 			}
+		}
+		// Linux journald fallback: when no log file exists for this source,
+		// synthesize records from journalctl (systemd gateway logs have no
+		// file to tail). Skipped on non-Linux and when a file was found.
+		if len(sourceRecords) == 0 && journaldEnabled() {
+			jctx, jcancel := context.WithTimeout(context.Background(), 5*time.Second)
+			sourceRecords = append(sourceRecords, collectJournaldRecords(jctx, systemdUnit, source, globalLimit)...)
+			jcancel()
 		}
 		if len(sourceRecords) > 0 {
 			slices.SortFunc(sourceRecords, compareLogRecords)

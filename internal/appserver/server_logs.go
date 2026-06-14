@@ -242,7 +242,8 @@ func (s *Server) handleErrors(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) readMergedLogs(sources []string, globalLimit int) ([]apprefresh.LogRecord, error) {
-	return apprefresh.ReadMergedLogs(s.openclawPath, sources, globalLimit)
+	unit := apprefresh.ResolveSystemdUnit(s.cfg.Logs.SystemdUnit)
+	return apprefresh.ReadMergedLogsWithUnit(s.openclawPath, sources, globalLimit, unit)
 }
 
 func (s *Server) defaultLogLimit() int {

@@ -61,6 +61,7 @@ type LogsConfig struct {
 	ErrorWindowHours     int      `json:"errorWindowHours"`
 	MaxErrorSignatures   int      `json:"maxErrorSignatures"`
 	Sources              []string `json:"sources"`
+	SystemdUnit          string   `json:"systemdUnit,omitempty"`
 	LogSources           []string `json:"log_sources"`
 	LogTailLines         int      `json:"log_tail_lines"`
 	LogFastRefreshMs     int      `json:"log_fast_refresh_ms"`

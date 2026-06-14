@@ -102,3 +102,49 @@ on live Linux/systemd.
 
 **RUNTIME-VERIFY (deferred).** End-to-end journald population needs live openclaw on
 Linux/systemd — not loop-observable; will ship code + stubbed tests and flag.
+
+---
+
+## 2026-06-14 — FIX-1 (Linux journald logs) — DONE (code), runtime-verify on live Linux
+
+**Slice 2/2.** Wired the journald fallback end to end behind injectable seams.
+
+- `journaldRunner` (func-var exec seam) — `journalctl --user -u <unit>.service -o
+  json --no-pager -n <N>`; stubbed in tests, graceful error→nil (missing binary).
+- `journaldEnabled` (func-var GOOS gate, default `runtime.GOOS=="linux"`) — tests
+  force-enable to exercise the Linux path on darwin.
+- `collectJournaldRecords(ctx, unit, source, limit)` — runner → split → parseJournaldLine
+  → Source/Raw set; skips blank/unparseable lines.
+- `ResolveSystemdUnit(configUnit)` — precedence OPENCLAW_SYSTEMD_UNIT (verbatim) >
+  config > default `openclaw-gateway`; OPENCLAW_PROFILE appends `-<profile>` to the
+  non-override forms.
+- Merge hook in new `ReadMergedLogsWithUnit(...)` (ReadMergedLogs delegates with
+  env/default unit — back-compat, signature stable): when a source has no file on
+  disk AND journald enabled, synthesize records from journalctl (5s ctx timeout).
+- `Logs.SystemdUnit` config field (additive, omitempty); appserver `readMergedLogs`
+  resolves + passes the unit via `ReadMergedLogsWithUnit`.
+
+**Files.** `logtail_journald.go` (+seam/collector/resolver) · `logtail.go`
+(ReadMergedLogs→WithUnit split + merge hook, +context import) · `appconfig/config.go`
+(+SystemdUnit) · `appserver/server_logs.go` (wire) · `logtail_journald_test.go` (+tests).
+
+**Tests delta.** +5 funcs this slice (CollectJournaldRecords_ParsesLines,
+_RunnerErrorYieldsNil, ReadMergedLogsWithUnit_JournaldFallback,
+_DisabledSkipsJournald, ResolveSystemdUnit_Precedence [4 subtests]).
+
+**Deviation taken (as planned).** No `_linux.go`/stub build-tag split — journald
+invoked via `exec.CommandContext` (compiles every GOOS), platform choice handled by
+the `journaldEnabled` GOOS gate. `GOOS=linux go build ./...` clean. Simpler, acceptance
+met (macOS: gate skips shell-out, verified by _DisabledSkipsJournald; Linux: populates).
+
+**Facade.** None — `ReadMergedLogsWithUnit`/`ResolveSystemdUnit` exported from
+apprefresh but not root-faceted (neither is `ReadMergedLogs`).
+
+**Gate.** `make check` green (vet, lint 0, `test -race` all pkgs, govulncheck clean),
+`gofmt -l` empty, `GOOS=linux go build ./...` ok. No embed change → no `make build`.
+
+**RUNTIME-VERIFY (flagged).** Real journald population on live Linux/systemd not
+loop-observable. Code + stubbed tests shipped; needs human/runtime check on a Linux
+host with openclaw-gateway.service running.
+
+**Remaining.** INT-2 (next), FIX-2, FIX-3, INT-4, INT-3, INT-5.
