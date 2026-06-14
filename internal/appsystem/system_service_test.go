@@ -158,8 +158,10 @@ func TestGetLatestVersionCached_FailureIsNegativelyCached(t *testing.T) {
 		t.Fatalf("expected one failed fetch, got %d", got)
 	}
 
+	// Within TTL the negatively-cached result returns via the RLock fast-path
+	// with no goroutine spawned, so assert immediately — a sleep here proves
+	// nothing and only adds flakiness under load.
 	_ = svc.getLatestVersionCached()
-	time.Sleep(50 * time.Millisecond)
 	if got := calls.Load(); got != 1 {
 		t.Fatalf("expected failed fetch to be cached within TTL, got %d calls", got)
 	}

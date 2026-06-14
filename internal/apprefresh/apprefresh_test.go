@@ -3,6 +3,7 @@ package apprefresh
 import (
 	"context"
 	"encoding/json"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -233,6 +234,50 @@ func TestFetchLiveSessionModelsCLI_UsesResolvedOpenclawBin(t *testing.T) {
 	if !slices.Equal(gotArgs, []string{"sessions", "--all-agents", "--limit", "all", "--json"}) {
 		t.Fatalf("unexpected args: got %v", gotArgs)
 	}
+}
+
+func TestFetchLiveSessionModelsCLI_Extraction(t *testing.T) {
+	prevResolve := resolveOpenclawBin
+	prevExec := execCommandContext
+	defer func() {
+		resolveOpenclawBin = prevResolve
+		execCommandContext = prevExec
+	}()
+	resolveOpenclawBin = func() string { return "/resolved/openclaw" }
+
+	stub := func(t *testing.T, stdout string) {
+		t.Helper()
+		execCommandContext = func(ctx context.Context, _ string, _ ...string) *exec.Cmd {
+			return exec.CommandContext(ctx, "sh", "-c", "printf '%s' '"+stdout+"'")
+		}
+	}
+
+	t.Run("bare array", func(t *testing.T) {
+		stub(t, `[{"key":"k1","model":"m1"},{"key":"k2","model":"m2"}]`)
+		got := fetchLiveSessionModelsCLI(context.Background())
+		want := map[string]string{"k1": "m1", "k2": "m2"}
+		if !maps.Equal(got, want) {
+			t.Fatalf("got %v, want %v", got, want)
+		}
+	})
+
+	t.Run("sessions wrapper object", func(t *testing.T) {
+		stub(t, `{"sessions":[{"key":"k3","model":"m3"}]}`)
+		got := fetchLiveSessionModelsCLI(context.Background())
+		want := map[string]string{"k3": "m3"}
+		if !maps.Equal(got, want) {
+			t.Fatalf("got %v, want %v", got, want)
+		}
+	})
+
+	t.Run("entries missing key or model are skipped", func(t *testing.T) {
+		stub(t, `[{"key":"k","model":"m"},{"key":"","model":"x"},{"key":"y","model":""}]`)
+		got := fetchLiveSessionModelsCLI(context.Background())
+		want := map[string]string{"k": "m"}
+		if !maps.Equal(got, want) {
+			t.Fatalf("got %v, want %v", got, want)
+		}
+	})
 }
 
 func TestGetSessionModel_UsesLastModelChange(t *testing.T) {
