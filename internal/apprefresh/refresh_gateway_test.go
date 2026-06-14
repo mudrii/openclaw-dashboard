@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"slices"
 	"strconv"
 	"testing"
 )
@@ -101,6 +102,48 @@ func TestCollectGatewayHealth_NilContextDoesNotPanic(t *testing.T) {
 	gw := collectGatewayHealth(ctx, 0)
 	if gw["status"] != "offline" {
 		t.Fatalf("status: want offline, got %v", gw["status"])
+	}
+}
+
+// TestParseReadyzFailing covers the /readyz body parser used by INT-1: it must
+// extract failing[] from the gateway's readiness payload regardless of the
+// "ready" flag, tolerate a missing failing key, and return nil on malformed
+// JSON so the caller can fall back to the activity heuristic. A 503 response
+// still carries a JSON body, so the same parse path applies.
+func TestParseReadyzFailing(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+		want []string
+	}{
+		{
+			name: "failing channels extracted",
+			body: `{"ready":false,"failing":["telegram","startup-sidecars"],"uptimeMs":12}`,
+			want: []string{"telegram", "startup-sidecars"},
+		},
+		{
+			name: "ready with no failing key",
+			body: `{"ready":true,"uptimeMs":12}`,
+			want: nil,
+		},
+		{
+			name: "empty failing array",
+			body: `{"ready":true,"failing":[]}`,
+			want: nil,
+		},
+		{
+			name: "malformed json yields nil",
+			body: `{not json`,
+			want: nil,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := parseReadyzFailing([]byte(tc.body))
+			if !slices.Equal(got, tc.want) {
+				t.Errorf("parseReadyzFailing(%q) = %v, want %v", tc.body, got, tc.want)
+			}
+		})
 	}
 }
 

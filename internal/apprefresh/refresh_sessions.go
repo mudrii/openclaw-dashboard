@@ -379,7 +379,12 @@ func collectSessions(ctx context.Context, stores []SessionStoreFile, basePath st
 	return sessionsList
 }
 
-func backfillChannelConnectivity(agentConfig map[string]any, sessions []map[string]any) {
+func backfillChannelConnectivity(agentConfig map[string]any, sessions []map[string]any, failing []string) {
+	failingSet := make(map[string]bool, len(failing))
+	for _, f := range failing {
+		failingSet[f] = true
+	}
+
 	channelActive := map[string]bool{}
 	for _, s := range sessions {
 		key, _ := s["key"].(string)
@@ -404,6 +409,14 @@ func backfillChannelConnectivity(agentConfig map[string]any, sessions []map[stri
 	for chName, st := range cs {
 		sm, ok := st.(map[string]any)
 		if !ok {
+			continue
+		}
+		// Gateway readiness is authoritative: a channel reported in /readyz
+		// failing[] is forced unhealthy, overriding the activity heuristic
+		// (a channel can have a live session yet a revoked credential).
+		if failingSet[chName] {
+			sm["connected"] = false
+			sm["health"] = "unhealthy"
 			continue
 		}
 		if sm["connected"] == nil && channelActive[chName] {

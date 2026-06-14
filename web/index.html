@@ -1595,6 +1595,10 @@ const Renderer = {
       const error = raw.error == null ? '' : String(raw.error);
       const connectedText = connected===null ? 'Unknown' : (connected ? 'Yes' : 'No');
       const healthText = health || 'Unknown';
+      const healthLc = (health||'').toLowerCase();
+      const healthColor = ['unhealthy','disconnected','offline','error','down','failing'].includes(healthLc) ? 'var(--red)'
+        : ['healthy','active','ok','connected','online'].includes(healthLc) ? 'var(--green)'
+        : 'var(--muted)';
       const errorText = error ? error : '—';
 
       return `<div style="background:var(--glass);border:1px solid var(--border);border-radius:6px;padding:8px 9px;margin-bottom:6px">
@@ -1605,7 +1609,7 @@ const Renderer = {
         <div style="font-size:11px;color:var(--muted);display:grid;grid-template-columns:auto 1fr;gap:3px 8px">
           <span>Configured</span><span style="color:${configured?'var(--green)':'var(--red)'}">${configured?'Yes':'No'}</span>
           <span>Connected</span><span style="color:${connected===null?'var(--dim)':(connected?'var(--green)':'var(--red)')}">${esc(connectedText)}</span>
-          <span>Health</span><span>${esc(healthText)}</span>
+          <span>Health</span><span style="color:${healthColor}">${esc(healthText)}</span>
           <span>Error</span><span style="color:${error?'var(--red)':'var(--dim)'};word-break:break-word">${esc(errorText)}</span>
         </div>
       </div>`;

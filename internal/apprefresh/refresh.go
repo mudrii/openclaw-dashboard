@@ -245,8 +245,11 @@ func collectDashboardData(ctx context.Context, dashboardDir, openclawPath string
 	sessionLiveModelTTL := time.Duration(cfg.Refresh.IntervalSeconds) * time.Second
 	sessionsList := collectSessions(ctx, sessionStores, basePath, loc, now, modelAliases, knownSIDs, sessionLiveModelTTL)
 
-	// Backfill channel connectivity from recent session activity
-	backfillChannelConnectivity(agentConfig, sessionsList)
+	// Backfill channel connectivity: gateway /readyz failing[] is authoritative
+	// for failures; on probe failure we fall back to the session-activity
+	// heuristic (failing is nil, so no channel is blanked).
+	readyzFailing, _ := readyzProbe(ctx, cfg.AI.GatewayPort)
+	backfillChannelConnectivity(agentConfig, sessionsList, readyzFailing)
 
 	// Token usage from JSONL
 	modelsAll := map[string]*TokenBucket{}

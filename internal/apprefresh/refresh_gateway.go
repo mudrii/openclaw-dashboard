@@ -2,7 +2,9 @@ package apprefresh
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"os/exec"
@@ -37,6 +39,48 @@ var healthzProbe = func(ctx context.Context, port int) bool {
 	}
 	defer func() { _ = resp.Body.Close() }()
 	return resp.StatusCode >= 200 && resp.StatusCode < 300
+}
+
+// readyzProbe issues a GET to the gateway's /readyz endpoint and returns the
+// list of failing component ids reported by the gateway, plus ok=false when the
+// probe could not be completed (no port, transport error, unparseable body) so
+// the caller falls back to the session-activity heuristic instead of blanking
+// channels. A 503 response is expected when components are failing and still
+// carries a JSON body, so its body is parsed normally. Stubbed in tests.
+var readyzProbe = func(ctx context.Context, port int) (failing []string, ok bool) {
+	if port <= 0 {
+		return nil, false
+	}
+	url := "http://127.0.0.1:" + strconv.Itoa(port) + "/readyz"
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, false
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, false
+	}
+	defer func() { _ = resp.Body.Close() }()
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if err != nil {
+		return nil, false
+	}
+	return parseReadyzFailing(body), true
+}
+
+// parseReadyzFailing extracts the failing[] component ids from a gateway
+// /readyz JSON body. It returns nil for a missing/empty list or malformed JSON.
+func parseReadyzFailing(body []byte) []string {
+	var payload struct {
+		Failing []string `json:"failing"`
+	}
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return nil
+	}
+	if len(payload.Failing) == 0 {
+		return nil
+	}
+	return payload.Failing
 }
 
 // collectGatewayHealth probes the openclaw gateway and returns a
