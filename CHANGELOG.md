@@ -104,6 +104,17 @@ and a TDD coverage audit over the features above:
   now also covers the GPT-4 family (`gpt-4.1` → `GPT-4.1`), and an unrecognized
   Gemini id falls back to the tier-neutral `Gemini` instead of being mislabeled
   `Gemini Flash`.
+- **Catalog resolves bare model ids** — session logs emit model ids without their
+  provider prefix (e.g. `MiniMax-M3`, `kimi-k2.7-code`) while the live catalog is
+  keyed by full id (`minimax/MiniMax-M3`). The catalog is now also indexed by the
+  unambiguous bare id, so the Token Usage and Sessions panels show the real
+  catalog name (`MiniMax M3`, `Kimi K2.7 Code`) instead of the version-collapsed
+  fallback (`MiniMax`, `Kimi K2.5`).
+- **Agent models show the inherited default** — OpenClaw 2026.6 writes
+  `agents.defaults.model` as a bare id string (not a `{primary}` object) and
+  leaves each agent's `model` null to inherit it. `parseModelDefaults` now reads
+  the string form, so the Agent & Model Configuration panel shows each agent's
+  effective model (prettified via `ModelName`) instead of a blank field.
 - **Explicit JSON `null` status block omitted** (INT-2) — `decodeStatusField`
   returned a non-nil zero struct for an explicit `null` (e.g. `"tasks": null`),
   rendering an empty Runtime Health block; it now returns nil so the block is

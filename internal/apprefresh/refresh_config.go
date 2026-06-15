@@ -218,16 +218,39 @@ func parseSkills(oc map[string]any) []map[string]any {
 }
 
 func parseModelDefaults(defaults map[string]any) (primary string, fallbacks []string, imageModel string, models map[string]any) {
-	modelCfg := jsonObj(defaults, "model")
-	primary = jsonStr(modelCfg, "primary")
-	for _, f := range jsonArr(modelCfg, "fallbacks") {
-		if s, ok := f.(string); ok {
-			fallbacks = append(fallbacks, s)
+	// defaults.model is either a {primary, fallbacks} object (legacy) or a bare
+	// model-id string (OpenClaw 2026.6+). The old code read only the object form,
+	// leaving primary empty on string-form configs so agents rendered no model.
+	switch m := defaults["model"].(type) {
+	case map[string]any:
+		primary = jsonStr(m, "primary")
+		for _, f := range jsonArr(m, "fallbacks") {
+			if s, ok := f.(string); ok {
+				fallbacks = append(fallbacks, s)
+			}
 		}
+	case string:
+		primary = m
 	}
 	imageModel = jsonStr(jsonObj(defaults, "imageModel"), "primary")
+	if imageModel == "" {
+		if s, ok := defaults["imageModel"].(string); ok {
+			imageModel = s
+		}
+	}
 	models = jsonObj(defaults, "models")
 	return
+}
+
+// agentModelDisplay returns the friendly alias for a model id when one is
+// configured, otherwise the id prettified through ModelName (catalog/curated).
+// Keeping a genuine alias verbatim avoids ModelName collapsing an already-nice
+// name (e.g. "MiniMax M3" → "MiniMax").
+func agentModelDisplay(modelAliases map[string]string, model string) string {
+	if d := aliasOrID(modelAliases, model); d != model {
+		return d
+	}
+	return ModelName(model)
 }
 
 func parseAvailableModels(models map[string]any, primary string) ([]map[string]any, map[string]string) {
@@ -462,7 +485,7 @@ func parseAgents(agents map[string]any, primary string, fallbacks []string, mode
 		}
 		out = append(out, map[string]any{
 			"id": "default", "role": "Default",
-			"model": aliasOrID(modelAliases, primary), "modelId": primary,
+			"model": agentModelDisplay(modelAliases, primary), "modelId": primary,
 			"workspace": "~/.openclaw/workspace", "isDefault": true,
 			"context1m": ctx1m,
 		})
@@ -527,7 +550,7 @@ func parseAgents(agents map[string]any, primary string, fallbacks []string, mode
 		}
 		out = append(out, map[string]any{
 			"id": aid, "role": role,
-			"model":     aliasOrID(modelAliases, amodel),
+			"model":     agentModelDisplay(modelAliases, amodel),
 			"modelId":   amodel,
 			"workspace": jsonStrDefault(am, "workspace", "~/.openclaw/workspace"),
 			"isDefault": isDefault,

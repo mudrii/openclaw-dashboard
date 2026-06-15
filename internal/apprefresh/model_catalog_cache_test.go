@@ -106,6 +106,40 @@ func TestParseModelCatalog(t *testing.T) {
 			t.Errorf("malformed → %+v, want empty", cat)
 		}
 	})
+	t.Run("bare id index: provider-less model ids resolve", func(t *testing.T) {
+		// Session logs emit bare ids ("MiniMax-M3") while the catalog is keyed
+		// by full id ("minimax/MiniMax-M3"); the bare index bridges them.
+		out := `{"models":[
+			{"key":"minimax/MiniMax-M3","name":"MiniMax M3","contextWindow":200000},
+			{"key":"kimi-coding/kimi-k2.7-code","name":"Kimi K2.7 Code"}
+		]}`
+		cat := parseModelCatalog([]byte(out))
+		if cat.names["minimax/MiniMax-M3"] != "MiniMax M3" {
+			t.Errorf("full id name = %q", cat.names["minimax/MiniMax-M3"])
+		}
+		if cat.names["MiniMax-M3"] != "MiniMax M3" {
+			t.Errorf("bare id name = %q, want MiniMax M3", cat.names["MiniMax-M3"])
+		}
+		if cat.names["kimi-k2.7-code"] != "Kimi K2.7 Code" {
+			t.Errorf("bare kimi name = %q, want Kimi K2.7 Code", cat.names["kimi-k2.7-code"])
+		}
+		if cat.windows["MiniMax-M3"] != 200000 {
+			t.Errorf("bare id window = %d, want 200000", cat.windows["MiniMax-M3"])
+		}
+	})
+	t.Run("ambiguous bare id is not indexed", func(t *testing.T) {
+		// Two providers, same bare id, different names → ambiguous, skip it.
+		cat := parseModelCatalog([]byte(`{"models":[{"key":"a/dup","name":"Alpha"},{"key":"b/dup","name":"Beta"}]}`))
+		if _, ok := cat.names["dup"]; ok {
+			t.Errorf("ambiguous bare id must not be indexed, got %q", cat.names["dup"])
+		}
+	})
+	t.Run("identical name across providers indexes cleanly", func(t *testing.T) {
+		cat := parseModelCatalog([]byte(`{"models":[{"key":"kimi/kimi-k2.7-code","name":"Kimi K2.7 Code"},{"key":"kimi-coding/kimi-k2.7-code","name":"Kimi K2.7 Code"}]}`))
+		if cat.names["kimi-k2.7-code"] != "Kimi K2.7 Code" {
+			t.Errorf("same-name bare id should index, got %q", cat.names["kimi-k2.7-code"])
+		}
+	})
 }
 
 // TestLookupModelLimits_CatalogFallback proves the live catalog supplies a

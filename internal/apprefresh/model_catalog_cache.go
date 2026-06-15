@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"maps"
 	"os/exec"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -102,7 +103,48 @@ func parseModelCatalog(out []byte) modelCatalog {
 			cat.windows[key] = int(w)
 		}
 	}
+	// Session logs frequently carry bare model ids (e.g. "MiniMax-M3") while the
+	// catalog is keyed by full id ("minimax/MiniMax-M3"). Add unambiguous bare-id
+	// aliases so those still resolve to the catalog name/window.
+	indexCatalogByBareID(cat.names)
+	indexCatalogByBareID(cat.windows)
 	return cat
+}
+
+// indexCatalogByBareID adds bare-id keys (the segment after the last "/") to a
+// catalog map. A bare id is added only when unambiguous: it is not already a
+// full key, and every full key sharing that bare id maps to the same value.
+// Ambiguous bare ids (same suffix, different value across providers) are skipped
+// so a wrong name is never shown.
+func indexCatalogByBareID[T comparable](m map[string]T) {
+	type entry struct {
+		val      T
+		conflict bool
+	}
+	bare := map[string]entry{}
+	for k, v := range m {
+		i := strings.LastIndex(k, "/")
+		if i < 0 {
+			continue // already bare
+		}
+		b := k[i+1:]
+		if _, isFullKey := m[b]; isFullKey {
+			continue // a full key already owns this string
+		}
+		if e, ok := bare[b]; ok {
+			if e.val != v {
+				e.conflict = true
+				bare[b] = e
+			}
+		} else {
+			bare[b] = entry{val: v}
+		}
+	}
+	for b, e := range bare {
+		if !e.conflict {
+			m[b] = e.val
+		}
+	}
 }
 
 // modelCatalogCache caches the live model display-name map under a TTL with a

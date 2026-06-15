@@ -117,6 +117,58 @@ func TestParseChannels(t *testing.T) {
 	})
 }
 
+// TestParseModelDefaults_StringForm covers OpenClaw 2026.6, which writes
+// defaults.model as a bare model-id string instead of a {primary,...} object.
+// The old parser only read the object form, leaving primary empty so every
+// agent's model rendered blank.
+func TestParseModelDefaults_StringForm(t *testing.T) {
+	t.Run("string form yields primary", func(t *testing.T) {
+		primary, _, _, _ := parseModelDefaults(map[string]any{"model": "minimax/MiniMax-M3"})
+		if primary != "minimax/MiniMax-M3" {
+			t.Errorf("primary = %q, want minimax/MiniMax-M3", primary)
+		}
+	})
+	t.Run("object form still yields primary + fallbacks", func(t *testing.T) {
+		primary, fb, _, _ := parseModelDefaults(map[string]any{
+			"model": map[string]any{"primary": "openai/gpt-5", "fallbacks": []any{"m1", "m2"}},
+		})
+		if primary != "openai/gpt-5" {
+			t.Errorf("primary = %q, want openai/gpt-5", primary)
+		}
+		if len(fb) != 2 || fb[0] != "m1" {
+			t.Errorf("fallbacks = %v, want [m1 m2]", fb)
+		}
+	})
+}
+
+// TestParseAgents_InheritsDefaultModel locks the fix: an agent whose model is
+// null or absent inherits the default primary (so the Agent & Model panel shows
+// a model), and a raw inherited id is prettified through ModelName when no alias
+// exists.
+func TestParseAgents_InheritsDefaultModel(t *testing.T) {
+	prev := modelCatalogNames.Load()
+	t.Cleanup(func() { modelCatalogNames.Store(prev) })
+	setModelCatalogNames(map[string]string{"minimax/MiniMax-M3": "MiniMax M3"})
+
+	agents := map[string]any{"list": []any{
+		map[string]any{"id": "main", "model": nil},
+		map[string]any{"id": "work"}, // no model key at all
+	}}
+	out := parseAgents(agents, "minimax/MiniMax-M3", nil, map[string]string{}, nil)
+	if len(out) != 2 {
+		t.Fatalf("got %d agents, want 2", len(out))
+	}
+	for _, a := range out {
+		am := a.(map[string]any)
+		if am["modelId"] != "minimax/MiniMax-M3" {
+			t.Errorf("agent %v modelId = %v, want inherited default", am["id"], am["modelId"])
+		}
+		if am["model"] != "MiniMax M3" {
+			t.Errorf("agent %v model display = %v, want MiniMax M3 (prettified)", am["id"], am["model"])
+		}
+	}
+}
+
 func TestParseAgents(t *testing.T) {
 	t.Run("empty list yields synthetic default", func(t *testing.T) {
 		agents := map[string]any{}
