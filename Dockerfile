@@ -36,7 +36,7 @@ RUN CGO_ENABLED=0 go build \
     -o openclaw-dashboard ./cmd/openclaw-dashboard
 
 # --- Stage 2: Runtime ---
-FROM alpine:3.23
+FROM alpine:3.24
 
 # wget is needed for HEALTHCHECK. Busybox in Alpine ships a wget applet, but
 # install the full package so HEALTHCHECK behavior is stable across Alpine
