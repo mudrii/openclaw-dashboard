@@ -1385,7 +1385,7 @@ const Renderer = {
     const total=bd.reduce((a,d)=>a+(d.cost||0),0)||1;
     let grad='',cum=0,legend='';
     bd.forEach((d,i)=>{
-      const pct=d.cost/total*100;
+      const pct=(d.cost||0)/total*100;
       const c=COLORS[i%COLORS.length];
       grad+=`${c} ${cum}% ${cum+pct}%,`;
       cum+=pct;
