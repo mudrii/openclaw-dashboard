@@ -41,6 +41,11 @@ type SystemService struct {
 	// getLatestVersionCached during test cleanup).
 	fetchLatest func(ctx context.Context, timeoutMs int) string
 
+	// refresh collects fresh metrics and reports a hard failure. A per-instance
+	// field (like fetchLatest) so tests can inject a failing refresh to exercise
+	// the hard-fail back-off window; defaults to refreshMetrics.
+	refresh func(ctx context.Context) ([]byte, bool)
+
 	metricsMu           sync.RWMutex
 	metricsPayload      []byte
 	metricsStalePayload []byte // pre-computed version with "stale":true
@@ -75,12 +80,14 @@ var sharedSystemHTTPClient = &http.Client{Timeout: 30 * time.Second}
 const maxJSONResponseBytes = 1 << 16
 
 func NewSystemService(cfg appconfig.SystemConfig, dashVer string, serverCtx context.Context) *SystemService {
-	return &SystemService{
+	s := &SystemService{
 		cfg:         cfg,
 		dashVer:     dashVer,
 		shutdownCtx: serverCtx,
 		fetchLatest: FetchLatestNpmVersion,
 	}
+	s.refresh = s.refreshMetrics
+	return s
 }
 
 func (s *SystemService) SetMetricsTimestampForTest(ts time.Time) {
@@ -179,7 +186,7 @@ func (s *SystemService) GetJSON(ctx context.Context) (int, []byte) {
 // runtime are collected in parallel; on the cold path that halves the worst
 // case from ~2 × GatewayTimeoutMs down to ~1 × GatewayTimeoutMs (or the cold
 // budget, whichever fires first).
-func (s *SystemService) refresh(ctx context.Context) ([]byte, bool) {
+func (s *SystemService) refreshMetrics(ctx context.Context) ([]byte, bool) {
 	coldPath := time.Duration(s.cfg.ColdPathTimeoutMs) * time.Millisecond
 	if coldPath <= 0 {
 		coldPath = time.Duration(appconfig.DefaultColdPathTimeoutMs) * time.Millisecond
