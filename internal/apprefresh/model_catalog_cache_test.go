@@ -158,6 +158,21 @@ func TestModelName_ConsultsCatalog(t *testing.T) {
 	}
 }
 
+// TestModelName_CatalogBareIdDoesNotShadowCurated guards the cache-first lookup
+// against openclaw's habit of using the bare model id as the catalog "name"
+// (when no friendly name is registered). Such a name is no better than the raw
+// id, so it must not shadow the curated display name.
+func TestModelName_CatalogBareIdDoesNotShadowCurated(t *testing.T) {
+	prev := modelCatalogNames.Load()
+	t.Cleanup(func() { modelCatalogNames.Store(prev) })
+
+	// Catalog "name" is just the bare id of a model the curated switch knows.
+	setModelCatalogNames(map[string]string{"openai/gpt-5.3-codex": "gpt-5.3-codex"})
+	if got := ModelName("openai/gpt-5.3-codex"); got != "GPT-5.3 Codex" {
+		t.Errorf("got %q, want curated 'GPT-5.3 Codex' (bare-id catalog name must not shadow it)", got)
+	}
+}
+
 // TestModelCatalogCache_FetchWithStubRunner exercises the TTL cache end to end
 // with a stubbed CLI runner: the parsed names are returned and the snapshot is
 // published for ModelName.

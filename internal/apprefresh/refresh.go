@@ -84,10 +84,25 @@ func TrimLabel(s string) string {
 	return strings.TrimSpace(reStripTelegramID.ReplaceAllString(s, ""))
 }
 
+// catalogNameIsBareID reports whether a catalog display name is just the
+// model's bare id (the segment after the last "/"), case-insensitively — i.e.
+// openclaw registered no real display name for it.
+func catalogNameIsBareID(model, name string) bool {
+	bare := model
+	if i := strings.LastIndex(model, "/"); i >= 0 {
+		bare = model[i+1:]
+	}
+	return strings.EqualFold(strings.TrimSpace(name), strings.TrimSpace(bare))
+}
+
 // ModelName returns the human-friendly display name for a model identifier.
 // Falls back to the raw id when no friendly name is known.
 func ModelName(model string) string {
-	if name, ok := catalogDisplayName(model); ok {
+	// Prefer the live catalog name, but ignore a catalog "name" that is merely
+	// the bare model id (openclaw's fallback when no friendly name is
+	// registered) — it is no better than the raw id and must not shadow a
+	// curated display name below.
+	if name, ok := catalogDisplayName(model); ok && !catalogNameIsBareID(model, name) {
 		return name
 	}
 	ml := strings.ToLower(model)

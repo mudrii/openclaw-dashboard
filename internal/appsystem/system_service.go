@@ -650,7 +650,9 @@ func parseOpenclawStatusJSON(output string, versions SystemVersions) (SystemOpen
 // block degrades to "not shown" rather than failing the whole status parse.
 func decodeStatusField[T any](raw map[string]any, key string) *T {
 	v, ok := raw[key]
-	if !ok {
+	if !ok || v == nil {
+		// Absent or explicit JSON null → omit the block (a nil value would
+		// otherwise decode to a non-nil zero struct and emit an empty block).
 		return nil
 	}
 	b, err := json.Marshal(v)

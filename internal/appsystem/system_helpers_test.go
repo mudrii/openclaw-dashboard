@@ -197,6 +197,19 @@ func TestParseOpenclawStatusJSON(t *testing.T) {
 		}
 	})
 
+	t.Run("explicit JSON null leaves typed block nil (not zero struct)", func(t *testing.T) {
+		got, err := parseOpenclawStatusJSON(`{"currentVersion":"2.0.0","tasks":null,"eventLoop":null}`, SystemVersions{})
+		if err != nil {
+			t.Fatalf("err: want nil, got %v", err)
+		}
+		if got.Tasks != nil {
+			t.Errorf("Tasks: want nil for explicit null, got %+v (would emit an empty block)", got.Tasks)
+		}
+		if got.EventLoop != nil {
+			t.Errorf("EventLoop: want nil for explicit null, got %+v", got.EventLoop)
+		}
+	})
+
 	t.Run("minimal JSON leaves rich blocks nil (back-compat)", func(t *testing.T) {
 		out := `{"currentVersion":"2.0.0"}`
 		got, err := parseOpenclawStatusJSON(out, SystemVersions{})
