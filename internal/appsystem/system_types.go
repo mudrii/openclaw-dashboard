@@ -97,6 +97,40 @@ type SystemOpenclawStatus struct {
 	LatestVersion    string         `json:"latestVersion,omitempty"`
 	ConnectLatencyMs int64          `json:"connectLatencyMs,omitempty"`
 	Security         map[string]any `json:"security,omitempty"`
+
+	// INT-2 rich blocks. Tasks and pluginCompatibility/channelSummary come from
+	// lean status; eventLoop and lastHeartbeat are deep-status only. All are
+	// optional: absent in the CLI output → nil → omitted from the API body.
+	Tasks               *SystemOpenclawTasks     `json:"tasks,omitempty"`
+	EventLoop           *SystemOpenclawEventLoop `json:"eventLoop,omitempty"`
+	PluginCompatibility map[string]any           `json:"pluginCompatibility,omitempty"`
+	LastHeartbeat       map[string]any           `json:"lastHeartbeat,omitempty"`
+	ChannelSummary      []string                 `json:"channelSummary,omitempty"`
+}
+
+// SystemOpenclawTasks is the task-queue summary from `openclaw status --json`.
+// byStatus/byRuntime are count maps keyed by openclaw's status/runtime enums;
+// a map keeps the dashboard forward-compatible if openclaw adds enum values.
+type SystemOpenclawTasks struct {
+	Total     int            `json:"total"`
+	Active    int            `json:"active"`
+	Terminal  int            `json:"terminal"`
+	Failures  int            `json:"failures"`
+	ByStatus  map[string]int `json:"byStatus,omitempty"`
+	ByRuntime map[string]int `json:"byRuntime,omitempty"`
+}
+
+// SystemOpenclawEventLoop is the event-loop health block (deep status only).
+// degraded's trigger semantics churn across openclaw releases, so the dashboard
+// renders the shape and never gates logic on degraded alone.
+type SystemOpenclawEventLoop struct {
+	Degraded     bool     `json:"degraded"`
+	Reasons      []string `json:"reasons,omitempty"`
+	IntervalMs   int64    `json:"intervalMs,omitempty"`
+	DelayP99Ms   float64  `json:"delayP99Ms,omitempty"`
+	DelayMaxMs   float64  `json:"delayMaxMs,omitempty"`
+	Utilization  float64  `json:"utilization,omitempty"`
+	CPUCoreRatio float64  `json:"cpuCoreRatio,omitempty"`
 }
 
 type SystemOpenclawFreshness struct {

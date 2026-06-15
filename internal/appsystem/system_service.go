@@ -41,6 +41,11 @@ type SystemService struct {
 	// getLatestVersionCached during test cleanup).
 	fetchLatest func(ctx context.Context, timeoutMs int) string
 
+	// refresh collects fresh metrics and reports a hard failure. A per-instance
+	// field (like fetchLatest) so tests can inject a failing refresh to exercise
+	// the hard-fail back-off window; defaults to refreshMetrics.
+	refresh func(ctx context.Context) ([]byte, bool)
+
 	metricsMu           sync.RWMutex
 	metricsPayload      []byte
 	metricsStalePayload []byte // pre-computed version with "stale":true
@@ -75,12 +80,14 @@ var sharedSystemHTTPClient = &http.Client{Timeout: 30 * time.Second}
 const maxJSONResponseBytes = 1 << 16
 
 func NewSystemService(cfg appconfig.SystemConfig, dashVer string, serverCtx context.Context) *SystemService {
-	return &SystemService{
+	s := &SystemService{
 		cfg:         cfg,
 		dashVer:     dashVer,
 		shutdownCtx: serverCtx,
 		fetchLatest: FetchLatestNpmVersion,
 	}
+	s.refresh = s.refreshMetrics
+	return s
 }
 
 func (s *SystemService) SetMetricsTimestampForTest(ts time.Time) {
@@ -179,7 +186,7 @@ func (s *SystemService) GetJSON(ctx context.Context) (int, []byte) {
 // runtime are collected in parallel; on the cold path that halves the worst
 // case from ~2 × GatewayTimeoutMs down to ~1 × GatewayTimeoutMs (or the cold
 // budget, whichever fires first).
-func (s *SystemService) refresh(ctx context.Context) ([]byte, bool) {
+func (s *SystemService) refreshMetrics(ctx context.Context) ([]byte, bool) {
 	coldPath := time.Duration(s.cfg.ColdPathTimeoutMs) * time.Millisecond
 	if coldPath <= 0 {
 		coldPath = time.Duration(appconfig.DefaultColdPathTimeoutMs) * time.Millisecond
@@ -209,7 +216,7 @@ func (s *SystemService) refresh(ctx context.Context) ([]byte, bool) {
 		// so serializing them would double the cold-path wall time. We pass
 		// SystemVersions{} here and patch openclaw.Status.{Current,Latest}Version
 		// from `ver` after wg.Wait() once both goroutines have finished.
-		openclaw = CollectOpenclawRuntime(coldCtx, oclawBin, s.cfg.GatewayTimeoutMs, s.cfg.GatewayPort, SystemVersions{})
+		openclaw = CollectOpenclawRuntime(coldCtx, oclawBin, s.cfg.GatewayTimeoutMs, s.cfg.GatewayPort, SystemVersions{}, s.cfg.DeepStatus)
 	}()
 	go func() { defer wg.Done(); disk = CollectDiskRoot(s.cfg.DiskPath) }()
 	go func() {
@@ -435,7 +442,18 @@ func CollectVersionsLocal(ctx context.Context, dashVer string, timeoutMs int, ga
 	return v
 }
 
-func CollectOpenclawRuntime(ctx context.Context, oclawBin string, timeoutMs int, gatewayPort int, versions SystemVersions) SystemOpenclaw {
+// statusArgs builds the `openclaw status` argv. Deep status (--deep) adds the
+// event-loop and last-heartbeat blocks but is slower, so it is opt-in via
+// System.DeepStatus.
+func statusArgs(deep bool) []string {
+	args := []string{"status", "--json"}
+	if deep {
+		args = append(args, "--deep")
+	}
+	return args
+}
+
+func CollectOpenclawRuntime(ctx context.Context, oclawBin string, timeoutMs int, gatewayPort int, versions SystemVersions, deepStatus bool) SystemOpenclaw {
 	openclaw := SystemOpenclaw{
 		Gateway: SystemOpenclawGateway{},
 		Status: SystemOpenclawStatus{
@@ -464,7 +482,7 @@ func CollectOpenclawRuntime(ctx context.Context, oclawBin string, timeoutMs int,
 	}()
 	go func() {
 		defer wg.Done()
-		out, err := runWithTimeout(ctx, timeoutMs, oclawBin, "status", "--json")
+		out, err := runWithTimeout(ctx, timeoutMs, oclawBin, statusArgs(deepStatus)...)
 		// I2 fix: attempt to parse stdout even on non-zero exit — CLIs often emit valid JSON while
 		// subprocess stdout is parsed regardless of returncode. Many CLIs emit valid JSON to
 		// stdout while exiting non-zero (e.g., status reported but gateway connect failed).
@@ -617,7 +635,42 @@ func parseOpenclawStatusJSON(output string, versions SystemVersions) (SystemOpen
 	if sec, ok := raw["security"].(map[string]any); ok {
 		status.Security = sec
 	}
+	// INT-2: additive rich blocks. Typed sub-objects (tasks, eventLoop) are
+	// re-decoded from their raw value; loose blocks pass through as maps. Any
+	// absent or malformed block is left nil so minimal status output is
+	// back-compatible.
+	status.Tasks = decodeStatusField[SystemOpenclawTasks](raw, "tasks")
+	status.EventLoop = decodeStatusField[SystemOpenclawEventLoop](raw, "eventLoop")
+	if pc, ok := raw["pluginCompatibility"].(map[string]any); ok {
+		status.PluginCompatibility = pc
+	}
+	if hb, ok := raw["lastHeartbeat"].(map[string]any); ok {
+		status.LastHeartbeat = hb
+	}
+	status.ChannelSummary = stringSliceFromAny(raw["channelSummary"])
 	return status, nil
+}
+
+// decodeStatusField re-decodes a named sub-object of the parsed status map into
+// a typed struct, returning nil when the key is absent or its value does not
+// decode. Used for the typed INT-2 blocks (tasks, eventLoop) so a malformed
+// block degrades to "not shown" rather than failing the whole status parse.
+func decodeStatusField[T any](raw map[string]any, key string) *T {
+	v, ok := raw[key]
+	if !ok || v == nil {
+		// Absent or explicit JSON null → omit the block (a nil value would
+		// otherwise decode to a non-nil zero struct and emit an empty block).
+		return nil
+	}
+	b, err := json.Marshal(v)
+	if err != nil {
+		return nil
+	}
+	var out T
+	if err := json.Unmarshal(b, &out); err != nil {
+		return nil
+	}
+	return &out
 }
 
 // decodeJSONObjectFromOutput finds the first '{'-prefixed substring of output
@@ -698,22 +751,18 @@ func ParseGatewayStatusJSON(ctx context.Context, output string) SystemGateway {
 		} `json:"service"`
 		Version string `json:"version"`
 	}
-	// Find first JSON object in output (may have leading non-JSON lines)
-	start := strings.Index(output, "{")
-	if start >= 0 {
-		if err := json.Unmarshal([]byte(output[start:]), &result); err == nil {
-			// Prefer runtime.Status == "running" over just Loaded
-			status := "offline"
-			if result.Service.Runtime.Status == "running" || result.Service.Loaded {
-				status = "online"
-			}
-			gw := SystemGateway{Version: result.Version, Status: status, PID: result.Service.Runtime.PID}
-			// Get uptime + memory from /proc or ps if we have a PID
-			if gw.PID > 0 {
-				gw.Uptime, gw.Memory = GetProcessInfo(ctx, gw.PID)
-			}
-			return gw
+	if err := decodeJSONObjectFromOutput(output, &result); err == nil {
+		// Prefer runtime.Status == "running" over just Loaded
+		status := "offline"
+		if result.Service.Runtime.Status == "running" || result.Service.Loaded {
+			status = "online"
 		}
+		gw := SystemGateway{Version: result.Version, Status: status, PID: result.Service.Runtime.PID}
+		// Get uptime + memory from /proc or ps if we have a PID
+		if gw.PID > 0 {
+			gw.Uptime, gw.Memory = GetProcessInfo(ctx, gw.PID)
+		}
+		return gw
 	}
 	// Fallback: text parsing
 	lower := strings.ToLower(output)

@@ -58,3 +58,10 @@ linters:
           - errcheck
           - gocritic
           - gosec
+
+# Formatting is enforced as part of `golangci-lint run` (CI lint job + `make lint`)
+# so unformatted code fails CI instead of slipping through — neither the Makefile
+# `check` target nor any workflow ran `gofmt` previously.
+formatters:
+  enable:
+    - gofmt

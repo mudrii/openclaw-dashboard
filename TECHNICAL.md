@@ -1,6 +1,6 @@
 # TECHNICAL.md — OpenClaw Dashboard Internals
 
-> **Version:** 2026.4.8 · **Repo:** [github.com/mudrii/openclaw-dashboard](https://github.com/mudrii/openclaw-dashboard)
+> **Version:** 2026.6.15 · **Repo:** [github.com/mudrii/openclaw-dashboard](https://github.com/mudrii/openclaw-dashboard)
 >
 > This document covers architecture, data flow, and implementation details for developers and contributors. For features and quick start, see [README.md](README.md).
 
@@ -92,17 +92,37 @@ The refresh collector (`internal/apprefresh`, invoked by `openclaw-dashboard --r
 | `openclaw.json` | Bot config: models, skills, compaction mode |
 | `agents/*/sessions/sessions.json` | Session metadata (keys, tokens, context, model, timestamps) |
 | `agents/*/sessions/*.jsonl` + `.jsonl.deleted.*` | Per-message token usage and cost data |
-| `cron/jobs.json` | Cron job definitions, schedules, state, last run status |
+| `openclaw cron list --json` (gateway) | Cron definitions, schedules, run status, **delivery status, consecutive errors/skips** (flapping). OpenClaw 2026.6 moved cron into shared SQLite; falls back to legacy `cron/jobs.json` + `cron/jobs-state.json` on pre-migration installs |
+| `openclaw tasks list --json --runtime subagent` (gateway) | Sub-agent runs: agent, task, status, duration, timestamp (no per-run cost/tokens — not exposed by the tasks store) |
 | `.git/` (via `git log`) | Last 5 commits (hash, message, relative time) |
-| Process table (`pgrep` + `ps`) | Gateway PID, uptime, RSS memory |
+| Gateway lock file + process table | Gateway PID, uptime, RSS memory |
+| `journalctl --user` (Linux) | Gateway logs when systemd routes them to journald (no file to tail) |
+| `openclaw models list --json` | Live model display names + context windows (TTL-cached) |
 
 ### Gateway Detection
 
+Process metadata (PID/uptime/RSS) is read first from openclaw's install-independent
+lock file (`<tmpdir>/openclaw-<uid>/gateway.<sha256(configPath)[:8]>.lock`, payload
+`{pid, createdAt, …}`), which is correct on every install layout. When no usable lock
+exists, the dashboard falls back to:
+
 ```bash
-pgrep -f openclaw-gateway
+pgrep -f "openclaw/dist/index.js gateway"   # npm layout
 ```
 
-If a PID is found, a follow-up `ps -p <pid> -o etime=,rss=` extracts uptime and RSS memory.
+If a PID is found (lock or pgrep), a follow-up `ps -p <pid> -o rss=` (or `etime=,rss=`
+on the pgrep path) extracts RSS memory; the lock path derives uptime from `createdAt`.
+The HTTP `/healthz` probe remains the authoritative liveness signal.
+
+### Linux journald Log Fallback
+
+On systemd hosts the gateway's systemd `--user` unit emits no `StandardOutput=`
+directive, so gateway output goes to journald and there is no file to tail. When a
+configured log source has no file on disk, the collector synthesizes log records from
+`journalctl --user -u <unit>.service -o json --no-pager` (mapping `PRIORITY`→severity,
+`MESSAGE`→message, `__REALTIME_TIMESTAMP`→time). The unit resolves from
+`OPENCLAW_SYSTEMD_UNIT` > `logs.systemdUnit` > `openclaw-gateway` (with an
+`OPENCLAW_PROFILE` suffix). Gated on `runtime.GOOS == "linux"`; macOS is unaffected.
 
 ### Runtime Observability (`/api/system` — `openclaw` block)
 
@@ -112,9 +132,22 @@ In addition to the `data.json` pipeline, the `/api/system` endpoint includes a l
 |--------|---------------|
 | `GET /healthz` | `live`, `uptimeMs`, `healthEndpointOk` |
 | `GET /readyz` | `ready`, `failing[]`, `readyEndpointOk` |
-| `openclaw status --json` | `currentVersion`, `latestVersion`, `connectLatencyMs`, `security` |
+| `openclaw status --json` | `currentVersion`, `latestVersion`, `connectLatencyMs`, `security`, `tasks`, `eventLoop`, `pluginCompatibility`, `lastHeartbeat`, `channelSummary` |
 
 The `readyz` endpoint returns a `503` body with JSON when some dependencies are failing. `fetchJSONMapAllowStatus` accepts configurable HTTP status codes so the body is parsed rather than discarded.
+
+The rich `status --json` blocks (`tasks`, `eventLoop`, `pluginCompatibility`,
+`lastHeartbeat`, `channelSummary`) feed the **Runtime Health** panel. They parse
+additively — minimal status still parses, and absent blocks are omitted. `eventLoop`
+and `lastHeartbeat` are deep-status-only: set `system.deepStatus=true` to invoke
+`openclaw status --json --deep` (slower). Lean status already provides the task queue,
+plugin-compatibility warnings, and channel summary.
+
+**Channel health (apprefresh `/readyz`).** Separately from the appsystem block above,
+the refresh collector has its own `/readyz` probe whose `failing[]` drives per-channel
+health: a channel whose config key is in `failing[]` is marked
+`connected=false, health="unhealthy"` (overriding the session-activity heuristic);
+non-channel reasons are ignored and probe failure falls back to the heuristic.
 
 The frontend's `SystemBar._gatewayState(d)` helper decides whether to trust the runtime data or fall back to the `versions.gateway` status field from `data.json`. Runtime is trusted when any of these signals is present: `healthEndpointOk`, `readyEndpointOk`, `uptimeMs > 0`, or `failing.length > 0`.
 
@@ -132,7 +165,7 @@ All aggregation and collector processing now runs under `internal/apprefresh/`.
 
 ### Model Name Normalization
 
-The `modelName()` function maps raw provider/model IDs (e.g., `anthropic/claude-opus-4-6`) to friendly display names (e.g., `Claude Opus 4.6`). It strips the provider prefix and matches against known substrings:
+The `ModelName()` function maps raw provider/model IDs (e.g., `anthropic/claude-opus-4-6`) to friendly display names (e.g., `Claude Opus 4.6`). It strips the provider prefix and matches against known substrings:
 
 | Pattern | Display Name |
 |---------|-------------|
@@ -145,7 +178,15 @@ The `modelName()` function maps raw provider/model IDs (e.g., `anthropic/claude-
 | `minimax-m2.5` | MiniMax M2.5 |
 | `k2p5`, `kimi` | Kimi K2.5 |
 | `gpt-5.3-codex` | GPT-5.3 Codex |
-| *(fallback)* | Raw model string |
+| *(unknown id)* | Live catalog name, else raw model string |
+
+**Live model catalog.** A TTL-cached snapshot of `openclaw models list --json`
+(`model_catalog_cache.go`, mirroring the session-model cache) supplies display names
+and context windows for current/future models. The curated switch above wins; the
+catalog is consulted only in the fallback (unknown-id) branch — openclaw's `name` is
+often the bare id, so curated-first avoids regressing nice names. `lookupModelLimits`
+also consults the catalog's context window when the `openclaw.json` model registry has
+no entry for a model.
 
 ### Session Type Detection
 
@@ -451,6 +492,8 @@ Each setting resolves through a priority chain (highest wins):
 | Key | Type | Description |
 |-----|------|-------------|
 | `crons` | `array` | All cron job definitions |
+| `crons[].id` | `string` | Job id (uuid) |
+| `crons[].agentId` | `string` | Owning agent id |
 | `crons[].name` | `string` | Job name |
 | `crons[].schedule` | `string` | Human-readable schedule (`"Every 6h"`, cron expr, etc.) |
 | `crons[].enabled` | `boolean` | Whether the job is active |
@@ -459,6 +502,11 @@ Each setting resolves through a priority chain (highest wins):
 | `crons[].lastDurationMs` | `number` | Last run duration in ms |
 | `crons[].nextRun` | `string` | Formatted next run timestamp or `""` |
 | `crons[].model` | `string` | Model from job payload |
+| `crons[].lastDeliveryStatus` | `string` | Last delivery outcome from sidecar state |
+| `crons[].lastDiagnostics` | `array` | Diagnostic strings for the last run/delivery |
+| `crons[].consecutiveErrors` | `number` | Consecutive failing runs |
+| `crons[].consecutiveSkipped` | `number` | Consecutive skipped deliveries/runs |
+| `crons[].flapping` | `boolean` | True when consecutive errors cross the flapping threshold |
 
 ### Sub-Agent Activity
 
@@ -468,17 +516,14 @@ Each setting resolves through a priority chain (highest wins):
 | `subagentRunsToday` | `array` | Last 20 sub-agent runs (today) |
 | `subagentRuns7d` | `array` | Last 50 sub-agent runs (7 days) |
 | `subagentRuns30d` | `array` | Last 100 sub-agent runs (30 days) |
-| `subagentRuns[].task` | `string` | Session key (truncated to 60 chars) |
-| `subagentRuns[].model` | `string` | Last model used |
-| `subagentRuns[].cost` | `number` | Total session cost (4 decimal places) |
-| `subagentRuns[].durationSec` | `number` | Session duration in seconds |
-| `subagentRuns[].status` | `string` | Always `"completed"` |
-| `subagentRuns[].timestamp` | `string` | `"YYYY-MM-DD HH:MM"` |
-| `subagentRuns[].date` | `string` | `"YYYY-MM-DD"` |
-| `subagentCostAllTime` | `number` | Total sub-agent cost (all time) |
-| `subagentCostToday` | `number` | Total sub-agent cost (today) |
-| `subagentCost7d` | `number` | Total sub-agent cost (7 days) |
-| `subagentCost30d` | `number` | Total sub-agent cost (30 days) |
+| `subagentRuns[].task` | `string` | Task description (whitespace-collapsed, truncated to 80 chars) |
+| `subagentRuns[].agent` | `string` | Owning agent id (e.g. `main`) |
+| `subagentRuns[].durationSec` | `number` | Run duration in seconds (ended − started, falling back to ended − created) |
+| `subagentRuns[].status` | `string` | Task status: `succeeded`, `failed`, `running`, `queued`, `cancelled`, `timed_out`, `lost` |
+| `subagentRuns[].error` | `string` | Failure reason when the run did not succeed (empty otherwise) |
+| `subagentRuns[].timestamp` | `string` | `"YYYY-MM-DD HH:MM"` (from createdAt) |
+| `subagentRuns[].date` | `string` | `"YYYY-MM-DD"` (windowing key) |
+| `subagentCostAllTime` / `subagentCostToday` / `subagentCost7d` / `subagentCost30d` | `number` | Retained for compatibility; `0` since the OpenClaw 2026.6 migration (the tasks store does not expose per-run cost, and the zero-dep build cannot read the gateway SQLite) |
 
 ### Token Usage
 
@@ -561,7 +606,7 @@ openclaw-dashboard uninstall
 # or: openclaw-dashboard service <cmd>
 ```
 
-`install` bakes `--bind` and `--port` (defaulting to values from `config.json` and env vars) into the generated plist / unit file. `openclaw-dashboard uninstall` preserves config and data; `uninstall.sh` removes the runtime directory after deregistering the service.
+`install` bakes `--bind` and `--port` (defaulting to values from `config.json` and env vars) into the generated plist / unit file. If `OPENCLAW_DASHBOARD_ALLOW_NON_LOOPBACK=1` is required for the chosen bind host, that override is persisted into the service environment as well. `openclaw-dashboard uninstall` preserves config and data; `uninstall.sh` removes the runtime directory after deregistering the service.
 
 **Implementation:**
 - Platform selection: Go build tags (`//go:build darwin`, `//go:build linux`, `//go:build !darwin && !linux`)
@@ -656,7 +701,7 @@ systemctl --user status openclaw-dashboard
 | Concern | Details |
 |---------|---------|
 | **Default bind** | `127.0.0.1` — localhost only, safe |
-| **LAN mode** | `--bind 0.0.0.0` exposes the dashboard to the local network with **no authentication** |
+| **LAN mode** | `OPENCLAW_DASHBOARD_ALLOW_NON_LOOPBACK=1 --bind 0.0.0.0` exposes the dashboard to the local network with **no authentication** |
 | **CORS** | Allows localhost/127.0.0.1 origins; fallback header is `http://localhost:8080` |
 | **No HTTPS** | Plain HTTP only; use a reverse proxy for TLS |
 | **Sensitive data in data.json** | Session keys, model usage, costs, cron config, gateway PID |
@@ -756,7 +801,7 @@ make check
 2. Add render logic in the `render()` function
 3. If it needs new data, add extraction logic in `internal/apprefresh` (inside `collectDashboardData` or helpers it calls)
 4. Add the new key to the `map[string]any` returned from `collectDashboardData`
-5. Optionally add a `panels.<name>` toggle in `config.json`
+5. If visibility should become configurable, add and document an explicit config schema field first; unknown `panels.*` keys are currently unsupported and logged as config warnings.
 
 ### Adding a New Alert Type
 

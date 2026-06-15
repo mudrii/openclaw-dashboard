@@ -193,8 +193,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'SF Pro','Helvetica Neue',sans
 .empty{text-align:center;padding:24px;color:var(--dim);font-size:12px}
 ::-webkit-scrollbar{width:4px}::-webkit-scrollbar-thumb{background:var(--scrollThumb);border-radius:2px}
 
-@media(max-width:1024px){.cost-row{grid-template-columns:repeat(2,1fr)}.health-row{grid-template-columns:repeat(3,1fr)}}
-@media(max-width:768px){.grid-2,.grid-3{grid-template-columns:1fr}.cost-row,.health-row{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:1024px){.cost-row{grid-template-columns:repeat(2,1fr)}.health-row{grid-template-columns:repeat(3,1fr)}#extraConfigRow1{grid-template-columns:repeat(2,minmax(0,1fr))!important}#extraConfigRow2{grid-template-columns:repeat(2,minmax(0,1fr))!important}}
+@media(max-width:768px){.grid-2,.grid-3{grid-template-columns:1fr}.cost-row,.health-row{grid-template-columns:repeat(2,1fr)}#agentConfigSummaryRow,#extraConfigRow1,#extraConfigRow2,.bindings-grid{grid-template-columns:1fr!important}}
 
 /* AI Chat Panel */
 .chat-fab{position:fixed;bottom:24px;right:24px;width:48px;height:48px;border-radius:50%;background:linear-gradient(135deg,var(--accent),var(--accent2));border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:20px;box-shadow:0 4px 20px rgba(99,102,241,.4);z-index:1000;transition:transform .2s}
@@ -257,7 +257,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'SF Pro','Helvetica Neue',sans
 // FOUC bootstrap: read localStorage before body renders to prevent flash
 (function(){
   var STORAGE_KEY='ocDash:collapse:v2';
-  var DEFAULTS={'alerts':false,'health':false,'cost':false,'charts':false,'crons':false,'sessions':false,'usage':false,'subagent':false,'logs':false,'errors':false,'agent-config':false};
+  var DEFAULTS={'alerts':false,'health':false,'cost':false,'charts':false,'crons':false,'sessions':false,'usage':false,'subagent':false,'logs':false,'errors':false,'agent-config':true};
   var state=Object.assign({},DEFAULTS);
   try{
     var raw=localStorage.getItem(STORAGE_KEY);
@@ -360,12 +360,12 @@ body{font-family:-apple-system,BlinkMacSystemFont,'SF Pro','Helvetica Neue',sans
   <div class="glass cost-card">
     <div class="cost-label">Today's Cost</div>
     <div class="cost-value" id="cToday">—</div>
-    <div class="cost-sub" id="cTodaySub"></div>
+    <div class="cost-sub" id="cTodaySub" style="display:none"></div>
   </div>
   <div class="glass cost-card">
     <div class="cost-label">All-Time Cost</div>
     <div class="cost-value" id="cAll">—</div>
-    <div class="cost-sub" id="cAllSub"></div>
+    <div class="cost-sub" id="cAllSub" style="display:none"></div>
   </div>
   <div class="glass cost-card">
     <div class="cost-label">Projected Monthly</div>
@@ -402,7 +402,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'SF Pro','Helvetica Neue',sans
       <div class="grid-3">
         <div class="glass chart-container"><div class="chart-title">Daily Cost Trend</div><div id="costChart"></div></div>
         <div class="glass chart-container"><div class="chart-title">Cost by Model</div><div id="modelChart"></div></div>
-        <div class="glass chart-container"><div class="chart-title">Sub-Agent Activity</div><div id="subagentChart"></div></div>
+        <div class="glass chart-container" style="display:none"><div class="chart-title">Sub-Agent Activity</div><div id="subagentChart"></div></div>
       </div>
     </div>
   </div>
@@ -495,13 +495,13 @@ body{font-family:-apple-system,BlinkMacSystemFont,'SF Pro','Helvetica Neue',sans
   <div class="oc-section-body" id="oc-body-subagent">
     <div class="glass panel" style="overflow-x:auto">
       <table class="dtable">
-        <thead><tr><th>Task</th><th>Model</th><th class="r">Cost</th><th class="r">Duration</th><th>Status</th><th>Time</th></tr></thead>
+        <thead><tr><th>Task</th><th>Agent</th><th class="r">Duration</th><th>Status</th><th>Time</th></tr></thead>
         <tbody id="srBody"></tbody>
       </table>
       <div class="empty" id="srEmpty" style="display:none">No sub-agent runs</div>
     </div>
-    <!-- Sub-agent token breakdown -->
-    <div style="margin-top:12px">
+    <!-- Sub-agent token breakdown — hidden: OpenClaw's durable tasks store does not expose per-run cost/tokens after the SQLite migration -->
+    <div style="margin-top:12px;display:none">
       <div class="section-header">
         <span class="section-title" style="color:var(--purple)">Sub-Agent Token Breakdown</span>
         <div class="tab-group">
@@ -617,7 +617,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'SF Pro','Helvetica Neue',sans
   <div id="agentCards" style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:18px"></div>
 
   <!-- 2-col: Model Routing + Runtime Config -->
-  <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:18px">
+  <div id="agentConfigSummaryRow" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:18px">
     <!-- Model Routing -->
     <div style="background:var(--glass);border:1px solid var(--border);border-radius:8px;padding:12px">
       <div style="font-size:9px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-bottom:10px">🔀 Model Routing</div>
@@ -679,6 +679,12 @@ body{font-family:-apple-system,BlinkMacSystemFont,'SF Pro','Helvetica Neue',sans
       <div id="searchPanelInner"></div>
     </div>
 
+  </div>
+
+  <!-- Runtime Health (INT-2: task queue / event-loop / plugin-compat / heartbeat from status --json) -->
+  <div style="background:var(--glass);border:1px solid var(--border);border-radius:8px;padding:12px;margin-bottom:18px" id="runtimeHealthPanel">
+    <div style="font-size:9px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-bottom:10px">📊 Runtime Health</div>
+    <div id="runtimeHealthPanelInner"><span style="color:var(--dim);font-size:12px">Loading…</span></div>
   </div>
 
   <!-- Agent Bindings -->
@@ -1300,11 +1306,11 @@ const DirtyChecker = {
     return {
       alerts: this.sectionChanged(['alerts']),
       health: true,
-      cost: this.sectionChanged(['totalCostToday','totalCostAllTime','projectedMonthly','subagentCostToday','subagentCostAllTime','costBreakdown']),
-      crons: !prevD || this.stableSnapshot(D.crons, ['lastStatus','name','schedule','lastDurationMs','lastError','model']) !== this.stableSnapshot(prevD.crons, ['lastStatus','name','schedule','lastDurationMs','lastError','model']),
+      cost: this.sectionChanged(['totalCostToday','totalCostAllTime','projectedMonthly','costBreakdown']),
+      crons: !prevD || this.stableSnapshot(D.crons, ['lastStatus','name','schedule','lastDurationMs','lastDiagnostics','model','lastDeliveryStatus','flapping']) !== this.stableSnapshot(prevD.crons, ['lastStatus','name','schedule','lastDurationMs','lastDiagnostics','model','lastDeliveryStatus','flapping']),
       sessions: !prevD || this.stableSnapshot(D.sessions, ['key','name','model','type','contextPct','totalTokens','active','spawnedBy','label','subject']) !== this.stableSnapshot(prevD.sessions, ['key','name','model','type','contextPct','totalTokens','active','spawnedBy','label','subject']),
       usage: this.sectionChanged(['tokenUsage','tokenUsageToday','tokenUsage7d','tokenUsage30d','subagentUsage','subagentUsageToday','subagentUsage7d','subagentUsage30d']) || snap.tabs.usage !== State.prevTabs.usage,
-      subRuns: (!prevD || ['subagentRuns','subagentRuns7d','subagentRuns30d','subagentRunsToday'].some(k => this.stableSnapshot(D[k], ['task','model','cost','durationSec','status']) !== this.stableSnapshot((prevD||{})[k], ['task','model','cost','durationSec','status']))) || snap.tabs.subRuns !== State.prevTabs.subRuns,
+      subRuns: (!prevD || ['subagentRuns','subagentRuns7d','subagentRuns30d','subagentRunsToday'].some(k => this.stableSnapshot(D[k], ['task','agent','status','durationSec','timestamp']) !== this.stableSnapshot((prevD||{})[k], ['task','agent','status','durationSec','timestamp']))) || snap.tabs.subRuns !== State.prevTabs.subRuns,
       subTokens: this.sectionChanged(['tokenUsage','tokenUsageToday','tokenUsage7d','tokenUsage30d','subagentUsage','subagentUsageToday','subagentUsage7d','subagentUsage30d']) || snap.tabs.subTokens !== State.prevTabs.subTokens,
       charts: this.sectionChanged(['dailyChart']) || snap.chartDays !== State.prevChartDays,
       models: this.sectionChanged(['availableModels']),
@@ -1348,7 +1354,13 @@ const Renderer = {
   // Alerts — filter "Gateway is offline" when SystemBar has confirmed gateway is online
   if (flags.alerts) {
     const alerts=(D.alerts||[]).filter(a=>!(window._gwOnlineConfirmed && a.message && a.message.includes('Gateway is offline')));
+    // SystemBar injects #gw-readiness-alert into this section on its own timer.
+    // Preserve the live node across this innerHTML rebuild and re-attach it, so
+    // a refresh while the gateway is not-ready does not drop the alert until the
+    // next SystemBar poll (~5s flicker).
+    const gwReadyAlert=$('gw-readiness-alert');
     $('alertsSection').innerHTML=alerts.length?alerts.map(a=>`<div class="alert-item alert-${esc(a.severity)||'low'}"><span class="alert-icon">${esc(a.icon)||'ℹ️'}</span><span class="alert-msg">${esc(a.message)}</span></div>`).join(''):'';
+    if(gwReadyAlert)$('alertsSection').insertAdjacentElement('afterbegin',gwReadyAlert);
   }
 
   // Health — skip gateway-specific fields if SystemBar has already populated them (prevents flicker)
@@ -1365,17 +1377,15 @@ const Renderer = {
   // Cost
   if (flags.cost) {
     $('cToday').textContent='$'+(D.totalCostToday||0).toFixed(2);
-    $('cTodaySub').textContent='Sub-agents: $'+(D.subagentCostToday||0).toFixed(2);
     $('cAll').textContent='$'+(D.totalCostAllTime||0).toFixed(2);
-    $('cAllSub').textContent='Sub-agents: $'+(D.subagentCostAllTime||0).toFixed(2);
     $('cProj').textContent='$'+(D.projectedMonthly||0).toFixed(0);
 
     // Donut (CSS conic-gradient)
     const bd=D.costBreakdown||[];
-    const total=bd.reduce((a,d)=>a+d.cost,0)||1;
+    const total=bd.reduce((a,d)=>a+(d.cost||0),0)||1;
     let grad='',cum=0,legend='';
     bd.forEach((d,i)=>{
-      const pct=d.cost/total*100;
+      const pct=(d.cost||0)/total*100;
       const c=COLORS[i%COLORS.length];
       grad+=`${c} ${cum}% ${cum+pct}%,`;
       cum+=pct;
@@ -1395,9 +1405,16 @@ const Renderer = {
     Renderer.reconcileRows('cronBody', crons, c => c.name, c => {
       const st=c.lastStatus;
       const dotCls=st==='ok'?'sd-ok':st==='error'?'sd-error':st==='none'?'sd-none':'sd-pending';
-      const tip=c.lastError?` data-tip="${esc(c.lastError)}"`:'';
+      const diagnostics=Array.isArray(c.lastDiagnostics)?c.lastDiagnostics.filter(Boolean).join(' · '):'';
+      const tip=diagnostics?` data-tip="${esc(diagnostics)}"`:'';
       const dur=c.lastDurationMs?((c.lastDurationMs/1000).toFixed(1)+'s'):'—';
-      return `<tr class="dr"><td><span class="sd ${dotCls}"${tip}></span>${esc(st)||'—'}</td><td class="w">${esc(c.name)}</td><td>${esc(c.schedule)}</td><td>${esc(c.lastRun||'—')}</td><td>${esc(c.nextRun||'—')}</td><td class="r">${dur}</td><td>${esc(c.model||'—')}</td></tr>`;
+      // INT-5: delivery outcome dot + flapping badge.
+      const ds=c.lastDeliveryStatus;
+      const dsColor=ds==='delivered'?'var(--green)':ds==='not-delivered'?'var(--red)':ds==='unknown'?'var(--yellow)':'var(--dim)';
+      const dsBadge=(ds&&ds!=='not-requested')?` <span style="font-size:9px;color:${dsColor}" data-tip="delivery: ${esc(ds)}">●</span>`:'';
+      const flapTip=diagnostics||(`${String(c.consecutiveErrors||0)} consecutive errors`);
+      const flap=c.flapping?` <span style="font-size:8px;font-weight:700;color:var(--red)" data-tip="${esc(flapTip)}">⚡FLAPPING</span>`:'';
+      return `<tr class="dr"><td><span class="sd ${dotCls}"${tip}></span>${esc(st)||'—'}${dsBadge}${flap}</td><td class="w">${esc(c.name)}</td><td>${esc(c.schedule)}</td><td>${esc(c.lastRun||'—')}</td><td>${esc(c.nextRun||'—')}</td><td class="r">${dur}</td><td>${esc(c.model||'—')}</td></tr>`;
     });
     if (cronContainer) cronContainer.scrollTop = cronScrollTop;
   }
@@ -1430,12 +1447,13 @@ const Renderer = {
   if (flags.subRuns) {
     const srTab=snap.tabs.subRuns;
     const runs=srTab==='today'?(D.subagentRunsToday||[]):srTab==='7d'?(D.subagentRuns7d||[]):srTab==='30d'?(D.subagentRuns30d||[]):(D.subagentRuns||[]);
-    const srCost=srTab==='today'?(D.subagentCostToday||0):srTab==='7d'?(D.subagentCost7d||0):srTab==='30d'?(D.subagentCost30d||0):(D.subagentCostAllTime||0);
-    $('subCostLbl').textContent='Total: $'+srCost.toFixed(2);
+    $('subCostLbl').textContent=runs.length+(runs.length===1?' run':' runs');
     $('srEmpty').style.display=runs.length?'none':'block';
     Renderer.reconcileRows('srBody', runs.slice(0,20), r => r.task+'-'+r.timestamp, r => {
-      const dur=r.durationSec>=3600?(r.durationSec/3600).toFixed(1)+'h':r.durationSec>=60?Math.round(r.durationSec/60)+'m':r.durationSec+'s';
-      return `<tr class="dr"><td class="w" style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(r.task)}</td><td>${esc(r.model)}</td><td class="r cost">$${r.cost.toFixed(4)}</td><td class="r">${dur}</td><td><span class="badge badge-ok">${esc(r.status)}</span></td><td>${esc(r.timestamp)}</td></tr>`;
+      const ds=r.durationSec||0;
+      const dur=ds>=3600?(ds/3600).toFixed(1)+'h':ds>=60?Math.round(ds/60)+'m':ds+'s';
+      const sc=r.status==='succeeded'?'badge-ok':(['failed','timed_out','cancelled','lost','error'].includes(r.status)?'badge-err':'');
+      return `<tr class="dr"><td class="w" style="max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(r.task)}</td><td>${esc(r.agent)}</td><td class="r">${dur}</td><td><span class="badge ${sc}">${esc(r.status)}</span></td><td>${esc(r.timestamp)}</td></tr>`;
     });
   }
 
@@ -1588,6 +1606,10 @@ const Renderer = {
       const error = raw.error == null ? '' : String(raw.error);
       const connectedText = connected===null ? 'Unknown' : (connected ? 'Yes' : 'No');
       const healthText = health || 'Unknown';
+      const healthLc = (health||'').toLowerCase();
+      const healthColor = ['unhealthy','disconnected','offline','error','down','failing'].includes(healthLc) ? 'var(--red)'
+        : ['healthy','active','ok','connected','online'].includes(healthLc) ? 'var(--green)'
+        : 'var(--muted)';
       const errorText = error ? error : '—';
 
       return `<div style="background:var(--glass);border:1px solid var(--border);border-radius:6px;padding:8px 9px;margin-bottom:6px">
@@ -1598,7 +1620,7 @@ const Renderer = {
         <div style="font-size:11px;color:var(--muted);display:grid;grid-template-columns:auto 1fr;gap:3px 8px">
           <span>Configured</span><span style="color:${configured?'var(--green)':'var(--red)'}">${configured?'Yes':'No'}</span>
           <span>Connected</span><span style="color:${connected===null?'var(--dim)':(connected?'var(--green)':'var(--red)')}">${esc(connectedText)}</span>
-          <span>Health</span><span>${esc(healthText)}</span>
+          <span>Health</span><span style="color:${healthColor}">${esc(healthText)}</span>
           <span>Error</span><span style="color:${error?'var(--red)':'var(--dim)'};word-break:break-word">${esc(errorText)}</span>
         </div>
       </div>`;
@@ -1659,7 +1681,7 @@ const Renderer = {
     const allBindings = [...bindings, ...inferredBindings];
 
     $('bindingsPanel').innerHTML = allBindings.length
-      ? `<div style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px">${allBindings.map(b=>{
+      ? `<div class="bindings-grid" style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px">${allBindings.map(b=>{
           const col=agentColMap[b.agentId]||'var(--dim)';
           const isDefault=b.kind==='default';
           const isImplicit=b.kind==='implicit';
@@ -1822,7 +1844,16 @@ const Renderer = {
     $('cTab7').className='tab-btn'+(chartDays===7?' active':'');
     $('cTab30').className='tab-btn'+(chartDays===30?' active':'');
     const data=(D.dailyChart||[]).slice(-chartDays);
-    if(!data.length)return;
+    if(!data.length){
+      // Clear any previously-rendered chart so a populated→empty transition
+      // does not leave stale bars/lines on screen. replaceChildren() empties
+      // the node without parsing any HTML. The _svgCache entry must also be
+      // invalidated: patchSvg skips identical HTML, so without this delete a
+      // later render of byte-identical chart HTML would be suppressed and the
+      // chart would stay permanently blank after data returns.
+      ['costChart','modelChart','subagentChart'].forEach(function(id){var el=$(id);if(el)el.replaceChildren();delete Renderer._svgCache[id];});
+      return;
+    }
     Renderer.renderCostChart('costChart',data);
     Renderer.renderModelChart('modelChart',data);
     Renderer.renderSubagentChart('subagentChart',data);
@@ -1993,13 +2024,27 @@ const SystemBar = {
   },
   _kv(k,v,c='var(--text)'){return `<div style="display:flex;justify-content:space-between;margin-bottom:4px"><span style="font-size:12px;color:var(--muted)">${esc(k)}</span><span style="font-size:12px;color:${c};font-weight:600">${esc(String(v))}</span></div>`;},
   renderGatewayDegraded(reason){
+    const gw=State.data?.gateway||{};
+    const hasCached=!!(gw.status||gw.version||gw.pid||gw.uptime||gw.memory);
     const el=$('gatewayRuntimePanelInner');
     if(el){
-      el.innerHTML=[
+      const rows=[
         this._kv('State','Unavailable','var(--red)'),
-        this._kv('Source',reason,'var(--muted)'),
-      ].join('');
+        this._kv('Source',hasCached?'cached fallback':'offline','var(--muted)'),
+      ];
+      if(hasCached){
+        rows.push(
+          this._kv('Cached status',gw.status||'—','var(--muted)'),
+          this._kv('PID',gw.pid||'—','var(--muted)'),
+          this._kv('Uptime',gw.uptime||'—','var(--muted)'),
+          this._kv('Memory',gw.memory||'—','var(--muted)'),
+        );
+      }
+      rows.push(this._kv('Reason',reason,'var(--muted)'));
+      el.innerHTML=rows.join('');
     }
+    const gwReadyAlert=$('gw-readiness-alert');
+    if(gwReadyAlert)gwReadyAlert.remove();
     window._sysBarActive=false;
     window._gwOnlineConfirmed=false;
   },
@@ -2034,7 +2079,7 @@ const SystemBar = {
     sp('sysDisk','Disk',d.disk?.error?null:(d.disk?.percent??null),tDisk,(!d.disk?.error && d.disk?.totalBytes>0)?'Disk used '+this.fmt(d.disk.usedBytes)+'/'+this.fmt(d.disk.totalBytes)+' ('+(d.disk.percent??0).toFixed(1)+'%)':null);
     const ocData=d.openclaw||{};
     const ocStatus=ocData.status||{};
-    const rawInst=ocStatus.currentVersion||d.versions?.openclaw||'?';
+    const rawInst=String(ocStatus.currentVersion||d.versions?.openclaw||'?');
     // Strip all leading "OpenClaw " prefixes — some builds or data paths embed one or more
     const inst=rawInst.replace(/^(OpenClaw\s+)+/i,'').trim();
     // Normalize for comparison: strip commit/build parenthetical e.g. " (3caab92)"
@@ -2090,15 +2135,23 @@ const SystemBar = {
       const gwFailingDeps = Array.isArray(gwRuntime.failing) ? gwRuntime.failing : [];
       const gwReadyAlertEl = $('gw-readiness-alert');
       if (gwLive && !gwReady && gwState.source === 'runtime') {
-        const depStr = gwFailingDeps.length ? gwFailingDeps.map(f => esc(f)).join(', ') : '';
+        const depStr = gwFailingDeps.length ? gwFailingDeps.join(', ') : '';
         const alertMsg = depStr ? 'Gateway not ready: ' + depStr : 'Gateway not ready';
         if (gwReadyAlertEl) {
-          gwReadyAlertEl.querySelector('.alert-msg').innerHTML = alertMsg;
+          // textContent (not innerHTML) so server-derived dependency names can
+          // never be interpreted as markup.
+          gwReadyAlertEl.querySelector('.alert-msg').textContent = alertMsg;
         } else {
           const alertEl = document.createElement('div');
           alertEl.id = 'gw-readiness-alert';
           alertEl.className = 'alert-item alert-medium';
-          alertEl.innerHTML = '<span class="alert-icon">🟡</span><span class="alert-msg">' + alertMsg + '</span>';
+          const icon = document.createElement('span');
+          icon.className = 'alert-icon';
+          icon.textContent = '🟡';
+          const msg = document.createElement('span');
+          msg.className = 'alert-msg';
+          msg.textContent = alertMsg;
+          alertEl.append(icon, msg);
           const as = $('alertsSection');
           if (as) as.insertAdjacentElement('afterbegin', alertEl);
         }
@@ -2128,14 +2181,74 @@ const SystemBar = {
       ].join('');
     }
 
+    // Runtime Health card (INT-2) — task queue / event loop / plugin compat / heartbeat.
+    // tasks/pluginCompatibility/channelSummary come from lean status; eventLoop and
+    // lastHeartbeat require System.DeepStatus. Each block is optional and rendered
+    // only when present, so the card degrades gracefully on lean status. Rows are
+    // built with textContent (no innerHTML) so server-derived strings are inert.
+    const rhEl=$('runtimeHealthPanelInner');
+    if(rhEl){
+      const tasks=ocStatus.tasks, evl=ocStatus.eventLoop, pc=ocStatus.pluginCompatibility, hb=ocStatus.lastHeartbeat;
+      const cs=Array.isArray(ocStatus.channelSummary)?ocStatus.channelSummary:[];
+      const rows=[];
+      const row=(k,v,c)=>rows.push([k,String(v),c||'var(--text)']);
+      if(tasks){
+        row('Tasks (active / total)', (tasks.active||0)+' / '+(tasks.total||0));
+        if(tasks.failures)row('Task failures', tasks.failures, tasks.failures>0?'var(--red)':'var(--text)');
+        const bs=tasks.byStatus||{};
+        const bsStr=['queued','running','succeeded','failed','timed_out','cancelled','lost'].filter(k=>bs[k]).map(k=>k+':'+bs[k]).join('   ');
+        if(bsStr)row('By status', bsStr, 'var(--muted)');
+      }
+      if(evl){
+        row('Event loop', evl.degraded?'Degraded':'Healthy', evl.degraded?'var(--red)':'var(--green)');
+        const util=typeof evl.utilization==='number'?(evl.utilization*100).toFixed(0)+'%':'—';
+        row('Loop utilization', util, evl.utilization>0.8?'var(--red)':evl.utilization>0.5?'var(--yellow,#f59e0b)':'var(--text)');
+        if(typeof evl.delayP99Ms==='number')row('Loop delay p99', evl.delayP99Ms+' ms','var(--muted)');
+        if(Array.isArray(evl.reasons)&&evl.reasons.length)row('Loop reasons', evl.reasons.join(', '),'var(--muted)');
+      }
+      if(pc){
+        const warns=Array.isArray(pc.warnings)?pc.warnings:[];
+        const cnt=typeof pc.count==='number'?pc.count:warns.length;
+        row('Plugin warnings', cnt, cnt>0?'var(--yellow,#f59e0b)':'var(--green)');
+      }
+      if(hb&&hb.ts){
+        const ageMs=Date.now()-Date.parse(hb.ts);
+        const age=isNaN(ageMs)?'—':this.fmtDurationMs(ageMs)+' ago';
+        row('Last heartbeat', age+(hb.status?(' · '+hb.status):''),'var(--muted)');
+      }
+      if(cs.length)row('Channels', cs.join('   ·   '),'var(--muted)');
+      rhEl.replaceChildren();
+      if(!rows.length){
+        const empty=document.createElement('span');
+        empty.style.cssText='color:var(--dim);font-size:12px';
+        empty.textContent='No runtime detail (enable System.DeepStatus for event-loop & heartbeat)';
+        rhEl.append(empty);
+      } else {
+        for(const [k,v,c] of rows){
+          const line=document.createElement('div');
+          line.style.cssText='display:flex;justify-content:space-between;margin-bottom:4px';
+          const ks=document.createElement('span');
+          ks.style.cssText='font-size:12px;color:var(--muted)';
+          ks.textContent=k;
+          const vs=document.createElement('span');
+          vs.style.cssText='font-size:12px;font-weight:600;color:'+c;
+          vs.textContent=v;
+          line.append(ks,vs);
+          rhEl.append(line);
+        }
+      }
+    }
+
     if(d.pollSeconds&&d.pollSeconds>0&&d.pollSeconds*1000!==this._lastMs)this.start(d.pollSeconds*1000);
   },
   async fetch() {
     if(this._inflight)return; this._inflight=true;
-    // 6000ms client timeout; backend cold-path budget is ~4000ms, this allows
-    // a small margin for marshal + network jitter before declaring degraded.
+    // 9000ms client timeout: must exceed the backend cold-path budget
+    // (ColdPathTimeoutMs default 8000ms) plus margin for marshal + network
+    // jitter, so a healthy-but-slow cold path is not aborted client-side and
+    // falsely painted "degraded".
     const ctl=new AbortController();
-    const t=setTimeout(()=>ctl.abort(),6000);
+    const t=setTimeout(()=>ctl.abort(),9000);
     try{
       const r=await fetch('/api/system',{signal:ctl.signal});
       if(r.ok){this.render(await r.json());}
@@ -2154,7 +2267,7 @@ const SECTION_KEYS = ['alerts','health','cost','charts','crons','sessions','usag
 const Sections = {
   _state: {},
   STORAGE_KEY: 'ocDash:collapse:v2',
-  DEFAULTS: {'alerts':false,'health':false,'cost':false,'charts':false,'crons':false,'sessions':false,'usage':false,'subagent':false,'logs':false,'errors':false,'agent-config':false},
+  DEFAULTS: {'alerts':false,'health':false,'cost':false,'charts':false,'crons':false,'sessions':false,'usage':false,'subagent':false,'logs':false,'errors':false,'agent-config':true},
 
   loadState() {
     var merged = Object.assign({}, this.DEFAULTS);

@@ -3,6 +3,7 @@ package apprefresh
 import (
 	"context"
 	"encoding/json"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -67,8 +68,65 @@ func TestCollectTokenUsageWithCache_HandlesLargeJSONLLine(t *testing.T) {
 	)
 
 	got := modelsAll["GPT-5"]
-	if got == nil || got.Total != 100 {
-		t.Fatalf("expected oversized JSONL line to be counted, got %+v", got)
+	if got == nil {
+		t.Fatalf("expected oversized JSONL line to be counted, got nil")
+	}
+	if got.Total != 100 || got.Input != 60 || got.Output != 40 || got.CacheRead != 0 {
+		t.Errorf("token fields mismatch: %+v (want Total=100 Input=60 Output=40 CacheRead=0)", got)
+	}
+	if got.Cost != 0.12 {
+		t.Errorf("cost = %v, want 0.12", got.Cost)
+	}
+}
+
+func TestCollectTokenUsageWithCache_CountsDeletedSubagentJSONL(t *testing.T) {
+	basePath := filepath.Join(t.TempDir(), "agents")
+	sessionDir := filepath.Join(basePath, "main", "sessions")
+	if err := os.MkdirAll(sessionDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	line := `{"timestamp":"2026-03-22T10:00:00Z","message":{"role":"assistant","model":"openai/gpt-5","usage":{"totalTokens":100,"input":60,"output":40,"cacheRead":0,"cost":{"total":0.12}}}}` + "\n"
+	if err := os.WriteFile(filepath.Join(sessionDir, "sub1.jsonl.deleted.123"), []byte(line), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	modelsAll := map[string]*TokenBucket{}
+	modelsToday := map[string]*TokenBucket{}
+	models7d := map[string]*TokenBucket{}
+	models30d := map[string]*TokenBucket{}
+	subagentAll := map[string]*TokenBucket{}
+	subagentToday := map[string]*TokenBucket{}
+	subagent7d := map[string]*TokenBucket{}
+	subagent30d := map[string]*TokenBucket{}
+	dailyCosts := map[string]map[string]float64{}
+	dailyTokens := map[string]map[string]int{}
+	dailyCalls := map[string]map[string]int{}
+	dailySubagentCosts := map[string]float64{}
+	dailySubagentCount := map[string]int{}
+
+	runs := CollectTokenUsageWithCache(
+		filepath.Join(t.TempDir(), "token-cache.json"),
+		basePath, time.UTC, "2026-03-22", "2026-03-16", "2026-02-21",
+		map[string]string{"sub1": "subagent"},
+		map[string]string{"sub1": "agent:main:subagent:task"},
+		map[string]string{},
+		modelsAll, modelsToday, models7d, models30d,
+		subagentAll, subagentToday, subagent7d, subagent30d,
+		dailyCosts, dailyTokens, dailyCalls, dailySubagentCosts, dailySubagentCount,
+	)
+
+	if got := modelsAll["GPT-5"]; got == nil || got.Total != 100 {
+		t.Fatalf("modelsAll GPT-5 = %+v, want total 100", got)
+	}
+	if got := subagentAll["GPT-5"]; got == nil || got.Total != 100 {
+		t.Fatalf("subagentAll GPT-5 = %+v, want total 100", got)
+	}
+	if len(runs) != 1 {
+		t.Fatalf("subagent runs = %d, want 1", len(runs))
+	}
+	if runs[0]["task"] != "agent:main:subagent:task" {
+		t.Errorf("run task = %v, want agent:main:subagent:task", runs[0]["task"])
 	}
 }
 
@@ -114,22 +172,42 @@ func TestCollectTokenUsageWithCache_ReusesUnchangedFileSummary(t *testing.T) {
 	}
 
 	first := run()
-	if first["GPT-5"] == nil || first["GPT-5"].Total != 100 {
-		t.Fatalf("expected initial parse to count tokens, got %+v", first["GPT-5"])
+	if first["GPT-5"] == nil {
+		t.Fatalf("expected initial parse to count tokens, got nil")
+	}
+	if first["GPT-5"].Total != 100 || first["GPT-5"].Input != 60 ||
+		first["GPT-5"].Output != 40 || first["GPT-5"].CacheRead != 0 || first["GPT-5"].Cost != 0.12 {
+		t.Fatalf("initial parse fields mismatch: %+v", first["GPT-5"])
 	}
 
-	if err := os.Chmod(filePath, 0o000); err != nil {
+	// The cache key is (size, mtimeNs). Prove reuse by overwriting the file body
+	// with DIFFERENT token counts but the SAME byte length, then restoring the
+	// original mtime. If the cache is honored, the second run must report the
+	// ORIGINAL totals (100), not the new body's totals — because the (size,
+	// mtime) key is unchanged so the file is never re-parsed.
+	origInfo, err := os.Stat(filePath)
+	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() {
-		if err := os.Chmod(filePath, 0o644); err != nil {
-			t.Logf("restore perms on %s: %v", filePath, err)
-		}
-	})
+	// Same byte length as the original line, but different token counts
+	// (totalTokens 999, input 59) and cost (9.99).
+	mutated := `{"timestamp":"2026-03-22T10:00:00Z","message":{"role":"assistant","model":"openai/gpt-5","usage":{"totalTokens":999,"input":59,"output":40,"cacheRead":0,"cost":{"total":9.99}}}}` + "\n"
+	if len(mutated) != len(line) {
+		t.Fatalf("test setup error: mutated len %d != original len %d", len(mutated), len(line))
+	}
+	if err := os.WriteFile(filePath, []byte(mutated), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(filePath, origInfo.ModTime(), origInfo.ModTime()); err != nil {
+		t.Fatal(err)
+	}
 
 	second := run()
 	if second["GPT-5"] == nil || second["GPT-5"].Total != 100 {
-		t.Fatalf("expected cached summary to be reused, got %+v", second["GPT-5"])
+		t.Fatalf("expected cached summary reuse (old total 100), got %+v", second["GPT-5"])
+	}
+	if second["GPT-5"].Input != 60 {
+		t.Errorf("expected cached input 60 (not re-parsed 599), got %d", second["GPT-5"].Input)
 	}
 }
 
@@ -207,6 +285,50 @@ func TestFetchLiveSessionModelsCLI_UsesResolvedOpenclawBin(t *testing.T) {
 	if !slices.Equal(gotArgs, []string{"sessions", "--all-agents", "--limit", "all", "--json"}) {
 		t.Fatalf("unexpected args: got %v", gotArgs)
 	}
+}
+
+func TestFetchLiveSessionModelsCLI_Extraction(t *testing.T) {
+	prevResolve := resolveOpenclawBin
+	prevExec := execCommandContext
+	defer func() {
+		resolveOpenclawBin = prevResolve
+		execCommandContext = prevExec
+	}()
+	resolveOpenclawBin = func() string { return "/resolved/openclaw" }
+
+	stub := func(t *testing.T, stdout string) {
+		t.Helper()
+		execCommandContext = func(ctx context.Context, _ string, _ ...string) *exec.Cmd {
+			return exec.CommandContext(ctx, "sh", "-c", "printf '%s' '"+stdout+"'")
+		}
+	}
+
+	t.Run("bare array", func(t *testing.T) {
+		stub(t, `[{"key":"k1","model":"m1"},{"key":"k2","model":"m2"}]`)
+		got := fetchLiveSessionModelsCLI(context.Background())
+		want := map[string]string{"k1": "m1", "k2": "m2"}
+		if !maps.Equal(got, want) {
+			t.Fatalf("got %v, want %v", got, want)
+		}
+	})
+
+	t.Run("sessions wrapper object", func(t *testing.T) {
+		stub(t, `{"sessions":[{"key":"k3","model":"m3"}]}`)
+		got := fetchLiveSessionModelsCLI(context.Background())
+		want := map[string]string{"k3": "m3"}
+		if !maps.Equal(got, want) {
+			t.Fatalf("got %v, want %v", got, want)
+		}
+	})
+
+	t.Run("entries missing key or model are skipped", func(t *testing.T) {
+		stub(t, `[{"key":"k","model":"m"},{"key":"","model":"x"},{"key":"y","model":""}]`)
+		got := fetchLiveSessionModelsCLI(context.Background())
+		want := map[string]string{"k": "m"}
+		if !maps.Equal(got, want) {
+			t.Fatalf("got %v, want %v", got, want)
+		}
+	})
 }
 
 func TestGetSessionModel_UsesLastModelChange(t *testing.T) {

@@ -1,5 +1,151 @@
 # Changelog
 
+## v2026.6.15 — 2026-06-15
+
+Closes the openclaw-dashboard fixes & integration plan (`PLAN.md`): 3 fixes + 5
+new-feature integrations validated against the openclaw repo. All backend logic is
+test-driven and `make check`-clean; frontend panels (channel health color, Runtime
+Health card, cron delivery/flapping badges) are re-embedded and browser-fixture
+validated. Remaining runtime verification is limited to live-environment surfaces
+such as Linux/systemd journald, non-npm lock metadata, and cron delivery state.
+No breaking changes — every new field/config is additive and back-compatible.
+
+### OpenClaw 2026.6 SQLite-migration compatibility
+
+OpenClaw 2026.6 moved cron jobs and subagent run tracking out of on-disk JSON
+(`cron/jobs.json`, `cron/jobs-state.json`) and per-session keys into a shared
+SQLite store served by the gateway, renaming the legacy files `*.migrated`. The
+dashboard read those files directly, so the **Cron Jobs** panel went blank and
+the **Sub-Agent Activity** panel went empty. The zero-dependency build cannot
+read SQLite, so both data sources now go through the gateway CLI (the same
+shell-out pattern as `models list --json` / `status --json`):
+
+- **Cron re-sourced from `openclaw cron list --json`** — each job's
+  gateway-merged inline `state` carries the same fields the old jobs-state.json
+  sidecar did, so schedule, last/next run, status, duration, delivery outcome,
+  and the INT-5 flapping signal all map through. CLI-first with a fallback to
+  the legacy `cron/jobs.json` (+ sidecar) for pre-migration installs.
+- **Sub-agent runs re-sourced from `openclaw tasks list --json --runtime
+  subagent`** — runs now show agent, task, status, duration, and timestamp. The
+  tasks store does not expose per-run **cost or token** usage, and the zero-dep
+  dashboard cannot read the SQLite that holds it, so the Sub-Agent panel drops
+  its cost column and token-breakdown sub-table (and the sub-agent cost figures
+  on the cost cards and the sub-agent activity chart are hidden) rather than
+  showing misleading zeros.
+
+### Added
+
+- **Live channel health from `/readyz`** (INT-1) — a new `/readyz` probe in
+  `apprefresh` extracts the gateway's `failing[]` and marks those channels
+  `connected=false, health="unhealthy"`, overriding the session-activity heuristic.
+  Non-channel reasons (`startup-sidecars`) are ignored; probe failure falls back to
+  the heuristic. Channel cards color the Health value red when failing.
+- **Runtime Health panel from `status --json`** (INT-2) — `SystemOpenclawStatus`
+  now parses the task-queue, event-loop, plugin-compatibility, last-heartbeat, and
+  channel-summary blocks (additive; minimal status still parses). A new Runtime
+  Health card renders task counts, an event-loop utilization gauge, a plugin-warning
+  badge, last-heartbeat age, and the channel summary. New `system.deepStatus` config
+  (default off) opts into `openclaw status --json --deep` for the event-loop and
+  last-heartbeat blocks; lean status already provides the rest.
+- **Linux journald log fallback** (FIX-1) — on systemd hosts the gateway logs to
+  journald (no file to tail), so the Logs panel and error feed were empty. When a
+  source has no file on disk, records are synthesized from
+  `journalctl --user -u <unit>.service -o json` (PRIORITY→severity,
+  `__REALTIME_TIMESTAMP`→time). New `logs.systemdUnit` config (env
+  `OPENCLAW_SYSTEMD_UNIT` overrides, `OPENCLAW_PROFILE` adds a suffix). macOS
+  unchanged.
+- **Live model catalog** (INT-4) — model display names and context-window limits
+  come from `openclaw models list --json` (TTL + singleflight cache mirroring the
+  session-model cache). `ModelName` consults the catalog for ids its curated switch
+  does not know (curated names still win); `lookupModelLimits` falls back to the
+  catalog's context window when the openclaw.json registry has no entry.
+- **Install-independent gateway metadata** (INT-3) — gateway PID/uptime/RSS are read
+  from openclaw's lock file
+  (`<tmpdir>/openclaw-<uid>/gateway.<sha256(configPath)[:8]>.lock`), correct on every
+  install layout (homebrew/binary/bun/source), not just npm. `/healthz` remains the
+  liveness signal; pgrep is the last-resort fallback.
+- **Cron delivery + flapping** (INT-5) — `CollectCrons` emits `lastDeliveryStatus`,
+  `consecutiveErrors`, `consecutiveSkipped`, and a derived `flapping` flag
+  (`consecutiveErrors >= 3`). The cron table shows a delivery-outcome dot and a red
+  `⚡FLAPPING` badge.
+
+### Fixed
+
+- **Per-agent models from `agents.list[]`** (FIX-2) — confirmed already implemented
+  in `loadAgentDefaultModels` (the `list[]` pass keyed by `entry.id`, string and
+  object model shapes, main/work/group backfill); covered by existing tests. No code
+  change; PLAN entry was stale.
+- **Cron status precedence** (FIX-3) — confirmed the dashboard already prefers the
+  canonical `lastRunStatus` over the deprecated `lastStatus` alias; added the missing
+  precedence test (canonical wins, legacy fallback, `none` default).
+
+### Hardening
+
+Correctness fixes surfaced by a multi-pass two-axis review (standards + spec)
+and a TDD coverage audit over the features above:
+
+- **Gateway liveness honors `EPERM`** — `pidAlive` treated `kill(pid,0)` →
+  `EPERM` as dead, so a gateway running under a different uid on a shared host
+  was wrongly judged stale, losing the install-independent lock metadata (INT-3).
+  Only `ESRCH` is dead now; `EPERM` counts as alive.
+- **Bare-id catalog name no longer shadows curated names** (INT-4) — `ModelName`
+  is cache-first, but openclaw emits the bare model id as the catalog "name" when
+  no friendly name is registered (e.g. `gpt-5.3-codex`). Such a name no longer
+  shadows the curated display name (`GPT-5.3 Codex`); genuine multi-word catalog
+  names still win, via `catalogNameIsBareID`.
+- **Model display preserves the full version** — `ModelName`'s curated GLM/GPT
+  fallback collapsed every minor version to the family (`glm-5.2` → `GLM-5`,
+  `gpt-5.5` → `GPT-5`); since the bare-id guard routes openclaw's bare-id catalog
+  names through that fallback, the version was lost in the Sessions and Token
+  Usage panels. The fallback now keeps the full version (`GLM-5.2`, `GPT-5.5`)
+  while the base family (`GLM-5`, `GPT-5`) is unchanged. Session models are also
+  rendered through `ModelName` so they match the Token Usage panel's display
+  (`GLM-5.2`, not the raw `glm-5.2` alias). The same version-preserving fallback
+  now also covers the GPT-4 family (`gpt-4.1` → `GPT-4.1`), and an unrecognized
+  Gemini id falls back to the tier-neutral `Gemini` instead of being mislabeled
+  `Gemini Flash`.
+- **Catalog resolves bare model ids** — session logs emit model ids without their
+  provider prefix (e.g. `MiniMax-M3`, `kimi-k2.7-code`) while the live catalog is
+  keyed by full id (`minimax/MiniMax-M3`). The catalog is now also indexed by the
+  unambiguous bare id, so the Token Usage and Sessions panels show the real
+  catalog name (`MiniMax M3`, `Kimi K2.7 Code`) instead of the version-collapsed
+  fallback (`MiniMax`, `Kimi K2.5`).
+- **Agent models show the inherited default** — OpenClaw 2026.6 writes
+  `agents.defaults.model` as a bare id string (not a `{primary}` object) and
+  leaves each agent's `model` null to inherit it. `parseModelDefaults` now reads
+  the string form, so the Agent & Model Configuration panel shows each agent's
+  effective model (prettified via `ModelName`) instead of a blank field.
+- **Cron and Models-grid model names prettified** — the Cron Jobs MODEL column
+  and the Available Models grid showed raw ids; both now render through
+  `ModelName` (the catalog refresh was also moved ahead of the collectors so the
+  cron goroutine sees a populated catalog). The Claude curated fallback now
+  preserves the full version (`claude-opus-4-7` → `Claude Opus 4.7`, dated
+  snapshots like `…-20250514` dropped) instead of a hardcoded `4.5`.
+- **Explicit JSON `null` status block omitted** (INT-2) — `decodeStatusField`
+  returned a non-nil zero struct for an explicit `null` (e.g. `"tasks": null`),
+  rendering an empty Runtime Health block; it now returns nil so the block is
+  omitted. A type-mismatch value (`"tasks": 5`) likewise yields nil, not a crash.
+- **Non-UTF-8 journald `MESSAGE` decoded** (FIX-1) — journald emits non-UTF-8
+  messages as a JSON byte array; `decodeJournaldMessage` now handles both the
+  string and byte-array forms instead of dropping the line.
+
+### CI
+
+- **gofmt enforced in lint** — neither `make check` nor any workflow ran gofmt,
+  so unformatted code could merge. golangci-lint v2's `formatters` block now
+  enables gofmt and fails on drift, so `make lint`/`make check` and the CI lint
+  job reject unformatted code. Repo is already clean (0 issues).
+
+### Tests
+
+- Behavior coverage for every shipped feature, plus the security-relevant INT-3
+  anti-stale-lock branch (lock-pid-alive + healthz-FAIL must fall through to
+  pgrep), `pidAlive` `EPERM`/`ESRCH`/non-positive cases, the journald byte-array
+  path, `decodeStatusField` null/type-mismatch branches, `catalogNameIsBareID`
+  edges, the `/readyz` probe-failure contract, and the flapping threshold
+  boundary. Package coverage: appchat 94%, appserver 93%, apprefresh 91%,
+  appservice 90%, appsystem 86%, appconfig 83%, appruntime 77%.
+
 ## v2026.6.1 — 2026-06-03
 
 Closes the "dashboard blank sections" work (issues #25/#26 follow-ups) and
@@ -542,7 +688,7 @@ Code-review fixes (waves 1–4) and security hardening pass. No new features.
 
 ### Added
 
-- **Collapsible sections** — 9 collapsible dashboard sections with right-aligned chevron toggles, localStorage persistence, FOUC prevention, Expand All / Collapse All buttons, and full ARIA keyboard navigation
+- **Collapsible sections** — 11 collapsible dashboard sections with right-aligned chevron toggles, localStorage persistence, FOUC prevention, Expand All / Collapse All buttons, and full ARIA keyboard navigation
 - **OpenClaw version freshness** — Version pill in the top metrics bar is colour-coded: green (up to date), yellow (1 release behind), red (2+ releases behind); latest version polled from npm registry
 - **npm latest version check** — `/api/system` now returns `versions.latest` (best-effort, non-blocking)
 

@@ -1,8 +1,10 @@
 package apprefresh
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"testing"
@@ -44,9 +46,10 @@ func TestReadTailLines_RespectsLimit(t *testing.T) {
 	path := filepath.Join(dir, "many.log")
 	var b strings.Builder
 	for i := 0; i < 100; i++ {
-		b.WriteString("line-")
-		b.WriteString(string(rune('a' + (i % 26))))
-		b.WriteByte('\n')
+		// Unique per-line content exercises the ring-buffer wrap-around: with a
+		// limit of 5 and 100 lines, write wraps the ring 20 times, so a correct
+		// implementation must return exactly the last 5 distinct lines in order.
+		fmt.Fprintf(&b, "line-%03d\n", i)
 	}
 	if err := os.WriteFile(path, []byte(b.String()), 0o644); err != nil {
 		t.Fatal(err)
@@ -55,12 +58,14 @@ func TestReadTailLines_RespectsLimit(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(lines) != 5 {
-		t.Fatalf("want 5 lines, got %d", len(lines))
+	want := []string{"line-095", "line-096", "line-097", "line-098", "line-099"}
+	if len(lines) != len(want) {
+		t.Fatalf("want %d lines, got %d: %v", len(want), len(lines), lines)
 	}
-	// Returned oldest→newest; last should be from end of file.
-	if lines[len(lines)-1] != "line-v" { // 99 % 26 = 21 → 'v'
-		t.Fatalf("expected last line line-v, got %q", lines[len(lines)-1])
+	for i, w := range want {
+		if lines[i] != w {
+			t.Fatalf("tail window[%d] = %q, want %q (full window: %v)", i, lines[i], w, lines)
+		}
 	}
 }
 
@@ -155,27 +160,48 @@ func TestMergeLatestRecords_CapsAtLimit(t *testing.T) {
 }
 
 func TestNormalizeErrorSignature(t *testing.T) {
-	tests := []struct {
+	// Cases with stable, intended output.
+	exact := []struct {
 		in, want string
 	}{
 		{"connection refused", "connection refused"},
 		{"failed for id 12345", "failed for <id>"},
 		{"trace 550e8400-e29b-41d4-a716-446655440000 lost", "trace <uuid> lost"},
 		{"got 5 errors and 17 warnings", "got <n> errors and <n> warnings"},
-		// Numeric regex runs before timestamp prefix regex so digits inside the
-		// timestamp are normalized to <n> before <ts> can match. Pin current
-		// behavior; a future change should reorder substitutions.
-		{"2026-05-01T10:00:00Z gateway timeout", "<n>-<n>-01t10:<n>:00z gateway timeout"},
 		{"   spaces   collapsed   here   ", "spaces collapsed here"},
 	}
-	for _, tc := range tests {
+	for _, tc := range exact {
 		t.Run(tc.in, func(t *testing.T) {
-			got := NormalizeErrorSignature(tc.in)
-			if got != tc.want {
+			if got := NormalizeErrorSignature(tc.in); got != tc.want {
 				t.Errorf("NormalizeErrorSignature(%q) = %q, want %q", tc.in, got, tc.want)
 			}
 		})
 	}
+
+	// Invariant: regardless of substitution order (there is a known ordering
+	// quirk where numeric masking runs before the timestamp prefix), the result
+	// must NOT leak volatile tokens — no literal UUID and no multi-digit run may
+	// survive. Asserting the invariant instead of the exact buggy string lets a
+	// future ordering fix pass without editing this test.
+	reMultiDigit := regexp.MustCompile(`[0-9]{2,}`)
+	t.Run("volatile tokens masked invariant", func(t *testing.T) {
+		// Inputs where the volatile tokens are bounded by word boundaries, so
+		// the \b\d+\b numeric mask and UUID mask both apply cleanly.
+		inputs := []string{
+			"req 9f1c2b3a-4d5e-6f70-8190-a1b2c3d4e5f6 failed after 4500 ms",
+			"job 42 retry 1337 abandoned",
+		}
+		for _, in := range inputs {
+			got := NormalizeErrorSignature(in)
+			if reUUID.MatchString(got) {
+				t.Errorf("UUID survived normalization: %q → %q", in, got)
+			}
+			if reMultiDigit.MatchString(got) {
+				t.Errorf("multi-digit run survived normalization: %q → %q", in, got)
+			}
+		}
+	})
+
 }
 
 func TestParseLogTimestamp_RFC3339(t *testing.T) {
@@ -284,10 +310,12 @@ func TestClassifySeverity(t *testing.T) {
 		{"healthy", "", "info"},
 	}
 	for _, tc := range tests {
-		got := classifySeverity(tc.line, tc.component)
-		if got != tc.want {
-			t.Errorf("classifySeverity(%q, %q) = %q, want %q", tc.line, tc.component, got, tc.want)
-		}
+		t.Run(tc.line, func(t *testing.T) {
+			got := classifySeverity(tc.line, tc.component)
+			if got != tc.want {
+				t.Errorf("classifySeverity(%q, %q) = %q, want %q", tc.line, tc.component, got, tc.want)
+			}
+		})
 	}
 }
 
@@ -306,19 +334,47 @@ func TestClassifySeverity_NoFalsePositives(t *testing.T) {
 		{"timeout reading", "", "warn"},
 	}
 	for _, tc := range tests {
-		got := classifySeverity(tc.line, tc.component)
-		if got != tc.want {
-			t.Errorf("classifySeverity(%q, %q) = %q, want %q", tc.line, tc.component, got, tc.want)
-		}
+		t.Run(tc.line, func(t *testing.T) {
+			got := classifySeverity(tc.line, tc.component)
+			if got != tc.want {
+				t.Errorf("classifySeverity(%q, %q) = %q, want %q", tc.line, tc.component, got, tc.want)
+			}
+		})
 	}
 }
 
 func TestInferSeverity_RawWins(t *testing.T) {
-	if inferSeverity("err", "everything is fine") != "error" {
-		t.Errorf("raw='err' should win over benign line")
+	tests := []struct {
+		name string
+		raw  string
+		line string
+		want string
+	}{
+		{"err raw beats benign line", "err", "everything is fine", "error"},
+		{"error raw", "error", "fine", "error"},
+		{"fatal raw", "fatal", "fine", "error"},
+		{"panic raw", "panic", "fine", "error"},
+		// stale/missing/unavailable/timeout are mapped to "error" by the raw
+		// switch (not "warn"), even though classifySeverity treats them as warn.
+		{"stale raw maps to error", "stale", "fine", "error"},
+		{"missing raw maps to error", "missing", "fine", "error"},
+		{"unavailable raw maps to error", "unavailable", "fine", "error"},
+		{"timeout raw maps to error", "timeout", "fine", "error"},
+		{"warn raw", "warn", "fine", "warn"},
+		{"warning raw", "warning", "fine", "warn"},
+		{"debug raw", "debug", "fine", "debug"},
+		{"mixed case raw", "  ERROR  ", "fine", "error"},
+		{"whitespace trimmed warn", "  warn  ", "fine", "warn"},
+		// Empty/unknown raw falls back to classifySeverity over the line.
+		{"empty raw falls back to line", "", "panic: boom", "error"},
+		{"unknown raw falls back to benign line", "trace", "all good", "info"},
 	}
-	if inferSeverity("", "panic: boom") != "error" {
-		t.Errorf("empty raw should fall back to classifySeverity")
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := inferSeverity(tc.raw, tc.line); got != tc.want {
+				t.Errorf("inferSeverity(%q, %q) = %q, want %q", tc.raw, tc.line, got, tc.want)
+			}
+		})
 	}
 }
 

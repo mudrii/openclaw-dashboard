@@ -56,9 +56,10 @@ func TestStartRefresh_SkipsAfterShutdown(t *testing.T) {
 		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
 	}
 
-	// Cancel lifecycle context (simulate shutdown)
+	// Cancel lifecycle context (simulate shutdown). cancel() closes ctx.Done()
+	// synchronously, so s.done is observably closed once cancel() returns — no
+	// sleep needed to "let it propagate".
 	cancel()
-	time.Sleep(50 * time.Millisecond)
 
 	// Second request after shutdown — should respond quickly, not hang
 	req2 := httptest.NewRequest(http.MethodGet, "/api/refresh", nil)
@@ -102,9 +103,10 @@ func TestStartRefresh_ReturnsInFlightChannelDuringShutdown(t *testing.T) {
 		t.Fatal("expected non-nil channel for first refresh")
 	}
 
-	// Cancel context while refresh is in flight
+	// Cancel context while refresh is in flight. cancel() closes ctx.Done()
+	// synchronously; refreshRunning is already true (set under s.mu before
+	// startRefresh returned), so no sleep is needed before re-checking.
 	cancel()
-	time.Sleep(50 * time.Millisecond)
 
 	// startRefresh should still return the in-flight channel
 	// (refreshRunning check comes before shutdown check)
@@ -141,16 +143,11 @@ func TestStartRefresh_SkipsAfterShutdown_NoInFlight(t *testing.T) {
 	}
 	srv := NewServer(dir, "test", cfg, "", []byte("<head><body>__VERSION__</body>"), ctx, slowRefresh)
 
-	// Ensure refreshRunning is false and lastRefresh is old — bypass all guards
-	// except the shutdown check, which is what we're testing.
-	srv.mu.Lock()
-	srv.refreshRunning = false
-	srv.lastRefresh = time.Now().Add(-time.Hour)
-	srv.mu.Unlock()
-
-	// Cancel context (simulate shutdown) before calling startRefresh
+	// A fresh server already has refreshRunning=false and a zero lastRefresh, so
+	// the only guard left for startRefresh to hit is the shutdown check — no need
+	// to poke unexported fields. cancel() closes ctx.Done() synchronously, so
+	// s.done is observably closed once cancel() returns; no sleep needed.
 	cancel()
-	time.Sleep(10 * time.Millisecond) // ensure s.done fires
 
 	// startRefresh must return nil immediately — s.done check must fire,
 	// not block, not spawn a goroutine.

@@ -3,7 +3,6 @@ package appconfig
 import (
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 )
 
@@ -22,13 +21,20 @@ func TestDefault_AllFieldsPopulated(t *testing.T) {
 		t.Error("Timezone should not be empty")
 	}
 	if cfg.Refresh.IntervalSeconds == 0 {
-		t.Error("RefreshSec should not be zero")
+		t.Error("IntervalSeconds should not be zero")
 	}
 	if cfg.System.PollSeconds == 0 {
 		t.Error("PollSeconds should not be zero")
 	}
 	if cfg.System.CPU.Warn == 0 || cfg.System.CPU.Critical == 0 {
 		t.Error("CPU thresholds should not be zero")
+	}
+	// Lock in a couple of exact defaults to catch silent drift.
+	if cfg.Server.Port != 8080 {
+		t.Errorf("Server.Port = %d, want 8080", cfg.Server.Port)
+	}
+	if cfg.Server.Host != "127.0.0.1" {
+		t.Errorf("Server.Host = %q, want 127.0.0.1", cfg.Server.Host)
 	}
 }
 
@@ -156,11 +162,21 @@ func TestLoad_SystemThresholdClamping(t *testing.T) {
 		t.Fatal(err)
 	}
 	cfg := Load(dir)
-	if cfg.System.CriticalPercent <= cfg.System.WarnPercent {
-		t.Errorf("critical (%g) should be > warn (%g) after clamping", cfg.System.CriticalPercent, cfg.System.WarnPercent)
+	// WarnPercent=70 is valid and kept. CriticalPercent=50 <= 70 triggers the
+	// clamp: warn<95 so critical = warn+15 = 85.
+	if cfg.System.WarnPercent != 70 {
+		t.Errorf("WarnPercent = %g, want 70", cfg.System.WarnPercent)
 	}
-	if cfg.System.CPU.Critical <= cfg.System.CPU.Warn {
-		t.Errorf("CPU critical (%g) should be > warn (%g) after clamping", cfg.System.CPU.Critical, cfg.System.CPU.Warn)
+	if cfg.System.CriticalPercent != 85 {
+		t.Errorf("CriticalPercent = %g, want 85 (70+15)", cfg.System.CriticalPercent)
+	}
+	// CPU.Warn=80 is valid. CPU.Critical=50 <= 80 triggers clamp; the global
+	// critical (85) is > warn(80) and <=100, so it wins: CPU.Critical = 85.
+	if cfg.System.CPU.Warn != 80 {
+		t.Errorf("CPU.Warn = %g, want 80", cfg.System.CPU.Warn)
+	}
+	if cfg.System.CPU.Critical != 85 {
+		t.Errorf("CPU.Critical = %g, want 85 (inherits global critical)", cfg.System.CPU.Critical)
 	}
 }
 
@@ -233,12 +249,12 @@ func TestReadDotenv_QuotedValues(t *testing.T) {
 }
 
 func TestExpandHome_WithTilde(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
 	result := ExpandHome("~/some/path")
-	if strings.HasPrefix(result, "~/") {
-		t.Errorf("tilde should be expanded, got %q", result)
-	}
-	if !strings.HasSuffix(result, "/some/path") {
-		t.Errorf("expected path to end with /some/path, got %q", result)
+	want := filepath.Join(home, "some/path")
+	if result != want {
+		t.Errorf("ExpandHome(~/some/path) = %q, want %q", result, want)
 	}
 }
 

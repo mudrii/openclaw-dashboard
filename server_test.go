@@ -11,6 +11,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/mudrii/openclaw-dashboard/internal/appservice"
 )
 
 const (
@@ -622,8 +624,8 @@ func TestPreWarm_TriggersRefreshCollector(t *testing.T) {
 func TestValidateLoopbackBind(t *testing.T) {
 	allowed := []string{"", "127.0.0.1", "localhost", "::1", "  127.0.0.1  "}
 	for _, h := range allowed {
-		if err := validateLoopbackBind(h); err != nil {
-			t.Errorf("validateLoopbackBind(%q) = %v, want nil", h, err)
+		if err := appservice.ValidateLoopbackBind(h); err != nil {
+			t.Errorf("ValidateLoopbackBind(%q) = %v, want nil", h, err)
 		}
 	}
 
@@ -632,13 +634,13 @@ func TestValidateLoopbackBind(t *testing.T) {
 	// malformed input and failing closed is the safe direction.
 	rejected := []string{"0.0.0.0", "192.168.1.10", "::", "10.0.0.1", "example.com", "[::1]", "[::1]:5001"}
 	for _, h := range rejected {
-		err := validateLoopbackBind(h)
+		err := appservice.ValidateLoopbackBind(h)
 		if err == nil {
-			t.Errorf("validateLoopbackBind(%q) = nil, want error", h)
+			t.Errorf("ValidateLoopbackBind(%q) = nil, want error", h)
 			continue
 		}
 		if !strings.Contains(err.Error(), "non-loopback") {
-			t.Errorf("validateLoopbackBind(%q) error = %q, want substring %q", h, err.Error(), "non-loopback")
+			t.Errorf("ValidateLoopbackBind(%q) error = %q, want substring %q", h, err.Error(), "non-loopback")
 		}
 	}
 }
@@ -672,13 +674,13 @@ func TestValidateLoopbackBind_EnvOverride(t *testing.T) {
 	const key = "OPENCLAW_DASHBOARD_ALLOW_NON_LOOPBACK"
 	t.Setenv(key, "1")
 	for _, h := range []string{"0.0.0.0", "192.168.1.10"} {
-		if err := validateLoopbackBind(h); err != nil {
-			t.Errorf("with %s=1, validateLoopbackBind(%q) = %v, want nil", key, h, err)
+		if err := appservice.ValidateLoopbackBind(h); err != nil {
+			t.Errorf("with %s=1, ValidateLoopbackBind(%q) = %v, want nil", key, h, err)
 		}
 	}
 	for _, val := range []string{"", "0", "true", "yes", "TRUE"} {
 		t.Setenv(key, val)
-		if err := validateLoopbackBind("0.0.0.0"); err == nil {
+		if err := appservice.ValidateLoopbackBind("0.0.0.0"); err == nil {
 			t.Errorf("with %s=%q, want rejection, got nil", key, val)
 		}
 	}

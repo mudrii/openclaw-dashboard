@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 	"time"
 )
@@ -192,6 +193,135 @@ func TestCollectCrons_SidecarMalformed(t *testing.T) {
 	}
 }
 
+// TestCollectCrons_DeliveryAndFlapping covers INT-5: the dashboard surfaces the
+// sidecar delivery status and a flapping indicator derived from consecutiveErrors.
+func TestCollectCrons_DeliveryAndFlapping(t *testing.T) {
+	build := func(t *testing.T, state map[string]any) map[string]any {
+		t.Helper()
+		dir := t.TempDir()
+		cronPath := filepath.Join(dir, "jobs.json")
+		jobs := map[string]any{"jobs": []any{map[string]any{
+			"id":       "j1",
+			"name":     "n",
+			"enabled":  true,
+			"schedule": map[string]any{"kind": "cron", "expr": "0 0 * * *"},
+			"state":    state,
+		}}}
+		b, _ := json.Marshal(jobs)
+		if err := os.WriteFile(cronPath, b, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		crons := CollectCrons(cronPath, time.UTC)
+		if len(crons) != 1 {
+			t.Fatalf("want 1 cron, got %d", len(crons))
+		}
+		return crons[0]
+	}
+
+	t.Run("delivery status surfaced and flapping set above threshold", func(t *testing.T) {
+		c := build(t, map[string]any{
+			"lastRunStatus":      "fail",
+			"lastDeliveryStatus": "not-delivered",
+			"lastDiagnostics":    []any{"telegram timeout", "retry scheduled"},
+			"consecutiveErrors":  float64(4),
+			"consecutiveSkipped": float64(1),
+		})
+		if c["lastDeliveryStatus"] != "not-delivered" {
+			t.Errorf("lastDeliveryStatus = %v, want not-delivered", c["lastDeliveryStatus"])
+		}
+		if c["consecutiveErrors"] != 4 {
+			t.Errorf("consecutiveErrors = %v, want 4", c["consecutiveErrors"])
+		}
+		if c["flapping"] != true {
+			t.Errorf("flapping = %v, want true (consecutiveErrors >= threshold)", c["flapping"])
+		}
+		gotDiagnostics, ok := c["lastDiagnostics"].([]string)
+		if !ok {
+			t.Fatalf("lastDiagnostics type = %T, want []string", c["lastDiagnostics"])
+		}
+		if !slices.Equal(gotDiagnostics, []string{"telegram timeout", "retry scheduled"}) {
+			t.Errorf("lastDiagnostics = %v, want diagnostics from sidecar", gotDiagnostics)
+		}
+	})
+
+	t.Run("healthy job is not flapping", func(t *testing.T) {
+		c := build(t, map[string]any{
+			"lastRunStatus":      "ok",
+			"lastDeliveryStatus": "delivered",
+			"consecutiveErrors":  float64(0),
+		})
+		if c["flapping"] != false {
+			t.Errorf("flapping = %v, want false", c["flapping"])
+		}
+		if c["lastDeliveryStatus"] != "delivered" {
+			t.Errorf("lastDeliveryStatus = %v, want delivered", c["lastDeliveryStatus"])
+		}
+	})
+
+	// Pin the threshold boundary (cronFlappingThreshold == 3) so an off-by-one
+	// regression (`> 3` instead of `>= 3`) is caught.
+	t.Run("flapping boundary: exactly at threshold is flapping", func(t *testing.T) {
+		c := build(t, map[string]any{"consecutiveErrors": float64(3)})
+		if c["flapping"] != true {
+			t.Errorf("consecutiveErrors=3: flapping = %v, want true (>= threshold)", c["flapping"])
+		}
+	})
+	t.Run("flapping boundary: one below threshold is not flapping", func(t *testing.T) {
+		c := build(t, map[string]any{"consecutiveErrors": float64(2)})
+		if c["flapping"] != false {
+			t.Errorf("consecutiveErrors=2: flapping = %v, want false (below threshold)", c["flapping"])
+		}
+	})
+}
+
+// TestCollectCrons_LastRunStatusPrecedence locks FIX-3: the dashboard reads
+// openclaw's canonical lastRunStatus in preference to the deprecated lastStatus
+// alias (aligning with openclaw's own readers and future-proofing against alias
+// removal), falls back to lastStatus when only the alias is present, and defaults
+// to "none" when neither is set.
+func TestCollectCrons_LastRunStatusPrecedence(t *testing.T) {
+	build := func(t *testing.T, state map[string]any) map[string]any {
+		t.Helper()
+		dir := t.TempDir()
+		cronPath := filepath.Join(dir, "jobs.json")
+		jobs := map[string]any{"jobs": []any{map[string]any{
+			"id":       "j1",
+			"name":     "n",
+			"enabled":  true,
+			"schedule": map[string]any{"kind": "cron", "expr": "0 0 * * *"},
+			"state":    state,
+		}}}
+		b, _ := json.Marshal(jobs)
+		if err := os.WriteFile(cronPath, b, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		crons := CollectCrons(cronPath, time.UTC)
+		if len(crons) != 1 {
+			t.Fatalf("want 1 cron, got %d", len(crons))
+		}
+		return crons[0]
+	}
+
+	t.Run("canonical lastRunStatus wins over deprecated lastStatus", func(t *testing.T) {
+		c := build(t, map[string]any{"lastRunStatus": "ok", "lastStatus": "fail"})
+		if c["lastStatus"] != "ok" {
+			t.Errorf("lastStatus = %v, want ok (canonical lastRunStatus must win)", c["lastStatus"])
+		}
+	})
+	t.Run("falls back to lastStatus when lastRunStatus absent", func(t *testing.T) {
+		c := build(t, map[string]any{"lastStatus": "fail"})
+		if c["lastStatus"] != "fail" {
+			t.Errorf("lastStatus = %v, want fail (legacy fallback)", c["lastStatus"])
+		}
+	})
+	t.Run("neither present yields none", func(t *testing.T) {
+		c := build(t, map[string]any{})
+		if c["lastStatus"] != "none" {
+			t.Errorf("lastStatus = %v, want none (default)", c["lastStatus"])
+		}
+	})
+}
+
 // TestCollectCrons_BothPresent_SidecarWins: when inline state and sidecar both have
 // values for the same job id, sidecar wins (it is the live runtime state).
 func TestCollectCrons_BothPresent_SidecarWins(t *testing.T) {
@@ -377,5 +507,50 @@ func TestCollectCrons_SidecarLastRunStatusFallback(t *testing.T) {
 	}
 	if crons[0]["lastDurationMs"] != 99 {
 		t.Errorf("lastDurationMs = %v, want 99", crons[0]["lastDurationMs"])
+	}
+}
+
+func TestCollectCrons_SidecarPrefersCanonicalLastRunStatus(t *testing.T) {
+	dir := t.TempDir()
+	cronPath := filepath.Join(dir, "jobs.json")
+	statePath := filepath.Join(dir, "jobs-state.json")
+
+	id := "canonical-status-job"
+	jobs := map[string]any{
+		"jobs": []any{
+			map[string]any{
+				"id":       id,
+				"name":     "canonical",
+				"enabled":  true,
+				"schedule": map[string]any{"kind": "cron", "expr": "0 0 * * *"},
+				"state": map[string]any{
+					"lastStatus":    "inline-stale",
+					"lastRunStatus": "inline-canonical",
+				},
+			},
+		},
+	}
+	sidecar := map[string]any{
+		"jobs": map[string]any{
+			id: map[string]any{
+				"state": map[string]any{
+					"lastStatus":    "sidecar-stale-alias",
+					"lastRunStatus": "sidecar-canonical",
+				},
+			},
+		},
+	}
+	jb, _ := json.Marshal(jobs)
+	sb, _ := json.Marshal(sidecar)
+	if err := os.WriteFile(cronPath, jb, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(statePath, sb, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	crons := CollectCrons(cronPath, time.UTC)
+	if got := crons[0]["lastStatus"]; got != "sidecar-canonical" {
+		t.Fatalf("lastStatus = %v, want canonical lastRunStatus", got)
 	}
 }

@@ -3,9 +3,16 @@ package apprefresh
 import (
 	"context"
 	"errors"
+	"io"
+	"net"
+	"net/http"
+	"net/http/httptest"
 	"os"
+	"slices"
 	"strconv"
+	"strings"
 	"testing"
+	"time"
 )
 
 // stubPgrep replaces pgrepGateway with a deterministic fake and returns a
@@ -104,6 +111,182 @@ func TestCollectGatewayHealth_NilContextDoesNotPanic(t *testing.T) {
 	}
 }
 
+// TestParseReadyzFailing covers the /readyz body parser used by INT-1: it must
+// extract failing[] from the gateway's readiness payload regardless of the
+// "ready" flag, tolerate a missing failing key, and return nil on malformed
+// JSON so the caller can fall back to the activity heuristic. A 503 response
+// still carries a JSON body, so the same parse path applies.
+func TestParseReadyzFailing(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+		want []string
+	}{
+		{
+			name: "failing channels extracted",
+			body: `{"ready":false,"failing":["telegram","startup-sidecars"],"uptimeMs":12}`,
+			want: []string{"telegram", "startup-sidecars"},
+		},
+		{
+			name: "ready with no failing key",
+			body: `{"ready":true,"uptimeMs":12}`,
+			want: nil,
+		},
+		{
+			name: "empty failing array",
+			body: `{"ready":true,"failing":[]}`,
+			want: nil,
+		},
+		{
+			name: "malformed json yields nil",
+			body: `{not json`,
+			want: nil,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := parseReadyzFailing([]byte(tc.body))
+			if !slices.Equal(got, tc.want) {
+				t.Errorf("parseReadyzFailing(%q) = %v, want %v", tc.body, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestReadyzProbe_PortZeroReturnsFalse proves the probe-failure contract used by
+// the INT-1 fallback: with no configured port the real readyzProbe returns
+// (nil, false) without any network call, so collectDashboardData passes nil
+// failing[] to backfillChannelConnectivity and the activity heuristic stands.
+func TestReadyzProbe_PortZeroReturnsFalse(t *testing.T) {
+	failing, ok := readyzProbe(context.Background(), 0)
+	if ok {
+		t.Errorf("ok = true for port 0, want false")
+	}
+	if failing != nil {
+		t.Errorf("failing = %v for port 0, want nil", failing)
+	}
+}
+
+func TestReadyzProbe_NilContextDoesNotPanic(t *testing.T) {
+	prev := gatewayProbeDo
+	gatewayProbeDo = func(req *http.Request) (*http.Response, error) {
+		if req.Context() == nil {
+			t.Fatalf("request context is nil")
+		}
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader(`{"ready":true}`)),
+		}, nil
+	}
+	t.Cleanup(func() { gatewayProbeDo = prev })
+
+	var ctx context.Context
+	_, ok := readyzProbe(ctx, 1)
+	if !ok {
+		t.Fatal("ok = false, want true")
+	}
+}
+
+func TestReadyzProbe_ParsesFailingFromHTTP503(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/readyz" {
+			t.Fatalf("path = %q, want /readyz", r.URL.Path)
+		}
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_, _ = w.Write([]byte(`{"ready":false,"failing":["telegram"]}`))
+	}))
+	t.Cleanup(srv.Close)
+	_, portStr, err := net.SplitHostPort(srv.Listener.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	port, err := strconv.Atoi(portStr)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	failing, ok := readyzProbe(context.Background(), port)
+	if !ok {
+		t.Fatal("ok = false, want true for parseable 503 readiness body")
+	}
+	if !slices.Equal(failing, []string{"telegram"}) {
+		t.Errorf("failing = %v, want [telegram]", failing)
+	}
+}
+
+func TestReadyzProbe_AttachesTimeout(t *testing.T) {
+	prev := gatewayProbeDo
+	gatewayProbeDo = func(req *http.Request) (*http.Response, error) {
+		deadline, ok := req.Context().Deadline()
+		if !ok {
+			t.Fatalf("readyz request context has no deadline")
+		}
+		remaining := time.Until(deadline)
+		if remaining <= 0 || remaining > gatewayReadyzProbeTimeout {
+			t.Fatalf("readyz deadline in %s, want within %s", remaining, gatewayReadyzProbeTimeout)
+		}
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader(`{"ready":true}`)),
+		}, nil
+	}
+	t.Cleanup(func() { gatewayProbeDo = prev })
+
+	failing, ok := readyzProbe(context.Background(), 1)
+	if !ok {
+		t.Fatal("ok = false, want true")
+	}
+	if failing != nil {
+		t.Fatalf("failing = %v, want nil", failing)
+	}
+}
+
+// TestFormatUptimeSince covers the INT-3 lock-derived uptime formatting across
+// its day/hour/minute branches and the future-timestamp clamp.
+func TestFormatUptimeSince(t *testing.T) {
+	now := time.Now()
+	cases := []struct {
+		name string
+		when time.Time
+		want string
+	}{
+		{"minutes", now.Add(-30 * time.Minute), "30m"},
+		{"hours", now.Add(-90 * time.Minute), "1h 30m"},
+		{"days", now.Add(-25 * time.Hour), "1d 1h"},
+		{"future clamps to zero", now.Add(2 * time.Hour), "0m"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := formatUptimeSince(tc.when); got != tc.want {
+				t.Errorf("formatUptimeSince = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+// TestSetGatewayMemory covers the rss → human-readable formatting at the
+// KB/MB/GB boundaries used by both the lock and pgrep metadata paths.
+func TestSetGatewayMemory(t *testing.T) {
+	cases := []struct {
+		rssKB      int
+		wantMemory string
+	}{
+		{512, "512 KB"},
+		{2048, "2 MB"},
+		{2097152, "2.0 GB"},
+	}
+	for _, tc := range cases {
+		gw := map[string]any{}
+		setGatewayMemory(gw, tc.rssKB)
+		if gw["rss"] != tc.rssKB {
+			t.Errorf("rss = %v, want %d", gw["rss"], tc.rssKB)
+		}
+		if gw["memory"] != tc.wantMemory {
+			t.Errorf("rssKB %d: memory = %v, want %q", tc.rssKB, gw["memory"], tc.wantMemory)
+		}
+	}
+}
+
 // stubHealthz replaces the HTTP probe with a deterministic fake.
 func stubHealthz(t *testing.T, ok bool) {
 	t.Helper()
@@ -173,6 +356,76 @@ func TestCollectGatewayHealth_PortZeroSkipsHTTP(t *testing.T) {
 	gw := collectGatewayHealth(context.Background(), 0)
 	if gw["status"] != "offline" {
 		t.Fatalf("status: want offline, got %v", gw["status"])
+	}
+}
+
+// stubLockMeta replaces readGatewayLockMeta with a deterministic fake.
+func stubLockMeta(t *testing.T, lk gatewayLock, ok bool) {
+	t.Helper()
+	prev := readGatewayLockMeta
+	readGatewayLockMeta = func(_ string) (gatewayLock, bool) { return lk, ok }
+	t.Cleanup(func() { readGatewayLockMeta = prev })
+}
+
+// TestCollectGatewayHealthWithLock_StaleLockDoesNotOverrideFailedHealthz locks
+// the INT-3 anti-stale-lock contract (refresh_gateway.go:146): when a port is
+// configured and /healthz FAILS, an alive gateway lock must NOT mark the gateway
+// online — a recycled pid behind a stale lock would otherwise lie. The lock
+// branch is skipped and liveness falls through to pgrep. Here pgrep also finds
+// nothing, so the gateway is correctly reported offline despite a live lock pid.
+func TestCollectGatewayHealthWithLock_StaleLockDoesNotOverrideFailedHealthz(t *testing.T) {
+	stubHealthz(t, false) // healthz FAILS
+	stubLockMeta(t, gatewayLock{pid: 4242, createdAt: time.Now()}, true)
+	stubPgrep(t, "", nil) // pgrep finds no gateway
+
+	gw := collectGatewayHealthWithLock(context.Background(), "/fake/openclaw", 18789)
+
+	if gw["status"] != "offline" {
+		t.Fatalf("status = %v, want offline (stale lock must not override failed healthz)", gw["status"])
+	}
+	if gw["pid"] != nil {
+		t.Fatalf("pid = %v, want nil (lock pid must not be surfaced past failed healthz)", gw["pid"])
+	}
+}
+
+// TestCollectGatewayHealthWithLock_LiveLockWithHealthzOKIsOnline is the positive
+// counterpart: port>0, /healthz OK, alive lock → lock metadata is trusted and
+// the gateway is online with the lock's pid.
+func TestCollectGatewayHealthWithLock_LiveLockWithHealthzOKIsOnline(t *testing.T) {
+	stubHealthz(t, true)
+	stubLockMeta(t, gatewayLock{pid: 4242, createdAt: time.Now()}, true)
+	stubPgrep(t, "", errors.New("pgrep must not decide liveness here"))
+
+	gw := collectGatewayHealthWithLock(context.Background(), "/fake/openclaw", 18789)
+
+	if gw["status"] != "online" {
+		t.Fatalf("status = %v, want online (healthz OK + alive lock)", gw["status"])
+	}
+	if gw["pid"] != 4242 {
+		t.Fatalf("pid = %v, want 4242 (from lock)", gw["pid"])
+	}
+}
+
+// TestCollectGatewayHealthWithLock_PortZeroTrustsLock proves the port==0 escape
+// hatch: with no port to probe, an alive lock is sufficient to mark online
+// (httpOnline is irrelevant because the healthz gate is bypassed when port<=0).
+func TestCollectGatewayHealthWithLock_PortZeroTrustsLock(t *testing.T) {
+	prev := healthzProbe
+	healthzProbe = func(_ context.Context, _ int) bool {
+		t.Fatalf("healthzProbe must not be called when port is 0")
+		return false
+	}
+	t.Cleanup(func() { healthzProbe = prev })
+	stubLockMeta(t, gatewayLock{pid: 4242, createdAt: time.Now()}, true)
+	stubPgrep(t, "", errors.New("pgrep must not be consulted when lock trusted"))
+
+	gw := collectGatewayHealthWithLock(context.Background(), "/fake/openclaw", 0)
+
+	if gw["status"] != "online" {
+		t.Fatalf("status = %v, want online (port 0 trusts alive lock)", gw["status"])
+	}
+	if gw["pid"] != 4242 {
+		t.Fatalf("pid = %v, want 4242", gw["pid"])
 	}
 }
 

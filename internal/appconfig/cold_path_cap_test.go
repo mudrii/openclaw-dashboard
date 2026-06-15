@@ -43,6 +43,64 @@ func TestColdPathTimeoutMs_Clamp(t *testing.T) {
 	}
 }
 
+// TestPollSeconds_Clamp pins system.pollSeconds to [2,60]; out-of-range values
+// fall back to the 10s default (the SystemBar poll cadence).
+func TestPollSeconds_Clamp(t *testing.T) {
+	tests := []struct {
+		name string
+		in   int
+		want int
+	}{
+		{"below 2 resets to default", 1, 10},
+		{"2 accepted (lower bound)", 2, 2},
+		{"in-range preserved", 30, 30},
+		{"60 accepted (upper bound)", 60, 60},
+		{"above 60 resets to default", 61, 10},
+		{"zero resets to default", 0, 10},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			content := []byte(`{"system":{"pollSeconds":` + strconv.Itoa(tc.in) + `}}`)
+			if err := os.WriteFile(filepath.Join(dir, "config.json"), content, 0o600); err != nil {
+				t.Fatalf("write fixture: %v", err)
+			}
+			if got := Load(dir).System.PollSeconds; got != tc.want {
+				t.Errorf("input %d: want %d, got %d", tc.in, tc.want, got)
+			}
+		})
+	}
+}
+
+// TestMetricsTTLSeconds_Clamp pins system.metricsTtlSeconds to [2,60]; a bad
+// value falls back to 10s (the cache-staleness window feeding GetJSON).
+func TestMetricsTTLSeconds_Clamp(t *testing.T) {
+	tests := []struct {
+		name string
+		in   int
+		want int
+	}{
+		{"below 2 resets to default", 1, 10},
+		{"2 accepted (lower bound)", 2, 2},
+		{"in-range preserved", 45, 45},
+		{"60 accepted (upper bound)", 60, 60},
+		{"above 60 resets to default", 120, 10},
+		{"negative resets to default", -5, 10},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			content := []byte(`{"system":{"metricsTtlSeconds":` + strconv.Itoa(tc.in) + `}}`)
+			if err := os.WriteFile(filepath.Join(dir, "config.json"), content, 0o600); err != nil {
+				t.Fatalf("write fixture: %v", err)
+			}
+			if got := Load(dir).System.MetricsTTLSeconds; got != tc.want {
+				t.Errorf("input %d: want %d, got %d", tc.in, tc.want, got)
+			}
+		})
+	}
+}
+
 func TestCPUTimeoutMs_Clamp(t *testing.T) {
 	tests := []struct {
 		name string

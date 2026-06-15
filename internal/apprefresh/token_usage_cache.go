@@ -134,8 +134,11 @@ func saveTokenUsageCache(path string, cache tokenUsageCache) {
 	tmp := path + ".tmp"
 	// 0o600 matches data.json + plist + systemd unit writers; cache holds
 	// per-session token/cost data that should not be world-readable.
-	if err := os.WriteFile(tmp, data, 0o600); err != nil {
+	// writeFileSync fsyncs before the rename below for durability parity with
+	// the data.json writer.
+	if err := writeFileSync(tmp, data, 0o600); err != nil {
 		slog.Error("[dashboard] saveTokenUsageCache: write failed", "path", tmp, "error", err)
+		_ = os.Remove(tmp)
 		return
 	}
 	if err := os.Rename(tmp, path); err != nil {
@@ -268,10 +271,10 @@ func applyTokenUsageSummary(
 	subagentRuns *[]map[string]any,
 ) {
 	sid := filepath.Base(path)
-	sid = strings.TrimSuffix(sid, ".jsonl")
 	if idx := strings.Index(sid, ".deleted."); idx >= 0 {
 		sid = sid[:idx]
 	}
+	sid = strings.TrimSuffix(sid, ".jsonl")
 	sessionKey := sidToKey[sid]
 	isSubagent := isSubagentSession(sessionKey, knownSIDs[sid])
 
@@ -323,9 +326,7 @@ func applyTokenUsageSummary(
 	} else if sessionTask == "" {
 		sessionTask = sid
 	}
-	if len(sessionTask) > 60 {
-		sessionTask = sessionTask[:60]
-	}
+	sessionTask = truncateRunes(sessionTask, 60)
 
 	lastTs := time.UnixMilli(summary.SessionLastUnixMs).In(loc)
 	lastDate := lastTs.Format("2006-01-02")
@@ -346,9 +347,8 @@ func applyTokenUsageSummary(
 }
 
 func resolveUsageModel(model string, modelAliases map[string]string) string {
-	displayModel := aliasOrID(modelAliases, model)
-	if displayModel == model {
-		return ModelName(model)
-	}
-	return displayModel
+	// Resolve the alias, then prettify through ModelName so the Token Usage
+	// panel matches the Sessions panel (e.g. "GLM-5.2", not a raw "glm-5.2"
+	// alias); a genuine custom alias passes through ModelName's default arm.
+	return ModelName(aliasOrID(modelAliases, model))
 }

@@ -3,6 +3,7 @@ package apprefresh
 import (
 	"math"
 	"slices"
+	"unicode/utf8"
 )
 
 // JSON helper functions ---------------------------------------------------
@@ -58,6 +59,20 @@ func asObj(v any) map[string]any {
 	return nil
 }
 
+func stringSliceFromAny(v any) []string {
+	arr, ok := v.([]any)
+	if !ok {
+		return nil
+	}
+	out := make([]string, 0, len(arr))
+	for _, it := range arr {
+		if s, ok := it.(string); ok && s != "" {
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
 func aliasOrID(aliases map[string]string, id string) string {
 	if a, ok := aliases[id]; ok {
 		return a
@@ -95,6 +110,37 @@ func FilterByDate(runs []map[string]any, targetDate, op string) []map[string]any
 		}
 	}
 	return out
+}
+
+// truncateRunes returns s limited to at most n runes, cutting on a rune
+// boundary so the result is always valid UTF-8. A plain byte-slice cut (s[:n])
+// can split a multibyte rune and emit U+FFFD into data.json.
+func truncateRunes(s string, n int) string {
+	if n < 0 {
+		n = 0
+	}
+	r := []rune(s)
+	if len(r) <= n {
+		return s
+	}
+	return string(r[:n])
+}
+
+// truncateBytes returns s limited to at most maxBytes bytes, backing up to a
+// rune boundary so the result is always valid UTF-8. Use this for byte-size
+// caps (e.g. a max log-line length); use truncateRunes for visual length caps.
+func truncateBytes(s string, maxBytes int) string {
+	if maxBytes < 0 {
+		maxBytes = 0
+	}
+	if len(s) <= maxBytes {
+		return s
+	}
+	b := maxBytes
+	for b > 0 && !utf8.RuneStart(s[b]) {
+		b--
+	}
+	return s[:b]
 }
 
 // LimitSlice truncates s to the first max elements (no-op when shorter).

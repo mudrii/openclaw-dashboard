@@ -60,11 +60,12 @@ make check
 | `make test` | `go test -race -count=1 ./...`. The race detector is non-negotiable for local runs. |
 | `make lint` | `golangci-lint run ./...`. Linters enabled in `.golangci.yml`: `errcheck`, `govet`, `staticcheck`, `ineffassign`, `unused`, `gocritic`, `gosec`, `errorlint`. |
 | `make vet` | `go vet ./...` only. Fast first pass before lint. |
-| `make govulncheck` | `govulncheck ./...`. Scans stdlib + module for known CVEs. Install once: `go install golang.org/x/vuln/cmd/govulncheck@v1.3.0`. |
-| `make check` | All of the above in sequence — the gate CI also enforces. |
+| `make staticcheck` | `go run honnef.co/go/tools/cmd/staticcheck@v0.7.0 ./...`. Runs standalone Staticcheck without requiring a preinstalled binary. |
+| `make govulncheck` | `go run golang.org/x/vuln/cmd/govulncheck@v1.3.0 ./...`. Scans stdlib + module for known CVEs without requiring a preinstalled binary. |
+| `make check` | Runs the required local gate: `go vet ./...`, `golangci-lint run ./...`, `go test -race -count=1 ./...`, and pinned `govulncheck`. Run `make staticcheck` separately for the standalone Staticcheck pass. |
 
-`golangci-lint` (>= v1.55) and `govulncheck` (>= v1.3.0) must be on `PATH`. The
-Nix `devShell` installs both; for non-Nix dev machines, `go install` works.
+`golangci-lint` (>= v1.55) must be on `PATH`. The Nix `devShell` installs it;
+for non-Nix dev machines, `go install` works.
 
 ### What the Go tests cover
 

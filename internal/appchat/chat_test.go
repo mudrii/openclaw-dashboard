@@ -4,8 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -128,11 +131,17 @@ func TestCallGateway_ServerError(t *testing.T) {
 }
 
 func TestCallGateway_Timeout(t *testing.T) {
+	// Block the handler on a channel instead of sleeping a fixed duration; the
+	// client-side ctx timeout (below) is what we exercise. The channel is
+	// closed before srv.Close() so the in-flight handler unblocks and Close
+	// does not deadlock waiting on the active connection.
+	release := make(chan struct{})
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		time.Sleep(2 * time.Second)
+		<-release
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer srv.Close()
+	defer close(release)
 
 	port := getPort(t, srv.URL)
 	client := srv.Client()
@@ -156,7 +165,10 @@ func TestCallGateway_Timeout(t *testing.T) {
 func TestCallGateway_EmptyModel(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var payload CompletionPayload
-		json.NewDecoder(r.Body).Decode(&payload)
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Errorf("decode gateway request body: %v", err)
+			return
+		}
 		if payload.Model != "" {
 			t.Errorf("expected empty model, got %q", payload.Model)
 		}
@@ -188,18 +200,19 @@ func TestGatewayError_Error(t *testing.T) {
 	}
 }
 
-func getPort(t *testing.T, url string) int {
+func getPort(t *testing.T, rawURL string) int {
 	t.Helper()
-	// URL is like http://127.0.0.1:PORT
-	for i := len(url) - 1; i >= 0; i-- {
-		if url[i] == ':' {
-			port := 0
-			for _, c := range url[i+1:] {
-				port = port*10 + int(c-'0')
-			}
-			return port
-		}
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		t.Fatalf("parse url %q: %v", rawURL, err)
 	}
-	t.Fatalf("cannot extract port from %q", url)
-	return 0
+	_, portStr, err := net.SplitHostPort(u.Host)
+	if err != nil {
+		t.Fatalf("split host:port from %q: %v", u.Host, err)
+	}
+	port, err := strconv.Atoi(portStr)
+	if err != nil {
+		t.Fatalf("atoi port %q: %v", portStr, err)
+	}
+	return port
 }

@@ -60,7 +60,7 @@ func TestCollectCrons_SurfacesIdAndAgentId(t *testing.T) {
 			name:    "Main Agent: Daily Memory Curation",
 			agentID: "main",
 			enabled: true,
-			model:   "kimi/k2p5",
+			model:   "Kimi K2.5", // prettified from payload "kimi/k2p5" via ModelName
 			status:  "ok",
 		},
 		{
@@ -68,7 +68,7 @@ func TestCollectCrons_SurfacesIdAndAgentId(t *testing.T) {
 			name:    "Biz Agent: Daily Memory Curation",
 			agentID: "biz",
 			enabled: false,
-			model:   "kimi/k2p5",
+			model:   "Kimi K2.5", // prettified from payload "kimi/k2p5" via ModelName
 			status:  "error",
 		},
 	}

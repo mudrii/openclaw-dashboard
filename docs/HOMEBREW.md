@@ -15,13 +15,15 @@ This repository owns the release automation:
 Tagging a release runs GoReleaser, publishes the release artifacts, and updates
 the Homebrew formula in the tap repository.
 
-## Required secret
+## Required secrets
 
 The GitHub Actions release job expects:
 
-- `HOMEBREW_TAP_TOKEN`
+- `HOMEBREW_TAP_APP_ID`
+- `HOMEBREW_TAP_APP_PRIVATE_KEY`
 
-That token must be able to push to `mudrii/homebrew-tap`.
+The workflow mints a short-lived `HOMEBREW_TAP_TOKEN` from those GitHub App
+credentials and uses it to push to `mudrii/homebrew-tap`.
 
 ## Runtime layout
 

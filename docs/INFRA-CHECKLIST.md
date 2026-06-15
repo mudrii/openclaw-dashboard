@@ -58,12 +58,12 @@ gh api -X PUT repos/mudrii/openclaw-dashboard/branches/main/protection \
   "required_status_checks": {
     "strict": true,
     "checks": [
-      {"context": "PR Validation / Check PR template is filled out"},
-      {"context": "Tests / GolangCI-Lint"},
-      {"context": "Tests / Go test suite (ubuntu-latest)"},
-      {"context": "Tests / Go test suite (macos-latest)"},
-      {"context": "Tests / govulncheck"},
-      {"context": "Tests / Lint shell scripts"}
+      {"context": "Check PR template is filled out"},
+      {"context": "GolangCI-Lint"},
+      {"context": "Go test suite (ubuntu-latest)"},
+      {"context": "Go test suite (macos-latest)"},
+      {"context": "govulncheck"},
+      {"context": "Lint shell scripts"}
     ]
   },
   "enforce_admins": false,
@@ -73,13 +73,18 @@ gh api -X PUT repos/mudrii/openclaw-dashboard/branches/main/protection \
   "allow_deletions": false
 }
 EOF
+
+# The protection PUT endpoint can leave a default review rule behind. This repo's
+# policy is strict required checks without mandatory review approval.
+gh api -X DELETE \
+  repos/mudrii/openclaw-dashboard/branches/main/protection/required_pull_request_reviews
 ```
 
-Context names follow GitHub's `{workflow name:} / {job name:}` convention, with
-matrix values appended in parentheses. If you rename any workflow's top-level
-`name:` field or any job's `name:`, mirror the change here and re-run the
-command — otherwise the protection rule will silently reference a check that
-no longer exists, and PRs will start merging without validation.
+Context names are the check-run `name` values reported by GitHub Actions. For
+these workflows that means job names, with matrix values appended in
+parentheses. If you rename any job's `name:`, mirror the change here and
+re-run the command — otherwise the protection rule can reference a check that
+never reports, leaving PRs blocked.
 
 ## 4. (Optional) Verify release pipeline end-to-end
 

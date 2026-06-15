@@ -1,0 +1,178 @@
+{
+  "dashboard": {
+    "botName": "Fixture Dashboard",
+    "botEmoji": "*",
+    "lastRefresh": "2026-06-14 10:00:00 UTC",
+    "gateway": {
+      "status": "online",
+      "pid": 4242,
+      "uptime": "2h",
+      "memory": "128 MB",
+      "port": 18789
+    },
+    "compactionMode": "auto",
+    "sessionCount": 0,
+    "totalCostToday": 0,
+    "subagentCostToday": 0,
+    "totalCostAllTime": 0,
+    "subagentCostAllTime": 0,
+    "projectedMonthly": 0,
+    "sessions": [],
+    "crons": [
+      {
+        "name": "nightly-report",
+        "schedule": "*/5 * * * *",
+        "lastStatus": "error",
+        "lastError": "telegram timeout",
+        "lastRun": "2026-06-14 09:55",
+        "nextRun": "2026-06-14 10:00",
+        "lastDurationMs": 1234,
+        "model": "GPT-5",
+        "lastDeliveryStatus": "not-delivered",
+        "lastDiagnostics": [
+          "telegram timeout",
+          "retry scheduled"
+        ],
+        "consecutiveErrors": 4,
+        "consecutiveSkipped": 0,
+        "flapping": true
+      }
+    ],
+    "skills": [],
+    "gitLog": [],
+    "alerts": [
+      {
+        "severity": "critical",
+        "icon": "!",
+        "message": "Gateway is offline"
+      }
+    ],
+    "dailyChart": [],
+    "availableModels": [],
+    "agentConfig": {
+      "primaryModel": "GPT-5",
+      "primaryModelId": "openai/gpt-5",
+      "fallbacks": [],
+      "agents": [],
+      "skills": [],
+      "bindings": [],
+      "channels": [
+        "slack",
+        "telegram"
+      ],
+      "channelStatus": {
+        "slack": {
+          "enabled": true,
+          "configured": true,
+          "connected": false,
+          "health": "unhealthy",
+          "error": "slack token expired"
+        },
+        "telegram": {
+          "enabled": true,
+          "configured": true,
+          "connected": true,
+          "health": "healthy",
+          "error": ""
+        }
+      },
+      "gateway": {
+        "port": 18789,
+        "mode": "http",
+        "bind": "127.0.0.1",
+        "authMode": "bearer",
+        "tailscale": "off"
+      },
+      "subagentConfig": {}
+    }
+  },
+  "system": {
+    "ok": true,
+    "stale": false,
+    "pollSeconds": 10,
+    "cpu": {
+      "percent": 12.5
+    },
+    "ram": {
+      "usedBytes": 1024,
+      "totalBytes": 4096,
+      "percent": 25
+    },
+    "swap": {
+      "percent": 0
+    },
+    "disk": {
+      "usedBytes": 2048,
+      "totalBytes": 8192,
+      "percent": 25
+    },
+    "versions": {
+      "openclaw": "2026.6.14",
+      "latest": "2026.6.14",
+      "gateway": {
+        "status": "online",
+        "version": "2026.6.14",
+        "pid": 4242,
+        "uptime": "2h",
+        "memory": "128 MB"
+      }
+    },
+    "openclaw": {
+      "status": {
+        "currentVersion": "2026.6.14",
+        "latestVersion": "2026.6.14",
+        "connectLatencyMs": 12,
+        "tasks": {
+          "total": 8,
+          "active": 2,
+          "terminal": 6,
+          "failures": 1,
+          "byStatus": {
+            "queued": 1,
+            "running": 2,
+            "failed": 1
+          },
+          "byRuntime": {
+            "subagent": 3,
+            "cron": 2
+          }
+        },
+        "eventLoop": {
+          "degraded": true,
+          "reasons": [
+            "timer lag"
+          ],
+          "intervalMs": 1000,
+          "delayP99Ms": 42,
+          "delayMaxMs": 80,
+          "utilization": 0.64,
+          "cpuCoreRatio": 0.2
+        },
+        "pluginCompatibility": {
+          "count": 1,
+          "warnings": [
+            "legacy plugin API"
+          ]
+        },
+        "lastHeartbeat": {
+          "ts": "2026-06-14T09:59:15Z",
+          "status": "ok",
+          "channel": "telegram"
+        },
+        "channelSummary": [
+          "slack failing",
+          "telegram ok"
+        ]
+      },
+      "gateway": {
+        "live": true,
+        "ready": false,
+        "readyEndpointOk": true,
+        "uptimeMs": 7200000,
+        "failing": [
+          "slack<script>alert(1)</script>"
+        ]
+      }
+    }
+  }
+}

@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 )
@@ -169,7 +170,18 @@ func BuildSystemPrompt(data map[string]any) string {
 		b.WriteString(status)
 		if status == "error" {
 			b.WriteString(" ERROR: ")
-			b.WriteString(str(c, "lastError"))
+			// The refresh collector emits lastDiagnostics (a string array), not a
+			// lastError string; join it so the chat context carries the failure.
+			if diags, ok := c["lastDiagnostics"].([]any); ok {
+				for i, d := range diags {
+					if s, ok := d.(string); ok {
+						if i > 0 {
+							b.WriteString("; ")
+						}
+						b.WriteString(s)
+					}
+				}
+			}
 		}
 		b.WriteByte('\n')
 	}
@@ -283,8 +295,8 @@ func CallGateway(ctx context.Context, system string, history []Message, question
 		return "", &GatewayError{Status: http.StatusBadGateway, Msg: fmt.Errorf("marshal error: %w", err).Error()}
 	}
 
-	url := "http://localhost:" + strconv.Itoa(port) + "/v1/chat/completions"
-	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(body))
+	endpoint := "http://localhost:" + strconv.Itoa(port) + "/v1/chat/completions"
+	req, err := http.NewRequestWithContext(ctx, "POST", endpoint, bytes.NewReader(body))
 	if err != nil {
 		return "", &GatewayError{Status: http.StatusBadGateway, Msg: fmt.Errorf("request error: %w", err).Error()}
 	}
@@ -293,8 +305,13 @@ func CallGateway(ctx context.Context, system string, history []Message, question
 
 	resp, err := client.Do(req)
 	if err != nil {
+		// http.Client.Timeout surfaces as a *url.Error whose cause is neither
+		// context.DeadlineExceeded nor Canceled, so it must be classified via
+		// Timeout() to report 504 rather than 502.
+		var urlErr *url.Error
 		if errors.Is(err, context.DeadlineExceeded) ||
-			errors.Is(err, context.Canceled) {
+			errors.Is(err, context.Canceled) ||
+			(errors.As(err, &urlErr) && urlErr.Timeout()) {
 			return "", &GatewayError{Status: http.StatusGatewayTimeout, Msg: "Gateway timed out — model took too long to respond"}
 		}
 		return "", &GatewayError{Status: http.StatusBadGateway, Msg: redactToken(fmt.Errorf("gateway unreachable: %w", err).Error(), token)}
@@ -311,8 +328,8 @@ func CallGateway(ctx context.Context, system string, history []Message, question
 
 	if resp.StatusCode != http.StatusOK {
 		preview := string(respBody)
-		if len(preview) > 200 {
-			preview = preview[:200]
+		if r := []rune(preview); len(r) > 200 {
+			preview = string(r[:200]) // rune-safe cut: avoid splitting a multibyte rune
 		}
 		return "", &GatewayError{Status: http.StatusBadGateway, Msg: redactToken(fmt.Sprintf("gateway HTTP %d: %s", resp.StatusCode, preview), token)}
 	}

@@ -25,8 +25,21 @@ import (
 var (
 	binOnce sync.Once
 	binPath string
+	binDir  string // parent temp dir holding the built binary; removed in TestMain
 	binErr  error
 )
+
+// TestMain removes the shared temp directory created by buildBinary after all
+// tests complete. buildBinary uses os.MkdirTemp (not t.TempDir) because the
+// binary is shared across subtests via sync.Once; without this teardown each
+// `go test` run would leak a temp directory under os.TempDir().
+func TestMain(m *testing.M) {
+	code := m.Run()
+	if binDir != "" {
+		_ = os.RemoveAll(binDir)
+	}
+	os.Exit(code)
+}
 
 // buildBinary builds the cmd binary exactly once per test run and returns the
 // resulting path. Subsequent calls reuse it. The binary is written under
@@ -39,6 +52,7 @@ func buildBinary(t *testing.T) string {
 			binErr = err
 			return
 		}
+		binDir = dir
 		path := filepath.Join(dir, "openclaw-dashboard")
 		// Build from the cmd directory's perspective: go test runs with
 		// CWD = the package being tested. The cmd package lives at
@@ -159,11 +173,24 @@ func TestCmdServiceStatusNoPanic(t *testing.T) {
 	if testing.Short() {
 		t.Skip("subprocess test; skipped under -short")
 	}
-	out, _ := runBin(t, []string{"service", "status"}, 10*time.Second)
+	out, code := runBin(t, []string{"service", "status"}, 10*time.Second)
 	// Either backend-not-available, or status-ok, or status-fail. None should
 	// panic. We assert absence of the Go runtime panic banner.
 	if strings.Contains(out, "panic:") || strings.Contains(out, "goroutine ") && strings.Contains(out, "runtime.gopanic") {
 		t.Fatalf("service status panicked; output:\n%s", out)
+	}
+	// The status path always resolves to a deliberate exit: 0 when the status
+	// renders, 1 when the backend is unavailable or Status() fails. A flag error
+	// (2) or a crash signal (>128) means the command did not reach the status
+	// handler.
+	if code != 0 && code != 1 {
+		t.Fatalf("service status exit = %d, want 0 or 1; output:\n%s", code, out)
+	}
+	// Whichever branch is taken produces user-facing output: either the rendered
+	// status (stdout) or an error explaining why it could not be produced
+	// (stderr). Silence would mean the command did nothing observable.
+	if strings.TrimSpace(out) == "" {
+		t.Fatalf("service status produced no output (exit %d)", code)
 	}
 }
 

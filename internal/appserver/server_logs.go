@@ -2,6 +2,7 @@ package appserver
 
 import (
 	"cmp"
+	"context"
 	"fmt"
 	"net/http"
 	"slices"
@@ -93,7 +94,7 @@ func (s *Server) handleLogs(w http.ResponseWriter, r *http.Request) {
 		sinceMs = v
 	}
 
-	entries, err := s.readMergedLogs(sources, limit)
+	entries, err := s.readMergedLogsWithContext(r.Context(), sources, limit)
 	if err != nil {
 		s.sendJSONRaw(w, r, http.StatusInternalServerError, []byte(`{"error":"failed to read logs"}`))
 		return
@@ -151,7 +152,7 @@ func (s *Server) handleErrors(w http.ResponseWriter, r *http.Request) {
 	sources := resolveSources(query.Get("source"), apprefresh.GetEffectiveLogSources(s.cfg))
 	rawSourceList := append([]string(nil), sources...)
 
-	entries, err := s.readMergedLogs(sources, errorLimitDefault)
+	entries, err := s.readMergedLogsWithContext(r.Context(), sources, errorLimitDefault)
 	if err != nil {
 		s.sendJSONRaw(w, r, http.StatusInternalServerError, []byte(`{"error":"failed to read logs"}`))
 		return
@@ -242,7 +243,12 @@ func (s *Server) handleErrors(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) readMergedLogs(sources []string, globalLimit int) ([]apprefresh.LogRecord, error) {
-	return apprefresh.ReadMergedLogs(s.openclawPath, sources, globalLimit)
+	return s.readMergedLogsWithContext(context.Background(), sources, globalLimit)
+}
+
+func (s *Server) readMergedLogsWithContext(ctx context.Context, sources []string, globalLimit int) ([]apprefresh.LogRecord, error) {
+	unit := apprefresh.ResolveSystemdUnit(s.cfg.Logs.SystemdUnit)
+	return apprefresh.ReadMergedLogsWithUnitContext(ctx, s.openclawPath, sources, globalLimit, unit)
 }
 
 func (s *Server) defaultLogLimit() int {

@@ -18,8 +18,8 @@ func collectDiskRoot(path string) SystemDisk {
 	return appsystem.CollectDiskRoot(path)
 }
 
-func collectOpenclawRuntime(ctx context.Context, oclawBin string, timeoutMs int, gatewayPort int, versions SystemVersions) SystemOpenclaw {
-	return appsystem.CollectOpenclawRuntime(ctx, oclawBin, timeoutMs, gatewayPort, versions)
+func collectOpenclawRuntime(ctx context.Context, oclawBin string, timeoutMs int, gatewayPort int, versions SystemVersions, deepStatus bool) SystemOpenclaw {
+	return appsystem.CollectOpenclawRuntime(ctx, oclawBin, timeoutMs, gatewayPort, versions, deepStatus)
 }
 
 func parseGatewayStatusJSON(ctx context.Context, output string) SystemGateway {

@@ -60,12 +60,13 @@ func TestResolveDashboardDirWithError_EnvOverride(t *testing.T) {
 }
 
 func TestResolveDashboardDirWithError_EnvOverrideTilde(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
 	t.Setenv("OPENCLAW_DASHBOARD_DIR", "~/test-dashboard")
 	result, err := ResolveDashboardDirWithError("/some/dir")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	home, _ := os.UserHomeDir()
 	expected := filepath.Join(home, "test-dashboard")
 	if result != expected {
 		t.Errorf("expected %q, got %q", expected, result)
@@ -197,5 +198,23 @@ func TestSeedHomebrewRuntimeDir_UpdatesVersionButPreservesUserConfig(t *testing.
 	}
 	if string(configData) != "{\"server\":{\"port\":9090}}\n" {
 		t.Fatalf("expected existing config.json to be preserved, got %q", string(configData))
+	}
+
+	// Newly seeded files must carry their declared modes despite any process
+	// umask: refresh.sh executable (0o755), themes.json 0o644.
+	assertMode(t, filepath.Join(runtimeDir, "refresh.sh"), 0o755)
+	assertMode(t, filepath.Join(runtimeDir, "themes.json"), 0o644)
+}
+
+// assertMode fails unless the file at path has exactly the expected permission
+// bits.
+func assertMode(t *testing.T, path string, want os.FileMode) {
+	t.Helper()
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat %s: %v", path, err)
+	}
+	if got := info.Mode().Perm(); got != want {
+		t.Errorf("%s mode = %o, want %o", path, got, want)
 	}
 }

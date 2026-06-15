@@ -1,0 +1,45 @@
+{
+  "count": 3,
+  "runtime": "subagent",
+  "tasks": [
+    {
+      "taskId": "e6c6fc59-e8a4-4c61-a307-8467af973a91",
+      "runId": "c832ff62-97d6-40e6-a5bc-13ded0ba57ba",
+      "agentId": "main",
+      "task": "TASK ID: glm52-research-v2-20260615\n\nReason for v2",
+      "status": "succeeded",
+      "runtime": "subagent",
+      "createdAt": 1781494414864,
+      "startedAt": 1781494415294,
+      "endedAt": 1781494622544,
+      "error": null,
+      "childSessionKey": "agent:main:subagent:7cf1e3ea-602d-458a-bf37-5e7fb177678e"
+    },
+    {
+      "taskId": "762e3df1-f6fe-41de-ab85-bd0d99f8a611",
+      "runId": "9a870145-0402-4462-82f2-655850340bfe",
+      "agentId": "main",
+      "task": "TASK ID: glm52-research-20260615\n\nGoal: Find the *",
+      "status": "failed",
+      "runtime": "subagent",
+      "createdAt": 1781494343310,
+      "startedAt": 1781494343473,
+      "endedAt": 1781494343605,
+      "error": "FailoverError: No API key found for provider \"xai\". Auth store: /Users/mudrii/.openclaw/agents/main/agent/openclaw-agent.sqlite (agentDir: /Users/mudrii/.openclaw/agents/main/agent). Configure auth for this agent (openclaw agents add <id>) ...",
+      "childSessionKey": "agent:main:subagent:dae19a4f-a0cc-4ac6-897e-07fb395b956f"
+    },
+    {
+      "taskId": "8fe08933-79d3-4aa3-8764-777a7e329669",
+      "runId": "18c44081-b9cd-4d69-8cf8-f142462d94be",
+      "agentId": "main",
+      "task": "TASK: Add two new models to existing OpenClaw prov",
+      "status": "failed",
+      "runtime": "subagent",
+      "createdAt": 1781408052679,
+      "startedAt": 1781408053414,
+      "endedAt": 1781408145305,
+      "error": "gateway closed (1012): service restart\nGateway target: ws://127.0.0.1:18789\nSource: local loopback\nConfig: /Users/mudrii/.openclaw/openclaw.json\nBind: loopback",
+      "childSessionKey": "agent:main:subagent:1a3759b9-ea40-4a4b-bf4c-68313a5ee8f7"
+    }
+  ]
+}

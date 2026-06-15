@@ -65,6 +65,28 @@ func TestSystemd_Install_writesUnitFile(t *testing.T) {
 	}
 }
 
+func TestSystemd_Install_PersistsNonLoopbackOverride(t *testing.T) {
+	sb, dir := newTestSystemd(t)
+	t.Setenv("OPENCLAW_HOME", "/srv/openclaw")
+	cfg := InstallConfig{
+		BinPath:          "/usr/local/bin/openclaw-dashboard",
+		WorkDir:          "/home/user/.openclaw/dashboard",
+		Host:             "0.0.0.0",
+		Port:             9090,
+		AllowNonLoopback: true,
+	}
+	if err := sb.Install(cfg); err != nil {
+		t.Fatalf("Install: %v", err)
+	}
+	data, err := os.ReadFile(filepath.Join(dir, "openclaw-dashboard.service"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), `Environment="OPENCLAW_DASHBOARD_ALLOW_NON_LOOPBACK=1"`) {
+		t.Fatalf("unit missing non-loopback override env:\n%s", data)
+	}
+}
+
 func TestSystemd_Install_quotesPathsWithSpaces(t *testing.T) {
 	sb, dir := newTestSystemd(t)
 	cfg := InstallConfig{
@@ -86,9 +108,29 @@ func TestSystemd_Install_quotesPathsWithSpaces(t *testing.T) {
 	if !strings.Contains(content, `WorkingDirectory="/home/test user/.openclaw/dashboard"`) {
 		t.Fatalf("expected quoted working directory, got:\n%s", content)
 	}
-	if !strings.Contains(content, `ExecStart="/home/test user/bin/openclaw-dashboard" --bind "127.0.0.1" --port 8080`) {
-		t.Fatalf("expected quoted ExecStart path, got:\n%s", content)
+	// Assert the quoted binary path and the port token appear on the ExecStart
+	// line, rather than pinning the entire line verbatim. The quoting of the
+	// space-bearing path is the behavior under test; arg ordering and spacing
+	// are not part of this contract.
+	execLine := execStartLine(t, content)
+	if !strings.Contains(execLine, `"/home/test user/bin/openclaw-dashboard"`) {
+		t.Errorf("ExecStart should quote the space-bearing binary path, got: %q", execLine)
 	}
+	if !strings.Contains(execLine, "--port 8080") {
+		t.Errorf("ExecStart should carry the --port token, got: %q", execLine)
+	}
+}
+
+// execStartLine returns the ExecStart= line from a rendered unit file.
+func execStartLine(t *testing.T, unit string) string {
+	t.Helper()
+	for _, line := range strings.Split(unit, "\n") {
+		if strings.HasPrefix(strings.TrimSpace(line), "ExecStart=") {
+			return line
+		}
+	}
+	t.Fatalf("unit file has no ExecStart line:\n%s", unit)
+	return ""
 }
 
 func TestSystemd_Install_callsSystemctl(t *testing.T) {
@@ -151,55 +193,147 @@ func TestSystemd_Uninstall(t *testing.T) {
 	}
 }
 
-func TestSystemd_Lifecycle(t *testing.T) {
-	tests := []struct {
-		name        string
-		op          func(*systemdBackend) error
-		wantInCalls []string
-	}{
-		{
-			"Start",
-			(*systemdBackend).Start,
-			[]string{"--user start"},
-		},
-		{
-			"Stop",
-			(*systemdBackend).Stop,
-			[]string{"--user stop"},
-		},
-		{
-			"Restart",
-			(*systemdBackend).Restart,
-			[]string{"--user restart"},
-		},
-	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			var calls []string
-			sb := &systemdBackend{
-				unitDir: t.TempDir(),
-				runCmd: func(_ context.Context, name string, args ...string) ([]byte, error) {
-					calls = append(calls, strings.Join(append([]string{name}, args...), " "))
-					return nil, nil
-				},
-			}
-			if err := tc.op(sb); err != nil {
-				t.Fatalf("%s: %v", tc.name, err)
-			}
-			for _, want := range tc.wantInCalls {
-				found := false
-				for _, c := range calls {
-					if strings.Contains(c, want) {
-						found = true
+// stubSystemd builds a backend whose runCmd dispatches by systemctl verb,
+// letting tests model realistic command outcomes without asserting argument
+// strings or call order. verbResults maps a systemctl verb to its result.
+func stubSystemd(t *testing.T, verbResults map[string]stubResult) *systemdBackend {
+	t.Helper()
+	return &systemdBackend{
+		unitDir: t.TempDir(),
+		runCmd: func(_ context.Context, name string, args ...string) ([]byte, error) {
+			// ctl prepends "--user"; the verb is the first non-flag arg.
+			verb := ""
+			if name == "systemctl" {
+				for _, a := range args {
+					if a != "--user" {
+						verb = a
 						break
 					}
 				}
-				if !found {
-					t.Errorf("%s: %q not in calls: %v", tc.name, want, calls)
-				}
 			}
-		})
+			if r, ok := verbResults[verb]; ok {
+				return r.out, r.err
+			}
+			return nil, nil
+		},
+		probeFunc: func(string) bool { return false },
 	}
+}
+
+type stubResult struct {
+	out []byte
+	err error
+}
+
+func TestSystemd_Start(t *testing.T) {
+	t.Run("succeeds when systemctl start exits 0", func(t *testing.T) {
+		if err := stubSystemd(t, nil).Start(); err != nil {
+			t.Errorf("Start: %v", err)
+		}
+	})
+
+	t.Run("surfaces systemctl failure output", func(t *testing.T) {
+		sb := stubSystemd(t, map[string]stubResult{
+			"start": {out: []byte("Unit not found"), err: errors.New("exit status 5")},
+		})
+		err := sb.Start()
+		if err == nil {
+			t.Fatal("expected Start to error on systemctl failure")
+		}
+		if !strings.Contains(err.Error(), "Unit not found") {
+			t.Errorf("error should include systemctl output, got: %v", err)
+		}
+	})
+}
+
+func TestSystemd_Stop(t *testing.T) {
+	t.Run("succeeds when systemctl stop exits 0", func(t *testing.T) {
+		if err := stubSystemd(t, nil).Stop(); err != nil {
+			t.Errorf("Stop: %v", err)
+		}
+	})
+
+	t.Run("surfaces systemctl failure output", func(t *testing.T) {
+		sb := stubSystemd(t, map[string]stubResult{
+			"stop": {out: []byte("Job failed"), err: errors.New("exit status 1")},
+		})
+		err := sb.Stop()
+		if err == nil {
+			t.Fatal("expected Stop to error on systemctl failure")
+		}
+		if !strings.Contains(err.Error(), "Job failed") {
+			t.Errorf("error should include systemctl output, got: %v", err)
+		}
+	})
+}
+
+func TestSystemd_Restart(t *testing.T) {
+	t.Run("succeeds when systemctl restart exits 0", func(t *testing.T) {
+		if err := stubSystemd(t, nil).Restart(); err != nil {
+			t.Errorf("Restart: %v", err)
+		}
+	})
+
+	t.Run("surfaces systemctl failure output", func(t *testing.T) {
+		sb := stubSystemd(t, map[string]stubResult{
+			"restart": {out: []byte("start-limit-hit"), err: errors.New("exit status 1")},
+		})
+		err := sb.Restart()
+		if err == nil {
+			t.Fatal("expected Restart to error on systemctl failure")
+		}
+		if !strings.Contains(err.Error(), "start-limit-hit") {
+			t.Errorf("error should include systemctl output, got: %v", err)
+		}
+	})
+}
+
+func TestSystemd_New(t *testing.T) {
+	t.Run("New returns a configured systemd backend", func(t *testing.T) {
+		t.Setenv("HOME", t.TempDir())
+		b, err := New()
+		if err != nil {
+			t.Fatalf("New: %v", err)
+		}
+		sb, ok := b.(*systemdBackend)
+		if !ok {
+			t.Fatalf("New returned %T, want *systemdBackend", b)
+		}
+		if sb.runCmd == nil {
+			t.Error("runCmd should be wired")
+		}
+		if sb.probeFunc == nil {
+			t.Error("probeFunc should be wired")
+		}
+		if !strings.HasSuffix(sb.unitDir, filepath.Join(".config", "systemd", "user")) {
+			t.Errorf("unitDir = %q, want a .../.config/systemd/user path", sb.unitDir)
+		}
+	})
+
+	t.Run("NewWithContext binds the provided context", func(t *testing.T) {
+		t.Setenv("HOME", t.TempDir())
+		type ctxKey struct{}
+		ctx := context.WithValue(context.Background(), ctxKey{}, "v")
+		b, err := NewWithContext(ctx)
+		if err != nil {
+			t.Fatalf("NewWithContext: %v", err)
+		}
+		if b.(*systemdBackend).ctx.Value(ctxKey{}) != "v" {
+			t.Error("NewWithContext did not retain the caller context")
+		}
+	})
+
+	t.Run("NewWithContext tolerates a nil context", func(t *testing.T) {
+		t.Setenv("HOME", t.TempDir())
+		//nolint:staticcheck // exercising the nil-ctx fallback
+		b, err := NewWithContext(nil)
+		if err != nil {
+			t.Fatalf("NewWithContext(nil): %v", err)
+		}
+		if b.(*systemdBackend).ctx == nil {
+			t.Error("ctx should default to non-nil")
+		}
+	})
 }
 
 func TestSystemd_Status_notInstalled(t *testing.T) {
@@ -230,7 +364,8 @@ func TestSystemd_Status_running(t *testing.T) {
 		runCmd: func(_ context.Context, name string, args ...string) ([]byte, error) {
 			joined := name + " " + strings.Join(args, " ")
 			if strings.Contains(joined, "show") {
-				return []byte("ActiveState=active\nMainPID=55555\nActiveEnterTimestamp=2026-04-08 10:00:00 UTC\n"), nil
+				// systemd's default timestamp format carries a leading weekday.
+				return []byte("ActiveState=active\nMainPID=55555\nActiveEnterTimestamp=Wed 2026-04-08 10:00:00 UTC\n"), nil
 			}
 			if name == "journalctl" {
 				return []byte("line1\nline2\n"), nil
@@ -259,6 +394,9 @@ func TestSystemd_Status_running(t *testing.T) {
 	}
 	if !st.AutoStart {
 		t.Error("expected AutoStart=true (unit file exists)")
+	}
+	if st.Uptime <= 0 {
+		t.Error("expected Uptime > 0 parsed from weekday-prefixed ActiveEnterTimestamp")
 	}
 }
 

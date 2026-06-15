@@ -2,9 +2,22 @@ package appsystem
 
 import (
 	"encoding/json"
-	"strings"
 	"testing"
 )
+
+// TestStatusArgs covers the INT-2 deep-status toggle: the lean invocation is
+// `status --json`; enabling deep appends `--deep` (openclaw's flag for the
+// event-loop/heartbeat blocks), which is slower so it is opt-in.
+func TestStatusArgs(t *testing.T) {
+	lean := statusArgs(false)
+	if len(lean) != 2 || lean[0] != "status" || lean[1] != "--json" {
+		t.Errorf("lean args = %v, want [status --json]", lean)
+	}
+	deep := statusArgs(true)
+	if len(deep) != 3 || deep[2] != "--deep" {
+		t.Errorf("deep args = %v, want [status --json --deep]", deep)
+	}
+}
 
 // TestInt64FromAny exercises int64FromAny across supported and unsupported input types.
 func TestInt64FromAny(t *testing.T) {
@@ -138,6 +151,97 @@ func TestParseOpenclawStatusJSON(t *testing.T) {
 			t.Errorf("CurrentVersion: want %q, got %q", "5.0.0", got.CurrentVersion)
 		}
 	})
+
+	t.Run("rich INT-2 blocks parsed", func(t *testing.T) {
+		out := `{
+			"currentVersion":"2.0.0",
+			"tasks":{"total":10,"active":3,"terminal":7,"failures":1,
+				"byStatus":{"queued":2,"running":1,"succeeded":6,"failed":1},
+				"byRuntime":{"subagent":4,"cli":3,"cron":3}},
+			"eventLoop":{"degraded":true,"reasons":["delay"],"intervalMs":1000,
+				"delayP99Ms":12.5,"delayMaxMs":40,"utilization":0.42,"cpuCoreRatio":0.8},
+			"pluginCompatibility":{"count":2,"warnings":["a deprecated","b deprecated"]},
+			"channelSummary":["telegram: ok","slack: ok"],
+			"lastHeartbeat":{"ts":"2026-06-14T00:00:00Z","status":"ok","channel":"telegram"}
+		}`
+		got, err := parseOpenclawStatusJSON(out, SystemVersions{})
+		if err != nil {
+			t.Fatalf("err: want nil, got %v", err)
+		}
+		if got.Tasks == nil {
+			t.Fatalf("Tasks: want non-nil")
+		}
+		if got.Tasks.Total != 10 || got.Tasks.Active != 3 || got.Tasks.Failures != 1 {
+			t.Errorf("Tasks totals = %+v", got.Tasks)
+		}
+		if got.Tasks.ByStatus["succeeded"] != 6 || got.Tasks.ByRuntime["subagent"] != 4 {
+			t.Errorf("Tasks nested counts = %+v", got.Tasks)
+		}
+		if got.EventLoop == nil {
+			t.Fatalf("EventLoop: want non-nil")
+		}
+		if !got.EventLoop.Degraded || got.EventLoop.Utilization != 0.42 || got.EventLoop.DelayP99Ms != 12.5 {
+			t.Errorf("EventLoop = %+v", got.EventLoop)
+		}
+		if len(got.EventLoop.Reasons) != 1 || got.EventLoop.Reasons[0] != "delay" {
+			t.Errorf("EventLoop.Reasons = %v", got.EventLoop.Reasons)
+		}
+		if got.PluginCompatibility == nil {
+			t.Errorf("PluginCompatibility: want non-nil loose map")
+		}
+		if len(got.ChannelSummary) != 2 || got.ChannelSummary[0] != "telegram: ok" {
+			t.Errorf("ChannelSummary = %v", got.ChannelSummary)
+		}
+		if got.LastHeartbeat == nil || got.LastHeartbeat["channel"] != "telegram" {
+			t.Errorf("LastHeartbeat = %v", got.LastHeartbeat)
+		}
+	})
+
+	t.Run("explicit JSON null leaves typed block nil (not zero struct)", func(t *testing.T) {
+		got, err := parseOpenclawStatusJSON(`{"currentVersion":"2.0.0","tasks":null,"eventLoop":null}`, SystemVersions{})
+		if err != nil {
+			t.Fatalf("err: want nil, got %v", err)
+		}
+		if got.Tasks != nil {
+			t.Errorf("Tasks: want nil for explicit null, got %+v (would emit an empty block)", got.Tasks)
+		}
+		if got.EventLoop != nil {
+			t.Errorf("EventLoop: want nil for explicit null, got %+v", got.EventLoop)
+		}
+	})
+
+	// INT-2: a sub-block whose JSON shape does not match the typed struct
+	// (scalar where an object is expected) must degrade to nil — the re-decode
+	// mismatch is swallowed so one malformed block never fails the whole status
+	// parse. Guards decodeStatusField's json.Unmarshal-error branch.
+	t.Run("type-mismatched typed block degrades to nil, parse still succeeds", func(t *testing.T) {
+		got, err := parseOpenclawStatusJSON(`{"currentVersion":"2.0.0","tasks":5,"eventLoop":"oops"}`, SystemVersions{})
+		if err != nil {
+			t.Fatalf("err: want nil (malformed block must not fail parse), got %v", err)
+		}
+		if got.CurrentVersion != "2.0.0" {
+			t.Errorf("CurrentVersion = %q, want 2.0.0 (rest of status must still parse)", got.CurrentVersion)
+		}
+		if got.Tasks != nil {
+			t.Errorf("Tasks: want nil for scalar-where-object, got %+v", got.Tasks)
+		}
+		if got.EventLoop != nil {
+			t.Errorf("EventLoop: want nil for scalar-where-object, got %+v", got.EventLoop)
+		}
+	})
+
+	t.Run("minimal JSON leaves rich blocks nil (back-compat)", func(t *testing.T) {
+		out := `{"currentVersion":"2.0.0"}`
+		got, err := parseOpenclawStatusJSON(out, SystemVersions{})
+		if err != nil {
+			t.Fatalf("err: want nil, got %v", err)
+		}
+		if got.Tasks != nil || got.EventLoop != nil || got.PluginCompatibility != nil ||
+			got.LastHeartbeat != nil || got.ChannelSummary != nil {
+			t.Errorf("rich blocks must be nil for minimal JSON: tasks=%v el=%v pc=%v hb=%v cs=%v",
+				got.Tasks, got.EventLoop, got.PluginCompatibility, got.LastHeartbeat, got.ChannelSummary)
+		}
+	})
 }
 
 // TestDecodeJSONObjectFromOutput documents decodeJSONObjectFromOutput behavior including the first-brace-wins limitation.
@@ -154,12 +258,11 @@ func TestDecodeJSONObjectFromOutput(t *testing.T) {
 
 	t.Run("no brace returns error", func(t *testing.T) {
 		var m map[string]any
-		err := decodeJSONObjectFromOutput("no json here", &m)
-		if err == nil {
+		// No sentinel exists for this path; assert only that an error is
+		// returned, not its exact text (CLAUDE.md: avoid brittle error-text
+		// assertions that break on harmless message edits).
+		if err := decodeJSONObjectFromOutput("no json here", &m); err == nil {
 			t.Errorf("err: want non-nil, got nil")
-		}
-		if err != nil && !strings.Contains(err.Error(), "json object not found") {
-			t.Errorf("err text: want contains %q, got %q", "json object not found", err.Error())
 		}
 	})
 

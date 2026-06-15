@@ -2,7 +2,7 @@
 
 A beautiful, zero-dependency command center for [OpenClaw](https://github.com/openclaw/openclaw) AI agents.
 
-![Dashboard Full View](screenshots/00-full-dashboard.png)
+![OpenClaw Dashboard](screenshots/00-full-dashboard.png)
 
 ## Why This Exists
 
@@ -31,10 +31,10 @@ It's not trying to replace the OpenClaw CLI or Telegram interface. It's the at-a
 3. **⚠️ Alerts Banner** — Smart alerts for high costs, failed crons, high context usage, gateway offline
 4. **💚 System Health** — Gateway status, PID, uptime, memory, compaction mode, active session count
 5. **💰 Cost Cards** — Today's cost, all-time cost, projected monthly, cost breakdown donut chart
-6. **⏰ Cron Jobs** — All scheduled jobs with status, schedule, last/next run, duration, model
+6. **⏰ Cron Jobs** — All scheduled jobs with status, schedule, last/next run, duration, model, plus a delivery-outcome dot and a `⚡FLAPPING` badge for unstable jobs
 7. **📡 Active Sessions** — Recent sessions with model, type badges (DM/group/cron/subagent), context %, tokens
 8. **📊 Token Usage & Cost** — Per-model breakdown with 7d/30d/all-time tabs, usage bars, totals
-9. **🤖 Sub-Agent Activity** — Sub-agent runs with cost, duration, status + token breakdown (7d/30d tabs)
+9. **🤖 Sub-Agent Activity** — Sub-agent runs with agent, task, status, and duration (Today/7d/30d/all-time tabs), sourced from the gateway's durable task store
 10. **📈 Charts & Trends** — Cost trend line, model cost breakdown bars, sub-agent activity — all pure SVG, 7d/30d toggle
 11. **🧩 Bottom Row** — Available models grid, skills list, git log
 12. **💬 AI Chat** — Ask questions about your dashboard in natural language, powered by your OpenClaw gateway
@@ -57,6 +57,12 @@ It's not trying to replace the OpenClaw CLI or Telegram interface. It's the at-a
 - 🔍 **Runtime Observability** — `/api/system` includes live gateway runtime state (liveness, readiness, failing deps, uptime, PID, memory) sourced from `/healthz`, `/readyz`, and `openclaw status --json`
 - 🟡 **Gateway Readiness Alerts** — Alert banner shows `🟡 Gateway not ready: discord` (or any failing dep) and auto-clears on recovery
 - ⚡ **Gateway Runtime + Config Cards** — System Settings split into two panels: Gateway Runtime (live probes) and Gateway Config (static config snapshot)
+- 📶 **Live Channel Health** — Per-channel up/down driven by the gateway's own `/readyz failing[]`, so idle-but-healthy channels stop looking dead and actually-failing ones (bad token, API down) show red; falls back to the session-activity heuristic when the probe is unavailable
+- 📊 **Runtime Health Panel** — Task queue (active/total, failures, by-status breakdown), event-loop health + utilization, plugin-compatibility warnings, last-heartbeat age, and channel summary from `openclaw status --json` (event-loop/heartbeat require `system.deepStatus`)
+- 🐧 **Linux journald Logs** — On systemd hosts the gateway logs to journald with no file to tail; the Logs panel and error feed populate from `journalctl --user -u <unit>.service -o json` (configurable via `logs.systemdUnit`)
+- 🏷️ **Live Model Catalog** — Display names and context-window limits come from `openclaw models list --json`, so current and future models get real names and accurate context bars; the curated names win, the catalog fills unknown ids
+- 🔧 **Install-Independent Gateway Metadata** — PID/uptime/RSS read from openclaw's gateway lock file, correct on homebrew/binary/bun/source installs, not just npm
+- 📬 **Cron Delivery & Flapping** — Cron rows show whether a job actually delivered output and flag unstable jobs (`⚡FLAPPING`) from `consecutiveErrors`
 
 ## Quick Start
 
@@ -104,8 +110,10 @@ curl -L https://github.com/mudrii/openclaw-dashboard/releases/latest/download/op
 
 Verify download integrity:
 ```bash
-curl -L https://github.com/mudrii/openclaw-dashboard/releases/latest/download/checksums-sha256.txt -o checksums-sha256.txt
-shasum -a 256 -c checksums-sha256.txt
+archive=openclaw-dashboard-darwin-arm64.tar.gz
+curl -LO "https://github.com/mudrii/openclaw-dashboard/releases/latest/download/${archive}"
+curl -LO https://github.com/mudrii/openclaw-dashboard/releases/latest/download/checksums-sha256.txt
+grep "  ${archive}$" checksums-sha256.txt | shasum -a 256 -c -
 ```
 
 ### One-Line Install
@@ -303,7 +311,7 @@ The `/api/chat` endpoint accepts `{"question": "...", "history": [...]}` and for
 
 ### Frontend Module Structure
 
-The entire frontend lives in a single `<script>` tag inside `web/index.html` — zero dependencies, no build step. The JS is organized into 7 plain objects:
+The entire frontend lives in a single `<script>` tag inside `web/index.html` — zero dependencies, no build step. The JS is organized into small plain-object modules:
 
 ```
 ┌─────────────────────────────────────────────┐
@@ -329,13 +337,17 @@ The entire frontend lives in a single `<script>` tag inside `web/index.html` —
 
 | Module | Responsibility |
 |--------|----------------|
-| **State** | Single source of truth — holds `data`, `prev`, `tabs`, `countdown`. Produces immutable deep-frozen snapshots for each render cycle. |
+| **State** | Single source of truth — holds `data`, `prev`, `tabs`, `countdown`, and tab state. Produces immutable deep-frozen snapshots for each render cycle. |
 | **DataLayer** | Stateless fetch with `_reqId` counter for out-of-order protection. Returns parsed JSON or `null`. |
+| **LogTail** | Incremental log polling, filtering, pause/fast modes, and merged log rendering. |
+| **ErrorFeed** | Error-signature feed derived from `/api/errors`, including sort/window controls. |
 | **DirtyChecker** | Computes 13 boolean dirty flags by comparing current snapshot against `State.prev`. Uses `stableSnapshot()` to strip volatile timestamps from crons/sessions. |
 | **Renderer** | Pure DOM side-effects. Receives frozen snapshot + pre-computed flags, dispatches to 14 section renderers. Owns the agent hierarchy tree, recent-finished buffer, and all chart SVG rendering. |
+| **SystemBar** | Polls `/api/system`, renders host/runtime health, and feeds gateway readiness state back into the main health and alert panels. |
 | **Theme** | Self-contained theme engine — loads `themes.json`, applies CSS variables, persists choice to `localStorage`. |
+| **Sections** | Collapsible-section state and persistence. |
 | **Chat** | AI chat panel — manages history, sends stateless requests to `/api/chat`. |
-| **App** | Wiring layer — `init()` starts theme + timer + first fetch; `renderNow()` captures snapshot → computes flags → schedules render via `requestAnimationFrame`; `commitPrev(snap)` runs inside rAF to prevent fetch/paint races. |
+| **OCUI / App** | UI command handlers plus wiring layer — theme, timers, data refresh, render scheduling, and event handlers. |
 
 All inline `onclick` handlers route through `window.OCUI` — a thin namespace that calls `State.setTab()` / `App.renderNow()`. No bare globals remain outside the module objects and top-level utilities (`$`, `esc`, `safeColor`, `relTime`).
 
@@ -410,7 +422,9 @@ is usually the repo root. For `install.sh` installs it is
 | `system.gatewayTimeoutMs` | `5000` | Timeout for gateway liveness probe (ms) |
 | `system.coldPathTimeoutMs` | `8000` | Overall budget for a cold `/api/system` collection (ms) |
 | `system.cpuTimeoutMs` | `6000` | Timeout for CPU sampling on macOS and Linux (ms) |
+| `system.deepStatus` | `false` | Opt into `openclaw status --json --deep` for event-loop + last-heartbeat blocks (slower; lean status already gives task queue + plugin-compat + channel summary) |
 | `system.gatewayPort` | `18789` | Gateway port for health probes (defaults to `ai.gatewayPort`) |
+| `logs.systemdUnit` | `"openclaw-gateway"` | Systemd `--user` unit for the Linux journald log fallback (env `OPENCLAW_SYSTEMD_UNIT` overrides; `OPENCLAW_PROFILE` adds a suffix) |
 | `system.diskPath` | `"/"` | Filesystem path to report disk usage for |
 | `system.warnPercent` | `70` | Global warn threshold (% used) — overridden by per-metric values |
 | `system.criticalPercent` | `85` | Global critical threshold (% used) — overridden by per-metric values |
@@ -477,6 +491,11 @@ The top bar shows live host metrics — always visible above the alerts banner.
 | `openclaw.status.currentVersion` | Installed OpenClaw version |
 | `openclaw.status.latestVersion` | Latest published version (from npm) |
 | `openclaw.status.connectLatencyMs` | Gateway connection latency (ms) |
+| `openclaw.status.tasks` | Task-queue summary: `total`, `active`, `terminal`, `failures`, `byStatus`, `byRuntime` (lean status) |
+| `openclaw.status.eventLoop` | Event-loop health: `degraded`, `reasons`, `utilization`, `delayP99Ms`, … (deep status only — `system.deepStatus`) |
+| `openclaw.status.pluginCompatibility` | Plugin-compat warnings `{count, warnings}` (omitted when empty) |
+| `openclaw.status.lastHeartbeat` | Last heartbeat `{ts, status, channel, …}` (deep status only) |
+| `openclaw.status.channelSummary` | Pre-formatted channel status lines (lean status) |
 | `openclaw.freshness.gateway` | RFC3339 timestamp of last successful gateway probe |
 | `openclaw.freshness.status` | RFC3339 timestamp of last successful status probe |
 
@@ -538,7 +557,7 @@ Three always-visible SVG charts with 7d/30d toggle: cost trend over time, per-mo
 ---
 
 ### ⏰ Cron Jobs
-All scheduled jobs with status badges (active/idle/error), schedule expression, last run time, next run, duration, and the model used. At-a-glance view of your automation health.
+All scheduled jobs with status badges (active/idle/error), schedule expression, last run time, next run, duration, and the model used. A delivery-outcome dot shows whether the job actually delivered output, and a `⚡FLAPPING` badge flags jobs with repeated consecutive errors. At-a-glance view of your automation health.
 
 ![Cron Jobs](screenshots/03-cron-jobs.png)
 
@@ -559,7 +578,7 @@ Per-model token and cost breakdown with 7d / 30d / all-time tabs. Includes input
 ---
 
 ### 🤖 Sub-Agent Activity
-All sub-agent runs with cost, duration, status, and token breakdown. Separate 7d/30d tabs. Useful for tracking which tasks spawn the most agents and where spend is concentrated.
+All sub-agent runs with agent, task, status, and duration, across Today/7d/30d/all-time tabs. Runs come from OpenClaw's durable task store (`openclaw tasks list --runtime subagent`); per-run cost and token usage are not exposed by that store (and the zero-dependency build cannot read the gateway SQLite directly), so they are not shown. Useful for tracking which tasks spawn the most agents and how they fare.
 
 ![Sub-Agent Activity](screenshots/06-subagent-activity.png)
 

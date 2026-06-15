@@ -31,7 +31,8 @@ func RunRefreshCollector(ctx context.Context, dashboardDir, openclawPath string,
 	tmpPath := filepath.Join(dashboardDir, "data.json.tmp")
 	finalPath := filepath.Join(dashboardDir, "data.json")
 
-	if err := os.WriteFile(tmpPath, out, 0o600); err != nil {
+	if err := writeFileSync(tmpPath, out, 0o600); err != nil {
+		_ = os.Remove(tmpPath)
 		return fmt.Errorf("write data.json.tmp: %w", err)
 	}
 	if err := os.Rename(tmpPath, finalPath); err != nil {
@@ -39,6 +40,25 @@ func RunRefreshCollector(ctx context.Context, dashboardDir, openclawPath string,
 		return fmt.Errorf("rename data.json.tmp: %w", err)
 	}
 	return nil
+}
+
+// writeFileSync writes data to path and fsyncs it before returning, so a crash
+// or power loss between the write and the subsequent rename cannot leave a
+// zero-length or truncated file once the rename is observed.
+func writeFileSync(path string, data []byte, perm os.FileMode) error {
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, perm)
+	if err != nil {
+		return err
+	}
+	if _, err := f.Write(data); err != nil {
+		_ = f.Close()
+		return err
+	}
+	if err := f.Sync(); err != nil {
+		_ = f.Close()
+		return err
+	}
+	return f.Close()
 }
 
 var reStripTelegramID = regexp.MustCompile(`(?i)\s*\bid\b[\s:=\-]*\d+`)
@@ -64,9 +84,90 @@ func TrimLabel(s string) string {
 	return strings.TrimSpace(reStripTelegramID.ReplaceAllString(s, ""))
 }
 
+// catalogNameIsBareID reports whether a catalog display name is just the
+// model's bare id (the segment after the last "/"), case-insensitively — i.e.
+// openclaw registered no real display name for it.
+func catalogNameIsBareID(model, name string) bool {
+	bare := model
+	if i := strings.LastIndex(model, "/"); i >= 0 {
+		bare = model[i+1:]
+	}
+	return strings.EqualFold(strings.TrimSpace(name), strings.TrimSpace(bare))
+}
+
 // ModelName returns the human-friendly display name for a model identifier.
 // Falls back to the raw id when no friendly name is known.
+// upperFamily renders a bare family id like "glm-5.2" or "gpt-5.5" as
+// "GLM-5.2" / "GPT-5.5", uppercasing the family token while preserving the full
+// numeric version that a flat family label (e.g. "GLM-5") would otherwise drop.
+// Only the leading "-<digits and dots>" version is kept; tier/variant suffixes
+// (e.g. "-plus", "-air") collapse to the versioned family as before. id is the
+// lower-cased model segment; token is the family as it appears in id (e.g.
+// "glm"); prefix is its canonical upper-case label (e.g. "GLM").
+func upperFamily(id, token, prefix string) string {
+	i := strings.Index(id, token)
+	if i < 0 {
+		return prefix
+	}
+	rest := strings.TrimPrefix(id[i+len(token):], "-")
+	end := 0
+	for end < len(rest) && (rest[end] == '.' || (rest[end] >= '0' && rest[end] <= '9')) {
+		end++
+	}
+	if end == 0 {
+		return prefix
+	}
+	return prefix + "-" + rest[:end]
+}
+
+// claudeFamilyName renders an Anthropic id like "claude-opus-4-6" as
+// "Claude Opus 4.6", reading the dashed version after the family token (4-6 →
+// 4.6). A dash only continues the version when a digit follows, so a word suffix
+// (e.g. "-thinking") stops it. With no version it returns "Claude <family>".
+// token is the lower-case family as it appears in the id ("opus"); family is the
+// display label ("Opus").
+func claudeFamilyName(id, token, family string) string {
+	i := strings.Index(id, token)
+	if i < 0 {
+		return "Claude " + family
+	}
+	rest := strings.TrimPrefix(id[i+len(token):], "-")
+	if rest == "" {
+		return "Claude " + family
+	}
+	// Version parts are short numeric segments joined by dashes ("4-6" → 4.6).
+	// Stop at a long numeric segment (a YYYYMMDD date snapshot) or any
+	// non-numeric suffix (e.g. "-thinking").
+	var parts []string
+	for _, seg := range strings.Split(rest, "-") {
+		if len(seg) == 0 || len(seg) > 3 || !isAllDigits(seg) {
+			break
+		}
+		parts = append(parts, seg)
+	}
+	if len(parts) == 0 {
+		return "Claude " + family
+	}
+	return "Claude " + family + " " + strings.Join(parts, ".")
+}
+
+func isAllDigits(s string) bool {
+	for i := 0; i < len(s); i++ {
+		if s[i] < '0' || s[i] > '9' {
+			return false
+		}
+	}
+	return len(s) > 0
+}
+
 func ModelName(model string) string {
+	// Prefer the live catalog name, but ignore a catalog "name" that is merely
+	// the bare model id (openclaw's fallback when no friendly name is
+	// registered) — it is no better than the raw id and must not shadow a
+	// curated display name below.
+	if name, ok := catalogDisplayName(model); ok && !catalogNameIsBareID(model, name) {
+		return name
+	}
 	ml := strings.ToLower(model)
 	if strings.Contains(ml, "/") {
 		parts := strings.SplitN(ml, "/", 2)
@@ -83,14 +184,12 @@ func ModelName(model string) string {
 		return slices.Contains(segments, seg)
 	}
 	switch {
-	case strings.Contains(ml, "opus-4-6"):
-		return "Claude Opus 4.6"
 	case strings.Contains(ml, "opus"):
-		return "Claude Opus 4.5"
+		return claudeFamilyName(ml, "opus", "Opus")
 	case strings.Contains(ml, "sonnet"):
-		return "Claude Sonnet"
+		return claudeFamilyName(ml, "sonnet", "Sonnet")
 	case strings.Contains(ml, "haiku"):
-		return "Claude Haiku"
+		return claudeFamilyName(ml, "haiku", "Haiku")
 	case strings.Contains(ml, "grok-4-fast"):
 		return "Grok 4 Fast"
 	case strings.Contains(ml, "grok-4") || strings.Contains(ml, "grok4"):
@@ -101,18 +200,25 @@ func ModelName(model string) string {
 		return "Gemini 3 Flash"
 	case strings.Contains(ml, "gemini-2.5-flash"):
 		return "Gemini 2.5 Flash"
-	case strings.Contains(ml, "gemini") || strings.Contains(ml, "flash"):
+	case strings.Contains(ml, "flash"):
 		return "Gemini Flash"
+	case strings.Contains(ml, "gemini"):
+		// Tier-neutral: an unrecognized Gemini (Pro/Ultra/future) must not be
+		// mislabeled "Flash". A genuine flash id is caught by the case above.
+		return "Gemini"
 	case strings.Contains(ml, "minimax-m2.5"):
 		return "MiniMax M2.5"
 	case strings.Contains(ml, "minimax-m2") || strings.Contains(ml, "minimax"):
 		return "MiniMax"
 	case strings.Contains(ml, "glm-5"):
-		return "GLM-5"
+		return upperFamily(ml, "glm", "GLM")
 	case strings.Contains(ml, "glm-4"):
-		return "GLM-4"
-	case strings.Contains(ml, "k2p5") || strings.Contains(ml, "kimi"):
+		return upperFamily(ml, "glm", "GLM")
+	case strings.Contains(ml, "k2p5"):
 		return "Kimi K2.5"
+	case strings.Contains(ml, "kimi"):
+		// Tier-neutral: an unrecognized Kimi id must not be pinned to "K2.5".
+		return "Kimi"
 	case hasOSegment("o1"):
 		return "O1"
 	case hasOSegment("o3"):
@@ -120,11 +226,11 @@ func ModelName(model string) string {
 	case strings.Contains(ml, "gpt-5.3-codex"):
 		return "GPT-5.3 Codex"
 	case strings.Contains(ml, "gpt-5"):
-		return "GPT-5"
+		return upperFamily(ml, "gpt", "GPT")
 	case strings.Contains(ml, "gpt-4o"):
 		return "GPT-4o"
 	case strings.Contains(ml, "gpt-4"):
-		return "GPT-4"
+		return upperFamily(ml, "gpt", "GPT")
 	default:
 		return model
 	}
@@ -134,8 +240,6 @@ func ModelName(model string) string {
 // dashboard JSON payload. Most work is delegated to refresh_*.go siblings.
 func collectDashboardData(ctx context.Context, dashboardDir, openclawPath string, cfg appconfig.Config) map[string]any {
 	now := time.Now()
-	date7d := now.AddDate(0, 0, -7).Format("2006-01-02")
-	date30d := now.AddDate(0, 0, -30).Format("2006-01-02")
 	tzName := cfg.Timezone
 	if tzName == "" {
 		tzName = "UTC"
@@ -147,6 +251,14 @@ func collectDashboardData(ctx context.Context, dashboardDir, openclawPath string
 	}
 	now = now.In(loc)
 	todayStr := now.Format("2006-01-02")
+	// Windows are inclusive of today in the configured timezone: "7d" spans
+	// today + 6 prior days and "30d" today + 29 prior — matching the 30-bucket
+	// daily chart (refresh_chart.go counts i := 29; i >= 0) and todayStr, all of
+	// which derive from the loc-zoned now. These must be computed AFTER
+	// now.In(loc); doing so earlier skews the window by a day whenever the host
+	// zone differs from cfg.Timezone across a midnight boundary.
+	date7d := now.AddDate(0, 0, -6).Format("2006-01-02")
+	date30d := now.AddDate(0, 0, -29).Format("2006-01-02")
 
 	basePath := filepath.Join(openclawPath, "agents")
 	configPath := filepath.Join(openclawPath, "openclaw.json")
@@ -180,14 +292,32 @@ func collectDashboardData(ctx context.Context, dashboardDir, openclawPath string
 		memoryThresholdKB = 640 * 1024
 	}
 
+	// Refresh the live model display-name catalog (TTL-cached) BEFORE the
+	// collectors so ModelName resolves current model ids for crons — collected in
+	// the goroutine below — as well as sessions and token usage downstream.
+	refreshModelCatalog(ctx, now, 5*time.Minute)
+
 	// Kick off independent collectors concurrently.
 	var gateway map[string]any
 	var crons []map[string]any
 	var gitLog []map[string]any
 	var cwg sync.WaitGroup
 	cwg.Add(3)
-	go func() { defer cwg.Done(); gateway = collectGatewayHealth(ctx, cfg.AI.GatewayPort) }()
-	go func() { defer cwg.Done(); crons = CollectCrons(cronPath, loc) }()
+	go func() {
+		defer cwg.Done()
+		gateway = collectGatewayHealthWithLock(ctx, openclawPath, cfg.AI.GatewayPort)
+	}()
+	go func() {
+		defer cwg.Done()
+		// OpenClaw 2026.6+ moved cron jobs into shared SQLite, served via the
+		// gateway CLI. Prefer it; fall back to the legacy jobs.json file for
+		// pre-migration installs (or when the gateway is unavailable).
+		if c, ok := collectCronsViaCLI(ctx, nil, nil, loc); ok {
+			crons = c
+		} else {
+			crons = CollectCrons(cronPath, loc)
+		}
+	}()
 	go func() { defer cwg.Done(); gitLog = collectGitLog(ctx, openclawPath) }()
 
 	// OpenClaw config (file I/O — runs while subprocesses are in flight)
@@ -219,8 +349,11 @@ func collectDashboardData(ctx context.Context, dashboardDir, openclawPath string
 	sessionLiveModelTTL := time.Duration(cfg.Refresh.IntervalSeconds) * time.Second
 	sessionsList := collectSessions(ctx, sessionStores, basePath, loc, now, modelAliases, knownSIDs, sessionLiveModelTTL)
 
-	// Backfill channel connectivity from recent session activity
-	backfillChannelConnectivity(agentConfig, sessionsList)
+	// Backfill channel connectivity: gateway /readyz failing[] is authoritative
+	// for failures; on probe failure we fall back to the session-activity
+	// heuristic (failing is nil, so no channel is blanked).
+	readyzFailing, _ := readyzProbe(ctx, cfg.AI.GatewayPort)
+	backfillChannelConnectivity(agentConfig, sessionsList, readyzFailing)
 
 	// Token usage from JSONL
 	modelsAll := map[string]*TokenBucket{}
@@ -241,7 +374,11 @@ func collectDashboardData(ctx context.Context, dashboardDir, openclawPath string
 	// Build sessionId → session key map
 	sidToKey := BuildSIDToKeyMap(sessionStores)
 
-	subagentRuns := CollectTokenUsageWithCache(
+	// CollectTokenUsageWithCache drives the main per-model token usage and cost
+	// buckets (the primary Token Usage panel). Its subagent-run output is now
+	// empty — OpenClaw 2026.6+ moved subagent tracking out of session keys — so
+	// its return is discarded; subagent runs come from the durable tasks store.
+	CollectTokenUsageWithCache(
 		filepath.Join(dashboardDir, ".token-usage-cache.json"),
 		basePath, loc, todayStr, date7d, date30d,
 		knownSIDs, sidToKey, modelAliases,
@@ -249,6 +386,11 @@ func collectDashboardData(ctx context.Context, dashboardDir, openclawPath string
 		subagentAll, subagentToday, subagent7d, subagent30d,
 		dailyCosts, dailyTokens, dailyCalls, dailySubagentCosts, dailySubagentCount,
 	)
+
+	// OpenClaw 2026.6+ tracks subagent runs as durable tasks in shared SQLite,
+	// served via the gateway CLI. Cost/token data is unavailable there, so runs
+	// carry status/duration/agent metadata only.
+	subagentRuns := collectSubagentRuns(ctx, nil, nil, loc)
 
 	slices.SortFunc(subagentRuns, func(a, b map[string]any) int {
 		ta, _ := a["timestamp"].(string)

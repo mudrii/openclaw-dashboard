@@ -6,6 +6,7 @@ VERSION := $(shell cat VERSION 2>/dev/null || echo "dev")
 # Pinned govulncheck version — must match .github/workflows/tests.yml so local
 # and CI scans agree.
 GOVULNCHECK_VERSION := v1.3.0
+STATICCHECK_VERSION := v0.7.0
 
 # CGO is disabled so the binary is statically linked and matches the artefacts
 # produced by Dockerfile, .goreleaser.yml, and flake.nix. Re-enable CGO only if
@@ -37,7 +38,7 @@ vet:
 	go vet ./...
 
 staticcheck:
-	staticcheck ./...
+	go run honnef.co/go/tools/cmd/staticcheck@$(STATICCHECK_VERSION) ./...
 
 # Run govulncheck via `go run` so first-time contributors don't need a prior
 # `go install ...`. The version is pinned to match CI.

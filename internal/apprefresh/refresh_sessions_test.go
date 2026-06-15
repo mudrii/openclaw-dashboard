@@ -1,8 +1,174 @@
 package apprefresh
 
 import (
+	"context"
+	"encoding/json"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strconv"
 	"testing"
+	"time"
+
+	appconfig "github.com/mudrii/openclaw-dashboard/internal/appconfig"
 )
+
+// TestRunRefreshCollector_ReadyzFailingMarksChannelUnhealthy proves the INT-1
+// wire-up end to end: collectDashboardData queries the /readyz probe and feeds
+// failing[] into backfillChannelConnectivity, so a configured channel reported
+// failing by the gateway lands in data.json with health="unhealthy".
+func TestRunRefreshCollector_ReadyzFailingMarksChannelUnhealthy(t *testing.T) {
+	prev := readyzProbe
+	readyzProbe = func(_ context.Context, _ int) ([]string, bool) {
+		return []string{"telegram"}, true
+	}
+	t.Cleanup(func() { readyzProbe = prev })
+	// Hermetic: stub every exec/HTTP seam the collector touches so the test
+	// never shells out to a real openclaw/pgrep/gateway and never leaks a live
+	// model-catalog snapshot into the package globals other tests read.
+	stubPgrep(t, "", nil)
+	stubHealthz(t, false)
+	prevRunner := defaultModelCatalogCache.runner
+	defaultModelCatalogCache.runner = func(ctx context.Context, name string, args ...string) *exec.Cmd {
+		return exec.CommandContext(ctx, "printf", "")
+	}
+	t.Cleanup(func() { defaultModelCatalogCache.runner = prevRunner })
+	t.Cleanup(resetModelCatalogForTest)
+
+	tmp := t.TempDir()
+	dashboardDir := filepath.Join(tmp, "dashboard")
+	openclawPath := filepath.Join(tmp, "openclaw")
+	for _, d := range []string{
+		filepath.Join(openclawPath, "agents", "main", "sessions"),
+		filepath.Join(openclawPath, "cron"),
+		dashboardDir,
+	} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	openclawConfig := `{
+		"channels": {"telegram": {"enabled": true, "token": "x"}},
+		"agents": {"defaults": {"model": {"primary": "openai/gpt-5"}}, "list": [{"id": "main", "model": "openai/gpt-5"}]}
+	}`
+	if err := os.WriteFile(filepath.Join(openclawPath, "openclaw.json"), []byte(openclawConfig), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(openclawPath, "cron", "jobs.json"), []byte(`[]`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := appconfig.Default()
+	cfg.Timezone = "UTC"
+	cfg.Refresh.IntervalSeconds = 30
+	cfg.AI.GatewayPort = 18789
+
+	if err := RunRefreshCollector(context.Background(), dashboardDir, openclawPath, cfg); err != nil {
+		t.Fatalf("RunRefreshCollector() error = %v", err)
+	}
+	data, err := os.ReadFile(filepath.Join(dashboardDir, "data.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(data, &payload); err != nil {
+		t.Fatal(err)
+	}
+	agentConfig, _ := payload["agentConfig"].(map[string]any)
+	cs, _ := agentConfig["channelStatus"].(map[string]any)
+	tg, ok := cs["telegram"].(map[string]any)
+	if !ok {
+		t.Fatalf("channelStatus.telegram missing; channelStatus=%v", cs)
+	}
+	if tg["health"] != "unhealthy" {
+		t.Errorf("telegram health: want unhealthy (from /readyz failing[]), got %v", tg["health"])
+	}
+	if tg["connected"] != false {
+		t.Errorf("telegram connected: want false, got %v", tg["connected"])
+	}
+}
+
+// TestRunRefreshCollector_ReadyzProbeFailureKeepsHeuristic proves the INT-1
+// fallback end to end: when the /readyz probe fails (returns nil, false), the
+// collector must NOT blank channels — a channel with an active session still
+// reports connected=true/health="active" via the session-activity heuristic.
+func TestRunRefreshCollector_ReadyzProbeFailureKeepsHeuristic(t *testing.T) {
+	prev := readyzProbe
+	readyzProbe = func(_ context.Context, _ int) ([]string, bool) {
+		return nil, false // probe failed → caller must fall back to the heuristic
+	}
+	t.Cleanup(func() { readyzProbe = prev })
+	stubPgrep(t, "", nil)
+	stubHealthz(t, false)
+	prevRunner := defaultModelCatalogCache.runner
+	defaultModelCatalogCache.runner = func(ctx context.Context, name string, args ...string) *exec.Cmd {
+		return exec.CommandContext(ctx, "printf", "")
+	}
+	t.Cleanup(func() { defaultModelCatalogCache.runner = prevRunner })
+	t.Cleanup(resetModelCatalogForTest)
+
+	tmp := t.TempDir()
+	dashboardDir := filepath.Join(tmp, "dashboard")
+	openclawPath := filepath.Join(tmp, "openclaw")
+	for _, d := range []string{
+		filepath.Join(openclawPath, "agents", "work", "sessions"),
+		filepath.Join(openclawPath, "cron"),
+		dashboardDir,
+	} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	openclawConfig := `{
+		"channels": {"telegram": {"enabled": true, "token": "x"}},
+		"agents": {"defaults": {"model": {"primary": "openai/gpt-5"}}, "list": [{"id": "work", "model": "openai/gpt-5"}]}
+	}`
+	if err := os.WriteFile(filepath.Join(openclawPath, "openclaw.json"), []byte(openclawConfig), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(openclawPath, "cron", "jobs.json"), []byte(`[]`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// Active telegram session: updatedAt ~1 min ago → ageMin < 30 → active=true,
+	// so backfillChannelConnectivity's heuristic marks telegram connected.
+	recentMs := time.Now().Add(-1 * time.Minute).UnixMilli()
+	sessions := `{"agent:work:telegram:123:main":{"sessionId":"s1","updatedAt":` +
+		strconv.FormatInt(recentMs, 10) + `}}`
+	if err := os.WriteFile(filepath.Join(openclawPath, "agents", "work", "sessions", "sessions.json"), []byte(sessions), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := appconfig.Default()
+	cfg.Timezone = "UTC"
+	cfg.Refresh.IntervalSeconds = 30
+	cfg.AI.GatewayPort = 18789
+
+	if err := RunRefreshCollector(context.Background(), dashboardDir, openclawPath, cfg); err != nil {
+		t.Fatalf("RunRefreshCollector() error = %v", err)
+	}
+	data, err := os.ReadFile(filepath.Join(dashboardDir, "data.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(data, &payload); err != nil {
+		t.Fatal(err)
+	}
+	agentConfig, _ := payload["agentConfig"].(map[string]any)
+	cs, _ := agentConfig["channelStatus"].(map[string]any)
+	tg, ok := cs["telegram"].(map[string]any)
+	if !ok {
+		t.Fatalf("channelStatus.telegram missing; channelStatus=%v", cs)
+	}
+	if tg["connected"] != true {
+		t.Errorf("telegram connected: want true (heuristic survives probe failure), got %v", tg["connected"])
+	}
+	if tg["health"] != "active" {
+		t.Errorf("telegram health: want active (heuristic), got %v", tg["health"])
+	}
+}
 
 func TestBuildGroupNames_ExtractsSubject(t *testing.T) {
 	stores := []SessionStoreFile{{
@@ -73,7 +239,7 @@ func TestBackfillChannelConnectivity_MarksActive(t *testing.T) {
 			"slack":    map[string]any{"connected": true, "health": "ok"},
 		},
 	}
-	backfillChannelConnectivity(agentConfig, sessions)
+	backfillChannelConnectivity(agentConfig, sessions, nil)
 
 	cs := agentConfig["channelStatus"].(map[string]any)
 	tg := cs["telegram"].(map[string]any)
@@ -90,5 +256,59 @@ func TestBackfillChannelConnectivity_MarksActive(t *testing.T) {
 	sl := cs["slack"].(map[string]any)
 	if sl["connected"] != true || sl["health"] != "ok" {
 		t.Errorf("slack pre-existing values must not be overwritten, got %+v", sl)
+	}
+}
+
+// TestBackfillChannelConnectivity_FailingMarksUnhealthy proves the INT-1
+// /readyz integration: a channel whose config key appears in the gateway's
+// failing[] is forced connected=false / health="unhealthy", and this readiness
+// signal overrides the session-activity heuristic — a channel with a live
+// session but a failing token (e.g. revoked API credential) must still show red.
+func TestBackfillChannelConnectivity_FailingMarksUnhealthy(t *testing.T) {
+	sessions := []map[string]any{
+		{"key": "agent:work:telegram:123:main", "active": true}, // active but failing
+	}
+	agentConfig := map[string]any{
+		"channelStatus": map[string]any{
+			"telegram": map[string]any{"connected": nil, "health": nil},
+			"slack":    map[string]any{"connected": nil, "health": nil},
+		},
+	}
+	backfillChannelConnectivity(agentConfig, sessions, []string{"telegram"})
+
+	cs := agentConfig["channelStatus"].(map[string]any)
+	tg := cs["telegram"].(map[string]any)
+	if tg["connected"] != false {
+		t.Errorf("telegram connected: want false (failing overrides active session), got %v", tg["connected"])
+	}
+	if tg["health"] != "unhealthy" {
+		t.Errorf("telegram health: want unhealthy, got %v", tg["health"])
+	}
+	// slack is not failing and has no active session: heuristic leaves it unset.
+	sl := cs["slack"].(map[string]any)
+	if sl["connected"] != nil {
+		t.Errorf("slack should remain unset (not failing, no active session), got %v", sl["connected"])
+	}
+}
+
+// TestBackfillChannelConnectivity_NonChannelFailingTokenIgnored proves that
+// non-channel readiness reasons ("startup-sidecars", "internal") in failing[]
+// never create spurious channelStatus entries — only keys already present are
+// touched.
+func TestBackfillChannelConnectivity_NonChannelFailingTokenIgnored(t *testing.T) {
+	agentConfig := map[string]any{
+		"channelStatus": map[string]any{
+			"telegram": map[string]any{"connected": nil, "health": nil},
+		},
+	}
+	backfillChannelConnectivity(agentConfig, nil, []string{"startup-sidecars", "internal"})
+
+	cs := agentConfig["channelStatus"].(map[string]any)
+	if _, exists := cs["startup-sidecars"]; exists {
+		t.Errorf("non-channel token startup-sidecars must not create a channelStatus entry")
+	}
+	tg := cs["telegram"].(map[string]any)
+	if tg["connected"] != nil {
+		t.Errorf("telegram not in failing[]: want unset, got %v", tg["connected"])
 	}
 }

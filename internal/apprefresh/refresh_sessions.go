@@ -90,35 +90,50 @@ func enrichBindings(agentConfig map[string]any, groupNames map[string]string) {
 }
 
 func loadAgentDefaultModels(basePath string) map[string]string {
-	defaults := map[string]string{"main": "unknown", "work": "unknown", "group": "unknown"}
+	defaults := map[string]string{}
 	cfgPath := filepath.Join(basePath, "..", "openclaw.json")
 	data, err := os.ReadFile(cfgPath)
 	if err != nil {
-		return defaults
+		return map[string]string{"main": "unknown", "work": "unknown", "group": "unknown"}
 	}
 	var cfg map[string]any
 	if err := json.Unmarshal(data, &cfg); err != nil {
-		return defaults
+		return map[string]string{"main": "unknown", "work": "unknown", "group": "unknown"}
 	}
 	agents := jsonObj(cfg, "agents")
 	defs := jsonObj(agents, "defaults")
-	primary := jsonStr(jsonObj(defs, "model"), "primary")
+	primary := agentModelPrimary(defs["model"])
 	if primary == "" {
 		primary = "unknown"
 	}
 	for name, v := range agents {
-		if name == "defaults" {
+		if name == "defaults" || name == "list" {
 			continue
 		}
 		vm := asObj(v)
 		if vm == nil {
 			continue
 		}
-		model := jsonStr(jsonObj(vm, "model"), "primary")
+		model := agentModelPrimary(vm["model"])
 		if model == "" {
 			model = primary
 		}
 		defaults[name] = model
+	}
+	for _, entry := range jsonArr(agents, "list") {
+		vm := asObj(entry)
+		if vm == nil {
+			continue
+		}
+		id := jsonStr(vm, "id")
+		if id == "" {
+			continue
+		}
+		model := agentModelPrimary(vm["model"])
+		if model == "" {
+			model = primary
+		}
+		defaults[id] = model
 	}
 	for _, a := range []string{"main", "work", "group"} {
 		if _, ok := defaults[a]; !ok {
@@ -126,6 +141,17 @@ func loadAgentDefaultModels(basePath string) map[string]string {
 		}
 	}
 	return defaults
+}
+
+func agentModelPrimary(v any) string {
+	switch m := v.(type) {
+	case string:
+		return m
+	case map[string]any:
+		return jsonStr(m, "primary")
+	default:
+		return ""
+	}
 }
 
 func getSessionModel(basePath, agentName, sessionID string, agentDefaults map[string]string) string {
@@ -282,9 +308,7 @@ func collectSessions(ctx context.Context, stores []SessionStoreFile, basePath st
 			if displayName == "" {
 				displayName = keyShort
 			}
-			if len(displayName) > 50 {
-				displayName = displayName[:50]
-			}
+			displayName = truncateRunes(displayName, 50)
 
 			trigger := subject
 			if trigger == "" {
@@ -293,9 +317,7 @@ func collectSessions(ctx context.Context, stores []SessionStoreFile, basePath st
 			if trigger == "" {
 				trigger = rawLabel
 			}
-			if len(trigger) > 50 {
-				trigger = trigger[:50]
-			}
+			trigger = truncateRunes(trigger, 50)
 
 			// Resolve model with priority chain
 			gwModel := gatewayModelMap[key]
@@ -319,7 +341,10 @@ func collectSessions(ctx context.Context, stores []SessionStoreFile, basePath st
 			if resolvedModel == "" || resolvedModel == "unknown" {
 				resolvedModel = getSessionModel(basePath, agentName, sid, agentDefaults)
 			}
-			resolvedModel = aliasOrID(modelAliases, resolvedModel)
+			// Prettify through ModelName so the session model matches the Token
+			// Usage panel's display (full version, e.g. "GLM-5.2" not the raw
+			// "glm-5.2" alias); genuine custom aliases pass through unchanged.
+			resolvedModel = ModelName(aliasOrID(modelAliases, resolvedModel))
 
 			if ctxPct > 100 {
 				ctxPct = 100
@@ -353,7 +378,12 @@ func collectSessions(ctx context.Context, stores []SessionStoreFile, basePath st
 	return sessionsList
 }
 
-func backfillChannelConnectivity(agentConfig map[string]any, sessions []map[string]any) {
+func backfillChannelConnectivity(agentConfig map[string]any, sessions []map[string]any, failing []string) {
+	failingSet := make(map[string]bool, len(failing))
+	for _, f := range failing {
+		failingSet[f] = true
+	}
+
 	channelActive := map[string]bool{}
 	for _, s := range sessions {
 		key, _ := s["key"].(string)
@@ -378,6 +408,14 @@ func backfillChannelConnectivity(agentConfig map[string]any, sessions []map[stri
 	for chName, st := range cs {
 		sm, ok := st.(map[string]any)
 		if !ok {
+			continue
+		}
+		// Gateway readiness is authoritative: a channel reported in /readyz
+		// failing[] is forced unhealthy, overriding the activity heuristic
+		// (a channel can have a live session yet a revoked credential).
+		if failingSet[chName] {
+			sm["connected"] = false
+			sm["health"] = "unhealthy"
 			continue
 		}
 		if sm["connected"] == nil && channelActive[chName] {

@@ -5,6 +5,7 @@ import (
 	"bufio"
 	"cmp"
 	"container/heap"
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -63,16 +64,44 @@ var (
 	}
 )
 
-// ReadMergedLogs tails and parses log sources, returning entries in oldest-to-newest order.
+// ReadMergedLogs tails and parses log sources, returning entries in
+// oldest-to-newest order. The systemd unit for the journald fallback is
+// resolved from the environment (OPENCLAW_SYSTEMD_UNIT / OPENCLAW_PROFILE) and
+// the package default; callers with a configured unit should use
+// ReadMergedLogsWithUnit.
 func ReadMergedLogs(openclawPath string, sources []string, globalLimit int) ([]LogRecord, error) {
+	return ReadMergedLogsWithUnit(openclawPath, sources, globalLimit, ResolveSystemdUnit(""))
+}
+
+// ReadMergedLogsWithContext is ReadMergedLogs with caller cancellation support.
+func ReadMergedLogsWithContext(ctx context.Context, openclawPath string, sources []string, globalLimit int) ([]LogRecord, error) {
+	return ReadMergedLogsWithUnitContext(ctx, openclawPath, sources, globalLimit, ResolveSystemdUnit(""))
+}
+
+// ReadMergedLogsWithUnit is ReadMergedLogs with an explicit systemd unit name
+// for the Linux journald fallback. On Linux, when a source has no log file on
+// disk, gateway output is read from journald (systemd emits no log file) so the
+// Logs panel and error alerts still populate. On other platforms the journald
+// path is skipped entirely.
+func ReadMergedLogsWithUnit(openclawPath string, sources []string, globalLimit int, systemdUnit string) ([]LogRecord, error) {
+	return ReadMergedLogsWithUnitContext(context.Background(), openclawPath, sources, globalLimit, systemdUnit)
+}
+
+// ReadMergedLogsWithUnitContext is ReadMergedLogsWithUnit with caller
+// cancellation support for journald collection.
+func ReadMergedLogsWithUnitContext(ctx context.Context, openclawPath string, sources []string, globalLimit int, systemdUnit string) ([]LogRecord, error) {
 	if globalLimit <= 0 {
 		return nil, nil
 	}
 	if len(sources) == 0 {
 		return nil, nil
 	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
 
 	perSourceRecords := make([][]LogRecord, 0, len(sources))
+	journaldUsed := false
 	for _, source := range sources {
 		candidates := candidateLogPaths(openclawPath, source)
 		sourceRecords := make([]LogRecord, 0)
@@ -98,6 +127,15 @@ func ReadMergedLogs(openclawPath string, sources []string, globalLimit int) ([]L
 				sourceRecords = append(sourceRecords, record)
 			}
 		}
+		// Linux journald fallback: when no log file exists for this source,
+		// synthesize records from journalctl (systemd gateway logs have no
+		// file to tail). Skipped on non-Linux and when a file was found.
+		if len(sourceRecords) == 0 && journaldEnabled() && !journaldUsed && isGatewayLogSource(source) {
+			jctx, jcancel := context.WithTimeout(ctx, 5*time.Second)
+			sourceRecords = append(sourceRecords, collectJournaldRecords(jctx, systemdUnit, source, globalLimit)...)
+			jcancel()
+			journaldUsed = true
+		}
 		if len(sourceRecords) > 0 {
 			slices.SortFunc(sourceRecords, compareLogRecords)
 			sourceRecords = dedupeSortedLogRecords(sourceRecords)
@@ -106,6 +144,11 @@ func ReadMergedLogs(openclawPath string, sources []string, globalLimit int) ([]L
 	}
 
 	return mergeLatestRecords(perSourceRecords, globalLimit), nil
+}
+
+func isGatewayLogSource(source string) bool {
+	name := strings.ToLower(filepath.Base(source))
+	return strings.Contains(name, "gateway")
 }
 
 type logRecordDedupKey struct {
@@ -485,7 +528,7 @@ func readTailLines(path string, limit int) ([]string, error) {
 			continue
 		}
 		if len(line) > readTailMaxLineBytes {
-			line = line[:readTailMaxLineBytes]
+			line = truncateBytes(line, readTailMaxLineBytes) // rune-safe byte cap
 		}
 		ring[write] = line
 		write = (write + 1) % limit

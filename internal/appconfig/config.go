@@ -61,6 +61,7 @@ type LogsConfig struct {
 	ErrorWindowHours     int      `json:"errorWindowHours"`
 	MaxErrorSignatures   int      `json:"maxErrorSignatures"`
 	Sources              []string `json:"sources"`
+	SystemdUnit          string   `json:"systemdUnit,omitempty"`
 	LogSources           []string `json:"log_sources"`
 	LogTailLines         int      `json:"log_tail_lines"`
 	LogFastRefreshMs     int      `json:"log_fast_refresh_ms"`
@@ -85,6 +86,10 @@ type SystemConfig struct {
 	MetricsTTLSeconds  int  `json:"metricsTtlSeconds"`
 	VersionsTTLSeconds int  `json:"versionsTtlSeconds"`
 	GatewayTimeoutMs   int  `json:"gatewayTimeoutMs"`
+	// DeepStatus opts into `openclaw status --json --deep`, which adds the
+	// event-loop and last-heartbeat blocks at the cost of a slower status call.
+	// Default off (lean status: task queue + plugin-compat + channel summary).
+	DeepStatus bool `json:"deepStatus,omitempty"`
 	// ColdPathTimeoutMs bounds the worst-case wall time of a cold /api/system
 	// collection (no warm cache). Each subcollector still has its own per-probe
 	// timeout; this is the overall budget that prevents a slow gateway from
@@ -256,6 +261,12 @@ func Load(dir string) Config {
 	}
 	if len(cfg.Logs.Sources) == 0 && len(cfg.Logs.LogSources) > 0 {
 		cfg.Logs.Sources = append([]string{}, cfg.Logs.LogSources...)
+	}
+	if len(cfg.Logs.Sources) == 0 {
+		// An empty/omitted sources list falls back to the built-in defaults so
+		// the log feed is never silently left with zero sources, consistent
+		// with how every other Logs field clamps to a sane default.
+		cfg.Logs.Sources = append([]string{}, Default().Logs.Sources...)
 	}
 	if cfg.Logs.TailLines <= 0 && cfg.Logs.LogTailLines > 0 {
 		cfg.Logs.TailLines = cfg.Logs.LogTailLines

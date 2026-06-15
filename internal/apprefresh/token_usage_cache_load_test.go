@@ -1,8 +1,10 @@
 package apprefresh
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 )
 
@@ -44,15 +46,36 @@ func TestLoadTokenUsageCache_Recompute(t *testing.T) {
 // cache is preserved (not discarded).
 func TestLoadTokenUsageCache_ValidRoundTrips(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "cache.json")
-	body := `{"version":2,"files":{"sess.jsonl":{"size":10,"modTimeUnixNano":123}}}`
-	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+	want := tokenUsageCache{
+		Version: tokenUsageCacheVersion,
+		Files: map[string]tokenUsageFileSummary{
+			"sess.jsonl": {
+				Size:            10,
+				ModTimeUnixNano: 123,
+				SessionModel:    "openai/gpt-5",
+				Models: map[string]TokenBucket{
+					"openai/gpt-5": {Calls: 1, Input: 60, Output: 40, Total: 100, Cost: 0.12},
+				},
+				Daily: map[string]map[string]TokenBucket{
+					"2026-03-22": {
+						"openai/gpt-5": {Calls: 1, Input: 60, Output: 40, Total: 100, Cost: 0.12},
+					},
+				},
+			},
+		},
+	}
+	body, err := json.Marshal(want)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, body, 0o600); err != nil {
 		t.Fatal(err)
 	}
 	got := loadTokenUsageCache(path)
 	if got.Version != tokenUsageCacheVersion {
 		t.Fatalf("Version = %d, want %d", got.Version, tokenUsageCacheVersion)
 	}
-	if _, ok := got.Files["sess.jsonl"]; !ok {
-		t.Errorf("expected file entry preserved, got %v", got.Files)
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("cache mismatch:\ngot  %+v\nwant %+v", got, want)
 	}
 }

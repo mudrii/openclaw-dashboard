@@ -54,9 +54,7 @@ func BuildAlerts(totalCostToday, costHigh, costWarn float64,
 		pct, _ := s["contextPct"].(float64)
 		if pct > contextThreshold {
 			name, _ := s["name"].(string)
-			if len(name) > 30 {
-				name = name[:30]
-			}
+			name = truncateRunes(name, 30)
 			alerts = append(alerts, map[string]any{
 				"type": "warning", "icon": "⚠️",
 				"message":  fmt.Sprintf("High context: %s (%.0f%%)", name, pct),

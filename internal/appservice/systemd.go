@@ -30,6 +30,9 @@ Type=simple
 WorkingDirectory={{systemdQuote .WorkDir}}
 Environment={{systemdQuote (printf "OPENCLAW_HOME=%s" .OpenclawHome)}}
 Environment={{systemdQuote (printf "PATH=%s" .PathEnv)}}
+{{- if .AllowNonLoopback}}
+Environment="OPENCLAW_DASHBOARD_ALLOW_NON_LOOPBACK=1"
+{{- end}}
 ExecStart={{systemdQuote .BinPath}} --bind {{systemdQuote .Host}} --port {{.Port}}
 Restart=always
 RestartSec=5
@@ -39,12 +42,13 @@ WantedBy=default.target
 `))
 
 type unitData struct {
-	BinPath      string
-	Host         string
-	Port         int
-	WorkDir      string
-	OpenclawHome string
-	PathEnv      string
+	BinPath          string
+	Host             string
+	Port             int
+	WorkDir          string
+	OpenclawHome     string
+	PathEnv          string
+	AllowNonLoopback bool
 }
 
 var unitPortRe = regexp.MustCompile(`(?:^|\s)--port\s+"?([0-9]+)"?`)
@@ -105,12 +109,13 @@ func (sb *systemdBackend) Install(cfg InstallConfig) error {
 		return fmt.Errorf("resolve OPENCLAW_HOME: %w", err)
 	}
 	data := unitData{
-		BinPath:      cfg.BinPath,
-		Host:         cfg.Host,
-		Port:         cfg.Port,
-		WorkDir:      cfg.WorkDir,
-		OpenclawHome: openclawHome,
-		PathEnv:      systemdPathEnv(),
+		BinPath:          cfg.BinPath,
+		Host:             cfg.Host,
+		Port:             cfg.Port,
+		WorkDir:          cfg.WorkDir,
+		OpenclawHome:     openclawHome,
+		PathEnv:          systemdPathEnv(),
+		AllowNonLoopback: cfg.AllowNonLoopback,
 	}
 	var buf bytes.Buffer
 	if err := unitTmpl.Execute(&buf, data); err != nil {
@@ -250,8 +255,14 @@ func (sb *systemdBackend) Status() (ServiceStatus, error) {
 		st.PID = n
 	}
 	if ts, ok := props["ActiveEnterTimestamp"]; ok && ts != "" {
-		if t, err := time.Parse("2006-01-02 15:04:05 MST", ts); err == nil {
-			st.Uptime = time.Since(t)
+		// systemd's default ActiveEnterTimestamp carries a leading weekday
+		// (e.g. "Tue 2026-04-08 10:00:00 UTC"). Try the weekday layout first,
+		// then fall back to the bare form for non-default --timestamp settings.
+		for _, layout := range []string{"Mon 2006-01-02 15:04:05 MST", "2006-01-02 15:04:05 MST"} {
+			if t, err := time.Parse(layout, ts); err == nil {
+				st.Uptime = time.Since(t)
+				break
+			}
 		}
 	}
 

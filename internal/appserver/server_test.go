@@ -7,7 +7,6 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	appconfig "github.com/mudrii/openclaw-dashboard/internal/appconfig"
@@ -115,6 +114,46 @@ func TestServeHTTP_CORS_IPv6Loopback(t *testing.T) {
 	}
 }
 
+// TestServeHTTP_CORS_NonLoopbackDefaulted exercises the else-branch in
+// setCORSHeaders: a non-loopback Origin must NOT be reflected. Instead the
+// server returns its configured corsDefault, and never sets
+// Access-Control-Allow-Credentials (so a cross-origin request cannot carry
+// cookies/auth even if a browser ignored the origin mismatch). The
+// localhost.evil.com case guards against a substring bypass of the
+// "http://localhost:" prefix check.
+func TestServeHTTP_CORS_NonLoopbackDefaulted(t *testing.T) {
+	tests := []struct {
+		name   string
+		origin string
+	}{
+		{name: "external https origin", origin: "https://evil.example.com"},
+		{name: "localhost lookalike host", origin: "http://localhost.evil.com:1234"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			s := newTestServer(t)
+			req := httptest.NewRequest(http.MethodOptions, "/api/chat", nil)
+			req.Header.Set("Origin", tc.origin)
+			w := httptest.NewRecorder()
+			s.ServeHTTP(w, req)
+
+			if w.Code != http.StatusNoContent {
+				t.Fatalf("expected 204, got %d", w.Code)
+			}
+			acao := w.Header().Get("Access-Control-Allow-Origin")
+			if acao == tc.origin {
+				t.Fatalf("non-loopback origin %q was reflected; must not be", tc.origin)
+			}
+			if acao != s.corsDefault {
+				t.Fatalf("Access-Control-Allow-Origin = %q, want corsDefault %q", acao, s.corsDefault)
+			}
+			if cred := w.Header().Get("Access-Control-Allow-Credentials"); cred != "" {
+				t.Fatalf("Access-Control-Allow-Credentials must be absent, got %q", cred)
+			}
+		})
+	}
+}
+
 func TestServeHTTP_UnknownRoute(t *testing.T) {
 	s := newTestServer(t)
 	req := httptest.NewRequest(http.MethodGet, "/nonexistent", nil)
@@ -157,8 +196,14 @@ func TestSendJSON_MarshalError(t *testing.T) {
 	if w.Code != http.StatusInternalServerError {
 		t.Errorf("expected 500 on marshal error, got %d", w.Code)
 	}
-	if !strings.Contains(w.Body.String(), "internal server error") {
-		t.Errorf("expected internal server error message, got %q", w.Body.String())
+	// Assert the contract — valid JSON carrying an "error" key — rather than the
+	// exact human-readable string, which is not part of the wire contract.
+	var out map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &out); err != nil {
+		t.Fatalf("expected valid JSON error body, got %q (err=%v)", w.Body.String(), err)
+	}
+	if _, ok := out["error"]; !ok {
+		t.Errorf("expected an \"error\" key in body, got %v", out)
 	}
 }
 

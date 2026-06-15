@@ -42,8 +42,19 @@ func lookupModelLimits(oc map[string]any, modelID string) (contextWindow, maxTok
 			continue
 		}
 		if jsonStr(em, "id") == mid {
-			return em["contextWindow"], em["maxTokens"]
+			cw := em["contextWindow"]
+			if cw == nil {
+				if w, ok := catalogContextWindow(modelID); ok {
+					cw = w
+				}
+			}
+			return cw, em["maxTokens"]
 		}
+	}
+	// No registry entry: the live model catalog can still supply a context
+	// window for stock configs that rely on openclaw's internal catalog.
+	if w, ok := catalogContextWindow(modelID); ok {
+		return w, nil
 	}
 	return nil, nil
 }
@@ -207,16 +218,39 @@ func parseSkills(oc map[string]any) []map[string]any {
 }
 
 func parseModelDefaults(defaults map[string]any) (primary string, fallbacks []string, imageModel string, models map[string]any) {
-	modelCfg := jsonObj(defaults, "model")
-	primary = jsonStr(modelCfg, "primary")
-	for _, f := range jsonArr(modelCfg, "fallbacks") {
-		if s, ok := f.(string); ok {
-			fallbacks = append(fallbacks, s)
+	// defaults.model is either a {primary, fallbacks} object (legacy) or a bare
+	// model-id string (OpenClaw 2026.6+). The old code read only the object form,
+	// leaving primary empty on string-form configs so agents rendered no model.
+	switch m := defaults["model"].(type) {
+	case map[string]any:
+		primary = jsonStr(m, "primary")
+		for _, f := range jsonArr(m, "fallbacks") {
+			if s, ok := f.(string); ok {
+				fallbacks = append(fallbacks, s)
+			}
 		}
+	case string:
+		primary = m
 	}
 	imageModel = jsonStr(jsonObj(defaults, "imageModel"), "primary")
+	if imageModel == "" {
+		if s, ok := defaults["imageModel"].(string); ok {
+			imageModel = s
+		}
+	}
 	models = jsonObj(defaults, "models")
 	return
+}
+
+// agentModelDisplay returns the friendly alias for a model id when one is
+// configured, otherwise the id prettified through ModelName (catalog/curated).
+// Keeping a genuine alias verbatim avoids ModelName collapsing an already-nice
+// name (e.g. "MiniMax M3" → "MiniMax").
+func agentModelDisplay(modelAliases map[string]string, model string) string {
+	if d := aliasOrID(modelAliases, model); d != model {
+		return d
+	}
+	return ModelName(model)
 }
 
 func parseAvailableModels(models map[string]any, primary string) ([]map[string]any, map[string]string) {
@@ -225,8 +259,13 @@ func parseAvailableModels(models map[string]any, primary string) ([]map[string]a
 	for _, mid := range sortedJSONKeys(models) {
 		mc := asObj(models[mid])
 		alias := jsonStr(mc, "alias")
+		// Grid display name: a genuine openclaw alias verbatim, otherwise the raw
+		// id prettified through ModelName so the Models grid matches every other
+		// panel (e.g. "MiniMax M3" / "Claude Opus 4.7" not the bare id).
+		name := alias
 		if alias == "" {
 			alias = mid
+			name = ModelName(mid)
 		}
 		aliases[mid] = alias
 		provider := "unknown"
@@ -238,7 +277,7 @@ func parseAvailableModels(models map[string]any, primary string) ([]map[string]a
 			status = "active"
 		}
 		out = append(out, map[string]any{
-			"provider": provider, "name": alias, "id": mid, "status": status,
+			"provider": provider, "name": name, "id": mid, "status": status,
 		})
 	}
 	return out, aliases
@@ -451,7 +490,7 @@ func parseAgents(agents map[string]any, primary string, fallbacks []string, mode
 		}
 		out = append(out, map[string]any{
 			"id": "default", "role": "Default",
-			"model": aliasOrID(modelAliases, primary), "modelId": primary,
+			"model": agentModelDisplay(modelAliases, primary), "modelId": primary,
 			"workspace": "~/.openclaw/workspace", "isDefault": true,
 			"context1m": ctx1m,
 		})
@@ -516,7 +555,7 @@ func parseAgents(agents map[string]any, primary string, fallbacks []string, mode
 		}
 		out = append(out, map[string]any{
 			"id": aid, "role": role,
-			"model":     aliasOrID(modelAliases, amodel),
+			"model":     agentModelDisplay(modelAliases, amodel),
 			"modelId":   amodel,
 			"workspace": jsonStrDefault(am, "workspace", "~/.openclaw/workspace"),
 			"isDefault": isDefault,

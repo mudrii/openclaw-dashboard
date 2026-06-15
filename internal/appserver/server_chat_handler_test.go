@@ -6,8 +6,10 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -146,17 +148,31 @@ func TestHandleChat_SuccessHitsGateway(t *testing.T) {
 	dir := t.TempDir()
 	writeMinimalDataJSON(t, dir)
 
-	// Spin a fake gateway on a free localhost port matching the handler's URL shape.
+	// Fake gateway via httptest (ready listener — no busy-wait needed). The
+	// handler builds http://localhost:<port>/v1/chat/completions, and
+	// httptest.Server binds 127.0.0.1:<port> which localhost resolves to.
 	mux := http.NewServeMux()
 	mux.HandleFunc("/v1/chat/completions", func(w http.ResponseWriter, r *http.Request) {
+		// Assert the server forwards the gateway token and configured model so
+		// dropping either would fail this test.
+		if auth := r.Header.Get("Authorization"); auth != "Bearer tok" {
+			t.Errorf("Authorization = %q, want %q", auth, "Bearer tok")
+		}
+		var body struct {
+			Model string `json:"model"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Errorf("decode gateway request body: %v", err)
+		}
+		if body.Model != "test-model" {
+			t.Errorf("request model = %q, want %q", body.Model, "test-model")
+		}
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{"choices":[{"message":{"content":"hello back"}}]}`))
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"hello back"}}]}`))
 	})
-	port := freePort(t)
-	srv := &http.Server{Addr: "127.0.0.1:" + itoa(port), Handler: mux}
-	go func() { _ = srv.ListenAndServe() }()
-	t.Cleanup(func() { _ = srv.Close() })
-	waitListening(t, port)
+	gw := httptest.NewServer(mux)
+	t.Cleanup(gw.Close)
+	port := gatewayPort(t, gw)
 
 	s := chatTestServer(t, dir, port)
 	w := mustPostChat(t, s, `{"question":"ping"}`)
@@ -164,21 +180,201 @@ func TestHandleChat_SuccessHitsGateway(t *testing.T) {
 		t.Fatalf("want 200, got %d body=%s", w.Code, w.Body.String())
 	}
 	var out map[string]string
-	_ = json.Unmarshal(w.Body.Bytes(), &out)
+	if err := json.Unmarshal(w.Body.Bytes(), &out); err != nil {
+		t.Fatalf("unmarshal response body %q: %v", w.Body.String(), err)
+	}
 	if out["answer"] != "hello back" {
 		t.Errorf("want answer 'hello back', got %q", out["answer"])
 	}
 }
 
-func TestHandleChat_GatewayError504(t *testing.T) {
+func TestHandleChat_GatewayError502(t *testing.T) {
 	dir := t.TempDir()
 	writeMinimalDataJSON(t, dir)
-	// Point at a port that nothing listens on → connection refused, fast.
-	s := chatTestServer(t, dir, 1) // port 1 is privileged, refused for unprivileged user
+	// freePort returns a port we opened then immediately closed — nothing is
+	// listening, so the connection is refused fast and deterministically. A
+	// refused dial (not a timeout) surfaces as 502 Bad Gateway.
+	s := chatTestServer(t, dir, freePort(t))
 
 	w := mustPostChat(t, s, `{"question":"ping"}`)
-	if w.Code != http.StatusBadGateway && w.Code != http.StatusGatewayTimeout {
-		t.Fatalf("want 502/504, got %d body=%s", w.Code, w.Body.String())
+	if w.Code != http.StatusBadGateway {
+		t.Fatalf("want 502, got %d body=%s", w.Code, w.Body.String())
+	}
+}
+
+func TestHandleChat_GatewayErrorDoesNotExposeUpstreamBodyOrToken(t *testing.T) {
+	dir := t.TempDir()
+	writeMinimalDataJSON(t, dir)
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/v1/chat/completions", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte("stack trace echoed Bearer tok"))
+	})
+	gw := httptest.NewServer(mux)
+	t.Cleanup(gw.Close)
+
+	s := chatTestServer(t, dir, gatewayPort(t, gw))
+	w := mustPostChat(t, s, `{"question":"ping"}`)
+	if w.Code != http.StatusBadGateway {
+		t.Fatalf("want 502, got %d body=%s", w.Code, w.Body.String())
+	}
+	body := w.Body.String()
+	if strings.Contains(body, "tok") || strings.Contains(body, "stack trace") {
+		t.Fatalf("response leaked upstream body or token: %s", body)
+	}
+	var out map[string]string
+	if err := json.Unmarshal(w.Body.Bytes(), &out); err != nil {
+		t.Fatalf("invalid JSON response: %v", err)
+	}
+	if out["error"] != "gateway unavailable" {
+		t.Errorf("error = %q, want gateway unavailable", out["error"])
+	}
+}
+
+func TestHandleChat_SanitizesHistoryBeforeGatewayRequest(t *testing.T) {
+	dir := t.TempDir()
+	writeMinimalDataJSON(t, dir)
+
+	type gatewayMessage struct {
+		Role    string `json:"role"`
+		Content string `json:"content"`
+	}
+	var got struct {
+		Messages []gatewayMessage `json:"messages"`
+	}
+	mux := http.NewServeMux()
+	mux.HandleFunc("/v1/chat/completions", func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&got); err != nil {
+			t.Errorf("decode gateway request: %v", err)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"ok"}}]}`))
+	})
+	gw := httptest.NewServer(mux)
+	t.Cleanup(gw.Close)
+
+	s := chatTestServer(t, dir, gatewayPort(t, gw))
+	long := strings.Repeat("x", maxHistoryItem+3)
+	body, err := json.Marshal(map[string]any{
+		"question": "current question",
+		"history": []map[string]string{
+			{"role": "user", "content": "old dropped by max history"},
+			{"role": "assistant", "content": "also dropped by max history"},
+			{"role": "tool", "content": "invalid role dropped"},
+			{"role": "user", "content": long},
+			{"role": "assistant", "content": "kept"},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	w := mustPostChat(t, s, string(body))
+	if w.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d body=%s", w.Code, w.Body.String())
+	}
+	if len(got.Messages) != 4 {
+		t.Fatalf("gateway messages = %#v, want system + 2 history + current question", got.Messages)
+	}
+	if got.Messages[1].Role != "user" || len([]rune(got.Messages[1].Content)) != maxHistoryItem {
+		t.Fatalf("history user not truncated on rune boundary: role=%q len=%d", got.Messages[1].Role, len([]rune(got.Messages[1].Content)))
+	}
+	if got.Messages[2] != (gatewayMessage{Role: "assistant", Content: "kept"}) {
+		t.Fatalf("assistant history = %#v, want kept", got.Messages[2])
+	}
+	if got.Messages[3] != (gatewayMessage{Role: "user", Content: "current question"}) {
+		t.Fatalf("current question message = %#v", got.Messages[3])
+	}
+}
+
+// TestHandleChat_BodyCapBoundary pins the exact body-size boundary. The handler
+// reads LimitReader(maxBodyBytes+1) then rejects len > maxBodyBytes, so a body of
+// exactly maxBodyBytes is accepted and maxBodyBytes+1 is rejected with 413. A
+// success gateway is wired so the exact-size case reaches 200, proving it passed
+// the cap rather than failing for an unrelated reason.
+func TestHandleChat_BodyCapBoundary(t *testing.T) {
+	dir := t.TempDir()
+	writeMinimalDataJSON(t, dir)
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/v1/chat/completions", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"ok"}}]}`))
+	})
+	gw := httptest.NewServer(mux)
+	t.Cleanup(gw.Close)
+	s := chatTestServer(t, dir, gatewayPort(t, gw))
+
+	// Build a valid-JSON body whose total length is exactly target bytes. The
+	// question stays short (the 2000-char question cap is a separate gate); the
+	// padding goes into an unknown "_pad" key that json.Unmarshal ignores, so
+	// the only gate the exact-max body can trip is the body cap itself.
+	bodyOfSize := func(target int) string {
+		const envelope = `{"question":"hi","_pad":""}`
+		pad := target - len(envelope)
+		if pad < 0 {
+			t.Fatalf("target %d smaller than envelope", target)
+		}
+		return `{"question":"hi","_pad":"` + strings.Repeat("a", pad) + `"}`
+	}
+
+	tests := []struct {
+		name     string
+		size     int
+		wantCode int
+	}{
+		{name: "exactly maxBodyBytes is accepted", size: maxBodyBytes, wantCode: http.StatusOK},
+		{name: "maxBodyBytes+1 is rejected", size: maxBodyBytes + 1, wantCode: http.StatusRequestEntityTooLarge},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			body := bodyOfSize(tc.size)
+			if len(body) != tc.size {
+				t.Fatalf("constructed body len = %d, want %d", len(body), tc.size)
+			}
+			w := mustPostChat(t, s, body)
+			if w.Code != tc.wantCode {
+				t.Fatalf("body size %d: got %d, want %d (body=%s)", tc.size, w.Code, tc.wantCode, w.Body.String())
+			}
+		})
+	}
+}
+
+// timeoutRoundTripper returns a *url.Error whose Timeout() reports true,
+// reproducing an http.Client.Timeout firing without any wall-clock sleep or
+// real network. CallGateway classifies this as a 504 GatewayTimeout.
+type timeoutRoundTripper struct{}
+
+func (timeoutRoundTripper) RoundTrip(r *http.Request) (*http.Response, error) {
+	return nil, &url.Error{Op: "Post", URL: r.URL.String(), Err: timeoutErr{}}
+}
+
+type timeoutErr struct{}
+
+func (timeoutErr) Error() string   { return "request timed out" }
+func (timeoutErr) Timeout() bool   { return true }
+func (timeoutErr) Temporary() bool { return true }
+
+// TestHandleChat_GatewayTimeoutReturns504 drives the real CallGateway timeout
+// classification (a *url.Error with Timeout()==true) through handleChat and
+// asserts the 504 status plus the user-facing "gateway timed out" message.
+func TestHandleChat_GatewayTimeoutReturns504(t *testing.T) {
+	dir := t.TempDir()
+	writeMinimalDataJSON(t, dir)
+	s := chatTestServer(t, dir, 1)
+	s.httpClient = &http.Client{Transport: timeoutRoundTripper{}}
+
+	w := mustPostChat(t, s, `{"question":"ping"}`)
+	if w.Code != http.StatusGatewayTimeout {
+		t.Fatalf("want 504, got %d body=%s", w.Code, w.Body.String())
+	}
+	var out map[string]string
+	if err := json.Unmarshal(w.Body.Bytes(), &out); err != nil {
+		t.Fatalf("invalid JSON response %q: %v", w.Body.String(), err)
+	}
+	if out["error"] != "gateway timed out" {
+		t.Errorf("error = %q, want %q", out["error"], "gateway timed out")
 	}
 }
 
@@ -242,40 +438,16 @@ func freePort(t *testing.T) int {
 	return port
 }
 
-func itoa(n int) string {
-	return strings.TrimSpace(formatInt(n))
-}
-
-func formatInt(n int) string {
-	if n == 0 {
-		return "0"
-	}
-	neg := n < 0
-	if neg {
-		n = -n
-	}
-	var buf [20]byte
-	i := len(buf)
-	for n > 0 {
-		i--
-		buf[i] = byte('0' + n%10)
-		n /= 10
-	}
-	if neg {
-		i--
-		buf[i] = '-'
-	}
-	return string(buf[i:])
-}
-
-func waitListening(t *testing.T, port int) {
+// gatewayPort extracts the integer port a running httptest.Server is bound to.
+func gatewayPort(t *testing.T, srv *httptest.Server) int {
 	t.Helper()
-	for i := 0; i < 50; i++ {
-		c, err := net.Dial("tcp", "127.0.0.1:"+itoa(port))
-		if err == nil {
-			_ = c.Close()
-			return
-		}
+	_, portStr, err := net.SplitHostPort(strings.TrimPrefix(srv.URL, "http://"))
+	if err != nil {
+		t.Fatalf("parse httptest URL %q: %v", srv.URL, err)
 	}
-	t.Fatalf("gateway did not start listening on port %d", port)
+	port, err := strconv.Atoi(portStr)
+	if err != nil {
+		t.Fatalf("parse port %q: %v", portStr, err)
+	}
+	return port
 }
