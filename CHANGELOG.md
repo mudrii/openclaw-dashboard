@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased (branch `feature_fix`)
+## v2026.6.15 — 2026-06-15
 
 Closes the openclaw-dashboard fixes & integration plan (`PLAN.md`): 3 fixes + 5
 new-feature integrations validated against the openclaw repo. All backend logic is
@@ -55,6 +55,45 @@ No breaking changes — every new field/config is additive and back-compatible.
 - **Cron status precedence** (FIX-3) — confirmed the dashboard already prefers the
   canonical `lastRunStatus` over the deprecated `lastStatus` alias; added the missing
   precedence test (canonical wins, legacy fallback, `none` default).
+
+### Hardening
+
+Correctness fixes surfaced by a multi-pass two-axis review (standards + spec)
+and a TDD coverage audit over the features above:
+
+- **Gateway liveness honors `EPERM`** — `pidAlive` treated `kill(pid,0)` →
+  `EPERM` as dead, so a gateway running under a different uid on a shared host
+  was wrongly judged stale, losing the install-independent lock metadata (INT-3).
+  Only `ESRCH` is dead now; `EPERM` counts as alive.
+- **Bare-id catalog name no longer shadows curated names** (INT-4) — `ModelName`
+  is cache-first, but openclaw emits the bare model id as the catalog "name" when
+  no friendly name is registered (e.g. `gpt-5.3-codex`). Such a name no longer
+  shadows the curated display name (`GPT-5.3 Codex`); genuine multi-word catalog
+  names still win, via `catalogNameIsBareID`.
+- **Explicit JSON `null` status block omitted** (INT-2) — `decodeStatusField`
+  returned a non-nil zero struct for an explicit `null` (e.g. `"tasks": null`),
+  rendering an empty Runtime Health block; it now returns nil so the block is
+  omitted. A type-mismatch value (`"tasks": 5`) likewise yields nil, not a crash.
+- **Non-UTF-8 journald `MESSAGE` decoded** (FIX-1) — journald emits non-UTF-8
+  messages as a JSON byte array; `decodeJournaldMessage` now handles both the
+  string and byte-array forms instead of dropping the line.
+
+### CI
+
+- **gofmt enforced in lint** — neither `make check` nor any workflow ran gofmt,
+  so unformatted code could merge. golangci-lint v2's `formatters` block now
+  enables gofmt and fails on drift, so `make lint`/`make check` and the CI lint
+  job reject unformatted code. Repo is already clean (0 issues).
+
+### Tests
+
+- Behavior coverage for every shipped feature, plus the security-relevant INT-3
+  anti-stale-lock branch (lock-pid-alive + healthz-FAIL must fall through to
+  pgrep), `pidAlive` `EPERM`/`ESRCH`/non-positive cases, the journald byte-array
+  path, `decodeStatusField` null/type-mismatch branches, `catalogNameIsBareID`
+  edges, the `/readyz` probe-failure contract, and the flapping threshold
+  boundary. Package coverage: appchat 94%, appserver 93%, apprefresh 91%,
+  appservice 90%, appsystem 86%, appconfig 83%, appruntime 77%.
 
 ## v2026.6.1 — 2026-06-03
 
