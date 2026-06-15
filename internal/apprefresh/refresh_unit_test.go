@@ -61,7 +61,7 @@ func TestModelName_NonOpenAIArms(t *testing.T) {
 		{"minimax m2", "minimax/minimax-m2", "MiniMax"},
 		{"bare minimax", "minimax", "MiniMax"},
 		{"glm-5", "glm-5", "GLM-5"},
-		{"glm-4", "zhipu/glm-4.6", "GLM-4"},
+		{"glm-4.6 preserves minor version", "zhipu/glm-4.6", "GLM-4.6"},
 		{"kimi k2p5", "kimi/k2p5", "Kimi K2.5"},
 		{"kimi alias", "moonshot/kimi-latest", "Kimi K2.5"},
 

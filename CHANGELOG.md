@@ -93,6 +93,14 @@ and a TDD coverage audit over the features above:
   no friendly name is registered (e.g. `gpt-5.3-codex`). Such a name no longer
   shadows the curated display name (`GPT-5.3 Codex`); genuine multi-word catalog
   names still win, via `catalogNameIsBareID`.
+- **Model display preserves the full version** — `ModelName`'s curated GLM/GPT
+  fallback collapsed every minor version to the family (`glm-5.2` → `GLM-5`,
+  `gpt-5.5` → `GPT-5`); since the bare-id guard routes openclaw's bare-id catalog
+  names through that fallback, the version was lost in the Sessions and Token
+  Usage panels. The fallback now keeps the full version (`GLM-5.2`, `GPT-5.5`)
+  while the base family (`GLM-5`, `GPT-5`) is unchanged. Session models are also
+  rendered through `ModelName` so they match the Token Usage panel's display
+  (`GLM-5.2`, not the raw `glm-5.2` alias).
 - **Explicit JSON `null` status block omitted** (INT-2) — `decodeStatusField`
   returned a non-nil zero struct for an explicit `null` (e.g. `"tasks": null`),
   rendering an empty Runtime Health block; it now returns nil so the block is

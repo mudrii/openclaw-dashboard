@@ -97,6 +97,29 @@ func catalogNameIsBareID(model, name string) bool {
 
 // ModelName returns the human-friendly display name for a model identifier.
 // Falls back to the raw id when no friendly name is known.
+// upperFamily renders a bare family id like "glm-5.2" or "gpt-5.5" as
+// "GLM-5.2" / "GPT-5.5", uppercasing the family token while preserving the full
+// numeric version that a flat family label (e.g. "GLM-5") would otherwise drop.
+// Only the leading "-<digits and dots>" version is kept; tier/variant suffixes
+// (e.g. "-plus", "-air") collapse to the versioned family as before. id is the
+// lower-cased model segment; token is the family as it appears in id (e.g.
+// "glm"); prefix is its canonical upper-case label (e.g. "GLM").
+func upperFamily(id, token, prefix string) string {
+	i := strings.Index(id, token)
+	if i < 0 {
+		return prefix
+	}
+	rest := strings.TrimPrefix(id[i+len(token):], "-")
+	end := 0
+	for end < len(rest) && (rest[end] == '.' || (rest[end] >= '0' && rest[end] <= '9')) {
+		end++
+	}
+	if end == 0 {
+		return prefix
+	}
+	return prefix + "-" + rest[:end]
+}
+
 func ModelName(model string) string {
 	// Prefer the live catalog name, but ignore a catalog "name" that is merely
 	// the bare model id (openclaw's fallback when no friendly name is
@@ -146,9 +169,9 @@ func ModelName(model string) string {
 	case strings.Contains(ml, "minimax-m2") || strings.Contains(ml, "minimax"):
 		return "MiniMax"
 	case strings.Contains(ml, "glm-5"):
-		return "GLM-5"
+		return upperFamily(ml, "glm", "GLM")
 	case strings.Contains(ml, "glm-4"):
-		return "GLM-4"
+		return upperFamily(ml, "glm", "GLM")
 	case strings.Contains(ml, "k2p5") || strings.Contains(ml, "kimi"):
 		return "Kimi K2.5"
 	case hasOSegment("o1"):
@@ -158,7 +181,7 @@ func ModelName(model string) string {
 	case strings.Contains(ml, "gpt-5.3-codex"):
 		return "GPT-5.3 Codex"
 	case strings.Contains(ml, "gpt-5"):
-		return "GPT-5"
+		return upperFamily(ml, "gpt", "GPT")
 	case strings.Contains(ml, "gpt-4o"):
 		return "GPT-4o"
 	case strings.Contains(ml, "gpt-4"):

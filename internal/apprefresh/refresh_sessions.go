@@ -345,7 +345,10 @@ func collectSessions(ctx context.Context, stores []SessionStoreFile, basePath st
 			if resolvedModel == "" || resolvedModel == "unknown" {
 				resolvedModel = getSessionModel(basePath, agentName, sid, agentDefaults)
 			}
-			resolvedModel = aliasOrID(modelAliases, resolvedModel)
+			// Prettify through ModelName so the session model matches the Token
+			// Usage panel's display (full version, e.g. "GLM-5.2" not the raw
+			// "glm-5.2" alias); genuine custom aliases pass through unchanged.
+			resolvedModel = ModelName(aliasOrID(modelAliases, resolvedModel))
 
 			if ctxPct > 100 {
 				ctxPct = 100
