@@ -10,6 +10,29 @@ validated. Remaining runtime verification is limited to live-environment surface
 such as Linux/systemd journald, non-npm lock metadata, and cron delivery state.
 No breaking changes — every new field/config is additive and back-compatible.
 
+### OpenClaw 2026.6 SQLite-migration compatibility
+
+OpenClaw 2026.6 moved cron jobs and subagent run tracking out of on-disk JSON
+(`cron/jobs.json`, `cron/jobs-state.json`) and per-session keys into a shared
+SQLite store served by the gateway, renaming the legacy files `*.migrated`. The
+dashboard read those files directly, so the **Cron Jobs** panel went blank and
+the **Sub-Agent Activity** panel went empty. The zero-dependency build cannot
+read SQLite, so both data sources now go through the gateway CLI (the same
+shell-out pattern as `models list --json` / `status --json`):
+
+- **Cron re-sourced from `openclaw cron list --json`** — each job's
+  gateway-merged inline `state` carries the same fields the old jobs-state.json
+  sidecar did, so schedule, last/next run, status, duration, delivery outcome,
+  and the INT-5 flapping signal all map through. CLI-first with a fallback to
+  the legacy `cron/jobs.json` (+ sidecar) for pre-migration installs.
+- **Sub-agent runs re-sourced from `openclaw tasks list --json --runtime
+  subagent`** — runs now show agent, task, status, duration, and timestamp. The
+  tasks store does not expose per-run **cost or token** usage, and the zero-dep
+  dashboard cannot read the SQLite that holds it, so the Sub-Agent panel drops
+  its cost column and token-breakdown sub-table (and the sub-agent cost figures
+  on the cost cards and the sub-agent activity chart are hidden) rather than
+  showing misleading zeros.
+
 ### Added
 
 - **Live channel health from `/readyz`** (INT-1) — a new `/readyz` probe in

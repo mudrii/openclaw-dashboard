@@ -360,12 +360,12 @@ body{font-family:-apple-system,BlinkMacSystemFont,'SF Pro','Helvetica Neue',sans
   <div class="glass cost-card">
     <div class="cost-label">Today's Cost</div>
     <div class="cost-value" id="cToday">—</div>
-    <div class="cost-sub" id="cTodaySub"></div>
+    <div class="cost-sub" id="cTodaySub" style="display:none"></div>
   </div>
   <div class="glass cost-card">
     <div class="cost-label">All-Time Cost</div>
     <div class="cost-value" id="cAll">—</div>
-    <div class="cost-sub" id="cAllSub"></div>
+    <div class="cost-sub" id="cAllSub" style="display:none"></div>
   </div>
   <div class="glass cost-card">
     <div class="cost-label">Projected Monthly</div>
@@ -402,7 +402,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'SF Pro','Helvetica Neue',sans
       <div class="grid-3">
         <div class="glass chart-container"><div class="chart-title">Daily Cost Trend</div><div id="costChart"></div></div>
         <div class="glass chart-container"><div class="chart-title">Cost by Model</div><div id="modelChart"></div></div>
-        <div class="glass chart-container"><div class="chart-title">Sub-Agent Activity</div><div id="subagentChart"></div></div>
+        <div class="glass chart-container" style="display:none"><div class="chart-title">Sub-Agent Activity</div><div id="subagentChart"></div></div>
       </div>
     </div>
   </div>
@@ -495,13 +495,13 @@ body{font-family:-apple-system,BlinkMacSystemFont,'SF Pro','Helvetica Neue',sans
   <div class="oc-section-body" id="oc-body-subagent">
     <div class="glass panel" style="overflow-x:auto">
       <table class="dtable">
-        <thead><tr><th>Task</th><th>Model</th><th class="r">Cost</th><th class="r">Duration</th><th>Status</th><th>Time</th></tr></thead>
+        <thead><tr><th>Task</th><th>Agent</th><th class="r">Duration</th><th>Status</th><th>Time</th></tr></thead>
         <tbody id="srBody"></tbody>
       </table>
       <div class="empty" id="srEmpty" style="display:none">No sub-agent runs</div>
     </div>
-    <!-- Sub-agent token breakdown -->
-    <div style="margin-top:12px">
+    <!-- Sub-agent token breakdown — hidden: OpenClaw's durable tasks store does not expose per-run cost/tokens after the SQLite migration -->
+    <div style="margin-top:12px;display:none">
       <div class="section-header">
         <span class="section-title" style="color:var(--purple)">Sub-Agent Token Breakdown</span>
         <div class="tab-group">
@@ -1310,7 +1310,7 @@ const DirtyChecker = {
       crons: !prevD || this.stableSnapshot(D.crons, ['lastStatus','name','schedule','lastDurationMs','lastError','model','lastDeliveryStatus','flapping']) !== this.stableSnapshot(prevD.crons, ['lastStatus','name','schedule','lastDurationMs','lastError','model','lastDeliveryStatus','flapping']),
       sessions: !prevD || this.stableSnapshot(D.sessions, ['key','name','model','type','contextPct','totalTokens','active','spawnedBy','label','subject']) !== this.stableSnapshot(prevD.sessions, ['key','name','model','type','contextPct','totalTokens','active','spawnedBy','label','subject']),
       usage: this.sectionChanged(['tokenUsage','tokenUsageToday','tokenUsage7d','tokenUsage30d','subagentUsage','subagentUsageToday','subagentUsage7d','subagentUsage30d']) || snap.tabs.usage !== State.prevTabs.usage,
-      subRuns: (!prevD || ['subagentRuns','subagentRuns7d','subagentRuns30d','subagentRunsToday'].some(k => this.stableSnapshot(D[k], ['task','model','cost','durationSec','status']) !== this.stableSnapshot((prevD||{})[k], ['task','model','cost','durationSec','status']))) || snap.tabs.subRuns !== State.prevTabs.subRuns,
+      subRuns: (!prevD || ['subagentRuns','subagentRuns7d','subagentRuns30d','subagentRunsToday'].some(k => this.stableSnapshot(D[k], ['task','agent','status','durationSec','timestamp']) !== this.stableSnapshot((prevD||{})[k], ['task','agent','status','durationSec','timestamp']))) || snap.tabs.subRuns !== State.prevTabs.subRuns,
       subTokens: this.sectionChanged(['tokenUsage','tokenUsageToday','tokenUsage7d','tokenUsage30d','subagentUsage','subagentUsageToday','subagentUsage7d','subagentUsage30d']) || snap.tabs.subTokens !== State.prevTabs.subTokens,
       charts: this.sectionChanged(['dailyChart']) || snap.chartDays !== State.prevChartDays,
       models: this.sectionChanged(['availableModels']),
@@ -1377,9 +1377,7 @@ const Renderer = {
   // Cost
   if (flags.cost) {
     $('cToday').textContent='$'+(D.totalCostToday||0).toFixed(2);
-    $('cTodaySub').textContent='Sub-agents: $'+(D.subagentCostToday||0).toFixed(2);
     $('cAll').textContent='$'+(D.totalCostAllTime||0).toFixed(2);
-    $('cAllSub').textContent='Sub-agents: $'+(D.subagentCostAllTime||0).toFixed(2);
     $('cProj').textContent='$'+(D.projectedMonthly||0).toFixed(0);
 
     // Donut (CSS conic-gradient)
@@ -1449,13 +1447,13 @@ const Renderer = {
   if (flags.subRuns) {
     const srTab=snap.tabs.subRuns;
     const runs=srTab==='today'?(D.subagentRunsToday||[]):srTab==='7d'?(D.subagentRuns7d||[]):srTab==='30d'?(D.subagentRuns30d||[]):(D.subagentRuns||[]);
-    const srCost=srTab==='today'?(D.subagentCostToday||0):srTab==='7d'?(D.subagentCost7d||0):srTab==='30d'?(D.subagentCost30d||0):(D.subagentCostAllTime||0);
-    $('subCostLbl').textContent='Total: $'+srCost.toFixed(2);
+    $('subCostLbl').textContent=runs.length+(runs.length===1?' run':' runs');
     $('srEmpty').style.display=runs.length?'none':'block';
     Renderer.reconcileRows('srBody', runs.slice(0,20), r => r.task+'-'+r.timestamp, r => {
       const ds=r.durationSec||0;
       const dur=ds>=3600?(ds/3600).toFixed(1)+'h':ds>=60?Math.round(ds/60)+'m':ds+'s';
-      return `<tr class="dr"><td class="w" style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(r.task)}</td><td>${esc(r.model)}</td><td class="r cost">$${(r.cost||0).toFixed(4)}</td><td class="r">${dur}</td><td><span class="badge badge-ok">${esc(r.status)}</span></td><td>${esc(r.timestamp)}</td></tr>`;
+      const sc=r.status==='succeeded'?'badge-ok':(['failed','timed_out','cancelled','lost','error'].includes(r.status)?'badge-err':'');
+      return `<tr class="dr"><td class="w" style="max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(r.task)}</td><td>${esc(r.agent)}</td><td class="r">${dur}</td><td><span class="badge ${sc}">${esc(r.status)}</span></td><td>${esc(r.timestamp)}</td></tr>`;
     });
   }
 

@@ -1,0 +1,99 @@
+{
+  "jobs": [
+    {
+      "id": "91ba6af1-9ab2-4f65-b24f-7b7f037f3778",
+      "name": "Vault Inbox Pipeline",
+      "enabled": true,
+      "createdAtMs": 1772436970563,
+      "updatedAtMs": 1781474552343,
+      "agentId": "main",
+      "schedule": {
+        "kind": "cron",
+        "expr": "0 */6 * * *",
+        "tz": "Asia/Kuala_Lumpur",
+        "staggerMs": 300000
+      },
+      "sessionTarget": "isolated",
+      "wakeMode": "now",
+      "payload": {
+        "kind": "agentTurn",
+        "message": "Run vault inbox pipeline and route new i",
+        "model": "minimax/MiniMax-M3",
+        "timeoutSeconds": 420,
+        "lightContext": true
+      },
+      "delivery": {
+        "mode": "announce",
+        "channel": "telegram",
+        "to": "8456335062",
+        "bestEffort": true
+      },
+      "failureAlert": {
+        "after": 1,
+        "channel": "telegram",
+        "to": "8456335062",
+        "cooldownMs": 21600000
+      },
+      "state": {
+        "nextRunAtMs": 1781496121384,
+        "lastRunAtMs": 1781474521414,
+        "lastRunStatus": "ok",
+        "lastStatus": "ok",
+        "lastDurationMs": 30929,
+        "lastDeliveryStatus": "delivered",
+        "consecutiveErrors": 0,
+        "consecutiveSkipped": 0,
+        "lastFailureNotificationDeliveryStatus": "not-requested",
+        "lastDelivered": true
+      },
+      "status": "ok"
+    },
+    {
+      "id": "ed947712-65dd-4d0a-9544-533469cdb7a2",
+      "name": "Main Agent: Daily Memory Curation",
+      "enabled": true,
+      "createdAtMs": 1772438857345,
+      "updatedAtMs": 1781449474617,
+      "agentId": "main",
+      "schedule": {
+        "kind": "cron",
+        "expr": "0 23 * * *",
+        "tz": "Asia/Kuala_Lumpur"
+      },
+      "sessionTarget": "isolated",
+      "wakeMode": "now",
+      "payload": {
+        "kind": "agentTurn",
+        "message": "End-of-day memory curation + inner thoug",
+        "model": "minimax/MiniMax-M3",
+        "timeoutSeconds": 900,
+        "lightContext": true
+      },
+      "delivery": {
+        "mode": "announce",
+        "channel": "telegram",
+        "to": "8456335062",
+        "bestEffort": true
+      },
+      "failureAlert": {
+        "after": 1,
+        "channel": "telegram",
+        "to": "8456335062",
+        "cooldownMs": 21600000
+      },
+      "state": {
+        "nextRunAtMs": 1781535600000,
+        "lastRunAtMs": 1781449329891,
+        "lastRunStatus": "ok",
+        "lastStatus": "ok",
+        "lastDurationMs": 144726,
+        "lastDeliveryStatus": "delivered",
+        "consecutiveErrors": 0,
+        "consecutiveSkipped": 0,
+        "lastFailureNotificationDeliveryStatus": "not-requested",
+        "lastDelivered": true
+      },
+      "status": "ok"
+    }
+  ]
+}

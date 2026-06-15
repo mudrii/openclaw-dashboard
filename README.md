@@ -34,7 +34,7 @@ It's not trying to replace the OpenClaw CLI or Telegram interface. It's the at-a
 6. **⏰ Cron Jobs** — All scheduled jobs with status, schedule, last/next run, duration, model, plus a delivery-outcome dot and a `⚡FLAPPING` badge for unstable jobs
 7. **📡 Active Sessions** — Recent sessions with model, type badges (DM/group/cron/subagent), context %, tokens
 8. **📊 Token Usage & Cost** — Per-model breakdown with 7d/30d/all-time tabs, usage bars, totals
-9. **🤖 Sub-Agent Activity** — Sub-agent runs with cost, duration, status + token breakdown (7d/30d tabs)
+9. **🤖 Sub-Agent Activity** — Sub-agent runs with agent, task, status, and duration (Today/7d/30d/all-time tabs), sourced from the gateway's durable task store
 10. **📈 Charts & Trends** — Cost trend line, model cost breakdown bars, sub-agent activity — all pure SVG, 7d/30d toggle
 11. **🧩 Bottom Row** — Available models grid, skills list, git log
 12. **💬 AI Chat** — Ask questions about your dashboard in natural language, powered by your OpenClaw gateway
@@ -578,7 +578,7 @@ Per-model token and cost breakdown with 7d / 30d / all-time tabs. Includes input
 ---
 
 ### 🤖 Sub-Agent Activity
-All sub-agent runs with cost, duration, status, and token breakdown. Separate 7d/30d tabs. Useful for tracking which tasks spawn the most agents and where spend is concentrated.
+All sub-agent runs with agent, task, status, and duration, across Today/7d/30d/all-time tabs. Runs come from OpenClaw's durable task store (`openclaw tasks list --runtime subagent`); per-run cost and token usage are not exposed by that store (and the zero-dependency build cannot read the gateway SQLite directly), so they are not shown. Useful for tracking which tasks spawn the most agents and how they fare.
 
 ![Sub-Agent Activity](screenshots/06-subagent-activity.png)
 

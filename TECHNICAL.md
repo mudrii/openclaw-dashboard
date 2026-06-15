@@ -92,7 +92,8 @@ The refresh collector (`internal/apprefresh`, invoked by `openclaw-dashboard --r
 | `openclaw.json` | Bot config: models, skills, compaction mode |
 | `agents/*/sessions/sessions.json` | Session metadata (keys, tokens, context, model, timestamps) |
 | `agents/*/sessions/*.jsonl` + `.jsonl.deleted.*` | Per-message token usage and cost data |
-| `cron/jobs.json` + `cron/jobs-state.json` | Cron definitions, schedules, run status, **delivery status, consecutive errors/skips** (flapping) |
+| `openclaw cron list --json` (gateway) | Cron definitions, schedules, run status, **delivery status, consecutive errors/skips** (flapping). OpenClaw 2026.6 moved cron into shared SQLite; falls back to legacy `cron/jobs.json` + `cron/jobs-state.json` on pre-migration installs |
+| `openclaw tasks list --json --runtime subagent` (gateway) | Sub-agent runs: agent, task, status, duration, timestamp (no per-run cost/tokens — not exposed by the tasks store) |
 | `.git/` (via `git log`) | Last 5 commits (hash, message, relative time) |
 | Gateway lock file + process table | Gateway PID, uptime, RSS memory |
 | `journalctl --user` (Linux) | Gateway logs when systemd routes them to journald (no file to tail) |
@@ -513,17 +514,14 @@ Each setting resolves through a priority chain (highest wins):
 | `subagentRunsToday` | `array` | Last 20 sub-agent runs (today) |
 | `subagentRuns7d` | `array` | Last 50 sub-agent runs (7 days) |
 | `subagentRuns30d` | `array` | Last 100 sub-agent runs (30 days) |
-| `subagentRuns[].task` | `string` | Session key (truncated to 60 chars) |
-| `subagentRuns[].model` | `string` | Last model used |
-| `subagentRuns[].cost` | `number` | Total session cost (4 decimal places) |
-| `subagentRuns[].durationSec` | `number` | Session duration in seconds |
-| `subagentRuns[].status` | `string` | Always `"completed"` |
-| `subagentRuns[].timestamp` | `string` | `"YYYY-MM-DD HH:MM"` |
-| `subagentRuns[].date` | `string` | `"YYYY-MM-DD"` |
-| `subagentCostAllTime` | `number` | Total sub-agent cost (all time) |
-| `subagentCostToday` | `number` | Total sub-agent cost (today) |
-| `subagentCost7d` | `number` | Total sub-agent cost (7 days) |
-| `subagentCost30d` | `number` | Total sub-agent cost (30 days) |
+| `subagentRuns[].task` | `string` | Task description (whitespace-collapsed, truncated to 80 chars) |
+| `subagentRuns[].agent` | `string` | Owning agent id (e.g. `main`) |
+| `subagentRuns[].durationSec` | `number` | Run duration in seconds (ended − started, falling back to ended − created) |
+| `subagentRuns[].status` | `string` | Task status: `succeeded`, `failed`, `running`, `queued`, `cancelled`, `timed_out`, `lost` |
+| `subagentRuns[].error` | `string` | Failure reason when the run did not succeed (empty otherwise) |
+| `subagentRuns[].timestamp` | `string` | `"YYYY-MM-DD HH:MM"` (from createdAt) |
+| `subagentRuns[].date` | `string` | `"YYYY-MM-DD"` (windowing key) |
+| `subagentCostAllTime` / `subagentCostToday` / `subagentCost7d` / `subagentCost30d` | `number` | Retained for compatibility; `0` since the OpenClaw 2026.6 migration (the tasks store does not expose per-run cost, and the zero-dep build cannot read the gateway SQLite) |
 
 ### Token Usage
 

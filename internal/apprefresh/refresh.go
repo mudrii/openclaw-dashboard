@@ -234,7 +234,17 @@ func collectDashboardData(ctx context.Context, dashboardDir, openclawPath string
 		defer cwg.Done()
 		gateway = collectGatewayHealthWithLock(ctx, openclawPath, cfg.AI.GatewayPort)
 	}()
-	go func() { defer cwg.Done(); crons = CollectCrons(cronPath, loc) }()
+	go func() {
+		defer cwg.Done()
+		// OpenClaw 2026.6+ moved cron jobs into shared SQLite, served via the
+		// gateway CLI. Prefer it; fall back to the legacy jobs.json file for
+		// pre-migration installs (or when the gateway is unavailable).
+		if c, ok := collectCronsViaCLI(ctx, nil, nil, loc); ok {
+			crons = c
+		} else {
+			crons = CollectCrons(cronPath, loc)
+		}
+	}()
 	go func() { defer cwg.Done(); gitLog = collectGitLog(ctx, openclawPath) }()
 
 	// OpenClaw config (file I/O — runs while subprocesses are in flight)
@@ -295,7 +305,11 @@ func collectDashboardData(ctx context.Context, dashboardDir, openclawPath string
 	// Build sessionId → session key map
 	sidToKey := BuildSIDToKeyMap(sessionStores)
 
-	subagentRuns := CollectTokenUsageWithCache(
+	// CollectTokenUsageWithCache drives the main per-model token usage and cost
+	// buckets (the primary Token Usage panel). Its subagent-run output is now
+	// empty — OpenClaw 2026.6+ moved subagent tracking out of session keys — so
+	// its return is discarded; subagent runs come from the durable tasks store.
+	CollectTokenUsageWithCache(
 		filepath.Join(dashboardDir, ".token-usage-cache.json"),
 		basePath, loc, todayStr, date7d, date30d,
 		knownSIDs, sidToKey, modelAliases,
@@ -303,6 +317,11 @@ func collectDashboardData(ctx context.Context, dashboardDir, openclawPath string
 		subagentAll, subagentToday, subagent7d, subagent30d,
 		dailyCosts, dailyTokens, dailyCalls, dailySubagentCosts, dailySubagentCount,
 	)
+
+	// OpenClaw 2026.6+ tracks subagent runs as durable tasks in shared SQLite,
+	// served via the gateway CLI. Cost/token data is unavailable there, so runs
+	// carry status/duration/agent metadata only.
+	subagentRuns := collectSubagentRuns(ctx, nil, nil, loc)
 
 	slices.SortFunc(subagentRuns, func(a, b map[string]any) int {
 		ta, _ := a["timestamp"].(string)
