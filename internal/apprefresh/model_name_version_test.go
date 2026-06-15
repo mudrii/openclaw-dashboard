@@ -44,12 +44,15 @@ func TestModelName_ClaudeFamilyVersion(t *testing.T) {
 	modelCatalogNames.Store(nil)
 
 	cases := map[string]string{
-		"anthropic/claude-opus-4-6":   "Claude Opus 4.6",
-		"anthropic/claude-opus-4-7":   "Claude Opus 4.7",
-		"anthropic/claude-sonnet-4-6": "Claude Sonnet 4.6",
-		"anthropic/claude-haiku-4-5":  "Claude Haiku 4.5",
-		"anthropic/opus":              "Claude Opus", // no version segment
-		"claude-sonnet":               "Claude Sonnet",
+		"anthropic/claude-opus-4-6":          "Claude Opus 4.6",
+		"anthropic/claude-opus-4-7":          "Claude Opus 4.7",
+		"anthropic/claude-sonnet-4-6":        "Claude Sonnet 4.6",
+		"anthropic/claude-haiku-4-5":         "Claude Haiku 4.5",
+		"anthropic/opus":                     "Claude Opus", // no version segment
+		"claude-sonnet":                      "Claude Sonnet",
+		"anthropic/claude-opus-4-5-20260514": "Claude Opus 4.5", // 8-digit date snapshot dropped
+		"anthropic/claude-opus-4-thinking":   "Claude Opus 4",   // word suffix stops the version
+		"anthropic/claude-opus-thinking":     "Claude Opus",     // no numeric version at all
 	}
 	for model, want := range cases {
 		if got := ModelName(model); got != want {

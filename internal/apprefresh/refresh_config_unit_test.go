@@ -139,6 +139,19 @@ func TestParseModelDefaults_StringForm(t *testing.T) {
 			t.Errorf("fallbacks = %v, want [m1 m2]", fb)
 		}
 	})
+	t.Run("imageModel string form", func(t *testing.T) {
+		// imageModel, like model, can be a bare string in OpenClaw 2026.6.
+		_, _, img, _ := parseModelDefaults(map[string]any{"imageModel": "openai/dall-e-4"})
+		if img != "openai/dall-e-4" {
+			t.Errorf("imageModel = %q, want openai/dall-e-4 (string form)", img)
+		}
+	})
+	t.Run("imageModel object form", func(t *testing.T) {
+		_, _, img, _ := parseModelDefaults(map[string]any{"imageModel": map[string]any{"primary": "openai/dall-e-4"}})
+		if img != "openai/dall-e-4" {
+			t.Errorf("imageModel = %q, want openai/dall-e-4 (object form)", img)
+		}
+	})
 }
 
 // TestParseAvailableModels_PrettifiesUnaliased locks the Models-grid display:

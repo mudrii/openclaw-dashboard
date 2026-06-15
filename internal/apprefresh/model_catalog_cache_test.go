@@ -140,6 +140,14 @@ func TestParseModelCatalog(t *testing.T) {
 			t.Errorf("same-name bare id should index, got %q", cat.names["kimi-k2.7-code"])
 		}
 	})
+	t.Run("bare id colliding with an existing full key is not overwritten", func(t *testing.T) {
+		// "dup" exists as its own full (provider-less) key; the bare form of
+		// "x/dup" must NOT clobber it.
+		cat := parseModelCatalog([]byte(`{"models":[{"key":"dup","name":"Standalone Dup"},{"key":"x/dup","name":"Prefixed Dup"}]}`))
+		if cat.names["dup"] != "Standalone Dup" {
+			t.Errorf("bare-id collision overwrote the full key: got %q, want Standalone Dup", cat.names["dup"])
+		}
+	})
 }
 
 // TestLookupModelLimits_CatalogFallback proves the live catalog supplies a
