@@ -173,6 +173,33 @@ func TestModelName_CatalogBareIdDoesNotShadowCurated(t *testing.T) {
 	}
 }
 
+// TestCatalogNameIsBareID covers INT-4 edge cases of the bare-id detector
+// directly: no-slash ids compare against the whole id, comparison is
+// case/whitespace-insensitive, and a genuine multi-word display name is NOT
+// treated as a bare id (so it is allowed to shadow the raw id).
+func TestCatalogNameIsBareID(t *testing.T) {
+	tests := []struct {
+		name  string
+		model string
+		cName string
+		want  bool
+	}{
+		{"no-slash model compares whole id", "gpt-5.3-codex", "gpt-5.3-codex", true},
+		{"slash model compares bare segment", "openai/gpt-5.3-codex", "gpt-5.3-codex", true},
+		{"case-insensitive match is bare", "openai/gpt-5.3-codex", "GPT-5.3-CODEX", true},
+		{"surrounding whitespace ignored", "openai/gpt-5.3-codex", "  gpt-5.3-codex ", true},
+		{"genuine multi-word name is not bare", "openai/gpt-5.3-codex", "GPT-5.3 Codex", false},
+		{"unrelated friendly name is not bare", "vendor/brand-new-9000", "Brand New 9000", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := catalogNameIsBareID(tt.model, tt.cName); got != tt.want {
+				t.Errorf("catalogNameIsBareID(%q, %q) = %v, want %v", tt.model, tt.cName, got, tt.want)
+			}
+		})
+	}
+}
+
 // TestModelCatalogCache_FetchWithStubRunner exercises the TTL cache end to end
 // with a stubbed CLI runner: the parsed names are returned and the snapshot is
 // published for ModelName.

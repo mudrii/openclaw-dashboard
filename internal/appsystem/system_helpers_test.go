@@ -210,6 +210,26 @@ func TestParseOpenclawStatusJSON(t *testing.T) {
 		}
 	})
 
+	// INT-2: a sub-block whose JSON shape does not match the typed struct
+	// (scalar where an object is expected) must degrade to nil — the re-decode
+	// mismatch is swallowed so one malformed block never fails the whole status
+	// parse. Guards decodeStatusField's json.Unmarshal-error branch.
+	t.Run("type-mismatched typed block degrades to nil, parse still succeeds", func(t *testing.T) {
+		got, err := parseOpenclawStatusJSON(`{"currentVersion":"2.0.0","tasks":5,"eventLoop":"oops"}`, SystemVersions{})
+		if err != nil {
+			t.Fatalf("err: want nil (malformed block must not fail parse), got %v", err)
+		}
+		if got.CurrentVersion != "2.0.0" {
+			t.Errorf("CurrentVersion = %q, want 2.0.0 (rest of status must still parse)", got.CurrentVersion)
+		}
+		if got.Tasks != nil {
+			t.Errorf("Tasks: want nil for scalar-where-object, got %+v", got.Tasks)
+		}
+		if got.EventLoop != nil {
+			t.Errorf("EventLoop: want nil for scalar-where-object, got %+v", got.EventLoop)
+		}
+	})
+
 	t.Run("minimal JSON leaves rich blocks nil (back-compat)", func(t *testing.T) {
 		out := `{"currentVersion":"2.0.0"}`
 		got, err := parseOpenclawStatusJSON(out, SystemVersions{})

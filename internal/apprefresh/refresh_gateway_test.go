@@ -359,6 +359,76 @@ func TestCollectGatewayHealth_PortZeroSkipsHTTP(t *testing.T) {
 	}
 }
 
+// stubLockMeta replaces readGatewayLockMeta with a deterministic fake.
+func stubLockMeta(t *testing.T, lk gatewayLock, ok bool) {
+	t.Helper()
+	prev := readGatewayLockMeta
+	readGatewayLockMeta = func(_ string) (gatewayLock, bool) { return lk, ok }
+	t.Cleanup(func() { readGatewayLockMeta = prev })
+}
+
+// TestCollectGatewayHealthWithLock_StaleLockDoesNotOverrideFailedHealthz locks
+// the INT-3 anti-stale-lock contract (refresh_gateway.go:146): when a port is
+// configured and /healthz FAILS, an alive gateway lock must NOT mark the gateway
+// online — a recycled pid behind a stale lock would otherwise lie. The lock
+// branch is skipped and liveness falls through to pgrep. Here pgrep also finds
+// nothing, so the gateway is correctly reported offline despite a live lock pid.
+func TestCollectGatewayHealthWithLock_StaleLockDoesNotOverrideFailedHealthz(t *testing.T) {
+	stubHealthz(t, false) // healthz FAILS
+	stubLockMeta(t, gatewayLock{pid: 4242, createdAt: time.Now()}, true)
+	stubPgrep(t, "", nil) // pgrep finds no gateway
+
+	gw := collectGatewayHealthWithLock(context.Background(), "/fake/openclaw", 18789)
+
+	if gw["status"] != "offline" {
+		t.Fatalf("status = %v, want offline (stale lock must not override failed healthz)", gw["status"])
+	}
+	if gw["pid"] != nil {
+		t.Fatalf("pid = %v, want nil (lock pid must not be surfaced past failed healthz)", gw["pid"])
+	}
+}
+
+// TestCollectGatewayHealthWithLock_LiveLockWithHealthzOKIsOnline is the positive
+// counterpart: port>0, /healthz OK, alive lock → lock metadata is trusted and
+// the gateway is online with the lock's pid.
+func TestCollectGatewayHealthWithLock_LiveLockWithHealthzOKIsOnline(t *testing.T) {
+	stubHealthz(t, true)
+	stubLockMeta(t, gatewayLock{pid: 4242, createdAt: time.Now()}, true)
+	stubPgrep(t, "", errors.New("pgrep must not decide liveness here"))
+
+	gw := collectGatewayHealthWithLock(context.Background(), "/fake/openclaw", 18789)
+
+	if gw["status"] != "online" {
+		t.Fatalf("status = %v, want online (healthz OK + alive lock)", gw["status"])
+	}
+	if gw["pid"] != 4242 {
+		t.Fatalf("pid = %v, want 4242 (from lock)", gw["pid"])
+	}
+}
+
+// TestCollectGatewayHealthWithLock_PortZeroTrustsLock proves the port==0 escape
+// hatch: with no port to probe, an alive lock is sufficient to mark online
+// (httpOnline is irrelevant because the healthz gate is bypassed when port<=0).
+func TestCollectGatewayHealthWithLock_PortZeroTrustsLock(t *testing.T) {
+	prev := healthzProbe
+	healthzProbe = func(_ context.Context, _ int) bool {
+		t.Fatalf("healthzProbe must not be called when port is 0")
+		return false
+	}
+	t.Cleanup(func() { healthzProbe = prev })
+	stubLockMeta(t, gatewayLock{pid: 4242, createdAt: time.Now()}, true)
+	stubPgrep(t, "", errors.New("pgrep must not be consulted when lock trusted"))
+
+	gw := collectGatewayHealthWithLock(context.Background(), "/fake/openclaw", 0)
+
+	if gw["status"] != "online" {
+		t.Fatalf("status = %v, want online (port 0 trusts alive lock)", gw["status"])
+	}
+	if gw["pid"] != 4242 {
+		t.Fatalf("pid = %v, want 4242", gw["pid"])
+	}
+}
+
 // TestCollectGatewayHealth_PortFieldPopulated pins the dashboard wire-format
 // contract: the gateway block in data.json must carry the gateway port so
 // the UI's Gateway Panel can render it without round-tripping through
