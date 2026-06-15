@@ -93,7 +93,7 @@ func collectSubagentRuns(ctx context.Context, runner func(context.Context, strin
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
-	out, err := runner(ctx, resolve(), "tasks", "list", "--json", "--runtime", "subagent").Output()
+	out, err := boundedOutput(runner(ctx, resolve(), "tasks", "list", "--json", "--runtime", "subagent"), maxCLIOutputBytes)
 	if err != nil {
 		return nil
 	}

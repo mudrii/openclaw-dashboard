@@ -56,6 +56,26 @@ func TestModelName_GeminiTierNeutralFallback(t *testing.T) {
 	}
 }
 
+// TestModelName_KimiTierNeutralFallback guards that an unrecognized Kimi id is
+// not pinned to "Kimi K2.5" — only the k2p5 id maps there; other Kimi ids fall
+// back to the tier-neutral "Kimi".
+func TestModelName_KimiTierNeutralFallback(t *testing.T) {
+	prevN := modelCatalogNames.Load()
+	t.Cleanup(func() { modelCatalogNames.Store(prevN) })
+	modelCatalogNames.Store(nil)
+
+	cases := map[string]string{
+		"kimi/k2p5":     "Kimi K2.5", // canonical id keeps the curated name
+		"kimi/kimi-k3":  "Kimi",      // future id must not be pinned to K2.5
+		"moonshot/kimi": "Kimi",
+	}
+	for model, want := range cases {
+		if got := ModelName(model); got != want {
+			t.Errorf("ModelName(%q) = %q, want %q", model, got, want)
+		}
+	}
+}
+
 // TestModelName_GenuineCatalogNameStillWins guards that a real friendly catalog
 // name (not a bare id) is still preferred over the curated fallback.
 func TestModelName_GenuineCatalogNameStillWins(t *testing.T) {

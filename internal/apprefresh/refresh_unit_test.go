@@ -63,7 +63,7 @@ func TestModelName_NonOpenAIArms(t *testing.T) {
 		{"glm-5", "glm-5", "GLM-5"},
 		{"glm-4.6 preserves minor version", "zhipu/glm-4.6", "GLM-4.6"},
 		{"kimi k2p5", "kimi/k2p5", "Kimi K2.5"},
-		{"kimi alias", "moonshot/kimi-latest", "Kimi K2.5"},
+		{"kimi generic is tier-neutral", "moonshot/kimi-latest", "Kimi"},
 
 		// GPT family: codex specialization before the generic gpt-5/4o/4 arms.
 		{"gpt-5.3 codex", "openai/gpt-5.3-codex", "GPT-5.3 Codex"},

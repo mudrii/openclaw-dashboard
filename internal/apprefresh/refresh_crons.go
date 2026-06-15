@@ -222,7 +222,7 @@ func collectCronsViaCLI(ctx context.Context, runner func(context.Context, string
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
-	out, err := runner(ctx, resolve(), "cron", "list", "--json").Output()
+	out, err := boundedOutput(runner(ctx, resolve(), "cron", "list", "--json"), maxCLIOutputBytes)
 	if err != nil {
 		return nil, false
 	}

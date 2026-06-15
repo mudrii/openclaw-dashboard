@@ -176,8 +176,11 @@ func ModelName(model string) string {
 		return upperFamily(ml, "glm", "GLM")
 	case strings.Contains(ml, "glm-4"):
 		return upperFamily(ml, "glm", "GLM")
-	case strings.Contains(ml, "k2p5") || strings.Contains(ml, "kimi"):
+	case strings.Contains(ml, "k2p5"):
 		return "Kimi K2.5"
+	case strings.Contains(ml, "kimi"):
+		// Tier-neutral: an unrecognized Kimi id must not be pinned to "K2.5".
+		return "Kimi"
 	case hasOSegment("o1"):
 		return "O1"
 	case hasOSegment("o3"):

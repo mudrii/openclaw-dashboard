@@ -3,6 +3,7 @@ package apprefresh
 import (
 	"math"
 	"slices"
+	"unicode/utf8"
 )
 
 // JSON helper functions ---------------------------------------------------
@@ -123,6 +124,23 @@ func truncateRunes(s string, n int) string {
 		return s
 	}
 	return string(r[:n])
+}
+
+// truncateBytes returns s limited to at most maxBytes bytes, backing up to a
+// rune boundary so the result is always valid UTF-8. Use this for byte-size
+// caps (e.g. a max log-line length); use truncateRunes for visual length caps.
+func truncateBytes(s string, maxBytes int) string {
+	if maxBytes < 0 {
+		maxBytes = 0
+	}
+	if len(s) <= maxBytes {
+		return s
+	}
+	b := maxBytes
+	for b > 0 && !utf8.RuneStart(s[b]) {
+		b--
+	}
+	return s[:b]
 }
 
 // LimitSlice truncates s to the first max elements (no-op when shorter).

@@ -528,7 +528,7 @@ func readTailLines(path string, limit int) ([]string, error) {
 			continue
 		}
 		if len(line) > readTailMaxLineBytes {
-			line = truncateRunes(line, readTailMaxLineBytes) // rune-safe cap
+			line = truncateBytes(line, readTailMaxLineBytes) // rune-safe byte cap
 		}
 		ring[write] = line
 		write = (write + 1) % limit

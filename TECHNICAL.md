@@ -492,6 +492,8 @@ Each setting resolves through a priority chain (highest wins):
 | Key | Type | Description |
 |-----|------|-------------|
 | `crons` | `array` | All cron job definitions |
+| `crons[].id` | `string` | Job id (uuid) |
+| `crons[].agentId` | `string` | Owning agent id |
 | `crons[].name` | `string` | Job name |
 | `crons[].schedule` | `string` | Human-readable schedule (`"Every 6h"`, cron expr, etc.) |
 | `crons[].enabled` | `boolean` | Whether the job is active |
