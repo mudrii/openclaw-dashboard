@@ -94,9 +94,17 @@ func TestIssue26FrontendFixtureContract(t *testing.T) {
 		"const healthColor = ['unhealthy','disconnected','offline','error','down','failing'].includes(healthLc) ? 'var(--red)'",
 		"const tasks=ocStatus.tasks, evl=ocStatus.eventLoop, pc=ocStatus.pluginCompatibility, hb=ocStatus.lastHeartbeat;",
 		"No skills configured",
+		// Sub-agent panel post-migration: agent/duration/status columns, no cost.
+		"<th>Task</th><th>Agent</th><th class=\"r\">Duration</th><th>Status</th><th>Time</th>",
+		"$('subCostLbl').textContent=runs.length+(runs.length===1?' run':' runs');",
 	} {
 		if !strings.Contains(html, snippet) {
 			t.Fatalf("web/index.html missing frontend contract snippet %q", snippet)
 		}
+	}
+	// The tasks store exposes no per-run cost/tokens, so the sub-agent runs table
+	// must NOT render a cost cell (dropped in the SQLite-migration rework).
+	if strings.Contains(html, "(r.cost||0).toFixed(4)") {
+		t.Fatal("web/index.html: sub-agent runs table still renders a cost cell; cost was dropped post-migration")
 	}
 }

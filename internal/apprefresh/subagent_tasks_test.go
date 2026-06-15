@@ -78,3 +78,42 @@ func TestCollectSubagentRuns_DurationFallbackToCreated(t *testing.T) {
 		t.Errorf("error = %v, want boom", runs[0]["error"])
 	}
 }
+
+// TestSubagentTasksFromBytes covers the envelope form, the bare-array form, and
+// graceful failure on invalid input.
+func TestSubagentTasksFromBytes(t *testing.T) {
+	t.Run("envelope", func(t *testing.T) {
+		ts, ok := subagentTasksFromBytes([]byte(`{"tasks":[{"taskId":"a"}]}`))
+		if !ok || len(ts) != 1 {
+			t.Fatalf("ok=%v len=%d, want true/1", ok, len(ts))
+		}
+	})
+	t.Run("bare array", func(t *testing.T) {
+		ts, ok := subagentTasksFromBytes([]byte(`[{"taskId":"a"},{"taskId":"b"}]`))
+		if !ok || len(ts) != 2 {
+			t.Fatalf("ok=%v len=%d, want true/2", ok, len(ts))
+		}
+	})
+	t.Run("invalid", func(t *testing.T) {
+		if _, ok := subagentTasksFromBytes([]byte(`nope`)); ok {
+			t.Error("ok=true, want false on invalid json")
+		}
+	})
+}
+
+// TestCollectSubagentRuns_NegativeDurationClampedToZero guards the duration
+// guard: a task whose endedAt precedes its start (clock skew / bad record) must
+// yield durationSec 0, never a negative number.
+func TestCollectSubagentRuns_NegativeDurationClampedToZero(t *testing.T) {
+	runner := func(ctx context.Context, _ string, _ ...string) *exec.Cmd {
+		return exec.CommandContext(ctx, "printf", `%s`,
+			`{"tasks":[{"agentId":"main","task":"t","status":"failed","createdAt":1781494500000,"startedAt":1781494500000,"endedAt":1781494400000}]}`)
+	}
+	runs := collectSubagentRuns(context.Background(), runner, func() string { return "openclaw" }, time.UTC)
+	if len(runs) != 1 {
+		t.Fatalf("got %d runs, want 1", len(runs))
+	}
+	if runs[0]["durationSec"] != 0 {
+		t.Errorf("durationSec = %v, want 0 (ended < started must not go negative)", runs[0]["durationSec"])
+	}
+}

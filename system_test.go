@@ -454,22 +454,20 @@ func TestFormatBytes_NegativeGuard(t *testing.T) {
 // ── Tests for getProcessInfo (Fix #12) ───────────────────────────────────
 
 func TestGetProcessInfo_CurrentProcess(t *testing.T) {
-	ctx := context.Background()
-	pid := os.Getpid()
-	uptime, memory := getProcessInfo(ctx, pid)
-	// Just verify the function doesn't panic and returns something for the current process
-	// ps output depends on platform availability
-	if uptime == "" && memory == "" {
-		t.Log("getProcessInfo returned empty strings — ps may not be available in this environment (acceptable)")
+	// The facade must delegate to appsystem.GetProcessInfo, which yields a real
+	// uptime for a live process (ps is available on the darwin/linux CI hosts).
+	uptime, memory := getProcessInfo(context.Background(), os.Getpid())
+	if uptime == "" {
+		t.Errorf("uptime empty for the running test process (memory=%q)", memory)
 	}
 }
 
 func TestGetProcessInfo_InvalidPID(t *testing.T) {
-	ctx := context.Background()
-	// PID 0 should not exist; we expect empty strings, not a panic
-	uptime, memory := getProcessInfo(ctx, 0)
+	// A non-positive PID is rejected deterministically (no ps call), so both
+	// fields must be empty — this would catch a facade that stopped guarding.
+	uptime, memory := getProcessInfo(context.Background(), 0)
 	if uptime != "" || memory != "" {
-		t.Logf("getProcessInfo(0) returned uptime=%q memory=%q — unexpected but not fatal", uptime, memory)
+		t.Errorf("getProcessInfo(0) = (%q, %q), want empty for non-positive PID", uptime, memory)
 	}
 }
 

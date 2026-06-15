@@ -113,3 +113,57 @@ func TestCollectCronsViaCLI_FlappingFromInlineState(t *testing.T) {
 		t.Errorf("lastDiagnostics = %v, want [x y]", c["lastDiagnostics"])
 	}
 }
+
+// TestCronScheduleString covers every schedule kind the renderer must format:
+// cron expr, the "every" duration tiers (d/h/m/ms), the truncated "at" form, and
+// the raw-JSON default for an unknown kind.
+func TestCronScheduleString(t *testing.T) {
+	tests := []struct {
+		name  string
+		sched map[string]any
+		want  string
+	}{
+		{"cron expr", map[string]any{"kind": "cron", "expr": "0 0 * * *"}, "0 0 * * *"},
+		{"every days", map[string]any{"kind": "every", "everyMs": float64(2 * 86400000)}, "Every 2d"},
+		{"every hours", map[string]any{"kind": "every", "everyMs": float64(3600000)}, "Every 1h"},
+		{"every minutes", map[string]any{"kind": "every", "everyMs": float64(300000)}, "Every 5m"},
+		{"every millis", map[string]any{"kind": "every", "everyMs": float64(500)}, "Every 500ms"},
+		{"at truncated to 16", map[string]any{"kind": "at", "at": "2026-06-15T10:00:00Z"}, "2026-06-15T10:00"},
+		{"unknown kind falls back to raw json", map[string]any{"kind": "weird"}, `{"kind":"weird"}`},
+		{"nil schedule", nil, "null"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := cronScheduleString(tt.sched); got != tt.want {
+				t.Errorf("cronScheduleString(%v) = %q, want %q", tt.sched, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestCronJobsFromBytes covers the envelope form, the bare-array form (which the
+// gateway CLI can emit), and graceful failure on invalid input.
+func TestCronJobsFromBytes(t *testing.T) {
+	t.Run("envelope", func(t *testing.T) {
+		jobs, ok := cronJobsFromBytes([]byte(`{"jobs":[{"id":"a"}]}`))
+		if !ok || len(jobs) != 1 {
+			t.Fatalf("ok=%v len=%d, want true/1", ok, len(jobs))
+		}
+	})
+	t.Run("bare array", func(t *testing.T) {
+		jobs, ok := cronJobsFromBytes([]byte(`[{"id":"a"},{"id":"b"}]`))
+		if !ok || len(jobs) != 2 {
+			t.Fatalf("ok=%v len=%d, want true/2", ok, len(jobs))
+		}
+	})
+	t.Run("invalid json", func(t *testing.T) {
+		if _, ok := cronJobsFromBytes([]byte(`{not json`)); ok {
+			t.Error("ok=true, want false on invalid json")
+		}
+	})
+	t.Run("object without jobs key", func(t *testing.T) {
+		if _, ok := cronJobsFromBytes([]byte(`{"count":0}`)); ok {
+			t.Error("ok=true, want false when neither envelope.jobs nor a bare array")
+		}
+	})
+}

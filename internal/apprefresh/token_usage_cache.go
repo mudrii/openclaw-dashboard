@@ -347,9 +347,8 @@ func applyTokenUsageSummary(
 }
 
 func resolveUsageModel(model string, modelAliases map[string]string) string {
-	displayModel := aliasOrID(modelAliases, model)
-	if displayModel == model {
-		return ModelName(model)
-	}
-	return displayModel
+	// Resolve the alias, then prettify through ModelName so the Token Usage
+	// panel matches the Sessions panel (e.g. "GLM-5.2", not a raw "glm-5.2"
+	// alias); a genuine custom alias passes through ModelName's default arm.
+	return ModelName(aliasOrID(modelAliases, model))
 }
