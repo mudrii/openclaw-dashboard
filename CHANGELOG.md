@@ -100,7 +100,10 @@ and a TDD coverage audit over the features above:
   Usage panels. The fallback now keeps the full version (`GLM-5.2`, `GPT-5.5`)
   while the base family (`GLM-5`, `GPT-5`) is unchanged. Session models are also
   rendered through `ModelName` so they match the Token Usage panel's display
-  (`GLM-5.2`, not the raw `glm-5.2` alias).
+  (`GLM-5.2`, not the raw `glm-5.2` alias). The same version-preserving fallback
+  now also covers the GPT-4 family (`gpt-4.1` → `GPT-4.1`), and an unrecognized
+  Gemini id falls back to the tier-neutral `Gemini` instead of being mislabeled
+  `Gemini Flash`.
 - **Explicit JSON `null` status block omitted** (INT-2) — `decodeStatusField`
   returned a non-nil zero struct for an explicit `null` (e.g. `"tasks": null`),
   rendering an empty Runtime Health block; it now returns nil so the block is

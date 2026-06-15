@@ -162,8 +162,12 @@ func ModelName(model string) string {
 		return "Gemini 3 Flash"
 	case strings.Contains(ml, "gemini-2.5-flash"):
 		return "Gemini 2.5 Flash"
-	case strings.Contains(ml, "gemini") || strings.Contains(ml, "flash"):
+	case strings.Contains(ml, "flash"):
 		return "Gemini Flash"
+	case strings.Contains(ml, "gemini"):
+		// Tier-neutral: an unrecognized Gemini (Pro/Ultra/future) must not be
+		// mislabeled "Flash". A genuine flash id is caught by the case above.
+		return "Gemini"
 	case strings.Contains(ml, "minimax-m2.5"):
 		return "MiniMax M2.5"
 	case strings.Contains(ml, "minimax-m2") || strings.Contains(ml, "minimax"):
@@ -185,7 +189,7 @@ func ModelName(model string) string {
 	case strings.Contains(ml, "gpt-4o"):
 		return "GPT-4o"
 	case strings.Contains(ml, "gpt-4"):
-		return "GPT-4"
+		return upperFamily(ml, "gpt", "GPT")
 	default:
 		return model
 	}

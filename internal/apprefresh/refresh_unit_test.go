@@ -53,7 +53,7 @@ func TestModelName_NonOpenAIArms(t *testing.T) {
 		{"gemini pro alias", "gemini-pro", "Gemini 2.5 Pro"},
 		{"gemini 3 flash", "gemini-3-flash", "Gemini 3 Flash"},
 		{"gemini 2.5 flash", "gemini-2.5-flash", "Gemini 2.5 Flash"},
-		{"gemini catch-all", "gemini-1.0", "Gemini Flash"},
+		{"gemini generic is tier-neutral", "gemini-1.0", "Gemini"},
 		{"bare flash", "flash", "Gemini Flash"},
 
 		// MiniMax / GLM / Kimi.
