@@ -135,7 +135,7 @@ func cronJobToMap(jm map[string]any, sidecarStates map[string]map[string]any, lo
 		enabled = e
 	}
 
-	model := jsonStr(asObj(jm["payload"]), "model")
+	model := ModelName(jsonStr(asObj(jm["payload"]), "model"))
 
 	return map[string]any{
 		"id":                 jsonStr(jm, "id"),

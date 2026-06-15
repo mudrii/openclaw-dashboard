@@ -254,6 +254,11 @@ func collectDashboardData(ctx context.Context, dashboardDir, openclawPath string
 		memoryThresholdKB = 640 * 1024
 	}
 
+	// Refresh the live model display-name catalog (TTL-cached) BEFORE the
+	// collectors so ModelName resolves current model ids for crons — collected in
+	// the goroutine below — as well as sessions and token usage downstream.
+	refreshModelCatalog(ctx, now, 5*time.Minute)
+
 	// Kick off independent collectors concurrently.
 	var gateway map[string]any
 	var crons []map[string]any
@@ -300,10 +305,6 @@ func collectDashboardData(ctx context.Context, dashboardDir, openclawPath string
 
 	// Wait for gateway before building sessions (sessions need gateway map)
 	cwg.Wait()
-
-	// Refresh the live model display-name catalog (TTL-cached) so ModelName,
-	// used below by sessions and token usage, resolves current model ids.
-	refreshModelCatalog(ctx, now, 5*time.Minute)
 
 	// Sessions
 	knownSIDs := map[string]string{}

@@ -114,6 +114,31 @@ func TestCollectCronsViaCLI_FlappingFromInlineState(t *testing.T) {
 	}
 }
 
+// TestCronJobToMap_ModelPrettified locks the cron MODEL column to the same
+// prettified display the rest of the dashboard uses: the payload's raw model id
+// is rendered through ModelName (catalog/curated), not shown raw.
+func TestCronJobToMap_ModelPrettified(t *testing.T) {
+	prev := modelCatalogNames.Load()
+	t.Cleanup(func() { modelCatalogNames.Store(prev) })
+	setModelCatalogNames(map[string]string{"minimax/MiniMax-M3": "MiniMax M3"})
+
+	jm := map[string]any{
+		"id": "j", "name": "n", "enabled": true,
+		"schedule": map[string]any{"kind": "cron", "expr": "0 0 * * *"},
+		"payload":  map[string]any{"kind": "agentTurn", "model": "minimax/MiniMax-M3"},
+	}
+	c := cronJobToMap(jm, nil, time.UTC)
+	if c["model"] != "MiniMax M3" {
+		t.Errorf("model = %v, want MiniMax M3 (prettified)", c["model"])
+	}
+	// empty payload model stays empty (frontend renders "—").
+	jm2 := map[string]any{"id": "j2", "name": "n2", "enabled": true,
+		"schedule": map[string]any{"kind": "cron", "expr": "0 0 * * *"}}
+	if c2 := cronJobToMap(jm2, nil, time.UTC); c2["model"] != "" {
+		t.Errorf("missing model = %v, want empty", c2["model"])
+	}
+}
+
 // TestCronScheduleString covers every schedule kind the renderer must format:
 // cron expr, the "every" duration tiers (d/h/m/ms), the truncated "at" form, and
 // the raw-JSON default for an unknown kind.
