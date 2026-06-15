@@ -308,9 +308,7 @@ func collectSessions(ctx context.Context, stores []SessionStoreFile, basePath st
 			if displayName == "" {
 				displayName = keyShort
 			}
-			if len(displayName) > 50 {
-				displayName = displayName[:50]
-			}
+			displayName = truncateRunes(displayName, 50)
 
 			trigger := subject
 			if trigger == "" {
@@ -319,9 +317,7 @@ func collectSessions(ctx context.Context, stores []SessionStoreFile, basePath st
 			if trigger == "" {
 				trigger = rawLabel
 			}
-			if len(trigger) > 50 {
-				trigger = trigger[:50]
-			}
+			trigger = truncateRunes(trigger, 50)
 
 			// Resolve model with priority chain
 			gwModel := gatewayModelMap[key]

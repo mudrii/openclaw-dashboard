@@ -111,6 +111,20 @@ func FilterByDate(runs []map[string]any, targetDate, op string) []map[string]any
 	return out
 }
 
+// truncateRunes returns s limited to at most n runes, cutting on a rune
+// boundary so the result is always valid UTF-8. A plain byte-slice cut (s[:n])
+// can split a multibyte rune and emit U+FFFD into data.json.
+func truncateRunes(s string, n int) string {
+	if n < 0 {
+		n = 0
+	}
+	r := []rune(s)
+	if len(r) <= n {
+		return s
+	}
+	return string(r[:n])
+}
+
 // LimitSlice truncates s to the first max elements (no-op when shorter).
 func LimitSlice[T any](s []T, max int) []T {
 	if len(s) > max {

@@ -326,9 +326,7 @@ func applyTokenUsageSummary(
 	} else if sessionTask == "" {
 		sessionTask = sid
 	}
-	if len(sessionTask) > 60 {
-		sessionTask = sessionTask[:60]
-	}
+	sessionTask = truncateRunes(sessionTask, 60)
 
 	lastTs := time.UnixMilli(summary.SessionLastUnixMs).In(loc)
 	lastDate := lastTs.Format("2006-01-02")

@@ -61,10 +61,7 @@ func subagentTaskToRun(tm map[string]any, loc *time.Location) map[string]any {
 
 	// Collapse internal whitespace (task prompts are multi-line) so the run
 	// renders cleanly on a single table row, then bound the length.
-	task := strings.Join(strings.Fields(jsonStr(tm, "task")), " ")
-	if len(task) > subagentTaskMaxLen {
-		task = task[:subagentTaskMaxLen]
-	}
+	task := truncateRunes(strings.Join(strings.Fields(jsonStr(tm, "task")), " "), subagentTaskMaxLen)
 
 	return map[string]any{
 		"task":        task,

@@ -317,8 +317,8 @@ func CallGateway(ctx context.Context, system string, history []Message, question
 
 	if resp.StatusCode != http.StatusOK {
 		preview := string(respBody)
-		if len(preview) > 200 {
-			preview = preview[:200]
+		if r := []rune(preview); len(r) > 200 {
+			preview = string(r[:200]) // rune-safe cut: avoid splitting a multibyte rune
 		}
 		return "", &GatewayError{Status: http.StatusBadGateway, Msg: redactToken(fmt.Sprintf("gateway HTTP %d: %s", resp.StatusCode, preview), token)}
 	}
