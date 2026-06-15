@@ -162,12 +162,12 @@ func TestModelName(t *testing.T) {
 	tests := []struct {
 		input, want string
 	}{
-		{"anthropic/claude-sonnet-4-20250514", "Claude Sonnet"},
+		{"anthropic/claude-sonnet-4-20250514", "Claude Sonnet 4"}, // version 4, date snapshot dropped
 		{"openai/gpt-5", "GPT-5"},
 		{"openai/gpt-4o-2024-05-13", "GPT-4o"},
 		{"anthropic/claude-opus-4-6-20260312", "Claude Opus 4.6"},
-		{"anthropic/claude-opus-4-20250108", "Claude Opus 4.5"},
-		{"claude-haiku-3", "Claude Haiku"},
+		{"anthropic/claude-opus-4-20250108", "Claude Opus 4"}, // version 4, date snapshot dropped
+		{"claude-haiku-3", "Claude Haiku 3"},
 		{"google/gemini-2.5-pro-preview", "Gemini 2.5 Pro"},
 		{"google/gemini-2.5-flash-preview", "Gemini 2.5 Flash"},
 		{"google/gemini-3-flash-preview", "Gemini 3 Flash"},

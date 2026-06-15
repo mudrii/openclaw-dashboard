@@ -259,8 +259,13 @@ func parseAvailableModels(models map[string]any, primary string) ([]map[string]a
 	for _, mid := range sortedJSONKeys(models) {
 		mc := asObj(models[mid])
 		alias := jsonStr(mc, "alias")
+		// Grid display name: a genuine openclaw alias verbatim, otherwise the raw
+		// id prettified through ModelName so the Models grid matches every other
+		// panel (e.g. "MiniMax M3" / "Claude Opus 4.7" not the bare id).
+		name := alias
 		if alias == "" {
 			alias = mid
+			name = ModelName(mid)
 		}
 		aliases[mid] = alias
 		provider := "unknown"
@@ -272,7 +277,7 @@ func parseAvailableModels(models map[string]any, primary string) ([]map[string]a
 			status = "active"
 		}
 		out = append(out, map[string]any{
-			"provider": provider, "name": alias, "id": mid, "status": status,
+			"provider": provider, "name": name, "id": mid, "status": status,
 		})
 	}
 	return out, aliases

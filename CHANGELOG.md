@@ -115,6 +115,12 @@ and a TDD coverage audit over the features above:
   leaves each agent's `model` null to inherit it. `parseModelDefaults` now reads
   the string form, so the Agent & Model Configuration panel shows each agent's
   effective model (prettified via `ModelName`) instead of a blank field.
+- **Cron and Models-grid model names prettified** — the Cron Jobs MODEL column
+  and the Available Models grid showed raw ids; both now render through
+  `ModelName` (the catalog refresh was also moved ahead of the collectors so the
+  cron goroutine sees a populated catalog). The Claude curated fallback now
+  preserves the full version (`claude-opus-4-7` → `Claude Opus 4.7`, dated
+  snapshots like `…-20250514` dropped) instead of a hardcoded `4.5`.
 - **Explicit JSON `null` status block omitted** (INT-2) — `decodeStatusField`
   returned a non-nil zero struct for an explicit `null` (e.g. `"tasks": null`),
   rendering an empty Runtime Health block; it now returns nil so the block is

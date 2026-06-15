@@ -20,10 +20,10 @@ func TestBuildSystemPrompt_RichData(t *testing.T) {
 		"costBreakdown": costBreakdown,
 		"crons": []any{
 			map[string]any{
-				"name":       "broken-job",
-				"schedule":   "* * * * *",
-				"lastStatus": "error",
-				"lastError":  "boom",
+				"name":            "broken-job",
+				"schedule":        "* * * * *",
+				"lastStatus":      "error",
+				"lastDiagnostics": []any{"boom"}, // real collector field (string array)
 			},
 			map[string]any{
 				"name":       "good-job",

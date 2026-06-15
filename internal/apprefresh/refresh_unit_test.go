@@ -34,13 +34,13 @@ func TestModelName_NonOpenAIArms(t *testing.T) {
 		in   string
 		want string
 	}{
-		// Anthropic: provider prefix stripped; opus-4-6 takes precedence over
-		// the broader "opus" arm.
-		{"opus 4.6 precedence", "anthropic/claude-opus-4-6", "Claude Opus 4.6"},
-		{"opus default", "anthropic/claude-opus-4-5", "Claude Opus 4.5"},
-		{"bare opus", "opus", "Claude Opus 4.5"},
-		{"sonnet", "anthropic/claude-sonnet-4-5", "Claude Sonnet"},
-		{"haiku", "anthropic/claude-3-5-haiku", "Claude Haiku"},
+		// Anthropic: provider prefix stripped; the dashed version after the
+		// family token is preserved (4-6 → 4.6), bare family keeps no version.
+		{"opus 4.6", "anthropic/claude-opus-4-6", "Claude Opus 4.6"},
+		{"opus 4.5", "anthropic/claude-opus-4-5", "Claude Opus 4.5"},
+		{"bare opus", "opus", "Claude Opus"},
+		{"sonnet 4.5", "anthropic/claude-sonnet-4-5", "Claude Sonnet 4.5"},
+		{"haiku version before family not captured", "anthropic/claude-3-5-haiku", "Claude Haiku"},
 
 		// Grok: grok-4-fast must win over the broader grok-4 arm.
 		{"grok 4 fast", "xai/grok-4-fast", "Grok 4 Fast"},

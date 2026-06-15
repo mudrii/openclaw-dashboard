@@ -141,6 +141,35 @@ func TestParseModelDefaults_StringForm(t *testing.T) {
 	})
 }
 
+// TestParseAvailableModels_PrettifiesUnaliased locks the Models-grid display:
+// a genuine openclaw alias is kept verbatim; an un-aliased model id is prettified
+// through ModelName so the grid matches every other panel. The returned aliases
+// map keeps the raw id for un-aliased models (for aliasOrID lookups elsewhere).
+func TestParseAvailableModels_PrettifiesUnaliased(t *testing.T) {
+	prev := modelCatalogNames.Load()
+	t.Cleanup(func() { modelCatalogNames.Store(prev) })
+	modelCatalogNames.Store(nil)
+
+	models := map[string]any{
+		"minimax/MiniMax-M3":        map[string]any{"alias": "MiniMax M3"},
+		"anthropic/claude-opus-4-7": map[string]any{},
+	}
+	out, aliases := parseAvailableModels(models, "")
+	name := map[string]string{}
+	for _, m := range out {
+		name[m["id"].(string)] = m["name"].(string)
+	}
+	if name["minimax/MiniMax-M3"] != "MiniMax M3" {
+		t.Errorf("aliased name = %q, want MiniMax M3 (alias kept)", name["minimax/MiniMax-M3"])
+	}
+	if name["anthropic/claude-opus-4-7"] != "Claude Opus 4.7" {
+		t.Errorf("un-aliased name = %q, want Claude Opus 4.7 (prettified)", name["anthropic/claude-opus-4-7"])
+	}
+	if aliases["anthropic/claude-opus-4-7"] != "anthropic/claude-opus-4-7" {
+		t.Errorf("aliases map for un-aliased = %q, want raw id", aliases["anthropic/claude-opus-4-7"])
+	}
+}
+
 // TestParseAgents_InheritsDefaultModel locks the fix: an agent whose model is
 // null or absent inherits the default primary (so the Agent & Model panel shows
 // a model), and a raw inherited id is prettified through ModelName when no alias

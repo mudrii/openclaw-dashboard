@@ -170,7 +170,18 @@ func BuildSystemPrompt(data map[string]any) string {
 		b.WriteString(status)
 		if status == "error" {
 			b.WriteString(" ERROR: ")
-			b.WriteString(str(c, "lastError"))
+			// The refresh collector emits lastDiagnostics (a string array), not a
+			// lastError string; join it so the chat context carries the failure.
+			if diags, ok := c["lastDiagnostics"].([]any); ok {
+				for i, d := range diags {
+					if s, ok := d.(string); ok {
+						if i > 0 {
+							b.WriteString("; ")
+						}
+						b.WriteString(s)
+					}
+				}
+			}
 		}
 		b.WriteByte('\n')
 	}

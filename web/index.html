@@ -1306,7 +1306,7 @@ const DirtyChecker = {
     return {
       alerts: this.sectionChanged(['alerts']),
       health: true,
-      cost: this.sectionChanged(['totalCostToday','totalCostAllTime','projectedMonthly','subagentCostToday','subagentCostAllTime','costBreakdown']),
+      cost: this.sectionChanged(['totalCostToday','totalCostAllTime','projectedMonthly','costBreakdown']),
       crons: !prevD || this.stableSnapshot(D.crons, ['lastStatus','name','schedule','lastDurationMs','lastDiagnostics','model','lastDeliveryStatus','flapping']) !== this.stableSnapshot(prevD.crons, ['lastStatus','name','schedule','lastDurationMs','lastDiagnostics','model','lastDeliveryStatus','flapping']),
       sessions: !prevD || this.stableSnapshot(D.sessions, ['key','name','model','type','contextPct','totalTokens','active','spawnedBy','label','subject']) !== this.stableSnapshot(prevD.sessions, ['key','name','model','type','contextPct','totalTokens','active','spawnedBy','label','subject']),
       usage: this.sectionChanged(['tokenUsage','tokenUsageToday','tokenUsage7d','tokenUsage30d','subagentUsage','subagentUsageToday','subagentUsage7d','subagentUsage30d']) || snap.tabs.usage !== State.prevTabs.usage,

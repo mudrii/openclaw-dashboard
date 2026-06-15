@@ -34,6 +34,30 @@ func TestModelName_PreservesFamilyVersion(t *testing.T) {
 	}
 }
 
+// TestModelName_ClaudeFamilyVersion locks the Claude curated fallback to keep
+// the full version (claude-opus-4-7 → Claude Opus 4.7) instead of collapsing to
+// a hardcoded 4.5, and to surface sonnet/haiku versions too — matching the
+// version-preserving treatment of the GLM/GPT families.
+func TestModelName_ClaudeFamilyVersion(t *testing.T) {
+	prevN := modelCatalogNames.Load()
+	t.Cleanup(func() { modelCatalogNames.Store(prevN) })
+	modelCatalogNames.Store(nil)
+
+	cases := map[string]string{
+		"anthropic/claude-opus-4-6":   "Claude Opus 4.6",
+		"anthropic/claude-opus-4-7":   "Claude Opus 4.7",
+		"anthropic/claude-sonnet-4-6": "Claude Sonnet 4.6",
+		"anthropic/claude-haiku-4-5":  "Claude Haiku 4.5",
+		"anthropic/opus":              "Claude Opus", // no version segment
+		"claude-sonnet":               "Claude Sonnet",
+	}
+	for model, want := range cases {
+		if got := ModelName(model); got != want {
+			t.Errorf("ModelName(%q) = %q, want %q", model, got, want)
+		}
+	}
+}
+
 // TestModelName_GeminiTierNeutralFallback guards that an unrecognized Gemini id
 // is not mislabeled as the Flash tier — a Pro/Ultra release with no catalog name
 // must fall back to the tier-neutral "Gemini", while an explicit flash id still

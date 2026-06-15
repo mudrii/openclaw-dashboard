@@ -120,6 +120,46 @@ func upperFamily(id, token, prefix string) string {
 	return prefix + "-" + rest[:end]
 }
 
+// claudeFamilyName renders an Anthropic id like "claude-opus-4-6" as
+// "Claude Opus 4.6", reading the dashed version after the family token (4-6 →
+// 4.6). A dash only continues the version when a digit follows, so a word suffix
+// (e.g. "-thinking") stops it. With no version it returns "Claude <family>".
+// token is the lower-case family as it appears in the id ("opus"); family is the
+// display label ("Opus").
+func claudeFamilyName(id, token, family string) string {
+	i := strings.Index(id, token)
+	if i < 0 {
+		return "Claude " + family
+	}
+	rest := strings.TrimPrefix(id[i+len(token):], "-")
+	if rest == "" {
+		return "Claude " + family
+	}
+	// Version parts are short numeric segments joined by dashes ("4-6" → 4.6).
+	// Stop at a long numeric segment (a YYYYMMDD date snapshot) or any
+	// non-numeric suffix (e.g. "-thinking").
+	var parts []string
+	for _, seg := range strings.Split(rest, "-") {
+		if len(seg) == 0 || len(seg) > 3 || !isAllDigits(seg) {
+			break
+		}
+		parts = append(parts, seg)
+	}
+	if len(parts) == 0 {
+		return "Claude " + family
+	}
+	return "Claude " + family + " " + strings.Join(parts, ".")
+}
+
+func isAllDigits(s string) bool {
+	for i := 0; i < len(s); i++ {
+		if s[i] < '0' || s[i] > '9' {
+			return false
+		}
+	}
+	return len(s) > 0
+}
+
 func ModelName(model string) string {
 	// Prefer the live catalog name, but ignore a catalog "name" that is merely
 	// the bare model id (openclaw's fallback when no friendly name is
@@ -144,14 +184,12 @@ func ModelName(model string) string {
 		return slices.Contains(segments, seg)
 	}
 	switch {
-	case strings.Contains(ml, "opus-4-6"):
-		return "Claude Opus 4.6"
 	case strings.Contains(ml, "opus"):
-		return "Claude Opus 4.5"
+		return claudeFamilyName(ml, "opus", "Opus")
 	case strings.Contains(ml, "sonnet"):
-		return "Claude Sonnet"
+		return claudeFamilyName(ml, "sonnet", "Sonnet")
 	case strings.Contains(ml, "haiku"):
-		return "Claude Haiku"
+		return claudeFamilyName(ml, "haiku", "Haiku")
 	case strings.Contains(ml, "grok-4-fast"):
 		return "Grok 4 Fast"
 	case strings.Contains(ml, "grok-4") || strings.Contains(ml, "grok4"):

@@ -233,7 +233,7 @@ func (c *modelCatalogCache) callFetch(ctx context.Context) modelCatalog {
 	}
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
-	out, err := runner(ctx, resolve(), "models", "list", "--json").Output()
+	out, err := boundedOutput(runner(ctx, resolve(), "models", "list", "--json"), maxCLIOutputBytes)
 	if err != nil {
 		slog.Warn("[dashboard] modelCatalogCache: command failed", "error", err)
 		return modelCatalog{names: map[string]string{}, windows: map[string]int{}}
