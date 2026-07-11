@@ -197,6 +197,69 @@ func TestParseOpenclawStatusJSON(t *testing.T) {
 		}
 	})
 
+	t.Run("latest status all blocks pass through", func(t *testing.T) {
+		out := `{
+			"runtimeVersion":"2026.6.11",
+			"agents":[{"id":"main"}],
+			"gateway":{"status":"online"},
+			"gatewayService":{"installed":true},
+			"heartbeat":{"status":"ok"},
+			"memory":{"rssBytes":123},
+			"memoryPlugin":{"enabled":true},
+			"nodeService":{"installed":false},
+			"os":{"platform":"darwin"},
+			"queuedSystemEvents":[{"type":"presence"}],
+			"secretDiagnostics":["gateway.auth.token configured"],
+			"securityAudit":{"warnings":0},
+			"sessions":{"count":2},
+			"taskAudit":{"active":1},
+			"taskAuditRetainedLost":false,
+			"tasks":{"total":3},
+			"update":{"available":false},
+			"updateChannel":"latest",
+			"updateChannelSource":"npm"
+		}`
+		got, err := parseOpenclawStatusJSON(out, SystemVersions{})
+		if err != nil {
+			t.Fatalf("err: want nil, got %v", err)
+		}
+		if got.RuntimeVersion != "2026.6.11" {
+			t.Errorf("RuntimeVersion = %q, want 2026.6.11", got.RuntimeVersion)
+		}
+		if got.CurrentVersion != "2026.6.11" {
+			t.Errorf("CurrentVersion = %q, want runtimeVersion compatibility alias", got.CurrentVersion)
+		}
+		if got.SecurityAudit == nil || got.SecurityAudit["warnings"] != float64(0) {
+			t.Errorf("SecurityAudit = %v", got.SecurityAudit)
+		}
+		secretDiagnostics, ok := got.SecretDiagnostics.([]any)
+		if !ok || len(secretDiagnostics) != 1 || secretDiagnostics[0] != "gateway.auth.token configured" {
+			t.Errorf("SecretDiagnostics = %v", got.SecretDiagnostics)
+		}
+		if got.Update == nil || got.Update["available"] != false {
+			t.Errorf("Update = %v", got.Update)
+		}
+		if got.UpdateChannel != "latest" || got.UpdateChannelSource != "npm" {
+			t.Errorf("update channel/source = %v/%v", got.UpdateChannel, got.UpdateChannelSource)
+		}
+		if got.LastHeartbeat == nil || got.LastHeartbeat["status"] != "ok" {
+			t.Errorf("LastHeartbeat = %v", got.LastHeartbeat)
+		}
+		if got.Gateway == nil || got.Gateway["status"] != "online" {
+			t.Errorf("Gateway = %v", got.Gateway)
+		}
+		if got.GatewayService == nil || got.NodeService == nil || got.Memory == nil ||
+			got.MemoryPlugin == nil || got.OS == nil || got.TaskAudit == nil {
+			t.Errorf("loose status blocks missing: gatewayService=%v nodeService=%v memory=%v memoryPlugin=%v os=%v taskAudit=%v",
+				got.GatewayService, got.NodeService, got.Memory, got.MemoryPlugin, got.OS, got.TaskAudit)
+		}
+		if got.Agents == nil || got.Sessions == nil || got.QueuedSystemEvents == nil ||
+			got.TaskAuditRetainedLost == nil {
+			t.Errorf("loose status values missing: agents=%v sessions=%v queued=%v retainedLost=%v",
+				got.Agents, got.Sessions, got.QueuedSystemEvents, got.TaskAuditRetainedLost)
+		}
+	})
+
 	t.Run("explicit JSON null leaves typed block nil (not zero struct)", func(t *testing.T) {
 		got, err := parseOpenclawStatusJSON(`{"currentVersion":"2.0.0","tasks":null,"eventLoop":null}`, SystemVersions{})
 		if err != nil {

@@ -8,9 +8,9 @@ VERSION := $(shell cat VERSION 2>/dev/null || echo "dev")
 GOVULNCHECK_VERSION := v1.3.0
 STATICCHECK_VERSION := v0.7.0
 
-# CGO is disabled so the binary is statically linked and matches the artefacts
-# produced by Dockerfile, .goreleaser.yml, and flake.nix. Re-enable CGO only if
-# a future feature requires it; ensure all four build paths flip together.
+# Release builds disable CGO for static-link parity with Docker, GoReleaser,
+# and Nix. The race-test target overrides this because Linux race builds need
+# cgo even though the shipped binary does not.
 export CGO_ENABLED := 0
 
 all: lint test build
@@ -26,7 +26,7 @@ build-debug:
 	go build -ldflags="-X github.com/mudrii/openclaw-dashboard.BuildVersion=$(VERSION)-debug" -o $(BINARY)-debug ./cmd/openclaw-dashboard
 
 test:
-	go test -race -count=1 ./...
+	CGO_ENABLED=1 go test -race -count=1 ./...
 
 lint:
 	golangci-lint run ./...
@@ -52,4 +52,4 @@ cover:
 	go test -coverprofile=coverage.out ./...
 	go tool cover -html=coverage.out -o coverage.html
 
-check: vet lint test govulncheck
+check: vet lint test govulncheck staticcheck build

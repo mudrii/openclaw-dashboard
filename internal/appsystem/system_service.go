@@ -635,6 +635,27 @@ func parseOpenclawStatusJSON(output string, versions SystemVersions) (SystemOpen
 	if sec, ok := raw["security"].(map[string]any); ok {
 		status.Security = sec
 	}
+	if sec, ok := raw["securityAudit"].(map[string]any); ok {
+		status.SecurityAudit = sec
+	}
+	if diag, ok := raw["secretDiagnostics"]; ok {
+		status.SecretDiagnostics = diag
+	}
+	if update, ok := raw["update"].(map[string]any); ok {
+		status.Update = update
+	}
+	if updateChannel, ok := raw["updateChannel"]; ok {
+		status.UpdateChannel = updateChannel
+	}
+	if updateChannelSource, ok := raw["updateChannelSource"]; ok {
+		status.UpdateChannelSource = updateChannelSource
+	}
+	if runtimeVersion, ok := raw["runtimeVersion"].(string); ok {
+		status.RuntimeVersion = runtimeVersion
+		if status.CurrentVersion == "" {
+			status.CurrentVersion = runtimeVersion
+		}
+	}
 	// INT-2: additive rich blocks. Typed sub-objects (tasks, eventLoop) are
 	// re-decoded from their raw value; loose blocks pass through as maps. Any
 	// absent or malformed block is left nil so minimal status output is
@@ -646,8 +667,43 @@ func parseOpenclawStatusJSON(output string, versions SystemVersions) (SystemOpen
 	}
 	if hb, ok := raw["lastHeartbeat"].(map[string]any); ok {
 		status.LastHeartbeat = hb
+	} else if hb, ok := raw["heartbeat"].(map[string]any); ok {
+		status.LastHeartbeat = hb
 	}
 	status.ChannelSummary = stringSliceFromAny(raw["channelSummary"])
+	if agents, ok := raw["agents"]; ok {
+		status.Agents = agents
+	}
+	if gateway, ok := raw["gateway"].(map[string]any); ok {
+		status.Gateway = gateway
+	}
+	if gatewayService, ok := raw["gatewayService"].(map[string]any); ok {
+		status.GatewayService = gatewayService
+	}
+	if nodeService, ok := raw["nodeService"].(map[string]any); ok {
+		status.NodeService = nodeService
+	}
+	if memory, ok := raw["memory"].(map[string]any); ok {
+		status.Memory = memory
+	}
+	if memoryPlugin, ok := raw["memoryPlugin"].(map[string]any); ok {
+		status.MemoryPlugin = memoryPlugin
+	}
+	if osInfo, ok := raw["os"].(map[string]any); ok {
+		status.OS = osInfo
+	}
+	if sessions, ok := raw["sessions"]; ok {
+		status.Sessions = sessions
+	}
+	if taskAudit, ok := raw["taskAudit"].(map[string]any); ok {
+		status.TaskAudit = taskAudit
+	}
+	if retainedLost, ok := raw["taskAuditRetainedLost"]; ok {
+		status.TaskAuditRetainedLost = retainedLost
+	}
+	if events, ok := raw["queuedSystemEvents"]; ok {
+		status.QueuedSystemEvents = events
+	}
 	return status, nil
 }
 

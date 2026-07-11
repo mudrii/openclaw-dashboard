@@ -872,6 +872,7 @@ const DataLayer = {
       if(myId!==this._reqId)return null;
       const json=await r.json();
       if(myId!==this._reqId)return null;
+      if(!r.ok)throw new Error(json&&json.error?json.error:`refresh failed (${r.status})`);
       return json;
     }catch(e){
       if(myId!==this._reqId)return null;
@@ -1420,7 +1421,7 @@ const Renderer = {
       const dotCls=st==='ok'?'sd-ok':st==='error'?'sd-error':st==='none'?'sd-none':'sd-pending';
       const diagnostics=Array.isArray(c.lastDiagnostics)?c.lastDiagnostics.filter(Boolean).join(' · '):'';
       const tip=diagnostics?` data-tip="${esc(diagnostics)}"`:'';
-      const dur=c.lastDurationMs?((c.lastDurationMs/1000).toFixed(1)+'s'):'—';
+      const dur=c.lastDurationMs!=null?((c.lastDurationMs/1000).toFixed(1)+'s'):'—';
       // INT-5: delivery outcome dot + flapping badge.
       const ds=c.lastDeliveryStatus;
       const dsColor=ds==='delivered'?'var(--green)':ds==='not-delivered'?'var(--red)':ds==='unknown'?'var(--yellow)':'var(--dim)';
@@ -1493,11 +1494,12 @@ const Renderer = {
   // Agent Configuration
   if (flags.agentConfig) {
     const AC = D.agentConfig||{};
+    const arr = v => Array.isArray(v) ? v : [];
     const PALETTE = ['var(--green)','var(--blue,#3b82f6)','var(--purple)','var(--yellow)','var(--cyan,#22d3ee)','var(--orange,#fb923c)'];
     const EMOJIS  = ['🤖','⚙️','👥','🔧','🧠','🦾','🛠️'];
 
     // Agent count badge
-    const agentList = AC.agents||[];
+    const agentList = arr(AC.agents);
     $('agentCount').textContent = agentList.length + (agentList.length===1?' agent':' agents');
 
     // Agent Cards — data-driven, no hardcoded IDs
@@ -1520,7 +1522,7 @@ const Renderer = {
     }).join('') : '<div style="color:var(--dim);font-size:11px;padding:8px">No agents configured — using default model.</div>';
 
     // Model Routing Panel — generic, handles 0–N fallbacks
-    const fallbacks = AC.fallbacks||[];
+    const fallbacks = arr(AC.fallbacks);
     const routingChain = [
       {label:'PRIMARY', model:AC.primaryModel||'—', color:'rgba(74,222,128,.3)', bg:'rgba(74,222,128,.1)', textCol:'var(--green)'},
       ...fallbacks.map((f,i)=>({label:`FALLBACK ${i+1}`, model:f, color:'var(--border)', bg:'var(--glass)', textCol:'var(--text)', opacity:Math.max(0.5,1-i*0.15)}))
@@ -1599,7 +1601,7 @@ const Renderer = {
     const channelStatusMap = AC.channelStatus && typeof AC.channelStatus === 'object' ? AC.channelStatus : {};
     const channelKeys = Array.from(new Set([
       ...Object.keys(channelStatusMap),
-      ...((AC.channels||[]).filter(c=>typeof c==='string')),
+      ...(arr(AC.channels).filter(c=>typeof c==='string')),
     ])).sort();
 
     const normalizeHealth = v => {
@@ -1615,7 +1617,7 @@ const Renderer = {
 
     const channelCards = channelKeys.map((key)=>{
       const raw = channelStatusMap[key] && typeof channelStatusMap[key] === 'object' ? channelStatusMap[key] : {};
-      const enabled = typeof raw.enabled === 'boolean' ? raw.enabled : (AC.channels||[]).includes(key);
+      const enabled = typeof raw.enabled === 'boolean' ? raw.enabled : arr(AC.channels).includes(key);
       const configured = typeof raw.configured === 'boolean' ? raw.configured : true;
       const connected = typeof raw.connected === 'boolean' ? raw.connected : null;
       const health = normalizeHealth(raw.health);
@@ -1662,14 +1664,14 @@ const Renderer = {
     ].join('') : '<span style="color:var(--dim);font-size:12px">Not configured</span>';
 
     // Hooks Panel
-    const hooks = AC.hooks||[];
+    const hooks = arr(AC.hooks);
     $('hooksPanelInner').innerHTML = hooks.length
       ? hooks.map(h=>badge(h.name, h.enabled)).join('')
       : '<span style="color:var(--dim);font-size:12px">No hooks configured</span>';
 
     // Plugins & Extras
-    const plugins = AC.plugins||[];
-    const skills  = (AC.skills||[]).filter(s=>s.enabled);
+    const plugins = arr(AC.plugins);
+    const skills  = arr(AC.skills).filter(s=>s.enabled);
     $('capsPanelInner').innerHTML = [
       plugins.length ? `<div style="margin-bottom:6px"><div style="font-size:9px;color:var(--muted);margin-bottom:3px">Plugins</div>${plugins.map(p=>badge(p.name, p.enabled)).join('')}</div>` : '',
       skills.length  ? `<div style="margin-bottom:6px"><div style="font-size:9px;color:var(--muted);margin-bottom:3px">Active Skills</div>${skills.map(s=>badge(s.name,true)).join('')}</div>` : '',
@@ -1680,13 +1682,13 @@ const Renderer = {
     ].join('');
 
     // Bindings
-    const bindings = AC.bindings||[];
+    const bindings = arr(AC.bindings);
     const agentColMap={};agentList.forEach((a,i)=>agentColMap[a.id]=PALETTE[i%PALETTE.length]);
     const defaultAgent = (agentList.find(a=>a.isDefault)||{}).id || (bindings.find(b=>b.kind==='default')||{}).agentId || 'main';
 
     // Add inferred per-channel bindings so newly configured channels (slack/discord/etc.) are visible
     const observedChannels = Array.from(new Set([
-      ...((AC.channels||[]).filter(c=>typeof c==='string')),
+      ...(arr(AC.channels).filter(c=>typeof c==='string')),
       ...Object.keys((AC.channelStatus&&typeof AC.channelStatus==='object')?AC.channelStatus:{}),
     ])).sort();
     const explicitChannels = new Set(bindings.filter(b=>b && b.kind!=='default').map(b=>String(b.channel||'')));
@@ -1729,7 +1731,7 @@ const Renderer = {
       const col = PALETTE[i % PALETTE.length];
       const provider = (a.modelId||'').split('/')[0]||'—';
       const ctx1m = a.context1m===true?'✅':a.context1m===false?'❌':'—';
-      const agentFallbacks = (a.fallbacks||AC.fallbacks||[]).join(' → ');
+      const agentFallbacks = (Array.isArray(a.fallbacks)?a.fallbacks:fallbacks).join(' → ');
       return `<tr class="dr">
         <td style="padding:6px 8px;font-weight:700;color:${col}">${esc(a.id)}${a.isDefault?' <span style="font-size:9px;color:var(--green);font-weight:400">(default)</span>':''}</td>
         <td style="padding:6px 8px;color:var(--text)">${esc(a.role||a.id)}</td>
@@ -1990,7 +1992,7 @@ const Chat = {
       });
       const data=await res.json();
       thinking.remove();
-      if(data.answer){
+      if(typeof data.answer === 'string'){
         Chat.appendMessage('assistant',data.answer);
         Chat.history.push({role:'user',content:question});
         Chat.history.push({role:'assistant',content:data.answer});
@@ -2212,9 +2214,11 @@ const SystemBar = {
     const rhEl=$('runtimeHealthPanelInner');
     if(rhEl){
       const tasks=ocStatus.tasks, evl=ocStatus.eventLoop, pc=ocStatus.pluginCompatibility, hb=ocStatus.lastHeartbeat;
+      const errs=Array.isArray(ocData.errors)?ocData.errors.filter(Boolean):[];
       const cs=Array.isArray(ocStatus.channelSummary)?ocStatus.channelSummary:[];
       const rows=[];
       const row=(k,v,c)=>rows.push([k,String(v),c||'var(--text)']);
+      if(errs.length)row('Status errors', errs.join('   ·   '), 'var(--red)');
       if(tasks){
         row('Tasks (active / total)', (tasks.active||0)+' / '+(tasks.total||0));
         if(tasks.failures)row('Task failures', tasks.failures, tasks.failures>0?'var(--red)':'var(--text)');

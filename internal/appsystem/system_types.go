@@ -93,19 +93,36 @@ type SystemOpenclawGateway struct {
 }
 
 type SystemOpenclawStatus struct {
-	CurrentVersion   string         `json:"currentVersion,omitempty"`
-	LatestVersion    string         `json:"latestVersion,omitempty"`
-	ConnectLatencyMs int64          `json:"connectLatencyMs,omitempty"`
-	Security         map[string]any `json:"security,omitempty"`
+	CurrentVersion      string         `json:"currentVersion,omitempty"`
+	LatestVersion       string         `json:"latestVersion,omitempty"`
+	ConnectLatencyMs    int64          `json:"connectLatencyMs,omitempty"`
+	Security            map[string]any `json:"security,omitempty"`
+	SecurityAudit       map[string]any `json:"securityAudit,omitempty"`
+	SecretDiagnostics   any            `json:"secretDiagnostics,omitempty"`
+	Update              map[string]any `json:"update,omitempty"`
+	UpdateChannel       any            `json:"updateChannel,omitempty"`
+	UpdateChannelSource any            `json:"updateChannelSource,omitempty"`
+	RuntimeVersion      string         `json:"runtimeVersion,omitempty"`
 
 	// INT-2 rich blocks. Tasks and pluginCompatibility/channelSummary come from
 	// lean status; eventLoop and lastHeartbeat are deep-status only. All are
 	// optional: absent in the CLI output → nil → omitted from the API body.
-	Tasks               *SystemOpenclawTasks     `json:"tasks,omitempty"`
-	EventLoop           *SystemOpenclawEventLoop `json:"eventLoop,omitempty"`
-	PluginCompatibility map[string]any           `json:"pluginCompatibility,omitempty"`
-	LastHeartbeat       map[string]any           `json:"lastHeartbeat,omitempty"`
-	ChannelSummary      []string                 `json:"channelSummary,omitempty"`
+	Tasks                 *SystemOpenclawTasks     `json:"tasks,omitempty"`
+	EventLoop             *SystemOpenclawEventLoop `json:"eventLoop,omitempty"`
+	PluginCompatibility   map[string]any           `json:"pluginCompatibility,omitempty"`
+	LastHeartbeat         map[string]any           `json:"lastHeartbeat,omitempty"`
+	ChannelSummary        []string                 `json:"channelSummary,omitempty"`
+	Agents                any                      `json:"agents,omitempty"`
+	Gateway               map[string]any           `json:"gateway,omitempty"`
+	GatewayService        map[string]any           `json:"gatewayService,omitempty"`
+	NodeService           map[string]any           `json:"nodeService,omitempty"`
+	Memory                map[string]any           `json:"memory,omitempty"`
+	MemoryPlugin          map[string]any           `json:"memoryPlugin,omitempty"`
+	OS                    map[string]any           `json:"os,omitempty"`
+	Sessions              any                      `json:"sessions,omitempty"`
+	TaskAudit             map[string]any           `json:"taskAudit,omitempty"`
+	TaskAuditRetainedLost any                      `json:"taskAuditRetainedLost,omitempty"`
+	QueuedSystemEvents    any                      `json:"queuedSystemEvents,omitempty"`
 }
 
 // SystemOpenclawTasks is the task-queue summary from `openclaw status --json`.
