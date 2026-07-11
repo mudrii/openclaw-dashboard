@@ -19,14 +19,22 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
           fetch-depth: 0
 
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
           go-version-file: go.mod
           cache: true
+
+      - name: Verify release commit is on main
+        run: |
+          git fetch --no-tags origin main
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "::error::release tag commit $GITHUB_SHA is not reachable from origin/main"
+            exit 1
+          fi
 
       - name: Verify release tag matches VERSION
         run: |
@@ -39,15 +47,24 @@ jobs:
       - name: Validate release source
         run: make check
 
+      - name: Install shellcheck
+        run: sudo apt-get update && sudo apt-get install -y shellcheck
+
+      - name: Lint shell scripts
+        run: |
+          shellcheck --severity=warning assets/runtime/refresh.sh
+          shellcheck --severity=warning install.sh
+          shellcheck --severity=warning uninstall.sh
+
       - name: Install syft (SBOM generator)
         # Pin exact: floating @v0 will silently disappear when syft v1 → v2.
         # Dependabot's github-actions ecosystem watches exact versions.
-        uses: anchore/sbom-action/download-syft@v0.24.0
+        uses: anchore/sbom-action/download-syft@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
 
       - name: Install cosign (keyless signing)
         # Pin exact: sigstore/cosign-installer does not publish a floating @v4
         # tag (only @v2 and @v3 exist as moving majors). Bump via dependabot.
-        uses: sigstore/cosign-installer@v4.1.2
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
 
       - name: Validate Homebrew tap credentials
         env:
@@ -64,7 +81,7 @@ jobs:
           }
 
       - name: Mint homebrew-tap token
-        uses: actions/create-github-app-token@v3.2.0
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         id: tap-token
         with:
           client-id: ${{ vars.HOMEBREW_TAP_APP_CLIENT_ID }}
@@ -74,7 +91,7 @@ jobs:
           permission-contents: write
 
       - name: Run GoReleaser
-        uses: goreleaser/goreleaser-action@v7
+        uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7
         with:
           distribution: goreleaser
           version: "v2.4.5"

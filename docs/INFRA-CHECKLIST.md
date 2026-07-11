@@ -19,11 +19,11 @@ Re-run `nix flake update` periodically (monthly is a reasonable cadence) to
 pick up nixpkgs security updates. The dependabot config in
 `.github/dependabot.yml` does not cover flake inputs today.
 
-## 2. Pin Docker base image digests
+## 2. Keep Docker base image digests current
 
-`Dockerfile` uses floating tags `golang:1.26-alpine` and `alpine:3.23`. A
-hostile registry compromise (or accidental tag move) could swap the image
-under us. Resolve the current digests and pin them:
+`Dockerfile` pins the base images by digest while keeping the human-readable
+tags (`golang:1.26-alpine` and `alpine:3.23`) for Dependabot matching. When
+refreshing the pins manually, resolve the current digests:
 
 ```sh
 docker pull golang:1.26-alpine
@@ -35,7 +35,7 @@ docker inspect --format='{{index .RepoDigests 0}}' alpine:3.23
 # → alpine@sha256:<DIGEST_B>
 ```
 
-Then edit `Dockerfile`:
+Then edit `Dockerfile` if the digests changed:
 
 ```dockerfile
 FROM golang:1.26-alpine@sha256:<DIGEST_A> AS builder
@@ -43,8 +43,8 @@ FROM golang:1.26-alpine@sha256:<DIGEST_A> AS builder
 FROM alpine:3.23@sha256:<DIGEST_B>
 ```
 
-Dependabot's `docker` ecosystem watcher will open PRs when newer digests are
-published, so this stays current automatically.
+Dependabot's `docker` ecosystem watcher opens PRs when newer digests are
+published, so this should normally stay current automatically.
 
 ## 3. Enable branch protection on `main`
 

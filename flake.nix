@@ -27,6 +27,7 @@
             subPackages = [ "cmd/openclaw-dashboard" ];
 
             env.CGO_ENABLED = "0";
+            flags = [ "-trimpath" ];
             ldflags = [
               "-s" "-w"
               "-X" "github.com/mudrii/openclaw-dashboard.BuildVersion=${version}"

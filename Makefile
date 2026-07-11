@@ -18,12 +18,12 @@ all: lint test build
 # Production build — strips DWARF symbols (-s -w) for minimal artefact size.
 # Matches the binary shipped by Dockerfile + .goreleaser.yml + flake.nix.
 build:
-	go build -ldflags="-s -w -X github.com/mudrii/openclaw-dashboard.BuildVersion=$(VERSION)" -o $(BINARY) ./cmd/openclaw-dashboard
+	go build -trimpath -ldflags="-s -w -X github.com/mudrii/openclaw-dashboard.BuildVersion=$(VERSION)" -o $(BINARY) ./cmd/openclaw-dashboard
 
 # Debug build — keeps DWARF so stack traces in panics are usable. Use locally
 # when investigating crashes; do not ship a debug binary as a release artefact.
 build-debug:
-	go build -ldflags="-X github.com/mudrii/openclaw-dashboard.BuildVersion=$(VERSION)-debug" -o $(BINARY)-debug ./cmd/openclaw-dashboard
+	go build -trimpath -ldflags="-X github.com/mudrii/openclaw-dashboard.BuildVersion=$(VERSION)-debug" -o $(BINARY)-debug ./cmd/openclaw-dashboard
 
 test:
 	CGO_ENABLED=1 go test -race -count=1 ./...

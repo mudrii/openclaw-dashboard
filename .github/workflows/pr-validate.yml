@@ -17,9 +17,10 @@ jobs:
     name: Check PR template is filled out
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    if: ${{ github.actor != 'dependabot[bot]' }}
     steps:
       - name: Validate PR description
-        uses: actions/github-script@v9
+        uses: actions/github-script@373c709c69115d41ff229c7e5df9f8788daa9553 # v9
         with:
           script: |
             const body = context.payload.pull_request.body || '';
@@ -30,9 +31,15 @@ jobs:
               errors.push('PR description is empty. Fill out the pull request template.');
             }
 
-            // Must have a Type ticked
-            if (!/- \[x\]/i.test(body)) {
-              errors.push('No PR type selected. Tick exactly one box under "## Type".');
+            // Must have exactly one Type ticked in the Type section.
+            const typeMatch = body.match(/## Type\s*([\s\S]*?)(?=##|$)/);
+            if (!typeMatch) {
+              errors.push('"## Type" section is missing. Tick exactly one PR type.');
+            } else {
+              const checkedTypes = (typeMatch[1].match(/- \[x\]/gi) || []).length;
+              if (checkedTypes !== 1) {
+                errors.push(`Expected exactly one checked PR type, found ${checkedTypes}.`);
+              }
             }
 
             // Summary must be substantial
@@ -43,16 +50,29 @@ jobs:
 
             // What Changed must have at least one real row
             const changedMatch = body.match(/## What Changed\s*([\s\S]*?)(?=##|$)/);
-            if (!changedMatch || !/\|\s*`/.test(changedMatch[1])) {
+            const changedRows = changedMatch
+              ? changedMatch[1].split('\n').filter(line => {
+                  const trimmed = line.trim();
+                  if (!trimmed.startsWith('|')) return false;
+                  if (/^\|\s*File\s*\|/i.test(trimmed)) return false;
+                  if (/^\|\s*-+\s*\|/.test(trimmed)) return false;
+                  const cells = trimmed.split('|').slice(1, -1).map(cell => cell.trim());
+                  return cells.length >= 2 && cells[0] !== '' && cells[1] !== '';
+                })
+              : [];
+            if (changedRows.length === 0) {
               errors.push('"## What Changed" table has no entries. List files touched and what changed.');
             }
 
             // Checklist must be fully ticked
             const checklistSection = body.match(/## Checklist([\s\S]*?)(?=## |$)/);
-            if (checklistSection) {
+            if (!checklistSection) {
+              errors.push('"## Checklist" section is missing. Keep the checklist and complete all items.');
+            } else {
+              const boxes = checklistSection[1].match(/- \[[ x]\]/gi) || [];
               const unticked = (checklistSection[1].match(/- \[ \]/g) || []).length;
-              if (unticked > 0) {
-                errors.push(`PR checklist has ${unticked} unchecked item(s). Complete all items before requesting review.`);
+              if (boxes.length === 0 || unticked > 0) {
+                errors.push(`PR checklist has ${unticked || 'missing'} unchecked item(s). Complete all items before requesting review.`);
               }
             }
 

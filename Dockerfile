@@ -2,7 +2,7 @@
 # OpenClaw Dashboard — Dockerfile (Go binary only)
 #
 # Build:
-#   docker build --build-arg VERSION=$(cat VERSION) -t openclaw-dashboard .
+#   docker build -t openclaw-dashboard .
 #
 # Run (LAN — opts into non-loopback bind via env var):
 #   docker run -p 8080:8080 \
@@ -21,9 +21,8 @@
 # =============================================================================
 
 # --- Stage 1: Build Go binary ---
-FROM golang:1.26-alpine AS builder
+FROM golang:1.26-alpine@sha256:0178a641fbb4858c5f1b48e34bdaabe0350a330a1b1149aabd498d0699ff5fb2 AS builder
 
-ARG VERSION=dev
 WORKDIR /build
 COPY go.mod ./
 COPY *.go ./
@@ -31,12 +30,14 @@ COPY cmd/ ./cmd/
 COPY internal/ ./internal/
 COPY web/ ./web/
 COPY VERSION ./
-RUN CGO_ENABLED=0 go build \
+RUN VERSION="$(tr -d '[:space:]' < VERSION)" && \
+    CGO_ENABLED=0 go build \
+    -trimpath \
     -ldflags="-s -w -X github.com/mudrii/openclaw-dashboard.BuildVersion=${VERSION}" \
     -o openclaw-dashboard ./cmd/openclaw-dashboard
 
 # --- Stage 2: Runtime ---
-FROM alpine:3.23
+FROM alpine:3.23@sha256:fd791d74b68913cbb027c6546007b3f0d3bc45125f797758156952bc2d6daf40
 
 # wget is needed for HEALTHCHECK. Busybox in Alpine ships a wget applet, but
 # install the full package so HEALTHCHECK behavior is stable across Alpine

@@ -19,6 +19,8 @@ builds:
     goarch:
       - amd64
       - arm64
+    flags:
+      - -trimpath
     ldflags:
       - -s -w -X github.com/mudrii/openclaw-dashboard.BuildVersion={{ .Version }}
 

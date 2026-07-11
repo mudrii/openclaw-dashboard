@@ -119,6 +119,7 @@ elif command -v go >/dev/null 2>&1; then
   fi
   curl -fsSL "$source_archive" | tar -xz --strip-components=1 -C "$INSTALL_DIR"
   CGO_ENABLED=0 go build \
+    -trimpath \
     -ldflags="-s -w -X github.com/mudrii/openclaw-dashboard.BuildVersion=${build_version}" \
     -o openclaw-dashboard ./cmd/openclaw-dashboard
   echo "✅ Binary built from source (version: ${build_version})"

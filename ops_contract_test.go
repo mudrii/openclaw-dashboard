@@ -10,11 +10,14 @@ import (
 func TestCIUsesCanonicalMakeTargets(t *testing.T) {
 	workflow := readTextFile(t, ".github/workflows/tests.yml")
 	for _, want := range []string{
-		"run: make vet",
-		"run: make test",
-		"run: make build",
-		"run: make govulncheck",
-		"run: make staticcheck",
+		`uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6`,
+		`uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6`,
+		`run: make vet`,
+		`run: make test`,
+		`run: make build`,
+		`run: make govulncheck`,
+		`run: make staticcheck`,
+		`sudo apt-get update && sudo apt-get install -y shellcheck`,
 	} {
 		if !strings.Contains(workflow, want) {
 			t.Fatalf("tests workflow missing %q", want)
@@ -28,6 +31,25 @@ func TestCIUsesCanonicalMakeTargets(t *testing.T) {
 	}
 }
 
+func TestWorkflowActionsAreImmutablePinned(t *testing.T) {
+	shaRe := regexp.MustCompile(`^[0-9a-f]{40}$`)
+	for _, path := range []string{
+		".github/workflows/tests.yml",
+		".github/workflows/release.yml",
+		".github/workflows/pr-validate.yml",
+		".github/workflows/label-issues.yml",
+	} {
+		workflow := readTextFile(t, path)
+		re := regexp.MustCompile(`(?m)^\s*uses:\s*([^@\s]+)@([^ #\s]+)`)
+		for _, match := range re.FindAllStringSubmatch(workflow, -1) {
+			ref := match[2]
+			if !shaRe.MatchString(ref) {
+				t.Fatalf("%s action %s must be pinned to a full commit SHA, got %q", path, match[1], ref)
+			}
+		}
+	}
+}
+
 func TestPRTemplateUsesCanonicalValidationCommand(t *testing.T) {
 	template := readTextFile(t, ".github/PULL_REQUEST_TEMPLATE.md")
 	if !strings.Contains(template, "make check") {
@@ -35,6 +57,21 @@ func TestPRTemplateUsesCanonicalValidationCommand(t *testing.T) {
 	}
 	if strings.Contains(template, "go test -race") {
 		t.Fatal("PR template must not advertise raw go test; make check is the repo validation surface")
+	}
+}
+
+func TestPRValidationSkipsDependabotTemplateGate(t *testing.T) {
+	workflow := readTextFile(t, ".github/workflows/pr-validate.yml")
+	for _, want := range []string{
+		`if: ${{ github.actor != 'dependabot[bot]' }}`,
+		`uses: actions/github-script@373c709c69115d41ff229c7e5df9f8788daa9553 # v9`,
+		`Expected exactly one checked PR type`,
+		`What Changed`,
+		`"## Checklist" section is missing`,
+	} {
+		if !strings.Contains(workflow, want) {
+			t.Fatalf("PR validation workflow missing %q", want)
+		}
 	}
 }
 
@@ -68,7 +105,7 @@ func TestMakeBuildCarriesReleaseParityFlags(t *testing.T) {
 	makefile := readTextFile(t, "Makefile")
 	for _, want := range []string{
 		"export CGO_ENABLED := 0",
-		`-ldflags="-s -w -X github.com/mudrii/openclaw-dashboard.BuildVersion=$(VERSION)"`,
+		`go build -trimpath -ldflags="-s -w -X github.com/mudrii/openclaw-dashboard.BuildVersion=$(VERSION)"`,
 		"-o $(BINARY) ./cmd/openclaw-dashboard",
 	} {
 		if !strings.Contains(makefile, want) {
@@ -85,14 +122,21 @@ func TestReleaseWorkflowContracts(t *testing.T) {
 		`permissions:`,
 		`contents: write`,
 		`id-token: write`,
+		`Verify release commit is on main`,
+		`git merge-base --is-ancestor "$GITHUB_SHA" origin/main`,
 		`Verify release tag matches VERSION`,
 		`if [ "$version" != "$GITHUB_REF_NAME" ]; then`,
 		`run: make check`,
-		`uses: actions/create-github-app-token@v3.2.0`,
+		`Install shellcheck`,
+		`shellcheck --severity=warning assets/runtime/refresh.sh`,
+		`uses: anchore/sbom-action/download-syft@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0`,
+		`uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2`,
+		`uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0`,
 		`HOMEBREW_TAP_APP_CLIENT_ID`,
 		`client-id: ${{ vars.HOMEBREW_TAP_APP_CLIENT_ID }}`,
 		`repositories: homebrew-tap`,
 		`permission-contents: write`,
+		`uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7`,
 		`HOMEBREW_TAP_TOKEN: ${{ steps.tap-token.outputs.token }}`,
 	} {
 		if !strings.Contains(workflow, want) {
@@ -150,6 +194,20 @@ func TestPackagingDocsMatchCurrentDockerBaseTags(t *testing.T) {
 			t.Fatalf("INFRA-CHECKLIST.md missing current Docker tag %q", tag)
 		}
 	}
+	for _, digest := range []string{
+		"golang:1.26-alpine@sha256:0178a641fbb4858c5f1b48e34bdaabe0350a330a1b1149aabd498d0699ff5fb2",
+		"alpine:3.23@sha256:fd791d74b68913cbb027c6546007b3f0d3bc45125f797758156952bc2d6daf40",
+	} {
+		if !strings.Contains(dockerfile, digest) {
+			t.Fatalf("Dockerfile missing pinned base image %q", digest)
+		}
+	}
+	if strings.Contains(dockerfile, "ARG VERSION=dev") {
+		t.Fatal("Dockerfile must not default release builds to dev-stamped binaries")
+	}
+	if !strings.Contains(dockerfile, `VERSION="$(tr -d '[:space:]' < VERSION)"`) {
+		t.Fatal("Dockerfile must derive the default build version from VERSION")
+	}
 }
 
 func TestNixDevShellAdvertisesMakeTargets(t *testing.T) {
@@ -159,6 +217,9 @@ func TestNixDevShellAdvertisesMakeTargets(t *testing.T) {
 			t.Fatalf("flake.nix dev shell missing %q", want)
 		}
 	}
+	if !strings.Contains(flake, `flags = [ "-trimpath" ];`) {
+		t.Fatal("flake.nix build must use -trimpath like Makefile/Docker/GoReleaser")
+	}
 }
 
 func TestGoReleaserReleaseContracts(t *testing.T) {
@@ -166,6 +227,7 @@ func TestGoReleaserReleaseContracts(t *testing.T) {
 	for _, want := range []string{
 		`version: 2`,
 		`CGO_ENABLED=0`,
+		`- -trimpath`,
 		`-s -w -X github.com/mudrii/openclaw-dashboard.BuildVersion={{ .Version }}`,
 		`format: tar.gz`,
 		`name_template: "{{ .ProjectName }}-{{ .Os }}-{{ .Arch }}"`,
@@ -199,6 +261,7 @@ func TestInstallerFallbackBuildsResolvedTagSource(t *testing.T) {
 		`source_archive="$REPO/archive/refs/heads/main.tar.gz"`,
 		`build_version="dev"`,
 		`curl -fsSL "$source_archive" | tar -xz --strip-components=1 -C "$INSTALL_DIR"`,
+		`-trimpath`,
 	} {
 		if !strings.Contains(installer, want) {
 			t.Fatalf("install.sh fallback build contract missing %q", want)
