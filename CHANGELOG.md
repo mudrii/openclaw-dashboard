@@ -1,19 +1,9 @@
 # Changelog
 
-## v2026.6.15 — 2026-06-15
+## v2026.7.11 — 2026-07-11
 
-Closes the openclaw-dashboard fixes & integration plan (`PLAN.md`): 3 fixes + 5
-new-feature integrations validated against the openclaw repo. All backend logic is
-test-driven and `make check`-clean; frontend panels (channel health color, Runtime
-Health card, cron delivery/flapping badges) are re-embedded and browser-fixture
-validated. Remaining runtime verification is limited to live-environment surfaces
-such as Linux/systemd journald, non-npm lock metadata, and cron delivery state.
-No breaking changes — every new field/config is additive and back-compatible.
-
-### 2026-07-11 maintenance validation
-
-Follow-up validation kept `VERSION` at `v2026.6.15` and tightened the release
-and dashboard contracts without changing the public API:
+Maintenance release that tightens release readiness, dashboard runtime
+compatibility, and validation coverage without changing the public API.
 
 - **Runtime status passthrough hardened** — `/api/system.openclaw.status` now
   preserves newer OpenClaw status blocks such as `runtimeVersion`,
@@ -37,6 +27,16 @@ and dashboard contracts without changing the public API:
   one type and a real What Changed row while skipping Dependabot prose checks,
   Docker base images are pinned by digest, and Make/Docker/Nix/GoReleaser/source
   fallback builds all use `-trimpath`.
+
+## v2026.6.15 — 2026-06-15
+
+Closes the openclaw-dashboard fixes & integration plan (`PLAN.md`): 3 fixes + 5
+new-feature integrations validated against the openclaw repo. All backend logic is
+test-driven and `make check`-clean; frontend panels (channel health color, Runtime
+Health card, cron delivery/flapping badges) are re-embedded and browser-fixture
+validated. Remaining runtime verification is limited to live-environment surfaces
+such as Linux/systemd journald, non-npm lock metadata, and cron delivery state.
+No breaking changes — every new field/config is additive and back-compatible.
 
 ### OpenClaw 2026.6 SQLite-migration compatibility
 
