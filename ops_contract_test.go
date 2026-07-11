@@ -40,7 +40,7 @@ func TestWorkflowActionsAreImmutablePinned(t *testing.T) {
 		".github/workflows/label-issues.yml",
 	} {
 		workflow := readTextFile(t, path)
-		re := regexp.MustCompile(`(?m)^\s*uses:\s*([^@\s]+)@([^ #\s]+)`)
+		re := regexp.MustCompile(`(?m)^\s*-?\s*uses:\s*([^@\s]+)@([^ #\s]+)`)
 		for _, match := range re.FindAllStringSubmatch(workflow, -1) {
 			ref := match[2]
 			if !shaRe.MatchString(ref) {
@@ -126,6 +126,8 @@ func TestReleaseWorkflowContracts(t *testing.T) {
 		`git merge-base --is-ancestor "$GITHUB_SHA" origin/main`,
 		`Verify release tag matches VERSION`,
 		`if [ "$version" != "$GITHUB_REF_NAME" ]; then`,
+		`Install golangci-lint`,
+		`go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.12.2`,
 		`run: make check`,
 		`Install shellcheck`,
 		`shellcheck --severity=warning assets/runtime/refresh.sh`,
