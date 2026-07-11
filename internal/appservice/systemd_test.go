@@ -246,6 +246,31 @@ func TestSystemd_Start(t *testing.T) {
 	})
 }
 
+func TestSystemd_StartPassesLifecycleContext(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	called := false
+	sb := &systemdBackend{
+		ctx:     ctx,
+		unitDir: t.TempDir(),
+		runCmd: func(got context.Context, name string, args ...string) ([]byte, error) {
+			called = true
+			if got.Err() != context.Canceled {
+				t.Fatalf("runCmd ctx err = %v, want context.Canceled", got.Err())
+			}
+			return []byte{}, nil
+		},
+		probeFunc: func(string) bool { return false },
+	}
+
+	if err := sb.Start(); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	if !called {
+		t.Fatal("runCmd was not called")
+	}
+}
+
 func TestSystemd_Stop(t *testing.T) {
 	t.Run("succeeds when systemctl stop exits 0", func(t *testing.T) {
 		if err := stubSystemd(t, nil).Stop(); err != nil {

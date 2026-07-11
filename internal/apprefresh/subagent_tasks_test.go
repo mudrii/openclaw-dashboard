@@ -4,6 +4,7 @@ import (
 	"context"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"testing"
 	"time"
 )
@@ -41,6 +42,35 @@ func TestCollectSubagentRuns_StubRunner(t *testing.T) {
 	// cost/tokens are intentionally absent — no source post-migration.
 	if _, ok := r["cost"]; ok {
 		t.Errorf("cost key must be absent (no source); got %v", r["cost"])
+	}
+}
+
+func TestCollectSubagentRuns_CommandContract(t *testing.T) {
+	var gotName string
+	var gotArgs []string
+	runner := func(ctx context.Context, name string, args ...string) *exec.Cmd {
+		gotName = name
+		gotArgs = append([]string(nil), args...)
+		return exec.CommandContext(ctx, "cat", filepath.Join("testdata", "cron", "subagent-tasks.cli.json"))
+	}
+	runs := collectSubagentRuns(context.Background(), runner, func() string { return "/bin/openclaw" }, time.UTC)
+	if gotName != "/bin/openclaw" {
+		t.Fatalf("runner name = %q, want /bin/openclaw", gotName)
+	}
+	wantArgs := []string{"tasks", "list", "--json", "--runtime", "subagent"}
+	if !slices.Equal(gotArgs, wantArgs) {
+		t.Fatalf("runner args = %v, want %v", gotArgs, wantArgs)
+	}
+	if len(runs) == 0 {
+		t.Fatal("expected fixture tasks to project into runs")
+	}
+	for _, run := range runs {
+		if _, ok := run["cost"]; ok {
+			t.Fatalf("run contains cost: %#v", run)
+		}
+		if _, ok := run["tokens"]; ok {
+			t.Fatalf("run contains tokens: %#v", run)
+		}
 	}
 }
 

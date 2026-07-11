@@ -3,6 +3,7 @@ package apprefresh
 import (
 	"context"
 	"os/exec"
+	"slices"
 	"testing"
 )
 
@@ -57,5 +58,31 @@ func TestCollectChannelStatusViaCLI_RunnerError(t *testing.T) {
 	}
 	if got, ok := collectChannelStatusViaCLI(context.Background(), runner, func() string { return "openclaw" }); ok || got != nil {
 		t.Fatalf("got (%v,%v), want nil,false on runner error", got, ok)
+	}
+}
+
+func TestCollectChannelStatusViaCLI_CommandContract(t *testing.T) {
+	var gotName string
+	var gotArgs []string
+	runner := func(ctx context.Context, name string, args ...string) *exec.Cmd {
+		gotName = name
+		gotArgs = append([]string(nil), args...)
+		return exec.CommandContext(ctx, "printf", `%s`, `{
+			"channelAccounts":{"slack":[{"enabled":true,"configured":true,"connected":true,"healthState":"healthy"}]}
+		}`)
+	}
+	status, ok := collectChannelStatusViaCLI(context.Background(), runner, func() string { return "/bin/openclaw" })
+	if !ok {
+		t.Fatal("ok = false, want true")
+	}
+	if gotName != "/bin/openclaw" {
+		t.Fatalf("runner name = %q, want /bin/openclaw", gotName)
+	}
+	wantArgs := []string{"channels", "status", "--probe", "--json", "--timeout", "10000"}
+	if !slices.Equal(gotArgs, wantArgs) {
+		t.Fatalf("runner args = %v, want %v", gotArgs, wantArgs)
+	}
+	if slack, ok := status["slack"].(map[string]any); !ok || slack["connected"] != true || slack["health"] != "healthy" {
+		t.Fatalf("slack status = %#v, want healthy connected", status["slack"])
 	}
 }

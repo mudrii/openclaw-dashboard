@@ -206,6 +206,31 @@ func TestLaunchd_Start(t *testing.T) {
 	})
 }
 
+func TestLaunchd_StartPassesLifecycleContext(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	called := false
+	lb := &launchdBackend{
+		ctx:      ctx,
+		plistDir: t.TempDir(),
+		runCmd: func(got context.Context, name string, args ...string) ([]byte, error) {
+			called = true
+			if got.Err() != context.Canceled {
+				t.Fatalf("runCmd ctx err = %v, want context.Canceled", got.Err())
+			}
+			return []byte{}, nil
+		},
+		probeFunc: func(string) bool { return false },
+	}
+
+	if err := lb.Start(); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	if !called {
+		t.Fatal("runCmd was not called")
+	}
+}
+
 func TestLaunchd_Stop(t *testing.T) {
 	t.Run("succeeds when launchctl stop exits 0", func(t *testing.T) {
 		lb := stubLaunchd(t, nil)

@@ -47,13 +47,13 @@ jobs:
           cache: true
 
       - name: Run vet
-        run: go vet ./...
+        run: make vet
 
       - name: Run tests with race detector
-        run: go test -race -v -count=1 ./...
+        run: make test
 
       - name: Build binary
-        run: go build -ldflags="-s -w" -o openclaw-dashboard ./cmd/openclaw-dashboard
+        run: make build
 
   govulncheck:
     name: govulncheck

@@ -2,6 +2,7 @@ package dashboard
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -113,7 +114,27 @@ func TestCallGateway_ResponseTooLarge(t *testing.T) {
 
 func TestCallGateway_HistoryIncluded(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Just verify we got the request
+		var payload struct {
+			Messages []chatMessage `json:"messages"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Errorf("decode gateway request body: %v", err)
+			return
+		}
+		want := []chatMessage{
+			{Role: "system", Content: "sys"},
+			{Role: "user", Content: "first"},
+			{Role: "assistant", Content: "reply"},
+			{Role: "user", Content: "second"},
+		}
+		if len(payload.Messages) != len(want) {
+			t.Fatalf("messages len = %d, want %d: %#v", len(payload.Messages), len(want), payload.Messages)
+		}
+		for i := range want {
+			if payload.Messages[i] != want[i] {
+				t.Fatalf("message[%d] = %#v, want %#v", i, payload.Messages[i], want[i])
+			}
+		}
 		fmt.Fprint(w, `{"choices":[{"message":{"content":"ok"}}]}`)
 	}))
 	defer ts.Close()

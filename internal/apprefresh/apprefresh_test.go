@@ -241,6 +241,55 @@ func TestCollectTokenUsageWithCache_ReusesUnchangedFileSummary(t *testing.T) {
 	}
 }
 
+func TestCollectTokenUsageWithCache_PrunesStaleCacheEntries(t *testing.T) {
+	tmp := t.TempDir()
+	basePath := filepath.Join(tmp, "agents")
+	if err := os.MkdirAll(basePath, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cachePath := filepath.Join(tmp, "token-cache.json")
+	stalePath := filepath.Join(basePath, "main", "sessions", "missing.jsonl")
+	cache := tokenUsageCache{
+		Version: tokenUsageCacheVersion,
+		Files: map[string]tokenUsageFileSummary{
+			stalePath: {
+				Size:            123,
+				ModTimeUnixNano: 456,
+				Models: map[string]TokenBucket{
+					"openai/gpt-5": {Total: 999, Input: 500, Output: 499, Cost: 9.99},
+				},
+				Daily: map[string]map[string]TokenBucket{
+					"2026-03-22": {"openai/gpt-5": {Total: 999, Cost: 9.99}},
+				},
+			},
+		},
+	}
+	data, err := json.Marshal(cache)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(cachePath, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	agg := freshAggregates()
+	CollectTokenUsageWithCache(
+		cachePath,
+		basePath, time.UTC, "2026-03-22", "2026-03-15", "2026-02-20",
+		map[string]string{}, map[string]string{}, map[string]string{},
+		agg.modelsAll, agg.modelsToday, agg.models7d, agg.models30d,
+		agg.subagentAll, agg.subagentToday, agg.subagent7d, agg.subagent30d,
+		agg.dailyCosts, agg.dailyTokens, agg.dailyCalls, agg.dailySubagentCosts, agg.dailySubagentCount,
+	)
+	if len(agg.modelsAll) != 0 || len(agg.dailyCosts) != 0 {
+		t.Fatalf("stale cache entry was counted: models=%v dailyCosts=%v", agg.modelsAll, agg.dailyCosts)
+	}
+	rewritten := loadTokenUsageCache(cachePath)
+	if len(rewritten.Files) != 0 {
+		t.Fatalf("rewritten cache still has stale entries: %#v", rewritten.Files)
+	}
+}
+
 func TestJSONNumericFieldsAlwaysPresent(t *testing.T) {
 	assertJSONKeys(t, LogRecord{}, "timestamp")
 	assertJSONKeys(t, TokenBucket{}, "calls", "input", "output", "cacheRead", "totalTokens", "cost")

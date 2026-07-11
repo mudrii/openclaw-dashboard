@@ -292,6 +292,33 @@ func TestHandleRefresh(t *testing.T) {
 		}
 	})
 
+	t.Run("request cancellation does not wait for in-flight refresh", func(t *testing.T) {
+		dir := t.TempDir()
+		started := make(chan struct{})
+		release := make(chan struct{})
+		s := newTestServerForRefresh(t, dir, func(ctx context.Context, d, o string, cfg appconfig.Config) error {
+			close(started)
+			<-release
+			return context.Canceled
+		})
+		t.Cleanup(func() { close(release) })
+
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+		req := httptest.NewRequest(http.MethodGet, "/api/refresh", nil).WithContext(ctx)
+		w := httptest.NewRecorder()
+		s.ServeHTTP(w, req)
+
+		if w.Code != http.StatusServiceUnavailable {
+			t.Fatalf("want 503, got %d body=%s", w.Code, w.Body.String())
+		}
+		select {
+		case <-started:
+		case <-time.After(time.Second):
+			t.Fatal("refreshFn was not started")
+		}
+	})
+
 	t.Run("read error (data.json is a directory) returns 500", func(t *testing.T) {
 		dir := t.TempDir()
 		// Make data.json a directory: os.Stat succeeds (not IsNotExist), but

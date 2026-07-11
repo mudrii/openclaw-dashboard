@@ -179,6 +179,82 @@ func TestGetLatestVersionCached_FailureIsNegativelyCached(t *testing.T) {
 	}
 }
 
+func TestGetLatestVersionCached_BackgroundFetchUsesShutdownContext(t *testing.T) {
+	serverCtx, cancel := context.WithCancel(context.Background())
+	svc := NewSystemService(appconfig.SystemConfig{
+		Enabled:            true,
+		VersionsTTLSeconds: 60,
+		GatewayTimeoutMs:   100,
+	}, "test", serverCtx)
+	done := make(chan error, 1)
+	svc.fetchLatest = func(ctx context.Context, timeoutMs int) string {
+		done <- ctx.Err()
+		return ""
+	}
+
+	cancel()
+	_ = svc.getLatestVersionCached()
+
+	select {
+	case err := <-done:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("fetchLatest ctx err = %v, want context.Canceled", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("fetchLatest was not called")
+	}
+	waitForLatestRefreshDone(t, svc)
+}
+
+func TestGetJSON_StaleBackgroundRefreshUsesShutdownContextAndClearsState(t *testing.T) {
+	serverCtx, cancel := context.WithCancel(context.Background())
+	svc := NewSystemService(appconfig.SystemConfig{
+		Enabled:            true,
+		MetricsTTLSeconds:  1,
+		ColdPathTimeoutMs:  100,
+		VersionsTTLSeconds: 60,
+	}, "test", serverCtx)
+	done := make(chan error, 1)
+	svc.refresh = func(ctx context.Context) ([]byte, bool) {
+		done <- ctx.Err()
+		return nil, true
+	}
+	svc.metricsMu.Lock()
+	svc.metricsPayload = []byte(`{"ok":true}`)
+	svc.metricsStalePayload = []byte(`{"ok":true,"stale":true}`)
+	svc.metricsAt = time.Now().Add(-time.Hour)
+	svc.metricsMu.Unlock()
+
+	cancel()
+	status, body := svc.GetJSON(context.Background())
+	if status != http.StatusOK {
+		t.Fatalf("status = %d, want 200 body=%s", status, body)
+	}
+
+	select {
+	case err := <-done:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("refresh ctx err = %v, want context.Canceled", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("background refresh was not called")
+	}
+
+	deadline := time.Now().Add(time.Second)
+	for {
+		svc.metricsMu.RLock()
+		running := svc.metricsRefresh
+		svc.metricsMu.RUnlock()
+		if !running {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("metricsRefresh was not cleared")
+		}
+		time.Sleep(time.Millisecond)
+	}
+}
+
 func TestProbeOpenclawGatewayEndpoints_RespectsTimeout(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		time.Sleep(200 * time.Millisecond)

@@ -3,6 +3,7 @@ package appserver
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -85,6 +86,31 @@ func TestHandleChat_BadJSON(t *testing.T) {
 	w := mustPostChat(t, s, `not json`)
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("want 400, got %d", w.Code)
+	}
+}
+
+type errReadCloser struct{}
+
+func (errReadCloser) Read([]byte) (int, error) { return 0, errReadBody }
+func (errReadCloser) Close() error             { return nil }
+
+var errReadBody = errors.New("read body")
+
+func TestHandleChat_BodyReadError(t *testing.T) {
+	dir := t.TempDir()
+	s := chatTestServer(t, dir, 1)
+	req := httptest.NewRequest(http.MethodPost, "/api/chat", nil)
+	req.RemoteAddr = "10.0.0.9:1234"
+	req.Body = errReadCloser{}
+	w := httptest.NewRecorder()
+
+	s.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("want 400, got %d body=%s", w.Code, w.Body.String())
+	}
+	if w.Body.String() != string(errBadBody) {
+		t.Fatalf("body = %q, want %q", w.Body.String(), errBadBody)
 	}
 }
 

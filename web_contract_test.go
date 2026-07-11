@@ -131,6 +131,9 @@ func TestIssue26FrontendFixtureContract(t *testing.T) {
 
 	assertUniqueHTMLIDs(t, html)
 	assertAriaControlsResolve(t, html)
+	assertStaticIDLookupsResolve(t, html)
+	assertSectionBindingsCoherent(t, html)
+	assertReadmeScreenshotLinksExist(t)
 }
 
 func assertUniqueHTMLIDs(t *testing.T, html string) {
@@ -157,6 +160,80 @@ func assertAriaControlsResolve(t *testing.T, html string) {
 	for _, match := range controlsRe.FindAllStringSubmatch(html, -1) {
 		if !ids[match[1]] {
 			t.Fatalf("web/index.html aria-controls target %q does not exist", match[1])
+		}
+	}
+}
+
+func assertStaticIDLookupsResolve(t *testing.T, html string) {
+	t.Helper()
+	idRe := regexp.MustCompile(`\bid="([A-Za-z][A-Za-z0-9_:-]*)"`)
+	ids := map[string]bool{}
+	for _, match := range idRe.FindAllStringSubmatch(html, -1) {
+		ids[match[1]] = true
+	}
+	allowDynamic := map[string]bool{
+		"gw-readiness-alert":    true,
+		"oc-collapse-bootstrap": true,
+	}
+	for _, pattern := range []string{
+		`\$\('([A-Za-z][A-Za-z0-9_:-]*)'\)`,
+		`document\.getElementById\('([A-Za-z][A-Za-z0-9_:-]*)'\)`,
+		`document\.getElementById\("([A-Za-z][A-Za-z0-9_:-]*)"\)`,
+	} {
+		re := regexp.MustCompile(pattern)
+		for _, match := range re.FindAllStringSubmatch(html, -1) {
+			id := match[1]
+			if !ids[id] && !allowDynamic[id] {
+				t.Fatalf("web/index.html static ID lookup %q has no matching element id", id)
+			}
+		}
+	}
+}
+
+func assertSectionBindingsCoherent(t *testing.T, html string) {
+	t.Helper()
+	sectionRe := regexp.MustCompile(`(?s)<section class="oc-section" data-section="([A-Za-z0-9_-]+)">(.*?)</section>`)
+	matches := sectionRe.FindAllStringSubmatch(html, -1)
+	if len(matches) == 0 {
+		t.Fatal("web/index.html has no collapsible oc-section blocks")
+	}
+	for _, match := range matches {
+		key, block := match[1], match[2]
+		bodyID := "oc-body-" + key
+		for _, want := range []string{
+			`aria-controls="` + bodyID + `"`,
+			`onclick="Sections.toggle('` + key + `')"`,
+			`id="` + bodyID + `"`,
+		} {
+			if !strings.Contains(block, want) {
+				t.Fatalf("section %q missing binding %q", key, want)
+			}
+		}
+		for _, want := range []string{
+			`'` + key + `'`,
+			`'` + key + `':`,
+		} {
+			if !strings.Contains(html, want) {
+				t.Fatalf("section %q missing collapse registry token %q", key, want)
+			}
+		}
+	}
+}
+
+func assertReadmeScreenshotLinksExist(t *testing.T) {
+	t.Helper()
+	raw, err := os.ReadFile("README.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	re := regexp.MustCompile(`!\[[^\]]*\]\((screenshots/[^)]+\.png)\)`)
+	matches := re.FindAllStringSubmatch(string(raw), -1)
+	if len(matches) == 0 {
+		t.Fatal("README.md has no screenshot image links")
+	}
+	for _, match := range matches {
+		if _, err := os.Stat(match[1]); err != nil {
+			t.Fatalf("README.md screenshot link %q is not readable: %v", match[1], err)
 		}
 	}
 }

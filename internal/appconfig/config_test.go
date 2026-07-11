@@ -3,6 +3,7 @@ package appconfig
 import (
 	"os"
 	"path/filepath"
+	"strconv"
 	"testing"
 )
 
@@ -195,6 +196,62 @@ func TestLoad_SystemThresholdClamping(t *testing.T) {
 	}
 	if cfg.System.CPU.Critical != 85 {
 		t.Errorf("CPU.Critical = %g, want 85 (inherits global critical)", cfg.System.CPU.Critical)
+	}
+}
+
+func TestLoad_SystemVersionsTTLBounds(t *testing.T) {
+	tests := []struct {
+		name string
+		raw  int
+		want int
+	}{
+		{name: "below minimum resets", raw: 29, want: 300},
+		{name: "minimum kept", raw: 30, want: 30},
+		{name: "in range kept", raw: 600, want: 600},
+		{name: "maximum kept", raw: 3600, want: 3600},
+		{name: "above maximum resets", raw: 3601, want: 300},
+		{name: "negative resets", raw: -1, want: 300},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			data := []byte(`{"system":{"versionsTtlSeconds":` + strconv.Itoa(tt.raw) + `}}`)
+			if err := os.WriteFile(filepath.Join(dir, "config.json"), data, 0o644); err != nil {
+				t.Fatal(err)
+			}
+			cfg := Load(dir)
+			if cfg.System.VersionsTTLSeconds != tt.want {
+				t.Fatalf("VersionsTTLSeconds = %d, want %d", cfg.System.VersionsTTLSeconds, tt.want)
+			}
+		})
+	}
+}
+
+func TestLoad_SystemGatewayTimeoutBounds(t *testing.T) {
+	tests := []struct {
+		name string
+		raw  int
+		want int
+	}{
+		{name: "below minimum resets", raw: 199, want: 5000},
+		{name: "minimum kept", raw: 200, want: 200},
+		{name: "in range kept", raw: 1234, want: 1234},
+		{name: "maximum kept", raw: 15000, want: 15000},
+		{name: "above maximum resets", raw: 15001, want: 5000},
+		{name: "negative resets", raw: -1, want: 5000},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			data := []byte(`{"system":{"gatewayTimeoutMs":` + strconv.Itoa(tt.raw) + `}}`)
+			if err := os.WriteFile(filepath.Join(dir, "config.json"), data, 0o644); err != nil {
+				t.Fatal(err)
+			}
+			cfg := Load(dir)
+			if cfg.System.GatewayTimeoutMs != tt.want {
+				t.Fatalf("GatewayTimeoutMs = %d, want %d", cfg.System.GatewayTimeoutMs, tt.want)
+			}
+		})
 	}
 }
 

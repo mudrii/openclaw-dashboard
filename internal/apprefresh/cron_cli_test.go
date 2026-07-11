@@ -56,6 +56,30 @@ func TestCollectCronsViaCLI_StubRunner(t *testing.T) {
 	}
 }
 
+func TestCollectCronsViaCLI_CommandContract(t *testing.T) {
+	var gotName string
+	var gotArgs []string
+	runner := func(ctx context.Context, name string, args ...string) *exec.Cmd {
+		gotName = name
+		gotArgs = append([]string(nil), args...)
+		return exec.CommandContext(ctx, "cat", filepath.Join("testdata", "cron", "cron-list.cli.json"))
+	}
+	crons, ok := collectCronsViaCLI(context.Background(), runner, func() string { return "/bin/openclaw" }, time.UTC)
+	if !ok {
+		t.Fatal("collectCronsViaCLI ok = false, want true")
+	}
+	if gotName != "/bin/openclaw" {
+		t.Fatalf("runner name = %q, want /bin/openclaw", gotName)
+	}
+	wantArgs := []string{"cron", "list", "--json"}
+	if !slices.Equal(gotArgs, wantArgs) {
+		t.Fatalf("runner args = %v, want %v", gotArgs, wantArgs)
+	}
+	if len(crons) == 0 {
+		t.Fatal("expected fixture crons to parse")
+	}
+}
+
 // TestCollectCronsViaCLI_RunnerError signals fallback: a failing CLI (gateway
 // down, binary missing) returns ok=false so the caller can fall back to the
 // legacy jobs.json file.

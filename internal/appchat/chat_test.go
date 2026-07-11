@@ -84,6 +84,41 @@ func TestBuildSystemPrompt_EmptyData(t *testing.T) {
 
 func TestCallGateway_Success(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Errorf("method = %s, want POST", r.Method)
+		}
+		if r.URL.Path != "/v1/chat/completions" {
+			t.Errorf("path = %s, want /v1/chat/completions", r.URL.Path)
+		}
+		if r.Header.Get("Authorization") != "Bearer token" {
+			t.Errorf("Authorization = %q, want bearer token", r.Header.Get("Authorization"))
+		}
+		var payload CompletionPayload
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Errorf("decode gateway request body: %v", err)
+			return
+		}
+		if payload.Model != "test-model" {
+			t.Errorf("model = %q, want test-model", payload.Model)
+		}
+		if payload.MaxTokens != 512 {
+			t.Errorf("max_tokens = %d, want 512", payload.MaxTokens)
+		}
+		if payload.Stream {
+			t.Error("stream = true, want false")
+		}
+		wantMessages := []Message{
+			{Role: "system", Content: "system prompt"},
+			{Role: "user", Content: "hello"},
+		}
+		if len(payload.Messages) != len(wantMessages) {
+			t.Fatalf("messages len = %d, want %d: %#v", len(payload.Messages), len(wantMessages), payload.Messages)
+		}
+		for i, want := range wantMessages {
+			if payload.Messages[i] != want {
+				t.Errorf("message[%d] = %#v, want %#v", i, payload.Messages[i], want)
+			}
+		}
 		resp := map[string]any{
 			"choices": []map[string]any{
 				{"message": map[string]any{"content": "Hello from gateway"}},

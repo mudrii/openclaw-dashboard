@@ -52,6 +52,39 @@ func TestHandleStaticFile_Allowlisted(t *testing.T) {
 	}
 }
 
+func TestHandleStaticFile_RuntimeFallback(t *testing.T) {
+	dir := t.TempDir()
+	cfg := appconfig.Default()
+	cfg.System.Enabled = false
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	refreshFn := func(ctx context.Context, d, o string, cfg appconfig.Config) error { return nil }
+	s := NewServer(dir, "1.0.0", cfg, "", []byte("<html></html>"), ctx, refreshFn)
+
+	runtimeDir := filepath.Join(dir, "assets", "runtime")
+	if err := os.MkdirAll(runtimeDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	want := []byte(`{"fallback":true}`)
+	if err := os.WriteFile(filepath.Join(runtimeDir, "themes.json"), want, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/themes.json", nil)
+	w := httptest.NewRecorder()
+	s.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", w.Code, w.Body.String())
+	}
+	if ct := w.Header().Get("Content-Type"); ct != "application/json" {
+		t.Errorf("Content-Type = %q, want application/json", ct)
+	}
+	if w.Body.String() != string(want) {
+		t.Fatalf("body = %q, want %q", w.Body.String(), want)
+	}
+}
+
 func TestHandleStaticFile_NotAllowlisted(t *testing.T) {
 	s := newTestServer(t)
 	req := httptest.NewRequest(http.MethodGet, "/secret.txt", nil)
