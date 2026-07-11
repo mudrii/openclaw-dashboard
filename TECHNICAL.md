@@ -132,16 +132,18 @@ In addition to the `data.json` pipeline, the `/api/system` endpoint includes a l
 |--------|---------------|
 | `GET /healthz` | `live`, `uptimeMs`, `healthEndpointOk` |
 | `GET /readyz` | `ready`, `failing[]`, `readyEndpointOk` |
-| `openclaw status --json` | `currentVersion`, `latestVersion`, `connectLatencyMs`, `security`, `tasks`, `eventLoop`, `pluginCompatibility`, `lastHeartbeat`, `channelSummary` |
+| `openclaw status --json` | `currentVersion`/`runtimeVersion`, `latestVersion`, `connectLatencyMs`, `tasks`, `pluginCompatibility`, `channelSummary`, plus additive runtime blocks such as `gateway`, `gatewayService`, `nodeService`, `memory`, `memoryPlugin`, `os`, `sessions`, `secretDiagnostics`, `taskAudit`, `update`, and queued system events |
 
 The `readyz` endpoint returns a `503` body with JSON when some dependencies are failing. `fetchJSONMapAllowStatus` accepts configurable HTTP status codes so the body is parsed rather than discarded.
 
 The rich `status --json` blocks (`tasks`, `eventLoop`, `pluginCompatibility`,
-`lastHeartbeat`, `channelSummary`) feed the **Runtime Health** panel. They parse
-additively — minimal status still parses, and absent blocks are omitted. `eventLoop`
-and `lastHeartbeat` are deep-status-only: set `system.deepStatus=true` to invoke
-`openclaw status --json --deep` (slower). Lean status already provides the task queue,
-plugin-compatibility warnings, and channel summary.
+`lastHeartbeat`, `channelSummary`) feed the **Runtime Health** panel. Additional
+OpenClaw runtime blocks are passed through additively so newer status payloads
+remain visible without breaking older dashboards. Minimal status still parses,
+and absent blocks are omitted. `eventLoop` and `lastHeartbeat` are deep-status-only:
+set `system.deepStatus=true` to invoke `openclaw status --json --deep` (slower).
+Lean status already provides the task queue, plugin-compatibility warnings, and
+channel summary.
 
 **Channel health (apprefresh `/readyz`).** Separately from the appsystem block above,
 the refresh collector has its own `/readyz` probe whose `failing[]` drives per-channel
@@ -330,12 +332,13 @@ The tab switching pattern uses `State.setTab(prefix, tab)` which updates the int
 
 ### Charts & Trends
 
-Three pure SVG charts render in a `.grid-3` layout, controlled by a `chartDays` variable (7 or 30):
+Two visible pure SVG charts render in the charts section, controlled by a `chartDays` variable (7 or 30). The sub-agent chart implementation is present but hidden until task-store cost/token data is available again:
 
 | Chart | Function | Visualization |
 |-------|----------|--------------|
 | **Daily Cost Trend** | `renderCostChart()` | Line chart with area fill — plots `dailyChart[].total` |
 | **Cost by Model** | `renderModelChart()` | Stacked bar chart — breaks down daily cost by top 6 models + "Other" |
+| **Sub-Agent Activity** | `renderSubChart()` | Hidden for now; task-store runs expose status/duration but not cost/token aggregates |
 | **Sub-Agent Activity** | `renderSubagentChart()` | Dual-axis: bars for run count (left axis), line for cost (right axis) |
 
 All charts are generated as inline `<svg>` elements with `viewBox="0 0 400 300"`. No external charting library. Data comes from the `dailyChart` array in `data.json`. Chart toggle buttons (`cTab7` / `cTab30`) call `renderCharts()` directly.
@@ -427,7 +430,7 @@ Each setting resolves through a priority chain (highest wins):
 | Max history (server cap) | — | — | `ai.maxHistory` | `6` |
 | Dotenv path for gateway token | — | — | `ai.dotenvPath` | `"~/.openclaw/.env"` |
 | Bot name | — | — | `bot.name` | `OpenClaw Dashboard` |
-| Bot emoji | — | — | `bot.emoji` | `⚡` |
+| Bot emoji | — | — | `bot.emoji` | `🦞` (`⚡` fallback if configured empty) |
 | Daily cost high | — | — | `alerts.dailyCostHigh` | `50` |
 | Daily cost warn | — | — | `alerts.dailyCostWarn` | `20` |
 | Context % threshold | — | — | `alerts.contextPct` | `80` |
@@ -667,7 +670,7 @@ systemctl --user status openclaw-dashboard
 
 1. Check prerequisites (OpenClaw directory at `OPENCLAW_HOME` or `~/.openclaw`)
 2. Create `${OPENCLAW_HOME:-~/.openclaw}/dashboard`
-3. Download the latest release archive for the current OS/arch, or fall back to `main.tar.gz` + `go build`
+3. Download the latest release archive for the current OS/arch, or fall back to a tag/main source archive + `go build -trimpath`
 4. Seed `refresh.sh` and copy `assets/runtime/config.json` to `config.json` if missing
 5. Run initial data generation: `./openclaw-dashboard --refresh`
 6. Register and start the OS-specific service via `./openclaw-dashboard install`
@@ -764,8 +767,8 @@ cat data.json | jq . | head -50
 make check
 ```
 
-- [ ] `make check` passes (vet, lint, race tests)
-- [ ] `./openclaw-dashboard --refresh` (or `bash refresh.sh`) produces valid JSON
+- [ ] `make check` passes (vet, lint, race tests, govulncheck, staticcheck, build)
+- [ ] `./openclaw-dashboard --refresh` (or `bash assets/runtime/refresh.sh`) produces valid JSON
 - [ ] `data.json` contains expected keys
 - [ ] Dashboard renders on desktop (1440px+)
 - [ ] Dashboard renders on tablet (768–1024px)

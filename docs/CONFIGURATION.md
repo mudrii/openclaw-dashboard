@@ -271,7 +271,8 @@ A few hard rules are enforced at startup or per-request:
   HTTP surface to a public network turns it into a DoS surface.
 - **Container deployment.** Set `OPENCLAW_DASHBOARD_ALLOW_NON_LOOPBACK=1` and
   bind to `0.0.0.0` so the published port works, or use
-  `docker run --network=host` and keep the loopback bind (Linux only).
+  `docker run --network=host ... openclaw-dashboard --bind 127.0.0.1 --port 8080`
+  to keep the loopback bind (Linux only).
 - **HTML response headers.** The `/` handler sets
   `Content-Security-Policy: default-src 'self'; …; connect-src 'self'; frame-ancestors 'none'; …`,
   plus `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, and

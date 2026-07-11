@@ -203,7 +203,7 @@ docker run -p 8080:8080 \
 # OR share host network (Linux only, preserves loopback-only design):
 docker run --network=host \
   -v ~/.openclaw:/home/dashboard/.openclaw \
-  openclaw-dashboard
+  openclaw-dashboard --bind 127.0.0.1 --port 8080
 ```
 
 ### Nix Flake
@@ -440,7 +440,7 @@ package installs it is `~/.openclaw/dashboard/config.json`.
 | `system.disk.warn` | `80` | Disk warn threshold (%) |
 | `system.disk.critical` | `95` | Disk critical threshold (%) |
 
-Full key list, env-var overrides, and the security policy (loopback enforcement, CSP headers, gateway token redaction) live in [docs/CONFIGURATION.md](docs/CONFIGURATION.md). Maintainer infrastructure tasks (`flake.lock`, Docker digest pin, GitHub branch protection) are in [docs/INFRA-CHECKLIST.md](docs/INFRA-CHECKLIST.md).
+Full key list, env-var overrides, and the security policy (loopback enforcement, CSP headers, gateway token redaction) live in [docs/CONFIGURATION.md](docs/CONFIGURATION.md). Maintainer infrastructure tasks (`flake.lock`, Docker digest refresh, GitHub branch protection) are in [docs/INFRA-CHECKLIST.md](docs/INFRA-CHECKLIST.md).
 
 ### Top Metrics Bar
 
@@ -553,7 +553,7 @@ Real-time bot status, gateway uptime, memory usage, active session count, today'
 ---
 
 ### 📈 Charts & Trends
-Three always-visible SVG charts with 7d/30d toggle: cost trend over time, per-model cost breakdown bars, and sub-agent activity volume. No external chart libraries — pure inline SVG.
+Two visible SVG charts with 7d/30d toggle: cost trend over time and per-model cost breakdown bars. A sub-agent activity chart implementation remains hidden until the task store exposes cost/token data again. No external chart libraries — pure inline SVG.
 
 ![Charts & Trends](screenshots/02-charts-trends.png)
 

@@ -68,6 +68,12 @@ paste here
 - [ ] All existing tests pass: `make check`
 - [ ] New behaviour has at least one test
 
+### Operational changes
+- [ ] If GitHub Actions changed: `uses:` entries stay pinned to full commit SHAs with version comments
+- [ ] If Dockerfile changed: base images stay tag+digest pinned and the binary is version-stamped from `VERSION`
+- [ ] If shell scripts changed: `shellcheck --severity=warning` was run on the changed script(s)
+- [ ] If release/Homebrew config changed: tag ancestry, `VERSION`, signing/SBOM, and tap update effects were reviewed
+
 ### Manual verification
 - [ ] Tested in at least one dark theme and one light theme
 - [ ] Tested on desktop and mobile viewport (< 768px)

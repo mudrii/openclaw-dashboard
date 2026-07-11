@@ -13,7 +13,11 @@ This repository owns the release automation:
 - [`.goreleaser.yml`](../.goreleaser.yml)
 
 Tagging a release runs GoReleaser, publishes the release artifacts, and updates
-the Homebrew formula in the tap repository.
+the Homebrew formula in the tap repository. Release tags must point to commits
+reachable from `main`, and the tag name must exactly match this repository's
+`VERSION` file. Before GoReleaser pushes the tap update, the workflow runs
+`make check` plus shellcheck for `assets/runtime/refresh.sh`, `install.sh`, and
+`uninstall.sh`.
 
 ## Required secrets
 
@@ -32,10 +36,8 @@ installation token.
 numeric App ID. Store it as a repository variable because it is an identifier,
 not a secret. Keep the private key in Actions secrets.
 
-Before publishing, the release workflow also verifies that the pushed tag name
-matches this repository's `VERSION` file. Keep those values aligned so the
-binary ldflags, bundled `VERSION`, release artifacts, and Homebrew formula all
-describe the same version.
+Keep the tag and `VERSION` aligned so the binary ldflags, bundled `VERSION`,
+release artifacts, and Homebrew formula all describe the same version.
 
 ## Runtime layout
 

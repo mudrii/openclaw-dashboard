@@ -51,22 +51,25 @@ internal packages. Run the full suite before every commit:
 make check
 ```
 
-`make check` runs the full CI gate locally: `go vet ./...`, `golangci-lint run ./...`,
+`make check` runs the full Go gate locally: `go vet ./...`, `golangci-lint run ./...`,
 `go test -race -count=1 ./...`, pinned `govulncheck`, pinned `staticcheck`,
 and `make build`.
 
 | Target | What it does |
 |--------|--------------|
-| `make build` | Build a static binary with `CGO_ENABLED=0`, `-s -w` strip, and the VERSION embedded via `-X main.BuildVersion=…`. Matches the binary produced by `Dockerfile`, `.goreleaser.yml`, and `flake.nix`. |
+| `make build` | Build a static binary with `CGO_ENABLED=0`, `-trimpath`, `-s -w` strip, and the VERSION embedded via `-X main.BuildVersion=…`. Matches the binary produced by `Dockerfile`, `.goreleaser.yml`, and `flake.nix`. |
 | `make test` | `go test -race -count=1 ./...`. The race detector is non-negotiable for local runs. |
 | `make lint` | `golangci-lint run ./...`. Linters enabled in `.golangci.yml`: `errcheck`, `govet`, `staticcheck`, `ineffassign`, `unused`, `gocritic`, `gosec`, `errorlint`. |
 | `make vet` | `go vet ./...` only. Fast first pass before lint. |
 | `make staticcheck` | `go run honnef.co/go/tools/cmd/staticcheck@v0.7.0 ./...`. Runs standalone Staticcheck without requiring a preinstalled binary. |
 | `make govulncheck` | `go run golang.org/x/vuln/cmd/govulncheck@v1.3.0 ./...`. Scans stdlib + module for known CVEs without requiring a preinstalled binary. |
-| `make check` | Runs the required local gate: `go vet ./...`, `golangci-lint run ./...`, `go test -race -count=1 ./...`, pinned `govulncheck`, pinned `staticcheck`, and `make build`. |
+| `make check` | Runs the required local Go gate: `go vet ./...`, `golangci-lint run ./...`, `go test -race -count=1 ./...`, pinned `govulncheck`, pinned `staticcheck`, and `make build`. |
 
-`golangci-lint` (>= v1.55) must be on `PATH`. The Nix `devShell` installs it;
-for non-Nix dev machines, `go install` works.
+`golangci-lint` v2.x must be on `PATH`; CI currently uses v2.12.2. The Nix
+`devShell` installs it; for non-Nix dev machines, `go install` works. If you
+touch `assets/runtime/refresh.sh`, `install.sh`, or `uninstall.sh`, also run
+`shellcheck --severity=warning` on the changed script(s); CI and release tags
+enforce those shell checks separately.
 
 ### What the Go tests cover
 

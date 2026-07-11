@@ -8,6 +8,11 @@
 
 **Tech Stack:** Go 1.26, stdlib only (`flag`, `os/exec`, `text/template`, `strings`, `fmt`). No new dependencies.
 
+> Historical note (2026-07-11): this plan is archival. For current execution,
+> prefer `make check` and `make build`; do not run blanket `go fix ./...`.
+> Release parity now depends on Makefile build flags, including `-trimpath` and
+> the embedded `BuildVersion` ldflag.
+
 ---
 
 ## File Map

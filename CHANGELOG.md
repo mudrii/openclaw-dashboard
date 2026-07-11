@@ -10,6 +10,34 @@ validated. Remaining runtime verification is limited to live-environment surface
 such as Linux/systemd journald, non-npm lock metadata, and cron delivery state.
 No breaking changes — every new field/config is additive and back-compatible.
 
+### 2026-07-11 maintenance validation
+
+Follow-up validation kept `VERSION` at `v2026.6.15` and tightened the release
+and dashboard contracts without changing the public API:
+
+- **Runtime status passthrough hardened** — `/api/system.openclaw.status` now
+  preserves newer OpenClaw status blocks such as `runtimeVersion`,
+  `secretDiagnostics`, update/channel metadata, gateway/node service details,
+  memory/plugin state, sessions, task audit, queued events, and OS/runtime
+  sections. `runtimeVersion` also backfills the legacy `currentVersion` field
+  when needed.
+- **Dashboard rendering contracts strengthened** — `/api/refresh` non-2xx
+  responses now fail through the error path, Runtime Health surfaces status
+  collection errors, empty chat answers are treated as valid gateway responses,
+  zero-duration cron runs render as `0.0s`, and stale/manual `agentConfig`
+  arrays are guarded before rendering.
+- **Test coverage expanded** — deterministic tests now cover invalid
+  `data.json` handling, post-shutdown refresh behavior, browser-visible chat
+  rate-limit headers, live channel CLI overlay, OpenClaw gateway command args,
+  embedded SPA placeholder rendering, dependency-free frontend contracts, and
+  docs/Makefile/release hook drift.
+- **Release pipeline hardened** — GitHub Actions are pinned by commit SHA with
+  version comments, release tags must point at `origin/main`, release runs the
+  shellcheck gate before GoReleaser, PR template validation now checks exactly
+  one type and a real What Changed row while skipping Dependabot prose checks,
+  Docker base images are pinned by digest, and Make/Docker/Nix/GoReleaser/source
+  fallback builds all use `-trimpath`.
+
 ### OpenClaw 2026.6 SQLite-migration compatibility
 
 OpenClaw 2026.6 moved cron jobs and subagent run tracking out of on-disk JSON
@@ -346,7 +374,7 @@ Six-pass audit + hardening cycle. Security, atomicity, supply-chain, and docs al
 - **`Dockerfile`** — `ARG VERSION` wired into ldflags; dropped `apk add bash git` from the runtime stage; added explicit `apk add wget` so the HEALTHCHECK is stable across Alpine minors; split `ENTRYPOINT`/`CMD`; updated comments to document `OPENCLAW_DASHBOARD_ALLOW_NON_LOOPBACK=1` and `--network=host` options.
 - **`.dockerignore`** — excludes `.planning/`, `graphify-out/`, `plan/`, `.codex/`, `.opencode/`, `.gemini/`, `*_test.go`, `testdata/`.
 - **`flake.nix`** — pins `pkgs.go_1_26 or pkgs.go`, reads `VERSION` for the version string, embeds it via ldflags, sets `env.CGO_ENABLED = "0"`, narrows `meta.platforms` to `linux ++ darwin`, adds a `checks` output so `nix flake check` rebuilds the package, expands devShell with `gopls`, `gotools`, `gofumpt`, `golangci-lint`, `govulncheck`.
-- **GitHub Actions** — `tests.yml` adds an `os: [ubuntu-latest, macos-latest]` matrix, a `govulncheck@v1.3.0` job, `cache: true` on `setup-go`, top-level `permissions: contents: read`, a concurrency group, and `timeout-minutes` per job. `pr-validate.yml`/`label-issues.yml` get matching permissions + timeouts. `release.yml` pins GoReleaser to `v2.4.5`, adds `id-token: write` + `attestations: write`, and installs `syft` + `sigstore/cosign-installer@v4`.
+- **GitHub Actions** — `tests.yml` adds an `os: [ubuntu-latest, macos-latest]` matrix, a `govulncheck@v1.3.0` job, `cache: true` on `setup-go`, top-level `permissions: contents: read`, a concurrency group, and `timeout-minutes` per job. `pr-validate.yml`/`label-issues.yml` get matching permissions + timeouts. `release.yml` pins GoReleaser to `v2.4.5`, grants `id-token: write` for keyless signing (no `attestations: write` until provenance attestation is wired), and installs `syft` + `sigstore/cosign-installer@v4`.
 - **`.goreleaser.yml`** — adds `sboms` (CycloneDX per archive) and `signs` (cosign keyless on the checksums file).
 - **`.github/dependabot.yml`** (new) — weekly bumps for `github-actions` and `docker` ecosystems.
 - **`docs/INFRA-CHECKLIST.md`** (new) — exact commands for the three user-side actions that can't be automated: `nix flake update`, docker base image digest pin, and `gh api -X PUT … branches/main/protection` with the correct `Tests / ` / `PR Validation / ` context prefixes.

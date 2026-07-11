@@ -46,10 +46,12 @@ FROM alpine:3.23@sha256:<DIGEST_B>
 Dependabot's `docker` ecosystem watcher opens PRs when newer digests are
 published, so this should normally stay current automatically.
 
-## 3. Enable branch protection on `main`
+## 3. Enable or refresh branch protection on `main`
 
 CI is hardened but PRs can still be merged without the required checks
-passing. Run once with the `gh` CLI:
+passing until branch protection is configured. Run this with the `gh` CLI after
+enabling protection for the first time, and re-run it whenever workflow job
+names are added, renamed, or removed:
 
 ```sh
 gh api -X PUT repos/mudrii/openclaw-dashboard/branches/main/protection \
@@ -87,20 +89,30 @@ parentheses. If you rename any job's `name:`, mirror the change here and
 re-run the command — otherwise the protection rule can reference a check that
 never reports, leaving PRs blocked.
 
-## 4. (Optional) Verify release pipeline end-to-end
-
-The `release.yml` now installs `syft` (SBOM) and `cosign` (keyless signing).
-Trigger a dry-run tag on a throwaway branch to confirm the pipeline works
-before the next real release:
+Audit the live required checks before and after changes:
 
 ```sh
-git checkout -b release-dryrun
-git tag v0.0.0-dryrun
-git push origin v0.0.0-dryrun
+gh api repos/mudrii/openclaw-dashboard/branches/main/protection/required_status_checks \
+  --jq '.checks[].context'
+```
 
-# Watch the run; if it succeeds, delete the tag:
-gh release delete v0.0.0-dryrun --yes --cleanup-tag
-git push origin :v0.0.0-dryrun
+## 4. (Optional) Verify release pipeline end-to-end
+
+The `release.yml` workflow installs `syft` (SBOM), `cosign` (keyless signing),
+and `shellcheck`, then rejects release tags whose commit is not reachable from
+`origin/main` or whose tag does not exactly match `VERSION`. Use a real
+release-candidate commit on `main` for end-to-end verification:
+
+```sh
+version="$(tr -d '[:space:]' < VERSION)"
+git fetch origin main
+git merge-base --is-ancestor HEAD origin/main
+git tag "$version"
+git push origin "$version"
+
+# Watch the run. If this was only a gate rehearsal and no release should remain:
+gh release delete "$version" --yes --cleanup-tag
+git push origin ":$version"
 ```
 
 ## 5. Sigstore outage runbook
