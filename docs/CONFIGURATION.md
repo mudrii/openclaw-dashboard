@@ -178,7 +178,7 @@ Panel visibility is not configurable — all panels are always displayed.
 
 ### OpenClaw Path
 
-To change the OpenClaw data directory, set the `OPENCLAW_HOME` environment variable — that is the runtime source of truth for both `refresh.sh` and the installer. The `openclawPath` key in `config.json` is not read by the current runtime.
+Generated dashboard services omit `OPENCLAW_HOME` by default. This lets the dashboard read the normal `$HOME/.openclaw` data directory while the `openclaw` CLI subprocesses use their own default environment for cron, task, channel, and status data. Only set `OPENCLAW_HOME` when you intentionally run OpenClaw from a custom environment; do not set it to `$HOME/.openclaw`, or current OpenClaw CLI releases will look under `$HOME/.openclaw/.openclaw`. The `openclawPath` key in `config.json` is not read by the current runtime.
 
 ### System Metrics
 
@@ -248,11 +248,11 @@ To change the OpenClaw data directory, set the `OPENCLAW_HOME` environment varia
 
 | Variable | Description |
 |----------|-------------|
-| `OPENCLAW_HOME` | OpenClaw installation path (source of truth for `refresh.sh` and installer) |
+| `OPENCLAW_HOME` | Optional custom OpenClaw environment passed through only when explicitly set before service install; normally unset |
 | `OPENCLAW_GATEWAY_TOKEN` | Gateway bearer token loaded from `ai.dotenvPath` |
 | `OPENCLAW_SYSTEMD_UNIT` | Overrides the systemd unit name used for the Linux journald log fallback (default `openclaw-gateway`). Takes precedence over `logs.systemdUnit`. |
 | `OPENCLAW_PROFILE` | When set, appends a `-<profile>` suffix to the resolved systemd unit name (matches openclaw's per-profile unit naming). |
-| `OPENCLAW_CONFIG_PATH` | Overrides the openclaw config path used to locate the gateway lock file (default `<OPENCLAW_HOME>/openclaw.json`). The lock supplies install-independent gateway PID/uptime/RSS. |
+| `OPENCLAW_CONFIG_PATH` | Overrides the OpenClaw config path used to locate the gateway lock file. The lock supplies install-independent gateway PID/uptime/RSS. |
 | `OPENCLAW_DASHBOARD_DIR` | Override the dashboard runtime directory |
 | `OPENCLAW_DASHBOARD_ALLOW_NON_LOOPBACK` | Set to the literal value `1` to permit non-loopback bind hosts (e.g., `0.0.0.0`). Required for containerized deployments where the bind has to be reachable from outside the container. Off by default; see Security below. |
 | `DASHBOARD_PORT` | Override the HTTP listen port (takes precedence over `server.port` in config) |

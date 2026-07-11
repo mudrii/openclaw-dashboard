@@ -912,6 +912,9 @@ func runWithTimeout(ctx context.Context, timeoutMs int, name string, args ...str
 	tctx, cancel := context.WithTimeout(ctx, time.Duration(timeoutMs)*time.Millisecond)
 	defer cancel()
 	cmd := exec.CommandContext(tctx, name, args...)
+	if env := OpenclawCLIEnv(name); env != nil {
+		cmd.Env = env
+	}
 	out, err := cmd.Output()
 	if err != nil {
 		if errors.Is(tctx.Err(), context.DeadlineExceeded) {

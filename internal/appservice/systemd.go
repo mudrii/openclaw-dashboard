@@ -28,8 +28,10 @@ After=network.target
 [Service]
 Type=simple
 WorkingDirectory={{systemdQuote .WorkDir}}
-Environment={{systemdQuote (printf "OPENCLAW_HOME=%s" .OpenclawHome)}}
 Environment={{systemdQuote (printf "PATH=%s" .PathEnv)}}
+{{- if .OpenclawHome}}
+Environment={{systemdQuote (printf "OPENCLAW_HOME=%s" .OpenclawHome)}}
+{{- end}}
 {{- if .AllowNonLoopback}}
 Environment="OPENCLAW_DASHBOARD_ALLOW_NON_LOOPBACK=1"
 {{- end}}
@@ -146,14 +148,7 @@ func systemdOpenclawHome() (string, error) {
 		}
 		return raw, nil
 	}
-	home, err := os.UserHomeDir()
-	if err != nil || home == "" {
-		return "", errors.New("OPENCLAW_HOME unset and home directory unknown")
-	}
-	if err := validateAbsPath(home); err != nil {
-		return "", fmt.Errorf("home dir: %w", err)
-	}
-	return filepath.Join(home, ".openclaw"), nil
+	return "", nil
 }
 
 func systemdPathEnv() string {

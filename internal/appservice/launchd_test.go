@@ -72,6 +72,43 @@ func TestLaunchd_Install_writesPlist(t *testing.T) {
 	}
 }
 
+func TestLaunchd_Install_DefaultOmitsOpenclawHome(t *testing.T) {
+	lb, dir := newTestLaunchd(t)
+	t.Setenv("HOME", "/home/user")
+	t.Setenv("PATH", "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin")
+	old, had := os.LookupEnv("OPENCLAW_HOME")
+	if err := os.Unsetenv("OPENCLAW_HOME"); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if had {
+			_ = os.Setenv("OPENCLAW_HOME", old)
+		} else {
+			_ = os.Unsetenv("OPENCLAW_HOME")
+		}
+	})
+
+	cfg := InstallConfig{
+		BinPath: "/usr/local/bin/openclaw-dashboard",
+		WorkDir: "/home/user/.openclaw/dashboard",
+		LogPath: "/home/user/.openclaw/dashboard/server.log",
+		Host:    "127.0.0.1",
+		Port:    8080,
+	}
+	if err := lb.Install(cfg); err != nil {
+		t.Fatalf("Install failed: %v", err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(dir, "com.openclaw.dashboard.plist"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	content := string(data)
+	if strings.Contains(content, "OPENCLAW_HOME") {
+		t.Fatalf("plist should omit OPENCLAW_HOME by default, got:\n%s", content)
+	}
+}
+
 func TestLaunchd_Install_PersistsNonLoopbackOverride(t *testing.T) {
 	lb, dir := newTestLaunchd(t)
 	t.Setenv("HOME", "/home/user")

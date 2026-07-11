@@ -45,8 +45,10 @@ var plistTmpl = template.Must(template.New("plist").Funcs(template.FuncMap{
     <string>{{xmlText .HomeDir}}</string>
     <key>PATH</key>
     <string>{{xmlText .PathEnv}}</string>
+{{- if .OpenclawHome}}
     <key>OPENCLAW_HOME</key>
     <string>{{xmlText .OpenclawHome}}</string>
+{{- end}}
 {{- if .AllowNonLoopback}}
     <key>OPENCLAW_DASHBOARD_ALLOW_NON_LOOPBACK</key>
     <string>1</string>
@@ -182,14 +184,7 @@ func launchdOpenclawHome() (string, error) {
 		}
 		return raw, nil
 	}
-	home := userHomeDir()
-	if home == "" {
-		return "", errors.New("OPENCLAW_HOME unset and home directory unknown")
-	}
-	if err := validateAbsPath(home); err != nil {
-		return "", fmt.Errorf("home dir: %w", err)
-	}
-	return filepath.Join(home, ".openclaw"), nil
+	return "", nil
 }
 
 func (lb *launchdBackend) Uninstall() error {

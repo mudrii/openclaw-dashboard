@@ -46,7 +46,15 @@ var defaultSessionModelCache = newLiveSessionModelCache()
 // these. New tests should construct a liveSessionModelCache instead.
 var fetchLiveSessionModels = fetchLiveSessionModelsCLI
 var resolveOpenclawBin = appsystem.ResolveOpenclawBin
-var execCommandContext = exec.CommandContext
+var execCommandContext = openclawCommandContext
+
+func openclawCommandContext(ctx context.Context, name string, args ...string) *exec.Cmd {
+	cmd := exec.CommandContext(ctx, name, args...)
+	if env := appsystem.OpenclawCLIEnv(name); env != nil {
+		cmd.Env = env
+	}
+	return cmd
+}
 
 // fetch returns the cached map or refreshes it. Uses the receiver's injected
 // collaborators when set, otherwise falls back to package-level defaults.

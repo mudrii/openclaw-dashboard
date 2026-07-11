@@ -1,5 +1,24 @@
 # Changelog
 
+## v2026.7.12 — 2026-07-12
+
+Patch release for installed dashboard services that showed empty **Cron Jobs**
+and **Sub-Agent Activity** panels even though OpenClaw had cron jobs and durable
+subagent tasks.
+
+- **Fixed service environment for OpenClaw CLI collectors** — newly generated
+  launchd and systemd services no longer write `OPENCLAW_HOME` by default. This
+  lets the dashboard keep reading the normal `$HOME/.openclaw` data directory
+  while `openclaw` CLI subprocesses use their own default environment for
+  cron, task, channel, and status data.
+- **Added compatibility for old service files** — `openclaw` CLI subprocesses
+  now sanitize the stale service value `OPENCLAW_HOME=$HOME/.openclaw` when it
+  points at an actual dashboard/OpenClaw data directory, preventing current
+  OpenClaw CLI releases from looking under `$HOME/.openclaw/.openclaw`.
+- **Documented the `OPENCLAW_HOME` trap** — configuration docs now call out
+  that `OPENCLAW_HOME` is optional for custom environments and should not be set
+  to `$HOME/.openclaw` for normal installs.
+
 ## v2026.7.11 — 2026-07-11
 
 Maintenance release that tightens release readiness, dashboard runtime

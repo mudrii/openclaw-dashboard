@@ -65,6 +65,42 @@ func TestSystemd_Install_writesUnitFile(t *testing.T) {
 	}
 }
 
+func TestSystemd_Install_DefaultOmitsOpenclawHome(t *testing.T) {
+	sb, dir := newTestSystemd(t)
+	t.Setenv("HOME", "/home/user")
+	t.Setenv("PATH", "/usr/local/bin:/usr/bin:/bin")
+	old, had := os.LookupEnv("OPENCLAW_HOME")
+	if err := os.Unsetenv("OPENCLAW_HOME"); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if had {
+			_ = os.Setenv("OPENCLAW_HOME", old)
+		} else {
+			_ = os.Unsetenv("OPENCLAW_HOME")
+		}
+	})
+
+	cfg := InstallConfig{
+		BinPath: "/usr/local/bin/openclaw-dashboard",
+		WorkDir: "/home/user/.openclaw/dashboard",
+		Host:    "127.0.0.1",
+		Port:    8080,
+	}
+	if err := sb.Install(cfg); err != nil {
+		t.Fatalf("Install: %v", err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(dir, "openclaw-dashboard.service"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	content := string(data)
+	if strings.Contains(content, "OPENCLAW_HOME") {
+		t.Fatalf("unit should omit OPENCLAW_HOME by default, got:\n%s", content)
+	}
+}
+
 func TestSystemd_Install_PersistsNonLoopbackOverride(t *testing.T) {
 	sb, dir := newTestSystemd(t)
 	t.Setenv("OPENCLAW_HOME", "/srv/openclaw")
