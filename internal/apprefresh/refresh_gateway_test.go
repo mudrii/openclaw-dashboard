@@ -214,6 +214,41 @@ func TestReadyzProbe_ParsesFailingFromHTTP503(t *testing.T) {
 	}
 }
 
+func TestReadyzProbe_ParseValidity(t *testing.T) {
+	cases := []struct {
+		name       string
+		statusCode int
+		body       string
+		wantOK     bool
+		wantFail   []string
+	}{
+		{"200 JSON", http.StatusOK, `{"ready":true,"failing":[]}`, true, nil},
+		{"503 JSON", http.StatusServiceUnavailable, `{"ready":false,"failing":["slack"]}`, true, []string{"slack"}},
+		{"404 HTML", http.StatusNotFound, `<html>missing</html>`, false, nil},
+		{"invalid JSON", http.StatusOK, `{not json`, false, nil},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			prev := gatewayProbeDo
+			gatewayProbeDo = func(req *http.Request) (*http.Response, error) {
+				return &http.Response{
+					StatusCode: tc.statusCode,
+					Body:       io.NopCloser(strings.NewReader(tc.body)),
+				}, nil
+			}
+			t.Cleanup(func() { gatewayProbeDo = prev })
+
+			failing, ok := readyzProbe(context.Background(), 1)
+			if ok != tc.wantOK {
+				t.Fatalf("ok = %v, want %v", ok, tc.wantOK)
+			}
+			if !slices.Equal(failing, tc.wantFail) {
+				t.Fatalf("failing = %v, want %v", failing, tc.wantFail)
+			}
+		})
+	}
+}
+
 func TestReadyzProbe_AttachesTimeout(t *testing.T) {
 	prev := gatewayProbeDo
 	gatewayProbeDo = func(req *http.Request) (*http.Response, error) {

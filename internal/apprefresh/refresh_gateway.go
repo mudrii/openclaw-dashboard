@@ -74,22 +74,28 @@ var readyzProbe = func(ctx context.Context, port int) (failing []string, ok bool
 	if err != nil {
 		return nil, false
 	}
-	return parseReadyzFailing(body), true
+	return parseReadyzFailingOK(body)
 }
 
 // parseReadyzFailing extracts the failing[] component ids from a gateway
 // /readyz JSON body. It returns nil for a missing/empty list or malformed JSON.
 func parseReadyzFailing(body []byte) []string {
+	failing, _ := parseReadyzFailingOK(body)
+	return failing
+}
+
+func parseReadyzFailingOK(body []byte) ([]string, bool) {
 	var payload struct {
+		Ready   bool     `json:"ready"`
 		Failing []string `json:"failing"`
 	}
 	if err := json.Unmarshal(body, &payload); err != nil {
-		return nil
+		return nil, false
 	}
 	if len(payload.Failing) == 0 {
-		return nil
+		return nil, true
 	}
-	return payload.Failing
+	return payload.Failing, true
 }
 
 // collectGatewayHealth probes the openclaw gateway and returns a

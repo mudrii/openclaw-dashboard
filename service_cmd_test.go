@@ -3,6 +3,7 @@ package dashboard
 import (
 	"errors"
 	"io"
+	"net"
 	"os"
 	"slices"
 	"strings"
@@ -39,6 +40,15 @@ func captureStdout(t *testing.T, fn func()) (out string) {
 
 	fn()
 	return out
+}
+
+func TestListenAddrFormatsIPv6(t *testing.T) {
+	if got := listenAddr("::1", 8080); got != "[::1]:8080" {
+		t.Fatalf("listenAddr(::1, 8080) = %q, want [::1]:8080", got)
+	}
+	if _, _, err := net.SplitHostPort(listenAddr("::1", 8080)); err != nil {
+		t.Fatalf("listenAddr(::1, 8080) is not split-host-port parseable: %v", err)
+	}
 }
 
 // captureStderr mirrors captureStdout for os.Stderr. The service dispatch writes
@@ -249,6 +259,18 @@ func TestRunServiceCmd(t *testing.T) {
 				t.Helper()
 				if fb.installedWith != nil {
 					t.Fatal("Install must not be called when loopback validation fails")
+				}
+			},
+		},
+		{
+			name:     "install rejects high port",
+			cmd:      "install",
+			args:     []string{"--port", "65536"},
+			wantCode: 1,
+			checkFb: func(t *testing.T, fb *fakeBackend) {
+				t.Helper()
+				if fb.installedWith != nil {
+					t.Fatal("Install must not be called when port validation fails")
 				}
 			},
 		},

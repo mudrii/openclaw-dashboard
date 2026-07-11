@@ -23,14 +23,14 @@ func TestCollectSubagentRuns_StubRunner(t *testing.T) {
 	if r["agent"] != "main" {
 		t.Errorf("agent = %v, want main", r["agent"])
 	}
-	if r["status"] != "succeeded" {
-		t.Errorf("status = %v, want succeeded", r["status"])
+	if r["status"] != "completed" {
+		t.Errorf("status = %v, want completed", r["status"])
 	}
 	if r["durationSec"] != 207 {
 		t.Errorf("durationSec = %v, want 207 (ended-started)", r["durationSec"])
 	}
-	if r["task"] == "" {
-		t.Errorf("task should be populated")
+	if r["task"] != "TASK ID: glm52-research-v2-20260615" {
+		t.Errorf("task = %v, want title from current OpenClaw task summary", r["task"])
 	}
 	if r["timestamp"] == "" {
 		t.Errorf("timestamp should be populated from createdAt")
@@ -41,6 +41,18 @@ func TestCollectSubagentRuns_StubRunner(t *testing.T) {
 	// cost/tokens are intentionally absent — no source post-migration.
 	if _, ok := r["cost"]; ok {
 		t.Errorf("cost key must be absent (no source); got %v", r["cost"])
+	}
+}
+
+func TestSubagentTaskToRun_TaskFallback(t *testing.T) {
+	run := subagentTaskToRun(map[string]any{
+		"agentId":   "main",
+		"task":      "legacy task prompt",
+		"status":    "succeeded",
+		"createdAt": float64(1781494400000),
+	}, time.UTC)
+	if run["task"] != "legacy task prompt" {
+		t.Fatalf("task = %v, want legacy task fallback", run["task"])
 	}
 }
 

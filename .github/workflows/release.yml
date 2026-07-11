@@ -28,6 +28,9 @@ jobs:
           go-version-file: go.mod
           cache: true
 
+      - name: Validate release source
+        run: make check
+
       - name: Install syft (SBOM generator)
         # Pin exact: floating @v0 will silently disappear when syft v1 → v2.
         # Dependabot's github-actions ecosystem watches exact versions.

@@ -87,6 +87,26 @@ func TestLoadConfig_ZeroValuesClamped(t *testing.T) {
 	}
 }
 
+func TestLoadConfig_HighPortsClamped(t *testing.T) {
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, "config.json"), []byte(`{
+		"server": {"port": 65536},
+		"ai": {"gatewayPort": 65536},
+		"system": {"gatewayPort": 65536}
+	}`), 0644)
+
+	cfg := loadConfig(dir)
+	if cfg.Server.Port != 8080 {
+		t.Fatalf("high server port should clamp to 8080, got %d", cfg.Server.Port)
+	}
+	if cfg.AI.GatewayPort != 18789 {
+		t.Fatalf("high AI gateway port should clamp to 18789, got %d", cfg.AI.GatewayPort)
+	}
+	if cfg.System.GatewayPort != cfg.AI.GatewayPort {
+		t.Fatalf("high system gateway port should inherit AI gateway port, got %d want %d", cfg.System.GatewayPort, cfg.AI.GatewayPort)
+	}
+}
+
 func TestReadDotenv_Basic(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, ".env")

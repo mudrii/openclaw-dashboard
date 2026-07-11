@@ -13,6 +13,15 @@ import (
 	appconfig "github.com/mudrii/openclaw-dashboard/internal/appconfig"
 )
 
+func stubChannelStatusCollector(t *testing.T, status map[string]any, ok bool) {
+	t.Helper()
+	prev := channelStatusCollector
+	channelStatusCollector = func(context.Context, func(context.Context, string, ...string) *exec.Cmd, func() string) (map[string]any, bool) {
+		return status, ok
+	}
+	t.Cleanup(func() { channelStatusCollector = prev })
+}
+
 // TestRunRefreshCollector_ReadyzFailingMarksChannelUnhealthy proves the INT-1
 // wire-up end to end: collectDashboardData queries the /readyz probe and feeds
 // failing[] into backfillChannelConnectivity, so a configured channel reported
@@ -28,6 +37,7 @@ func TestRunRefreshCollector_ReadyzFailingMarksChannelUnhealthy(t *testing.T) {
 	// model-catalog snapshot into the package globals other tests read.
 	stubPgrep(t, "", nil)
 	stubHealthz(t, false)
+	stubChannelStatusCollector(t, nil, false)
 	prevRunner := defaultModelCatalogCache.runner
 	defaultModelCatalogCache.runner = func(ctx context.Context, name string, args ...string) *exec.Cmd {
 		return exec.CommandContext(ctx, "printf", "")
@@ -101,6 +111,7 @@ func TestRunRefreshCollector_ReadyzProbeFailureKeepsHeuristic(t *testing.T) {
 	t.Cleanup(func() { readyzProbe = prev })
 	stubPgrep(t, "", nil)
 	stubHealthz(t, false)
+	stubChannelStatusCollector(t, nil, false)
 	prevRunner := defaultModelCatalogCache.runner
 	defaultModelCatalogCache.runner = func(ctx context.Context, name string, args ...string) *exec.Cmd {
 		return exec.CommandContext(ctx, "printf", "")

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -93,6 +94,11 @@ func TestIssue26FrontendFixtureContract(t *testing.T) {
 		"const flap=c.flapping?",
 		"const healthColor = ['unhealthy','disconnected','offline','error','down','failing'].includes(healthLc) ? 'var(--red)'",
 		"const tasks=ocStatus.tasks, evl=ocStatus.eventLoop, pc=ocStatus.pluginCompatibility, hb=ocStatus.lastHeartbeat;",
+		"data-section=\"runtime\"",
+		"'runtime':false",
+		"Runtime Health unavailable",
+		"No models detected",
+		"SR.provider && SR.provider !== '—'",
 		"No skills configured",
 		// Sub-agent panel post-migration: agent/duration/status columns, no cost.
 		"<th>Task</th><th>Agent</th><th class=\"r\">Duration</th><th>Status</th><th>Time</th>",
@@ -106,5 +112,51 @@ func TestIssue26FrontendFixtureContract(t *testing.T) {
 	// must NOT render a cost cell (dropped in the SQLite-migration rework).
 	if strings.Contains(html, "(r.cost||0).toFixed(4)") {
 		t.Fatal("web/index.html: sub-agent runs table still renders a cost cell; cost was dropped post-migration")
+	}
+
+	runtimeSection := strings.Index(html, `data-section="runtime"`)
+	agentConfigSection := strings.Index(html, `data-section="agent-config"`)
+	if runtimeSection == -1 || agentConfigSection == -1 || runtimeSection > agentConfigSection {
+		t.Fatal("web/index.html: runtime panels must be in a default-visible runtime section before collapsed agent configuration")
+	}
+	for _, id := range []string{"gatewayRuntimePanel", "runtimeHealthPanel"} {
+		idx := strings.Index(html, `id="`+id+`"`)
+		if idx == -1 {
+			t.Fatalf("web/index.html missing %s", id)
+		}
+		if idx > agentConfigSection {
+			t.Fatalf("web/index.html: %s is still nested after agent configuration", id)
+		}
+	}
+
+	assertUniqueHTMLIDs(t, html)
+	assertAriaControlsResolve(t, html)
+}
+
+func assertUniqueHTMLIDs(t *testing.T, html string) {
+	t.Helper()
+	re := regexp.MustCompile(`\bid="([A-Za-z][A-Za-z0-9_:-]*)"`)
+	seen := map[string]bool{}
+	for _, match := range re.FindAllStringSubmatch(html, -1) {
+		id := match[1]
+		if seen[id] {
+			t.Fatalf("web/index.html duplicate id %q", id)
+		}
+		seen[id] = true
+	}
+}
+
+func assertAriaControlsResolve(t *testing.T, html string) {
+	t.Helper()
+	idRe := regexp.MustCompile(`\bid="([A-Za-z][A-Za-z0-9_:-]*)"`)
+	ids := map[string]bool{}
+	for _, match := range idRe.FindAllStringSubmatch(html, -1) {
+		ids[match[1]] = true
+	}
+	controlsRe := regexp.MustCompile(`\baria-controls="([A-Za-z][A-Za-z0-9_:-]*)"`)
+	for _, match := range controlsRe.FindAllStringSubmatch(html, -1) {
+		if !ids[match[1]] {
+			t.Fatalf("web/index.html aria-controls target %q does not exist", match[1])
+		}
 	}
 }

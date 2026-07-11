@@ -430,3 +430,14 @@ func TestDefaultAgentConfig(t *testing.T) {
 		t.Errorf("memoryPolicy should be nil, got %v", got["memoryPolicy"])
 	}
 }
+
+func TestParseOpenclawConfig_MissingSearchProviderIsEmpty(t *testing.T) {
+	_, _, _, _, agentConfig := parseOpenclawConfig(map[string]any{}, "")
+	search, ok := agentConfig["search"].(map[string]any)
+	if !ok {
+		t.Fatalf("agentConfig.search type = %T, want object", agentConfig["search"])
+	}
+	if search["provider"] != "" {
+		t.Fatalf("search.provider = %q, want empty string for unconfigured search", search["provider"])
+	}
+}

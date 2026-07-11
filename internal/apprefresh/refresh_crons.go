@@ -102,9 +102,13 @@ func cronJobToMap(jm map[string]any, sidecarStates map[string]map[string]any, lo
 		}
 	}
 
-	// OpenClaw's canonical field is lastRunStatus; lastStatus is a deprecated
-	// alias kept only as a legacy fallback.
-	lastStatus := jsonStrDefault(state, "lastRunStatus", "")
+	// OpenClaw's CLI computes job-level status from enabled + runningAtMs +
+	// lastRunStatus. Prefer that status when present; legacy file reads fall
+	// back to canonical lastRunStatus, then deprecated lastStatus.
+	lastStatus := jsonStr(jm, "status")
+	if lastStatus == "" {
+		lastStatus = jsonStrDefault(state, "lastRunStatus", "")
+	}
 	if lastStatus == "" {
 		lastStatus = jsonStrDefault(state, "lastStatus", "none")
 	}

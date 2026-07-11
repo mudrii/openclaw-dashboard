@@ -153,7 +153,7 @@ func parseOpenclawConfig(oc map[string]any, basePath string) (
 			}(),
 		},
 		"search": map[string]any{
-			"provider":        jsonStrDefault(webCfg, "provider", "—"),
+			"provider":        jsonStr(webCfg, "provider"),
 			"maxResults":      webCfg["maxResults"],
 			"cacheTtlMinutes": webCfg["cacheTtlMinutes"],
 		},

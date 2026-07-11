@@ -17,6 +17,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/mudrii/openclaw-dashboard/internal/appconfig"
 	"github.com/mudrii/openclaw-dashboard/internal/appruntime"
 	"github.com/mudrii/openclaw-dashboard/internal/appservice"
 )
@@ -39,6 +40,19 @@ const (
 	httpWriteTimeout = 90 * time.Second
 	httpIdleTimeout  = 120 * time.Second
 )
+
+func listenAddr(host string, port int) string {
+	return net.JoinHostPort(host, strconv.Itoa(port))
+}
+
+func parsePortOverride(value string, fallback int, source string) int {
+	port, err := strconv.Atoi(value)
+	if err != nil || !appconfig.ValidPort(port) {
+		slog.Warn("[dashboard] invalid "+source+", using default", "value", value, "default", fallback)
+		return fallback
+	}
+	return port
+}
 
 // Main runs the dashboard CLI and returns a process exit code.
 func Main() int {
@@ -76,11 +90,7 @@ func Main() int {
 			}
 			envPort := cfg.Server.Port
 			if p := os.Getenv("DASHBOARD_PORT"); p != "" {
-				if n, err := strconv.Atoi(p); err == nil {
-					envPort = n
-				} else {
-					slog.Warn("[dashboard] invalid DASHBOARD_PORT, using default", "value", p, "default", envPort)
-				}
+				envPort = parsePortOverride(p, envPort, "DASHBOARD_PORT")
 			}
 
 			b, err := appservice.NewWithContext(cmdCtx)
@@ -127,11 +137,7 @@ func Main() int {
 	envPortInt := cfg.Server.Port
 
 	if envPort != "" {
-		if p, err := strconv.Atoi(envPort); err == nil {
-			envPortInt = p
-		} else {
-			slog.Warn("[dashboard] invalid DASHBOARD_PORT, using default", "value", envPort, "default", envPortInt)
-		}
+		envPortInt = parsePortOverride(envPort, envPortInt, "DASHBOARD_PORT")
 	}
 
 	// CLI flags
@@ -192,13 +198,17 @@ func Main() int {
 		fmt.Fprintf(os.Stderr, "[dashboard] fatal: %v\n", err)
 		return 1
 	}
+	if !appconfig.ValidPort(*port) {
+		fmt.Fprintf(os.Stderr, "[dashboard] fatal: invalid port %d; must be between 1 and 65535\n", *port)
+		return 1
+	}
 
 	srv := NewServer(dir, version, cfg, gatewayToken, indexHTML, serverCtx)
 
 	// Pre-warm data.json in background so first browser hit is instant
 	srv.PreWarm()
 
-	addr := fmt.Sprintf("%s:%d", *bind, *port)
+	addr := listenAddr(*bind, *port)
 	httpSrv := &http.Server{
 		Addr:         addr,
 		Handler:      srv,
@@ -216,7 +226,7 @@ func Main() int {
 	}
 	if *bind == "0.0.0.0" {
 		if ip := localIP(); ip != "" {
-			fmt.Printf("[dashboard] LAN access: http://%s:%d/\n", ip, *port)
+			fmt.Printf("[dashboard] LAN access: http://%s/\n", listenAddr(ip, *port))
 		}
 	}
 
@@ -342,6 +352,10 @@ func runServiceCmd(cmd string, opts serviceCmdOpts) int {
 	}
 	if fs.NArg() != 0 {
 		fmt.Fprintf(os.Stderr, "[dashboard] unexpected arguments for %s: %s\n", cmd, strings.Join(fs.Args(), " "))
+		return 1
+	}
+	if !appconfig.ValidPort(*port) {
+		fmt.Fprintf(os.Stderr, "[dashboard] invalid port %d; must be between 1 and 65535\n", *port)
 		return 1
 	}
 

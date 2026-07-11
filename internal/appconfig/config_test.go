@@ -109,6 +109,24 @@ func TestLoad_InvalidJSON(t *testing.T) {
 	}
 }
 
+func TestLoad_HighPortsClamped(t *testing.T) {
+	dir := t.TempDir()
+	data := `{"server":{"port":65536},"ai":{"gatewayPort":65536},"system":{"gatewayPort":65536}}`
+	if err := os.WriteFile(filepath.Join(dir, "config.json"), []byte(data), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg := Load(dir)
+	if cfg.Server.Port != 8080 {
+		t.Fatalf("Server.Port = %d, want default 8080", cfg.Server.Port)
+	}
+	if cfg.AI.GatewayPort != 18789 {
+		t.Fatalf("AI.GatewayPort = %d, want default 18789", cfg.AI.GatewayPort)
+	}
+	if cfg.System.GatewayPort != cfg.AI.GatewayPort {
+		t.Fatalf("System.GatewayPort = %d, want inherited %d", cfg.System.GatewayPort, cfg.AI.GatewayPort)
+	}
+}
+
 // TestLoad_SystemGatewayPortInheritsFromAI verifies that omitting
 // system.gatewayPort in config.json inherits the value from ai.gatewayPort,
 // which is the documented behavior. Regression: previously Default()

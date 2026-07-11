@@ -322,6 +322,46 @@ func TestCollectCrons_LastRunStatusPrecedence(t *testing.T) {
 	})
 }
 
+func TestCronJobToMap_PrefersComputedStatus(t *testing.T) {
+	build := func(job map[string]any) map[string]any {
+		if _, ok := job["id"]; !ok {
+			job["id"] = "j1"
+		}
+		if _, ok := job["name"]; !ok {
+			job["name"] = "n"
+		}
+		if _, ok := job["schedule"]; !ok {
+			job["schedule"] = map[string]any{"kind": "cron", "expr": "0 0 * * *"}
+		}
+		return cronJobToMap(job, nil, time.UTC)
+	}
+
+	t.Run("disabled", func(t *testing.T) {
+		c := build(map[string]any{"enabled": false, "status": "disabled", "state": map[string]any{"lastRunStatus": "ok"}})
+		if c["lastStatus"] != "disabled" {
+			t.Fatalf("lastStatus = %v, want computed disabled", c["lastStatus"])
+		}
+	})
+	t.Run("running", func(t *testing.T) {
+		c := build(map[string]any{"enabled": true, "status": "running", "state": map[string]any{"runningAtMs": float64(1781494400000)}})
+		if c["lastStatus"] != "running" {
+			t.Fatalf("lastStatus = %v, want computed running", c["lastStatus"])
+		}
+	})
+	t.Run("idle without prior run", func(t *testing.T) {
+		c := build(map[string]any{"enabled": true, "status": "idle", "state": map[string]any{}})
+		if c["lastStatus"] != "idle" {
+			t.Fatalf("lastStatus = %v, want computed idle", c["lastStatus"])
+		}
+	})
+	t.Run("state fallback when computed status absent", func(t *testing.T) {
+		c := build(map[string]any{"enabled": true, "state": map[string]any{"lastRunStatus": "fail"}})
+		if c["lastStatus"] != "fail" {
+			t.Fatalf("lastStatus = %v, want canonical state fallback", c["lastStatus"])
+		}
+	})
+}
+
 // TestCollectCrons_BothPresent_SidecarWins: when inline state and sidecar both have
 // values for the same job id, sidecar wins (it is the live runtime state).
 func TestCollectCrons_BothPresent_SidecarWins(t *testing.T) {

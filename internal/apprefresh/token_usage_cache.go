@@ -15,7 +15,7 @@ import (
 	"time"
 )
 
-const tokenUsageCacheVersion = 2
+const tokenUsageCacheVersion = 3
 
 type tokenUsageCache struct {
 	Version int                              `json:"version"`
@@ -169,57 +169,46 @@ func parseTokenUsageFile(path string, info os.FileInfo, loc *time.Location) (tok
 		if len(line) > 0 {
 			var obj map[string]any
 			if json.Unmarshal(line, &obj) == nil {
-				msg := asObj(obj["message"])
-				if msg != nil {
-					role, _ := msg["role"].(string)
-					if role == "assistant" {
-						usage := asObj(msg["usage"])
-						if usage != nil {
-							tt, _ := usage["totalTokens"].(float64)
-							if tt > 0 {
-								model, _ := msg["model"].(string)
-								if model == "" {
-									model = "unknown"
+				usage, model, ok := usageFromSessionEvent(obj)
+				if ok {
+					tt, _ := usage["totalTokens"].(float64)
+					if tt > 0 && !strings.Contains(model, "delivery-mirror") {
+						var costTotal float64
+						if costObj, ok := usage["cost"].(map[string]any); ok {
+							if t, ok := costObj["total"].(float64); ok {
+								costTotal = t
+							}
+						}
+						if costTotal < 0 {
+							costTotal = 0
+						}
+
+						inp, _ := usage["input"].(float64)
+						out, _ := usage["output"].(float64)
+						cr, _ := usage["cacheRead"].(float64)
+						cw, _ := usage["cacheWrite"].(float64)
+
+						modelBucket := summary.Models[model]
+						modelBucket.add(int(inp), int(out), int(cr), int(cw), int(tt), costTotal)
+						summary.Models[model] = modelBucket
+						summary.SessionCost += costTotal
+						summary.SessionModel = model
+
+						ts, _ := obj["timestamp"].(string)
+						if ts != "" {
+							if t, err := time.Parse(time.RFC3339Nano, ts); err == nil {
+								t = t.In(loc)
+								msgDate := t.Format("2006-01-02")
+								if summary.Daily[msgDate] == nil {
+									summary.Daily[msgDate] = map[string]TokenBucket{}
 								}
-								if !strings.Contains(model, "delivery-mirror") {
-									var costTotal float64
-									if costObj, ok := usage["cost"].(map[string]any); ok {
-										if t, ok := costObj["total"].(float64); ok {
-											costTotal = t
-										}
-									}
-									if costTotal < 0 {
-										costTotal = 0
-									}
-
-									inp, _ := usage["input"].(float64)
-									out, _ := usage["output"].(float64)
-									cr, _ := usage["cacheRead"].(float64)
-
-									modelBucket := summary.Models[model]
-									modelBucket.add(int(inp), int(out), int(cr), int(tt), costTotal)
-									summary.Models[model] = modelBucket
-									summary.SessionCost += costTotal
-									summary.SessionModel = model
-
-									ts, _ := obj["timestamp"].(string)
-									if ts != "" {
-										if t, err := time.Parse(time.RFC3339Nano, ts); err == nil {
-											t = t.In(loc)
-											msgDate := t.Format("2006-01-02")
-											if summary.Daily[msgDate] == nil {
-												summary.Daily[msgDate] = map[string]TokenBucket{}
-											}
-											dailyBucket := summary.Daily[msgDate][model]
-											dailyBucket.add(int(inp), int(out), int(cr), int(tt), costTotal)
-											summary.Daily[msgDate][model] = dailyBucket
-											if sessionFirstTs.IsZero() {
-												sessionFirstTs = t
-											}
-											sessionLastTs = t
-										}
-									}
+								dailyBucket := summary.Daily[msgDate][model]
+								dailyBucket.add(int(inp), int(out), int(cr), int(cw), int(tt), costTotal)
+								summary.Daily[msgDate][model] = dailyBucket
+								if sessionFirstTs.IsZero() {
+									sessionFirstTs = t
 								}
+								sessionLastTs = t
 							}
 						}
 					}
@@ -253,6 +242,29 @@ func parseTokenUsageFile(path string, info os.FileInfo, loc *time.Location) (tok
 	return summary, nil
 }
 
+func usageFromSessionEvent(obj map[string]any) (map[string]any, string, bool) {
+	msg := asObj(obj["message"])
+	if msg == nil {
+		return nil, "", false
+	}
+	role, _ := msg["role"].(string)
+	if role != "assistant" {
+		return nil, "", false
+	}
+	usage := asObj(obj["usage"])
+	if usage == nil {
+		usage = asObj(msg["usage"])
+	}
+	if usage == nil {
+		return nil, "", false
+	}
+	model, _ := msg["model"].(string)
+	if model == "" {
+		model = "unknown"
+	}
+	return usage, model, true
+}
+
 func applyTokenUsageSummary(
 	path string,
 	summary tokenUsageFileSummary,
@@ -280,9 +292,9 @@ func applyTokenUsageSummary(
 
 	for model, bucket := range summary.Models {
 		displayModel := resolveUsageModel(model, modelAliases)
-		getBucket(modelsAll, displayModel).add(bucket.Input, bucket.Output, bucket.CacheRead, bucket.Total, bucket.Cost)
+		getBucket(modelsAll, displayModel).add(bucket.Input, bucket.Output, bucket.CacheRead, bucket.CacheWrite, bucket.Total, bucket.Cost)
 		if isSubagent {
-			getBucket(subagentAll, displayModel).add(bucket.Input, bucket.Output, bucket.CacheRead, bucket.Total, bucket.Cost)
+			getBucket(subagentAll, displayModel).add(bucket.Input, bucket.Output, bucket.CacheRead, bucket.CacheWrite, bucket.Total, bucket.Cost)
 		}
 	}
 
@@ -293,21 +305,21 @@ func applyTokenUsageSummary(
 			ensureMapMapInt(dailyTokens, date)[displayModel] += bucket.Total
 			ensureMapMapInt(dailyCalls, date)[displayModel] += bucket.Calls
 			if date == todayStr {
-				getBucket(modelsToday, displayModel).add(bucket.Input, bucket.Output, bucket.CacheRead, bucket.Total, bucket.Cost)
+				getBucket(modelsToday, displayModel).add(bucket.Input, bucket.Output, bucket.CacheRead, bucket.CacheWrite, bucket.Total, bucket.Cost)
 				if isSubagent {
-					getBucket(subagentToday, displayModel).add(bucket.Input, bucket.Output, bucket.CacheRead, bucket.Total, bucket.Cost)
+					getBucket(subagentToday, displayModel).add(bucket.Input, bucket.Output, bucket.CacheRead, bucket.CacheWrite, bucket.Total, bucket.Cost)
 				}
 			}
 			if date >= date7d {
-				getBucket(models7d, displayModel).add(bucket.Input, bucket.Output, bucket.CacheRead, bucket.Total, bucket.Cost)
+				getBucket(models7d, displayModel).add(bucket.Input, bucket.Output, bucket.CacheRead, bucket.CacheWrite, bucket.Total, bucket.Cost)
 				if isSubagent {
-					getBucket(subagent7d, displayModel).add(bucket.Input, bucket.Output, bucket.CacheRead, bucket.Total, bucket.Cost)
+					getBucket(subagent7d, displayModel).add(bucket.Input, bucket.Output, bucket.CacheRead, bucket.CacheWrite, bucket.Total, bucket.Cost)
 				}
 			}
 			if date >= date30d {
-				getBucket(models30d, displayModel).add(bucket.Input, bucket.Output, bucket.CacheRead, bucket.Total, bucket.Cost)
+				getBucket(models30d, displayModel).add(bucket.Input, bucket.Output, bucket.CacheRead, bucket.CacheWrite, bucket.Total, bucket.Cost)
 				if isSubagent {
-					getBucket(subagent30d, displayModel).add(bucket.Input, bucket.Output, bucket.CacheRead, bucket.Total, bucket.Cost)
+					getBucket(subagent30d, displayModel).add(bucket.Input, bucket.Output, bucket.CacheRead, bucket.CacheWrite, bucket.Total, bucket.Cost)
 				}
 			}
 			if isSubagent {

@@ -11,19 +11,21 @@ import (
 )
 
 type TokenBucket struct {
-	Calls     int     `json:"calls"`
-	Input     int     `json:"input"`
-	Output    int     `json:"output"`
-	CacheRead int     `json:"cacheRead"`
-	Total     int     `json:"totalTokens"`
-	Cost      float64 `json:"cost"`
+	Calls      int     `json:"calls"`
+	Input      int     `json:"input"`
+	Output     int     `json:"output"`
+	CacheRead  int     `json:"cacheRead"`
+	CacheWrite int     `json:"cacheWrite"`
+	Total      int     `json:"totalTokens"`
+	Cost       float64 `json:"cost"`
 }
 
-func (b *TokenBucket) add(inp, out, cr, tt int, cost float64) {
+func (b *TokenBucket) add(inp, out, cr, cw, tt int, cost float64) {
 	b.Calls++
 	b.Input += inp
 	b.Output += out
 	b.CacheRead += cr
+	b.CacheWrite += cw
 	b.Total += tt
 	b.Cost += cost
 }
@@ -34,11 +36,13 @@ type TokenUsageEntry struct {
 	Input          string  `json:"input"`
 	Output         string  `json:"output"`
 	CacheRead      string  `json:"cacheRead"`
+	CacheWrite     string  `json:"cacheWrite"`
 	TotalTokens    string  `json:"totalTokens"`
 	Cost           float64 `json:"cost"`
 	InputRaw       int     `json:"inputRaw"`
 	OutputRaw      int     `json:"outputRaw"`
 	CacheReadRaw   int     `json:"cacheReadRaw"`
+	CacheWriteRaw  int     `json:"cacheWriteRaw"`
 	TotalTokensRaw int     `json:"totalTokensRaw"`
 }
 
@@ -61,11 +65,13 @@ func BucketsToList(m map[string]*TokenBucket) []TokenUsageEntry {
 			Input:          FmtTokens(p.v.Input),
 			Output:         FmtTokens(p.v.Output),
 			CacheRead:      FmtTokens(p.v.CacheRead),
+			CacheWrite:     FmtTokens(p.v.CacheWrite),
 			TotalTokens:    FmtTokens(p.v.Total),
 			Cost:           math.Round(p.v.Cost*100) / 100,
 			InputRaw:       p.v.Input,
 			OutputRaw:      p.v.Output,
 			CacheReadRaw:   p.v.CacheRead,
+			CacheWriteRaw:  p.v.CacheWrite,
 			TotalTokensRaw: p.v.Total,
 		})
 	}

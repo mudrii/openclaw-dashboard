@@ -59,9 +59,13 @@ func subagentTaskToRun(tm map[string]any, loc *time.Location) map[string]any {
 		dateStr = ct.Format("2006-01-02")
 	}
 
-	// Collapse internal whitespace (task prompts are multi-line) so the run
-	// renders cleanly on a single table row, then bound the length.
-	task := truncateRunes(strings.Join(strings.Fields(jsonStr(tm, "task")), " "), subagentTaskMaxLen)
+	// Current OpenClaw task summaries expose title; older dashboard fixtures used
+	// task. Collapse whitespace so either shape renders cleanly in one table row.
+	taskText := jsonStr(tm, "title")
+	if taskText == "" {
+		taskText = jsonStr(tm, "task")
+	}
+	task := truncateRunes(strings.Join(strings.Fields(taskText), " "), subagentTaskMaxLen)
 
 	return map[string]any{
 		"task":        task,

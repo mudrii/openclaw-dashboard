@@ -349,6 +349,10 @@ func collectDashboardData(ctx context.Context, dashboardDir, openclawPath string
 	sessionLiveModelTTL := time.Duration(cfg.Refresh.IntervalSeconds) * time.Second
 	sessionsList := collectSessions(ctx, sessionStores, basePath, loc, now, modelAliases, knownSIDs, sessionLiveModelTTL)
 
+	if cliChannelStatus, ok := channelStatusCollector(ctx, nil, nil); ok {
+		overlayChannelStatus(agentConfig, cliChannelStatus)
+	}
+
 	// Backfill channel connectivity: gateway /readyz failing[] is authoritative
 	// for failures; on probe failure we fall back to the session-activity
 	// heuristic (failing is nil, so no channel is blanked).

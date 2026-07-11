@@ -67,15 +67,45 @@ func TestCollectTokenUsageWithCache_HandlesLargeJSONLLine(t *testing.T) {
 		dailyCosts, dailyTokens, dailyCalls, dailySubagentCosts, dailySubagentCount,
 	)
 
-	got := modelsAll["GPT-5"]
-	if got == nil {
+	if got := modelsAll["GPT-5"]; got == nil {
 		t.Fatalf("expected oversized JSONL line to be counted, got nil")
-	}
-	if got.Total != 100 || got.Input != 60 || got.Output != 40 || got.CacheRead != 0 {
+	} else if got.Total != 100 || got.Input != 60 || got.Output != 40 || got.CacheRead != 0 {
 		t.Errorf("token fields mismatch: %+v (want Total=100 Input=60 Output=40 CacheRead=0)", got)
-	}
-	if got.Cost != 0.12 {
+	} else if got.Cost != 0.12 {
 		t.Errorf("cost = %v, want 0.12", got.Cost)
+	}
+}
+
+func TestCollectTokenUsageWithCache_TopLevelUsageAndCacheWrite(t *testing.T) {
+	basePath := filepath.Join(t.TempDir(), "agents")
+	sessionDir := filepath.Join(basePath, "main", "sessions")
+	if err := os.MkdirAll(sessionDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	line := `{"timestamp":"2026-03-22T10:00:00Z","usage":{"totalTokens":120,"input":70,"output":30,"cacheRead":10,"cacheWrite":10,"cost":{"total":0.34}},"message":{"role":"assistant","model":"openai/gpt-5"}}` + "\n"
+	if err := os.WriteFile(filepath.Join(sessionDir, "top-level.jsonl"), []byte(line), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	agg := freshAggregates()
+	CollectTokenUsageWithCache(
+		filepath.Join(t.TempDir(), "token-cache.json"),
+		basePath, time.UTC, "2026-03-22", "2026-03-15", "2026-02-20",
+		map[string]string{}, map[string]string{}, map[string]string{},
+		agg.modelsAll, agg.modelsToday, agg.models7d, agg.models30d,
+		agg.subagentAll, agg.subagentToday, agg.subagent7d, agg.subagent30d,
+		agg.dailyCosts, agg.dailyTokens, agg.dailyCalls, agg.dailySubagentCosts, agg.dailySubagentCount,
+	)
+
+	if got := agg.modelsAll["GPT-5"]; got == nil {
+		t.Fatal("expected top-level usage to be counted")
+	} else if got.Total != 120 || got.Input != 70 || got.Output != 30 || got.CacheRead != 10 || got.CacheWrite != 10 {
+		t.Fatalf("token fields mismatch: %+v", got)
+	}
+	entries := BucketsToList(agg.modelsAll)
+	if len(entries) != 1 || entries[0].CacheWriteRaw != 10 || entries[0].CacheWrite != "10" {
+		t.Fatalf("entry cacheWrite fields mismatch: %+v", entries)
 	}
 }
 

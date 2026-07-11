@@ -30,6 +30,10 @@ type ServerConfig struct {
 	Host string `json:"host"`
 }
 
+func ValidPort(port int) bool {
+	return port >= 1 && port <= 65535
+}
+
 type AIConfig struct {
 	Enabled     bool   `json:"enabled"`
 	GatewayPort int    `json:"gatewayPort"`
@@ -280,7 +284,7 @@ func Load(dir string) Config {
 	if cfg.AI.MaxHistory <= 0 {
 		cfg.AI.MaxHistory = 6
 	}
-	if cfg.AI.GatewayPort <= 0 {
+	if !ValidPort(cfg.AI.GatewayPort) {
 		cfg.AI.GatewayPort = 18789
 	}
 	if cfg.AI.DotenvPath == "" {
@@ -289,7 +293,7 @@ func Load(dir string) Config {
 	if cfg.Refresh.IntervalSeconds <= 0 {
 		cfg.Refresh.IntervalSeconds = 30
 	}
-	if cfg.Server.Port <= 0 {
+	if !ValidPort(cfg.Server.Port) {
 		cfg.Server.Port = 8080
 	}
 	if strings.TrimSpace(cfg.Server.Host) == "" {
@@ -329,7 +333,7 @@ func Load(dir string) Config {
 	if cfg.System.CPUTimeoutMs < 500 || cfg.System.CPUTimeoutMs > 20000 {
 		cfg.System.CPUTimeoutMs = DefaultCPUTimeoutMs
 	}
-	if cfg.System.GatewayPort <= 0 {
+	if !ValidPort(cfg.System.GatewayPort) {
 		cfg.System.GatewayPort = cfg.AI.GatewayPort
 	}
 	if cfg.System.DiskPath == "" {

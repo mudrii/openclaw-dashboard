@@ -257,7 +257,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'SF Pro','Helvetica Neue',sans
 // FOUC bootstrap: read localStorage before body renders to prevent flash
 (function(){
   var STORAGE_KEY='ocDash:collapse:v2';
-  var DEFAULTS={'alerts':false,'health':false,'cost':false,'charts':false,'crons':false,'sessions':false,'usage':false,'subagent':false,'logs':false,'errors':false,'agent-config':true};
+  var DEFAULTS={'alerts':false,'health':false,'cost':false,'charts':false,'crons':false,'sessions':false,'usage':false,'subagent':false,'logs':false,'errors':false,'runtime':false,'agent-config':true};
   var state=Object.assign({},DEFAULTS);
   try{
     var raw=localStorage.getItem(STORAGE_KEY);
@@ -586,7 +586,32 @@ body{font-family:-apple-system,BlinkMacSystemFont,'SF Pro','Helvetica Neue',sans
   </div>
 </section>
 
-<!-- 13. Agent Configuration (includes Models, Skills, Git Log) -->
+<!-- 13. Runtime Diagnostics -->
+<section class="oc-section" data-section="runtime">
+  <div class="oc-section-header">
+    <button class="oc-section-toggle" aria-expanded="true" aria-controls="oc-body-runtime" aria-label="Toggle Runtime Diagnostics" onclick="Sections.toggle('runtime')">
+      <span class="section-title">📊 Runtime Diagnostics</span>
+      <span class="oc-chevron">▼</span>
+    </button>
+  </div>
+  <div class="oc-section-body" id="oc-body-runtime">
+    <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-bottom:18px" id="runtimeDiagnosticsRow">
+      <!-- Gateway Runtime (live /api/system data) -->
+      <div style="background:var(--glass);border:1px solid var(--border);border-radius:8px;padding:12px" id="gatewayRuntimePanel">
+        <div style="font-size:9px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-bottom:10px">⚡ Gateway Runtime</div>
+        <div id="gatewayRuntimePanelInner"><span style="color:var(--dim);font-size:12px">Loading…</span></div>
+      </div>
+
+      <!-- Runtime Health (INT-2: task queue / event-loop / plugin-compat / heartbeat from status --json) -->
+      <div style="background:var(--glass);border:1px solid var(--border);border-radius:8px;padding:12px" id="runtimeHealthPanel">
+        <div style="font-size:9px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-bottom:10px">📊 Runtime Health</div>
+        <div id="runtimeHealthPanelInner"><span style="color:var(--dim);font-size:12px">Loading…</span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 14. Agent Configuration (includes Models, Skills, Git Log) -->
 <section class="oc-section" data-section="agent-config" style="margin-top:16px">
   <div class="oc-section-header">
     <button class="oc-section-toggle" aria-expanded="false" aria-controls="oc-body-agent-config" aria-label="Toggle Agent Configuration" onclick="Sections.toggle('agent-config')">
@@ -630,19 +655,13 @@ body{font-family:-apple-system,BlinkMacSystemFont,'SF Pro','Helvetica Neue',sans
     </div>
   </div>
 
-  <!-- 2-row config panels: (1) Channels, Gateway Runtime, Gateway Config, Subagent Limits; (2) Plugins, Hooks, Web Search -->
-  <div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-bottom:12px" id="extraConfigRow1">
+  <!-- 2-row config panels: (1) Channels, Gateway Config, Subagent Limits; (2) Plugins, Hooks, Web Search -->
+  <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-bottom:12px" id="extraConfigRow1">
 
     <!-- Channels -->
     <div style="background:var(--glass);border:1px solid var(--border);border-radius:8px;padding:12px" id="channelsPanel">
       <div style="font-size:9px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-bottom:10px">📡 Channels</div>
       <div id="channelConfigPanel"></div>
-    </div>
-
-    <!-- Gateway Runtime (live /api/system data) -->
-    <div style="background:var(--glass);border:1px solid var(--border);border-radius:8px;padding:12px" id="gatewayRuntimePanel">
-      <div style="font-size:9px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-bottom:10px">⚡ Gateway Runtime</div>
-      <div id="gatewayRuntimePanelInner"><span style="color:var(--dim);font-size:12px">Loading…</span></div>
     </div>
 
     <!-- Gateway Config (config snapshot from data.json) -->
@@ -679,12 +698,6 @@ body{font-family:-apple-system,BlinkMacSystemFont,'SF Pro','Helvetica Neue',sans
       <div id="searchPanelInner"></div>
     </div>
 
-  </div>
-
-  <!-- Runtime Health (INT-2: task queue / event-loop / plugin-compat / heartbeat from status --json) -->
-  <div style="background:var(--glass);border:1px solid var(--border);border-radius:8px;padding:12px;margin-bottom:18px" id="runtimeHealthPanel">
-    <div style="font-size:9px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-bottom:10px">📊 Runtime Health</div>
-    <div id="runtimeHealthPanelInner"><span style="color:var(--dim);font-size:12px">Loading…</span></div>
   </div>
 
   <!-- Agent Bindings -->
@@ -1471,7 +1484,10 @@ const Renderer = {
 
   // Models
   if (flags.models) {
-    $('modelsGrid').innerHTML=(D.availableModels||[]).map(m=>`<div class="glass model-card"><span class="badge badge-${esc(m.status)}">${esc(m.status)}</span><div class="model-name">${esc(m.name)}</div><div class="model-id">${esc(m.provider)}</div></div>`).join('');
+    const availableModels=D.availableModels||[];
+    $('modelsGrid').innerHTML=availableModels.length
+      ? availableModels.map(m=>`<div class="glass model-card"><span class="badge badge-${esc(m.status)}">${esc(m.status)}</span><div class="model-name">${esc(m.name)}</div><div class="model-id">${esc(m.provider)}</div></div>`).join('')
+      : '<div class="empty" style="display:block">No models detected</div>';
   }
 
   // Agent Configuration
@@ -1629,9 +1645,9 @@ const Renderer = {
 
     // Search Panel
     const SR = AC.search||{};
-    $('searchPanelInner').innerHTML = SR.provider ? [
+    $('searchPanelInner').innerHTML = SR.provider && SR.provider !== '—' ? [
       kv('Provider', SR.provider, 'var(--blue,#3b82f6)'),
-      kv('Max Results', SR.maxResults),
+      kv('Max Results', SR.maxResults||'—'),
       kv('Cache TTL', (SR.cacheTtlMinutes||'—')+' min'),
     ].join('') : '<span style="color:var(--dim);font-size:12px">Not configured</span>';
 
@@ -2043,6 +2059,13 @@ const SystemBar = {
       rows.push(this._kv('Reason',reason,'var(--muted)'));
       el.innerHTML=rows.join('');
     }
+    const rh=$('runtimeHealthPanelInner');
+    if(rh){
+      rh.innerHTML=[
+        this._kv('State','Runtime Health unavailable','var(--red)'),
+        this._kv('Reason',reason,'var(--muted)'),
+      ].join('');
+    }
     const gwReadyAlert=$('gw-readiness-alert');
     if(gwReadyAlert)gwReadyAlert.remove();
     window._sysBarActive=false;
@@ -2263,11 +2286,11 @@ const SystemBar = {
 };
 
 // === Collapsible Sections ===
-const SECTION_KEYS = ['alerts','health','cost','charts','crons','sessions','usage','subagent','logs','errors','agent-config'];
+const SECTION_KEYS = ['alerts','health','cost','charts','crons','sessions','usage','subagent','logs','errors','runtime','agent-config'];
 const Sections = {
   _state: {},
   STORAGE_KEY: 'ocDash:collapse:v2',
-  DEFAULTS: {'alerts':false,'health':false,'cost':false,'charts':false,'crons':false,'sessions':false,'usage':false,'subagent':false,'logs':false,'errors':false,'agent-config':true},
+  DEFAULTS: {'alerts':false,'health':false,'cost':false,'charts':false,'crons':false,'sessions':false,'usage':false,'subagent':false,'logs':false,'errors':false,'runtime':false,'agent-config':true},
 
   loadState() {
     var merged = Object.assign({}, this.DEFAULTS);
