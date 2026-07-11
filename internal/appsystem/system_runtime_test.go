@@ -273,6 +273,38 @@ func TestCollectVersionsLocal_FallbackHTTP(t *testing.T) {
 	})
 }
 
+func TestCollectVersionsLocal_CommandContracts(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	bin := filepath.Join(dir, "openclaw")
+	script := `#!/bin/sh
+if [ "$#" -eq 1 ] && [ "$1" = "--version" ]; then
+	printf '%s' 'openclaw 2026.7.11'
+	exit 0
+fi
+if [ "$#" -eq 3 ] && [ "$1" = "gateway" ] && [ "$2" = "status" ] && [ "$3" = "--json" ]; then
+	printf '%s' '{"service":{"loaded":true,"runtime":{"status":"running","pid":0}},"version":"gw-1.2.3"}'
+	exit 0
+fi
+exit 64
+`
+	if err := os.WriteFile(bin, []byte(script), 0o755); err != nil {
+		t.Fatalf("write fake openclaw: %v", err)
+	}
+
+	v := CollectVersionsLocal(ctx, "dash-1.0", 1000, 1, bin)
+
+	if v.Openclaw != "2026.7.11" {
+		t.Fatalf("Openclaw = %q, want 2026.7.11", v.Openclaw)
+	}
+	if v.Gateway.Status != "online" {
+		t.Fatalf("Gateway.Status = %q, want online from gateway status --json", v.Gateway.Status)
+	}
+	if v.Gateway.Version != "gw-1.2.3" {
+		t.Fatalf("Gateway.Version = %q, want gw-1.2.3", v.Gateway.Version)
+	}
+}
+
 // TestParseGatewayStatusJSON_ProcessInfoAndTextFallback adds the PID-driven
 // GetProcessInfo branch and the non-JSON substring fallback.
 func TestParseGatewayStatusJSON_ProcessInfoAndTextFallback(t *testing.T) {

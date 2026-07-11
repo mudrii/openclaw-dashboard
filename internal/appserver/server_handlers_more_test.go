@@ -348,6 +348,53 @@ func TestHandleRefresh(t *testing.T) {
 			t.Fatalf("want 500, got %d body=%s", w.Code, w.Body.String())
 		}
 	})
+
+	t.Run("invalid data.json returns 500 for GET and HEAD", func(t *testing.T) {
+		dir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(dir, "data.json"), []byte(`{"version":`), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		s := newTestServerForRefresh(t, dir, func(ctx context.Context, d, o string, cfg appconfig.Config) error {
+			t.Fatal("refreshFn must not run when debounce blocks")
+			return nil
+		})
+		s.mu.Lock()
+		s.lastRefresh = time.Now()
+		s.mu.Unlock()
+
+		for _, method := range []string{http.MethodGet, http.MethodHead} {
+			t.Run(method, func(t *testing.T) {
+				req := httptest.NewRequest(method, "/api/refresh", nil)
+				w := httptest.NewRecorder()
+				s.ServeHTTP(w, req)
+
+				if w.Code != http.StatusInternalServerError {
+					t.Fatalf("%s want 500, got %d body=%s", method, w.Code, w.Body.String())
+				}
+				if ct := w.Header().Get("Content-Type"); ct != "application/json" {
+					t.Errorf("%s Content-Type = %q, want application/json", method, ct)
+				}
+				if cc := w.Header().Get("Cache-Control"); cc != "no-cache" {
+					t.Errorf("%s Cache-Control = %q, want no-cache", method, cc)
+				}
+				if method == http.MethodHead {
+					if w.Body.Len() != 0 {
+						t.Fatalf("HEAD body length = %d, want 0", w.Body.Len())
+					}
+					return
+				}
+				var out struct {
+					Error string `json:"error"`
+				}
+				if err := json.Unmarshal(w.Body.Bytes(), &out); err != nil {
+					t.Fatalf("GET body is not JSON: %v", err)
+				}
+				if out.Error != "failed to read dashboard data" {
+					t.Fatalf("GET error = %q, want failed to read dashboard data", out.Error)
+				}
+			})
+		}
+	})
 }
 
 // --- handleLogs -----------------------------------------------------------

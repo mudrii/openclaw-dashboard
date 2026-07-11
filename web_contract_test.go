@@ -133,6 +133,7 @@ func TestIssue26FrontendFixtureContract(t *testing.T) {
 	assertAriaControlsResolve(t, html)
 	assertStaticIDLookupsResolve(t, html)
 	assertSectionBindingsCoherent(t, html)
+	assertNoExternalFrontendDependencies(t, html)
 	assertReadmeScreenshotLinksExist(t)
 }
 
@@ -216,6 +217,24 @@ func assertSectionBindingsCoherent(t *testing.T, html string) {
 			if !strings.Contains(html, want) {
 				t.Fatalf("section %q missing collapse registry token %q", key, want)
 			}
+		}
+	}
+}
+
+func assertNoExternalFrontendDependencies(t *testing.T, html string) {
+	t.Helper()
+	for _, pattern := range []string{
+		`(?is)<script\b[^>]*\bsrc\s*=`,
+		`(?is)<link\b[^>]*\brel\s*=\s*["']?stylesheet\b`,
+		`(?m)^\s*import\s+`,
+		`(?i)@import\s+`,
+		`https://cdn\.`,
+		`https://unpkg\.com`,
+		`https://esm\.sh`,
+	} {
+		re := regexp.MustCompile(pattern)
+		if match := re.FindString(html); match != "" {
+			t.Fatalf("web/index.html must remain embedded and dependency-free; found %q", match)
 		}
 	}
 }

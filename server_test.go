@@ -99,6 +99,45 @@ func TestHandleIndex_HEAD_NoBody(t *testing.T) {
 	}
 }
 
+func TestEmbeddedIndexServedWithRuntimePlaceholdersRendered(t *testing.T) {
+	dir := t.TempDir()
+	cfg := defaultConfig()
+	cfg.AI.Enabled = false
+	cfg.Refresh.IntervalSeconds = 1
+	srv := NewServer(dir, "2026.7.11-test", cfg, "", indexHTML, context.Background())
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	body := w.Body.String()
+	for _, forbidden := range []string{"__VERSION__", "__RUNTIME__"} {
+		if strings.Contains(body, forbidden) {
+			t.Fatalf("served embedded index still contains placeholder %q", forbidden)
+		}
+	}
+	for _, want := range []string{
+		"2026.7.11-test",
+		"<meta name=\"oc-theme\"",
+		"/api/refresh",
+		"/api/system",
+		"const DataLayer =",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("served embedded index missing %q", want)
+		}
+	}
+	if csp := w.Header().Get("Content-Security-Policy"); csp == "" {
+		t.Fatal("served embedded index missing Content-Security-Policy header")
+	}
+	if cc := w.Header().Get("Cache-Control"); cc != "no-cache, no-store, must-revalidate" {
+		t.Fatalf("Cache-Control = %q, want no-cache, no-store, must-revalidate", cc)
+	}
+}
+
 func TestHandleRefresh_HEAD_NoBody(t *testing.T) {
 	dir := t.TempDir()
 	srv := testServer(t, dir)

@@ -149,6 +149,7 @@ func TestHandleChat_RateLimited(t *testing.T) {
 	}
 	req := httptest.NewRequest(http.MethodPost, "/api/chat", strings.NewReader(`{"question":"hi"}`))
 	req.RemoteAddr = "10.0.0.5:1111"
+	req.Header.Set("Origin", "http://localhost:5173")
 	w := httptest.NewRecorder()
 	s.ServeHTTP(w, req)
 
@@ -157,6 +158,12 @@ func TestHandleChat_RateLimited(t *testing.T) {
 	}
 	if w.Header().Get("Retry-After") != "60" {
 		t.Errorf("Retry-After header missing")
+	}
+	if got := w.Header().Get("Access-Control-Expose-Headers"); got != "Retry-After" {
+		t.Errorf("Access-Control-Expose-Headers = %q, want Retry-After", got)
+	}
+	if got := w.Header().Get("Access-Control-Allow-Origin"); got != "http://localhost:5173" {
+		t.Errorf("Access-Control-Allow-Origin = %q, want reflected localhost origin", got)
 	}
 }
 

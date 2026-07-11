@@ -52,7 +52,8 @@ make check
 ```
 
 `make check` runs the full CI gate locally: `go vet ./...`, `golangci-lint run ./...`,
-`go test -race -count=1 ./...`, and `govulncheck ./...`.
+`go test -race -count=1 ./...`, pinned `govulncheck`, pinned `staticcheck`,
+and `make build`.
 
 | Target | What it does |
 |--------|--------------|
@@ -62,7 +63,7 @@ make check
 | `make vet` | `go vet ./...` only. Fast first pass before lint. |
 | `make staticcheck` | `go run honnef.co/go/tools/cmd/staticcheck@v0.7.0 ./...`. Runs standalone Staticcheck without requiring a preinstalled binary. |
 | `make govulncheck` | `go run golang.org/x/vuln/cmd/govulncheck@v1.3.0 ./...`. Scans stdlib + module for known CVEs without requiring a preinstalled binary. |
-| `make check` | Runs the required local gate: `go vet ./...`, `golangci-lint run ./...`, `go test -race -count=1 ./...`, and pinned `govulncheck`. Run `make staticcheck` separately for the standalone Staticcheck pass. |
+| `make check` | Runs the required local gate: `go vet ./...`, `golangci-lint run ./...`, `go test -race -count=1 ./...`, pinned `govulncheck`, pinned `staticcheck`, and `make build`. |
 
 `golangci-lint` (>= v1.55) must be on `PATH`. The Nix `devShell` installs it;
 for non-Nix dev machines, `go install` works.

@@ -2,6 +2,7 @@ package dashboard
 
 import (
 	"os"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -34,6 +35,32 @@ func TestPRTemplateUsesCanonicalValidationCommand(t *testing.T) {
 	}
 	if strings.Contains(template, "go test -race") {
 		t.Fatal("PR template must not advertise raw go test; make check is the repo validation surface")
+	}
+}
+
+func TestContributingDocsDescribeMakeCheckGate(t *testing.T) {
+	makefile := readTextFile(t, "Makefile")
+	contributing := readTextFile(t, "CONTRIBUTING.md")
+	prereqs := makeTargetPrereqs(t, makefile, "check")
+	for _, prereq := range []string{"vet", "lint", "test", "govulncheck", "staticcheck", "build"} {
+		if !containsWord(prereqs, prereq) {
+			t.Fatalf("Makefile check target missing prerequisite %q in %v", prereq, prereqs)
+		}
+	}
+	for _, want := range []string{
+		"`go vet ./...`",
+		"`golangci-lint run ./...`",
+		"`go test -race -count=1 ./...`",
+		"`govulncheck`",
+		"`staticcheck`",
+		"`make build`",
+	} {
+		if !strings.Contains(contributing, want) {
+			t.Fatalf("CONTRIBUTING.md make check docs missing %q", want)
+		}
+	}
+	if strings.Contains(contributing, "Run `make staticcheck` separately") {
+		t.Fatal("CONTRIBUTING.md must not describe staticcheck as separate from make check")
 	}
 }
 
@@ -154,6 +181,15 @@ func TestGoReleaserReleaseContracts(t *testing.T) {
 			t.Fatalf("GoReleaser contract missing %q", want)
 		}
 	}
+	hooks := goReleaserBeforeHooks(t, config)
+	if !containsString(hooks, "make test") {
+		t.Fatalf("GoReleaser before.hooks = %v, want make test", hooks)
+	}
+	for _, hook := range hooks {
+		if strings.Contains(hook, "go test") {
+			t.Fatalf("GoReleaser before.hooks must delegate to make test, got raw hook %q", hook)
+		}
+	}
 }
 
 func TestInstallerFallbackBuildsResolvedTagSource(t *testing.T) {
@@ -180,4 +216,67 @@ func readTextFile(t *testing.T, path string) string {
 		t.Fatal(err)
 	}
 	return string(data)
+}
+
+func makeTargetPrereqs(t *testing.T, makefile, target string) []string {
+	t.Helper()
+	re := regexp.MustCompile(`(?m)^` + regexp.QuoteMeta(target) + `:\s*(.*)$`)
+	match := re.FindStringSubmatch(makefile)
+	if match == nil {
+		t.Fatalf("Makefile target %q not found", target)
+	}
+	return strings.Fields(match[1])
+}
+
+func containsWord(words []string, want string) bool {
+	for _, word := range words {
+		if word == want {
+			return true
+		}
+	}
+	return false
+}
+
+func containsString(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
+}
+
+func goReleaserBeforeHooks(t *testing.T, config string) []string {
+	t.Helper()
+	lines := strings.Split(config, "\n")
+	inBefore := false
+	inHooks := false
+	var hooks []string
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" {
+			continue
+		}
+		switch {
+		case line == "before:":
+			inBefore = true
+			inHooks = false
+			continue
+		case inBefore && !strings.HasPrefix(line, " ") && trimmed != "before:":
+			inBefore = false
+			inHooks = false
+		case inBefore && trimmed == "hooks:":
+			inHooks = true
+			continue
+		case inHooks && strings.HasPrefix(trimmed, "- "):
+			hooks = append(hooks, strings.TrimSpace(strings.TrimPrefix(trimmed, "- ")))
+			continue
+		case inHooks && trimmed != "hooks:" && !strings.HasPrefix(trimmed, "- "):
+			inHooks = false
+		}
+	}
+	if len(hooks) == 0 {
+		t.Fatal("GoReleaser before.hooks not found")
+	}
+	return hooks
 }

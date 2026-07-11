@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -76,6 +77,47 @@ func TestStartRefresh_SkipsAfterShutdown(t *testing.T) {
 		// Good — didn't hang
 	case <-time.After(3 * time.Second):
 		t.Fatal("request after shutdown hung — startRefresh may be blocking")
+	}
+}
+
+func TestHandleRefresh_AfterShutdownMissingDataDoesNotSpawnRefresh(t *testing.T) {
+	dir := t.TempDir()
+	ctx, cancel := context.WithCancel(context.Background())
+	var calls atomic.Int32
+	cfg := appconfig.Config{
+		Refresh: appconfig.RefreshConfig{IntervalSeconds: 1},
+		AI:      appconfig.AIConfig{Enabled: false},
+		System:  appconfig.SystemConfig{Enabled: false},
+	}
+	srv := NewServer(dir, "test", cfg, "", []byte("<head><body>__VERSION__</body>"), ctx,
+		func(ctx context.Context, dir, home string, cfg appconfig.Config) error {
+			calls.Add(1)
+			return nil
+		})
+
+	cancel()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/refresh", nil)
+	w := httptest.NewRecorder()
+	done := make(chan struct{})
+	go func() {
+		srv.ServeHTTP(w, req)
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(3 * time.Second):
+		t.Fatal("request after shutdown with missing data.json hung")
+	}
+	if w.Code != http.StatusServiceUnavailable {
+		t.Fatalf("want 503, got %d body=%s", w.Code, w.Body.String())
+	}
+	if w.Body.String() != string(errDataMissing) {
+		t.Fatalf("body = %q, want %q", w.Body.String(), errDataMissing)
+	}
+	if got := calls.Load(); got != 0 {
+		t.Fatalf("refreshFn calls = %d, want 0 after shutdown", got)
 	}
 }
 

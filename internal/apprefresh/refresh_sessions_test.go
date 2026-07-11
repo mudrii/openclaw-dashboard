@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -20,6 +21,92 @@ func stubChannelStatusCollector(t *testing.T, status map[string]any, ok bool) {
 		return status, ok
 	}
 	t.Cleanup(func() { channelStatusCollector = prev })
+}
+
+func TestRunRefreshCollector_ChannelStatusCLIOverlaysDashboardJSON(t *testing.T) {
+	prevCollector := channelStatusCollector
+	channelStatusCollector = collectChannelStatusViaCLI
+	t.Cleanup(func() { channelStatusCollector = prevCollector })
+
+	prevExec := execCommandContext
+	execCommandContext = func(ctx context.Context, name string, args ...string) *exec.Cmd {
+		if strings.Join(args, " ") == "channels status --probe --json --timeout 10000" {
+			return exec.CommandContext(ctx, "printf", `%s`, `{
+				"channelAccounts": {
+					"slack": [{"enabled":true,"configured":true,"connected":false,"healthState":"unhealthy","lastError":"token revoked"}]
+				}
+			}`)
+		}
+		return exec.CommandContext(ctx, "false")
+	}
+	t.Cleanup(func() { execCommandContext = prevExec })
+
+	prevReadyz := readyzProbe
+	readyzProbe = func(_ context.Context, _ int) ([]string, bool) { return nil, false }
+	t.Cleanup(func() { readyzProbe = prevReadyz })
+	stubPgrep(t, "", nil)
+	stubHealthz(t, false)
+	prevRunner := defaultModelCatalogCache.runner
+	defaultModelCatalogCache.runner = func(ctx context.Context, name string, args ...string) *exec.Cmd {
+		return exec.CommandContext(ctx, "printf", "")
+	}
+	t.Cleanup(func() { defaultModelCatalogCache.runner = prevRunner })
+	t.Cleanup(resetModelCatalogForTest)
+
+	tmp := t.TempDir()
+	dashboardDir := filepath.Join(tmp, "dashboard")
+	openclawPath := filepath.Join(tmp, "openclaw")
+	for _, d := range []string{
+		filepath.Join(openclawPath, "agents", "main", "sessions"),
+		filepath.Join(openclawPath, "cron"),
+		dashboardDir,
+	} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	openclawConfig := `{
+		"channels": {"slack": {"enabled": true, "token": "x"}},
+		"agents": {"defaults": {"model": {"primary": "openai/gpt-5"}}, "list": [{"id": "main", "model": "openai/gpt-5"}]}
+	}`
+	if err := os.WriteFile(filepath.Join(openclawPath, "openclaw.json"), []byte(openclawConfig), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(openclawPath, "cron", "jobs.json"), []byte(`[]`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := appconfig.Default()
+	cfg.Timezone = "UTC"
+	cfg.Refresh.IntervalSeconds = 30
+	cfg.AI.GatewayPort = 18789
+
+	if err := RunRefreshCollector(context.Background(), dashboardDir, openclawPath, cfg); err != nil {
+		t.Fatalf("RunRefreshCollector() error = %v", err)
+	}
+	data, err := os.ReadFile(filepath.Join(dashboardDir, "data.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(data, &payload); err != nil {
+		t.Fatal(err)
+	}
+	agentConfig, _ := payload["agentConfig"].(map[string]any)
+	cs, _ := agentConfig["channelStatus"].(map[string]any)
+	slack, ok := cs["slack"].(map[string]any)
+	if !ok {
+		t.Fatalf("channelStatus.slack missing; channelStatus=%v", cs)
+	}
+	if slack["connected"] != false {
+		t.Fatalf("slack connected = %v, want false from channels status CLI", slack["connected"])
+	}
+	if slack["health"] != "unhealthy" {
+		t.Fatalf("slack health = %v, want unhealthy from channels status CLI", slack["health"])
+	}
+	if slack["error"] != "token revoked" {
+		t.Fatalf("slack error = %v, want token revoked from channels status CLI", slack["error"])
+	}
 }
 
 // TestRunRefreshCollector_ReadyzFailingMarksChannelUnhealthy proves the INT-1
