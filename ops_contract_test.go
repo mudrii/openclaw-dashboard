@@ -12,6 +12,8 @@ func TestCIUsesCanonicalMakeTargets(t *testing.T) {
 		"run: make vet",
 		"run: make test",
 		"run: make build",
+		"run: make govulncheck",
+		"run: make staticcheck",
 	} {
 		if !strings.Contains(workflow, want) {
 			t.Fatalf("tests workflow missing %q", want)
@@ -19,6 +21,19 @@ func TestCIUsesCanonicalMakeTargets(t *testing.T) {
 	}
 	if strings.Contains(workflow, `run: go build`) {
 		t.Fatal("tests workflow must not use raw go build; make build carries CGO and BuildVersion parity")
+	}
+	if strings.Contains(workflow, `run: govulncheck ./...`) {
+		t.Fatal("tests workflow must not use raw govulncheck; make govulncheck carries pinned version parity")
+	}
+}
+
+func TestPRTemplateUsesCanonicalValidationCommand(t *testing.T) {
+	template := readTextFile(t, ".github/PULL_REQUEST_TEMPLATE.md")
+	if !strings.Contains(template, "make check") {
+		t.Fatal("PR template must ask contributors for make check evidence")
+	}
+	if strings.Contains(template, "go test -race") {
+		t.Fatal("PR template must not advertise raw go test; make check is the repo validation surface")
 	}
 }
 
@@ -32,6 +47,129 @@ func TestMakeBuildCarriesReleaseParityFlags(t *testing.T) {
 		if !strings.Contains(makefile, want) {
 			t.Fatalf("Makefile build contract missing %q", want)
 		}
+	}
+}
+
+func TestReleaseWorkflowContracts(t *testing.T) {
+	workflow := readTextFile(t, ".github/workflows/release.yml")
+	for _, want := range []string{
+		`tags:`,
+		`- "v*"`,
+		`permissions:`,
+		`contents: write`,
+		`id-token: write`,
+		`Verify release tag matches VERSION`,
+		`if [ "$version" != "$GITHUB_REF_NAME" ]; then`,
+		`run: make check`,
+		`uses: actions/create-github-app-token@v3.2.0`,
+		`HOMEBREW_TAP_APP_CLIENT_ID`,
+		`client-id: ${{ vars.HOMEBREW_TAP_APP_CLIENT_ID }}`,
+		`repositories: homebrew-tap`,
+		`permission-contents: write`,
+		`HOMEBREW_TAP_TOKEN: ${{ steps.tap-token.outputs.token }}`,
+	} {
+		if !strings.Contains(workflow, want) {
+			t.Fatalf("release workflow contract missing %q", want)
+		}
+	}
+	if strings.Contains(workflow, "\n  attestations: write") {
+		t.Fatal("release workflow must not grant attestations: write until provenance attestation is wired")
+	}
+	if strings.Contains(workflow, "HOMEBREW_TAP_APP_ID") {
+		t.Fatal("release workflow must use GitHub App Client ID, not numeric App ID")
+	}
+}
+
+func TestReleaseDocsUseCurrentHomebrewAppCredentialContract(t *testing.T) {
+	homebrewDoc := readTextFile(t, "docs/HOMEBREW.md")
+	for _, want := range []string{
+		"HOMEBREW_TAP_APP_CLIENT_ID",
+		"HOMEBREW_TAP_APP_PRIVATE_KEY",
+		"GitHub App **Client ID**",
+	} {
+		if !strings.Contains(homebrewDoc, want) {
+			t.Fatalf("Homebrew docs missing %q", want)
+		}
+	}
+	if strings.Contains(homebrewDoc, "HOMEBREW_TAP_APP_ID") {
+		t.Fatal("Homebrew docs must not document deprecated App ID credential")
+	}
+}
+
+func TestInfraChecklistTracksRequiredChecks(t *testing.T) {
+	infra := readTextFile(t, "docs/INFRA-CHECKLIST.md")
+	for _, want := range []string{
+		`{"context": "GolangCI-Lint"}`,
+		`{"context": "Go test suite (ubuntu-latest)"}`,
+		`{"context": "Go test suite (macos-latest)"}`,
+		`{"context": "govulncheck"}`,
+		`{"context": "Staticcheck"}`,
+		`{"context": "Lint shell scripts"}`,
+	} {
+		if !strings.Contains(infra, want) {
+			t.Fatalf("INFRA-CHECKLIST.md branch protection snippet missing %q", want)
+		}
+	}
+}
+
+func TestPackagingDocsMatchCurrentDockerBaseTags(t *testing.T) {
+	dockerfile := readTextFile(t, "Dockerfile")
+	infra := readTextFile(t, "docs/INFRA-CHECKLIST.md")
+	for _, tag := range []string{"golang:1.26-alpine", "alpine:3.23"} {
+		if !strings.Contains(dockerfile, tag) {
+			t.Fatalf("Dockerfile missing %q", tag)
+		}
+		if !strings.Contains(infra, tag) {
+			t.Fatalf("INFRA-CHECKLIST.md missing current Docker tag %q", tag)
+		}
+	}
+}
+
+func TestNixDevShellAdvertisesMakeTargets(t *testing.T) {
+	flake := readTextFile(t, "flake.nix")
+	for _, want := range []string{"make build", "make test", "make check", "make govulncheck", "make lint"} {
+		if !strings.Contains(flake, want) {
+			t.Fatalf("flake.nix dev shell missing %q", want)
+		}
+	}
+}
+
+func TestGoReleaserReleaseContracts(t *testing.T) {
+	config := readTextFile(t, ".goreleaser.yml")
+	for _, want := range []string{
+		`version: 2`,
+		`CGO_ENABLED=0`,
+		`-s -w -X github.com/mudrii/openclaw-dashboard.BuildVersion={{ .Version }}`,
+		`format: tar.gz`,
+		`name_template: "{{ .ProjectName }}-{{ .Os }}-{{ .Arch }}"`,
+		`name_template: checksums-sha256.txt`,
+		`sboms:`,
+		`- artifacts: archive`,
+		`cmd: cosign`,
+		`--bundle=${signature}`,
+		`artifacts: checksum`,
+		`token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"`,
+	} {
+		if !strings.Contains(config, want) {
+			t.Fatalf("GoReleaser contract missing %q", want)
+		}
+	}
+}
+
+func TestInstallerFallbackBuildsResolvedTagSource(t *testing.T) {
+	installer := readTextFile(t, "install.sh")
+	for _, want := range []string{
+		`source_archive="$REPO/archive/refs/tags/$LATEST_TAG.tar.gz"`,
+		`source_archive="$REPO/archive/refs/heads/main.tar.gz"`,
+		`build_version="dev"`,
+		`curl -fsSL "$source_archive" | tar -xz --strip-components=1 -C "$INSTALL_DIR"`,
+	} {
+		if !strings.Contains(installer, want) {
+			t.Fatalf("install.sh fallback build contract missing %q", want)
+		}
+	}
+	if strings.Contains(installer, `archive/main.tar.gz`) {
+		t.Fatal("install.sh must not build main while stamping a resolved release tag")
 	}
 }
 

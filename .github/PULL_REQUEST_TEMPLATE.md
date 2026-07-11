@@ -40,7 +40,7 @@ Closes #
      Required for any PR that touches production code. -->
 
 ```
-go test -race -v ./...
+make check
 ```
 
 <details>
@@ -65,7 +65,7 @@ paste here
 - [ ] No new Go module dependencies (`go.mod` stays stdlib-only)
 
 ### Tests
-- [ ] All existing tests pass: `go test -race ./...`
+- [ ] All existing tests pass: `make check`
 - [ ] New behaviour has at least one test
 
 ### Manual verification

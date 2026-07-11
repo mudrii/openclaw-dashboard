@@ -13,6 +13,10 @@ echo ""
 
 # Detect OS and architecture
 OS="$(uname -s | tr '[:upper:]' '[:lower:]')"
+case "$OS" in
+  linux|darwin) ;;
+  *) echo "❌ Unsupported operating system: $OS"; exit 1 ;;
+esac
 ARCH="$(uname -m)"
 case "$ARCH" in
   x86_64)  ARCH="amd64" ;;
@@ -103,10 +107,17 @@ if curl -fsSL "$ARCHIVE_URL" -o "$tmp_archive" 2>/dev/null \
   echo "✅ Release archive downloaded and SHA-256 verified"
 elif command -v go >/dev/null 2>&1; then
   echo "⚠️  Download failed, building from source..."
-  # Use the resolved tag (or "dev" if we never resolved one) so the built
-  # binary reports the same BuildVersion as a downloaded release would.
-  build_version="${LATEST_TAG:-dev}"
-  curl -fsSL "$REPO/archive/main.tar.gz" | tar -xz --strip-components=1 -C "$INSTALL_DIR"
+  # Build the same source tree as the release tag we resolved. If GitHub's
+  # latest redirect was unavailable, fall back to main and stamp the build as
+  # dev so the binary does not claim to be a release artifact.
+  if [ -n "$LATEST_TAG" ]; then
+    source_archive="$REPO/archive/refs/tags/$LATEST_TAG.tar.gz"
+    build_version="$LATEST_TAG"
+  else
+    source_archive="$REPO/archive/refs/heads/main.tar.gz"
+    build_version="dev"
+  fi
+  curl -fsSL "$source_archive" | tar -xz --strip-components=1 -C "$INSTALL_DIR"
   CGO_ENABLED=0 go build \
     -ldflags="-s -w -X github.com/mudrii/openclaw-dashboard.BuildVersion=${build_version}" \
     -o openclaw-dashboard ./cmd/openclaw-dashboard

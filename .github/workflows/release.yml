@@ -28,6 +28,14 @@ jobs:
           go-version-file: go.mod
           cache: true
 
+      - name: Verify release tag matches VERSION
+        run: |
+          version="$(tr -d '[:space:]' < VERSION)"
+          if [ "$version" != "$GITHUB_REF_NAME" ]; then
+            echo "::error file=VERSION::release tag $GITHUB_REF_NAME does not match VERSION file $version"
+            exit 1
+          fi
+
       - name: Validate release source
         run: make check
 
@@ -41,19 +49,29 @@ jobs:
         # tag (only @v2 and @v3 exist as moving majors). Bump via dependabot.
         uses: sigstore/cosign-installer@v4.1.2
 
+      - name: Validate Homebrew tap credentials
+        env:
+          HOMEBREW_TAP_APP_CLIENT_ID: ${{ vars.HOMEBREW_TAP_APP_CLIENT_ID }}
+          HOMEBREW_TAP_APP_PRIVATE_KEY: ${{ secrets.HOMEBREW_TAP_APP_PRIVATE_KEY }}
+        run: |
+          test -n "$HOMEBREW_TAP_APP_CLIENT_ID" || {
+            echo "::error::Set repository variable HOMEBREW_TAP_APP_CLIENT_ID to the GitHub App Client ID for mudrii/homebrew-tap"
+            exit 1
+          }
+          test -n "$HOMEBREW_TAP_APP_PRIVATE_KEY" || {
+            echo "::error::Set secret HOMEBREW_TAP_APP_PRIVATE_KEY to the GitHub App private key for mudrii/homebrew-tap"
+            exit 1
+          }
+
       - name: Mint homebrew-tap token
-        uses: actions/create-github-app-token@v3
+        uses: actions/create-github-app-token@v3.2.0
         id: tap-token
         with:
-          # `client-id` replaces the deprecated `app-id` input. The existing
-          # HOMEBREW_TAP_APP_ID secret (the numeric App ID) is still valid here:
-          # GitHub accepts either the numeric App ID or the App's Client ID as
-          # the JWT issuer when authenticating as a GitHub App, so no secret
-          # change is required to silence the deprecation warning.
-          client-id: ${{ secrets.HOMEBREW_TAP_APP_ID }}
+          client-id: ${{ vars.HOMEBREW_TAP_APP_CLIENT_ID }}
           private-key: ${{ secrets.HOMEBREW_TAP_APP_PRIVATE_KEY }}
           owner: mudrii
           repositories: homebrew-tap
+          permission-contents: write
 
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@v7

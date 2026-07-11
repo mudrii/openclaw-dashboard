@@ -19,11 +19,23 @@ the Homebrew formula in the tap repository.
 
 The GitHub Actions release job expects:
 
-- `HOMEBREW_TAP_APP_ID`
-- `HOMEBREW_TAP_APP_PRIVATE_KEY`
+- repository variable `HOMEBREW_TAP_APP_CLIENT_ID`
+- repository secret `HOMEBREW_TAP_APP_PRIVATE_KEY`
 
 The workflow mints a short-lived `HOMEBREW_TAP_TOKEN` from those GitHub App
-credentials and uses it to push to `mudrii/homebrew-tap`.
+credentials and uses it to push to `mudrii/homebrew-tap`. The GitHub App
+installation must have access to that tap repository with repository contents
+write permission; the workflow requests only that permission for the minted
+installation token.
+
+`actions/create-github-app-token@v3` uses the GitHub App **Client ID**, not the
+numeric App ID. Store it as a repository variable because it is an identifier,
+not a secret. Keep the private key in Actions secrets.
+
+Before publishing, the release workflow also verifies that the pushed tag name
+matches this repository's `VERSION` file. Keep those values aligned so the
+binary ldflags, bundled `VERSION`, release artifacts, and Homebrew formula all
+describe the same version.
 
 ## Runtime layout
 

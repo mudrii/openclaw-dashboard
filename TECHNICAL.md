@@ -614,7 +614,7 @@ openclaw-dashboard uninstall
 - Linux backend (`systemd.go`): writes unit to `~/.config/systemd/user/openclaw-dashboard.service`, invokes `systemctl --user daemon-reload/enable/start/stop/disable/restart/show` and `journalctl`
 - All external commands injected via `runCmdFunc` field for testability (no mocking frameworks)
 - HTTP liveness probe (`probe.go`, package-level `http.Client`, 2s timeout) — `Status()` sets `Running=true` only when both PID > 0 AND HTTP probe succeeds
-- Homebrew runtime seeding preserves existing `config.json` and `themes.json`, while syncing the package-managed `VERSION` file on startup so the reported version matches the installed formula
+- Homebrew/Nix package-share runtime seeding preserves existing `config.json` and `themes.json`, while syncing the package-managed `VERSION` file on startup so the reported version matches the installed package
 
 **Status output format:**
 ```

@@ -216,6 +216,9 @@ nix run github:mudrii/openclaw-dashboard
 nix develop github:mudrii/openclaw-dashboard
 ```
 
+The Nix package installs immutable defaults under its package share directory
+and seeds the writable runtime directory at `~/.openclaw/dashboard` on first run.
+
 ## Themes
 
 Click the 🎨 button in the header to switch themes instantly — no reload or server restart needed. Choice persists via `localStorage`.
@@ -303,7 +306,7 @@ data.json                   generated dashboard data
 | Pre-warm | Runs `--refresh` at startup |
 | Shutdown | Graceful (drains requests, 5s timeout) |
 | Gateway limit | 1MB response cap |
-| Tests | `go test -race` |
+| Tests | `make test` |
 
 When you open the dashboard, the embedded frontend calls `/api/refresh`. The server returns the current `data.json` immediately, and if the refresh debounce window has expired it starts a background refresh to rebuild the file from your OpenClaw installation. If `data.json` does not exist yet, the handler waits briefly for the first refresh before returning. No cron jobs are required.
 
@@ -357,8 +360,8 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for the full specification.
 
 Edit `config.json` in your dashboard runtime directory. In a source checkout this
 is usually the repo root. For `install.sh` installs it is
-`${OPENCLAW_HOME:-~/.openclaw}/dashboard/config.json`; with Homebrew it is
-`~/.openclaw/dashboard/config.json`.
+`${OPENCLAW_HOME:-~/.openclaw}/dashboard/config.json`; with Homebrew and Nix
+package installs it is `~/.openclaw/dashboard/config.json`.
 
 ```json
 {

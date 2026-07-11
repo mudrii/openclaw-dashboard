@@ -21,7 +21,7 @@ pick up nixpkgs security updates. The dependabot config in
 
 ## 2. Pin Docker base image digests
 
-`Dockerfile` uses floating tags `golang:1.26-alpine` and `alpine:3.21`. A
+`Dockerfile` uses floating tags `golang:1.26-alpine` and `alpine:3.23`. A
 hostile registry compromise (or accidental tag move) could swap the image
 under us. Resolve the current digests and pin them:
 
@@ -30,8 +30,8 @@ docker pull golang:1.26-alpine
 docker inspect --format='{{index .RepoDigests 0}}' golang:1.26-alpine
 # → golang@sha256:<DIGEST_A>
 
-docker pull alpine:3.21
-docker inspect --format='{{index .RepoDigests 0}}' alpine:3.21
+docker pull alpine:3.23
+docker inspect --format='{{index .RepoDigests 0}}' alpine:3.23
 # → alpine@sha256:<DIGEST_B>
 ```
 
@@ -40,7 +40,7 @@ Then edit `Dockerfile`:
 ```dockerfile
 FROM golang:1.26-alpine@sha256:<DIGEST_A> AS builder
 ...
-FROM alpine:3.21@sha256:<DIGEST_B>
+FROM alpine:3.23@sha256:<DIGEST_B>
 ```
 
 Dependabot's `docker` ecosystem watcher will open PRs when newer digests are
@@ -63,6 +63,7 @@ gh api -X PUT repos/mudrii/openclaw-dashboard/branches/main/protection \
       {"context": "Go test suite (ubuntu-latest)"},
       {"context": "Go test suite (macos-latest)"},
       {"context": "govulncheck"},
+      {"context": "Staticcheck"},
       {"context": "Lint shell scripts"}
     ]
   },

@@ -71,10 +71,11 @@
             echo "OpenClaw Dashboard dev shell"
             echo ""
             echo "  Go:     go run ./cmd/openclaw-dashboard --port 8080"
-            echo "  Build:  go build -ldflags='-s -w' -o openclaw-dashboard ./cmd/openclaw-dashboard"
-            echo "  Test:   go test -race -v -count=1 ./..."
-            echo "  Vuln:   govulncheck ./..."
-            echo "  Lint:   golangci-lint run"
+            echo "  Build:  make build"
+            echo "  Test:   make test"
+            echo "  Check:  make check"
+            echo "  Vuln:   make govulncheck"
+            echo "  Lint:   make lint"
           '';
         };
 
