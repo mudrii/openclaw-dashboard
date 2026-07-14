@@ -38,6 +38,7 @@ dashboard-server
 # Local agent/tooling scratch (not part of the repo)
 .antigravitycli/
 .playwright-mcp/
+.codegraph/
 
 # Go test/profile leftovers
 *.test
@@ -47,7 +48,6 @@ coverage.html
 
 # Local Claude settings
 .claude/settings.local.json
-graphify-out/
 
 # understand-anything dashboard runtime log
 .understand-anything/.dashboard.log

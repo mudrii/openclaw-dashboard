@@ -54,7 +54,6 @@ No platform-tagged code → no GOOS=linux pass needed.
 Health coloring and the unhealthy disconnected state.
 
 **Remaining.** FIX-1 (next), INT-2, FIX-2, FIX-3, INT-4, INT-3, INT-5.
-graphify NOT updated (known false-deletion gotcha — graph left stale intentionally).
 
 ---
 
@@ -449,6 +448,5 @@ INT-1 ✓ · FIX-1 ✓ · INT-2 ✓ · FIX-2 ✓ (pre-existing) · FIX-3 ✓ · 
   FIX-1 journald population on Linux/systemd · INT-3 lock-file pid/uptime on a
   non-npm install · INT-5 live delivery/flapping state with current cron jobs.
 
-graphify left stale throughout (known false-deletion gotcha). PLAN.md notes FIX-2 was
-already implemented pre-loop (stale plan). All ticks: make check green, atomic commits on
-feature_fix, local HEAD == upstream.
+PLAN.md notes FIX-2 was already implemented pre-loop (stale plan). All ticks:
+make check green, atomic commits on feature_fix, local HEAD == upstream.

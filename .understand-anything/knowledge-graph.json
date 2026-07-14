@@ -338,53 +338,6 @@
       "languageNotes": "CGO_ENABLED=0 cross-compilation with SBOM and cosign signing for supply-chain integrity."
     },
     {
-      "id": "config:.opencode/opencode.json",
-      "type": "config",
-      "name": "opencode.json",
-      "filePath": ".opencode/opencode.json",
-      "summary": "OpenCode agent configuration registering the local graphify plugin.",
-      "tags": [
-        "configuration",
-        "agent-config",
-        "opencode",
-        "plugin"
-      ],
-      "complexity": "simple"
-    },
-    {
-      "id": "file:.opencode/plugins/graphify.js",
-      "type": "file",
-      "name": "graphify.js",
-      "filePath": ".opencode/plugins/graphify.js",
-      "summary": "OpenCode plugin that injects a one-time knowledge-graph reminder into bash tool calls when a graphify-out/graph.json exists, nudging the agent to query the graph instead of grepping raw files.",
-      "tags": [
-        "plugin",
-        "opencode",
-        "agent-tooling",
-        "event-handler"
-      ],
-      "complexity": "simple",
-      "languageNotes": "ESM module exporting an async plugin factory hooking into the tool.execute.before lifecycle event."
-    },
-    {
-      "id": "function:.opencode/plugins/graphify.js:GraphifyPlugin",
-      "type": "function",
-      "name": "GraphifyPlugin",
-      "filePath": ".opencode/plugins/graphify.js",
-      "lineRange": [
-        6,
-        22
-      ],
-      "summary": "Async plugin factory returning a tool.execute.before hook that prepends a knowledge-graph reminder echo to the first bash command when graphify-out/graph.json is present.",
-      "tags": [
-        "event-handler",
-        "plugin",
-        "factory",
-        "opencode"
-      ],
-      "complexity": "simple"
-    },
-    {
       "id": "document:AGENTS.md",
       "type": "document",
       "name": "AGENTS.md",
@@ -659,19 +612,6 @@
       "complexity": "complex"
     },
     {
-      "id": "document:docs/graphify.md",
-      "type": "document",
-      "name": "graphify.md",
-      "filePath": "docs/graphify.md",
-      "summary": "Short note describing the canonical graphify knowledge-graph workflow and rules for the project.",
-      "tags": [
-        "documentation",
-        "graphify",
-        "workflow"
-      ],
-      "complexity": "simple"
-    },
-    {
       "id": "document:docs/HOMEBREW.md",
       "type": "document",
       "name": "HOMEBREW.md",
@@ -943,19 +883,6 @@
       ],
       "complexity": "moderate",
       "languageNotes": "Nix flake with CGO_ENABLED=0 to match the project's pure-Go build constraint."
-    },
-    {
-      "id": "document:GEMINI.md",
-      "type": "document",
-      "name": "GEMINI.md",
-      "filePath": "GEMINI.md",
-      "summary": "Minimal pointer document referencing the graphify knowledge-graph workflow.",
-      "tags": [
-        "documentation",
-        "pointer",
-        "graphify"
-      ],
-      "complexity": "simple"
     },
     {
       "id": "config:go.mod",
@@ -5020,19 +4947,6 @@
       "complexity": "complex"
     },
     {
-      "id": "file:scripts/graphify-hook.sh",
-      "type": "file",
-      "name": "graphify-hook.sh",
-      "filePath": "scripts/graphify-hook.sh",
-      "summary": "Shell hook that keeps the graphify knowledge graph current after code changes.",
-      "tags": [
-        "script",
-        "automation",
-        "tooling"
-      ],
-      "complexity": "simple"
-    },
-    {
       "id": "file:uninstall.sh",
       "type": "file",
       "name": "uninstall.sh",
@@ -5320,27 +5234,6 @@
     }
   ],
   "edges": [
-    {
-      "source": "file:.opencode/plugins/graphify.js",
-      "target": "function:.opencode/plugins/graphify.js:GraphifyPlugin",
-      "type": "contains",
-      "direction": "forward",
-      "weight": 1.0
-    },
-    {
-      "source": "file:.opencode/plugins/graphify.js",
-      "target": "function:.opencode/plugins/graphify.js:GraphifyPlugin",
-      "type": "exports",
-      "direction": "forward",
-      "weight": 0.8
-    },
-    {
-      "source": "config:.opencode/opencode.json",
-      "target": "file:.opencode/plugins/graphify.js",
-      "type": "configures",
-      "direction": "forward",
-      "weight": 0.6
-    },
     {
       "source": "config:.golangci.yml",
       "target": "document:.claude/rules/go-patterns.md",
@@ -10082,7 +9975,7 @@
     {
       "id": "layer:documentation",
       "name": "Documentation & Agent Tooling",
-      "description": "Project docs, architecture/technical references, changelog, implementation plans, and the Claude/Codex/Gemini/OpenCode agent rules, skills, and graphify tooling configs.",
+      "description": "Project docs, architecture/technical references, changelog, implementation plans, and the Claude/Codex/Gemini/OpenCode agent rules, skills, and tooling configs.",
       "nodeIds": [
         "document:README.md",
         "document:ARCHITECTURE.md",
@@ -10097,7 +9990,6 @@
         "document:SKILLS.md",
         "document:TODO.md",
         "document:docs/CONFIGURATION.md",
-        "document:docs/graphify.md",
         "document:docs/HOMEBREW.md",
         "document:docs/INFRA-CHECKLIST.md",
         "document:docs/plans/2026-02-23-ai-chat-integration.md",
@@ -10118,9 +10010,7 @@
         "document:.codex/skills/go-rig/SKILL.md",
         "document:.codex/skills/project-ops/SKILL.md",
         "config:.gemini/settings.json",
-        "config:.opencode/opencode.json",
-        "file:.opencode/plugins/graphify.js",
-        "file:scripts/graphify-hook.sh"
+        "config:.opencode/opencode.json"
       ]
     }
   ],

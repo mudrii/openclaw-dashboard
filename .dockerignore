@@ -15,11 +15,11 @@ examples/
 
 # Plan + scratch dirs not needed in image
 .planning/
-graphify-out/
 plan/
 .codex/
 .opencode/
 .gemini/
+.codegraph/
 
 # Tests + testdata not needed at runtime
 *_test.go

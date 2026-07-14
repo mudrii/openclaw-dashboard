@@ -2,7 +2,7 @@
 
 **Last audited:** 2026-05-19
 **Status:** All five validated bugs (BUG-1, BUG-2, BUG-3, BUG-5, BUG-6) **fixed and tested**. BUG-4 confirmed false positive. BUG-7 was a documentation issue resolved by this regeneration. Smells SMELL-1..4 remain open (deferred — see bottom).
-**Audit method:** Static analysis (`go vet`, `gofmt`), graphify knowledge graph review, two reviewer-agent passes on hot zones (apprefresh / appchat / appconfig / appserver / appsystem / appservice / appruntime), targeted self-validation against source, cross-repo validation against `~/src/open_claw/openclaw`. Reviewer-agent false positives discarded (see bottom).
+**Audit method:** Static analysis (`go vet`, `gofmt`), CodeGraph review, two reviewer-agent passes on hot zones (apprefresh / appchat / appconfig / appserver / appsystem / appservice / appruntime), targeted self-validation against source, cross-repo validation against `~/src/open_claw/openclaw`. Reviewer-agent false positives discarded (see bottom).
 
 ### Verification log (this PR / commit cycle)
 
@@ -238,42 +238,6 @@ No probe-to-port-zero path exists. Reviewer was wrong. No action.
 
 ---
 
-### BUG-5 ✅ FIXED — Hardcoded user-specific path in Codex hook
-
-**Resolution:** edit at `.codex/hooks.json:9` (`/Users/mudrii/.local/bin/graphify hook-check` → `graphify hook-check`).
-
-**Verification:**
-```
-$ python3 -m json.tool < .codex/hooks.json > /dev/null   # JSON syntax OK
-$ which graphify       → /Users/mudrii/.local/bin/graphify
-$ graphify hook-check  → exit 0 (silent)
-```
-
-The hook now resolves through `PATH` and will work for any contributor whose `graphify` binary is on `PATH`, regardless of install location.
-
-**Original analysis preserved below for context.**
-
-**File:** `.codex/hooks.json:9`
-
-**Current value:**
-```json
-"command": "/Users/mudrii/.local/bin/graphify hook-check"
-```
-
-**Why it fails:** Any contributor with `graphify` installed elsewhere (or CI machines, or `~/.local/bin` not on `PATH`) breaks this hook. The other tool configs (`.claude/settings.json`, `.gemini/settings.json`, `.opencode/plugins/graphify.js`) all rely on `PATH` resolution or `existsSync` checks, so this file is the lone outlier.
-
-**Fix:** Drop the absolute prefix and rely on `PATH`.
-
-```json
-"command": "graphify hook-check"
-```
-
-If a contributor's `PATH` does not include the graphify binary, the hook fails loudly — which is the correct behavior, not a silent miss.
-
-**Verification:** Inspect `.codex/hooks.json` after edit; `which graphify` succeeds on developer machines.
-
----
-
 ### BUG-6 ✅ FIXED — Gemini hook invokes legacy `python` interpreter
 
 **Resolution:** edit at `.gemini/settings.json:9` (leading `python -c` → `python3 -c`).
@@ -326,7 +290,7 @@ The previous TODO.md investigation report (committed as part of this branch's wo
    ```
    `openai/gpt-5.4` is openclaw's current default model alias for the `gpt` shortname. Not stale. No such migration exists.
 
-Lesson: investigation reports must cite file paths verified via `grep` / `graphify query`, and must not assert historical events without commit-log or upstream-doc evidence.
+Lesson: investigation reports must cite file paths verified via source inspection or CodeGraph, and must not assert historical events without commit-log or upstream-doc evidence.
 
 ---
 
@@ -379,44 +343,6 @@ Caller `refresh.go:189` updated to pass `cfg.AI.GatewayPort`. No frontend shape 
 - `internal/appsystem/system_service.go:505` (`probeOpenclawGatewayEndpoints`, HTTP-based) → feeds `/api/system`.
 
 Each handles a different failure mode. They will disagree under common scenarios (hung gateway, misnamed binary, port collision). Consolidate by deleting `collectGatewayHealth` and routing `gateway` map field through the HTTP probe. Out of scope for BUG-1 surgical fix.
-
----
-
-### SMELL-3 ✅ FIXED — Embedded Python inside bash inside JSON in hook configs
-
-**Resolution:** Extracted shared logic to `scripts/graphify-hook.sh` (executable bash). The script accepts `--mode claude` or `--mode gemini`; the additionalContext string is defined once. Both `.claude/settings.json` and `.gemini/settings.json` now invoke the script. JSON validity preserved.
-
-**Smoke tests:**
-```
-$ echo '{"tool_input":{"command":"grep foo"}}' | scripts/graphify-hook.sh --mode claude
-{"hookSpecificOutput": {"hookEventName": "PreToolUse", "additionalContext": "graphify: ..."}}
-
-$ scripts/graphify-hook.sh --mode gemini
-{"decision": "allow", "additionalContext": "graphify: ..."}
-
-$ python3 -m json.tool < .claude/settings.json > /dev/null && echo claude OK
-$ python3 -m json.tool < .gemini/settings.json > /dev/null && echo gemini OK
-```
-
-**Original analysis preserved below for context.**
-
-**Files:** `.claude/settings.json`, `.gemini/settings.json`.
-
-Hook command strings carry multi-line Python with embedded JSON literals, all escape-encoded through JSON. Hard to modify, fragile to copy-paste, broken syntax goes undetected until the hook fires.
-
-**Fix:** Extract logic to `scripts/graphify-hook.sh` (committed) and have each hook config call the script with arguments. One source of truth, normal shell syntax.
-
----
-
-### SMELL-4 ✅ FIXED — Graphify rules duplicated across three Markdown files
-
-**Resolution:** Canonical content moved to `docs/graphify.md`. `CLAUDE.md`, `AGENTS.md`, `GEMINI.md` each replaced with a 2-line pointer to the canonical doc. Single source of truth; drift impossible.
-
-**Original analysis preserved below for context.**
-
-**Files:** `CLAUDE.md`, `AGENTS.md`, `GEMINI.md` — each carries a near-identical `## graphify` section.
-
-Drift is inevitable. Move canonical content to `docs/graphify.md`, replace each per-agent block with a one-line reference. Each agent system can be told to read the canonical doc.
 
 ---
 
@@ -481,10 +407,7 @@ Clean module structure — single embedded SPA file, zero deps. 7 modules: State
 go vet ./...
 go test -race ./...
 gofmt -l .
-graphify query "<question>"            # focused subgraph
-graphify path "<A>" "<B>"              # relationship trace
-graphify explain "<concept>"           # node explanation
-graphify update .                      # incremental graph refresh after code changes
+codegraph explore "<question>"         # focused code graph query
 ```
 
-Architecture doc: `ARCHITECTURE.md`. Graph audit: `graphify-out/GRAPH_REPORT.md`.
+Architecture doc: `ARCHITECTURE.md`.

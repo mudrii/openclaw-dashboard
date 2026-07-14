@@ -13,38 +13,6 @@
       "totalLines": 27,
       "hasStructuralAnalysis": false
     },
-    ".opencode/plugins/graphify.js": {
-      "filePath": ".opencode/plugins/graphify.js",
-      "contentHash": "31e36b87ad46c6804e2b52c10d7bf6dabb178c426be85f855ff940032e043463",
-      "functions": [
-        {
-          "name": "GraphifyPlugin",
-          "params": [],
-          "exported": true,
-          "lineCount": 17
-        }
-      ],
-      "classes": [],
-      "imports": [
-        {
-          "source": "fs",
-          "specifiers": [
-            "existsSync"
-          ]
-        },
-        {
-          "source": "path",
-          "specifiers": [
-            "join"
-          ]
-        }
-      ],
-      "exports": [
-        "GraphifyPlugin"
-      ],
-      "totalLines": 23,
-      "hasStructuralAnalysis": true
-    },
     "VERSION": {
       "filePath": "VERSION",
       "contentHash": "d8c9f082d56466aa0404a2a5c62b92bb3df00e0f844d9b87545af95a803a422c",
