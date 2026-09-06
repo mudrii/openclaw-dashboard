@@ -2279,14 +2279,14 @@ const Renderer = {
     const d=data[i];
     // Larger dots for small values, with white border
     const isSmall=d.total<maxY*0.1;
-    const r=isSmall?7:4;
+    const r=Math.min(isSmall?7:4,stepX*0.35);
     const stroke=isSmall?' stroke="white" stroke-width="2"':'';
-    // Always show value label
+    // Dense ranges keep exact values in tooltips without overlapping labels.
     const labelY=p[1]-(isSmall?12:8);
     const labelColor=isSmall?'var(--textStrong)':'var(--dim)';
     const labelSize=isSmall?10:8;
     const total=d.total||0;
-    const label=`<text x="${p[0]}" y="${labelY}" text-anchor="middle" fill="${labelColor}" font-size="${labelSize}" font-weight="${isSmall?600:400}">$${total.toFixed(total<1?2:0)}</text>`;
+    const label=data.length<=7?`<text x="${p[0]}" y="${labelY}" text-anchor="middle" fill="${labelColor}" font-size="${labelSize}" font-weight="${isSmall?600:400}">$${total.toFixed(total<1?2:0)}</text>`:'';
     return `<circle cx="${p[0]}" cy="${p[1]}" r="${r}" fill="var(--accent)"${stroke}><title>${esc(d.label)}: $${total.toFixed(2)}</title></circle>${label}`;
   }).join('');
   const yLabels=Array.from({length:5},(_, i)=>{const v=maxY*i/4;const y=P.t+ch-ch*i/4;return `<text x="${P.l-6}" y="${y+3}" text-anchor="end" fill="var(--dim)" font-size="9">$${v.toFixed(0)}</text><line x1="${P.l}" y1="${y}" x2="${W-P.r}" y2="${y}" stroke="var(--border)" stroke-dasharray="2"/>`}).join('');

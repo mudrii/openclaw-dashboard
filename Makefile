@@ -1,6 +1,7 @@
-.PHONY: build build-debug test frontend-test lint vet clean all staticcheck cover check fmt govulncheck
+.PHONY: build build-debug test frontend-test container-test lint vet clean all staticcheck cover check fmt govulncheck
 
 BINARY := openclaw-dashboard
+CONTAINER_ENGINE ?= docker
 VERSION := $(shell cat VERSION 2>/dev/null || echo "dev")
 
 # Pinned govulncheck version — must match .github/workflows/tests.yml so local
@@ -31,6 +32,13 @@ test:
 
 frontend-test:
 	node scripts/frontend-regression.cjs
+
+# Separate from make check: requires an available Docker or Podman engine.
+container-test:
+	$(CONTAINER_ENGINE) build -t openclaw-dashboard-test .
+	$(CONTAINER_ENGINE) run --rm --network none --entrypoint /bin/sh \
+		-v "$(CURDIR)/scripts/container-smoke.sh:/tmp/container-smoke.sh:ro" \
+		openclaw-dashboard-test /tmp/container-smoke.sh
 
 lint:
 	golangci-lint run ./...

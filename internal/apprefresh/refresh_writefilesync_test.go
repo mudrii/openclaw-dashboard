@@ -6,13 +6,13 @@ import (
 	"testing"
 )
 
-// TestWriteFileSync_OpenFailure asserts the OpenFile error path: a path whose
+// TestWriteSnapshotAtomic_MissingParent asserts the creation error path: a path whose
 // parent does not exist must return a non-nil error and create no file.
-func TestWriteFileSync_MissingParent(t *testing.T) {
+func TestWriteSnapshotAtomic_MissingParent(t *testing.T) {
 	dir := t.TempDir()
 	target := filepath.Join(dir, "does-not-exist", "out.json")
 
-	err := writeFileSync(target, []byte("payload"), 0o600)
+	err := writeSnapshotAtomic(target, []byte("payload"))
 	if err == nil {
 		t.Fatal("expected error for missing parent dir, got nil")
 	}
@@ -21,9 +21,9 @@ func TestWriteFileSync_MissingParent(t *testing.T) {
 	}
 }
 
-// TestWriteFileSync_ParentIsFile asserts the same error contract when the
+// TestWriteSnapshotAtomic_ParentIsFile asserts the same error contract when the
 // parent path component is a regular file rather than a directory.
-func TestWriteFileSync_ParentIsFile(t *testing.T) {
+func TestWriteSnapshotAtomic_ParentIsFile(t *testing.T) {
 	dir := t.TempDir()
 	parent := filepath.Join(dir, "afile")
 	if err := os.WriteFile(parent, []byte("x"), 0o600); err != nil {
@@ -31,7 +31,7 @@ func TestWriteFileSync_ParentIsFile(t *testing.T) {
 	}
 	target := filepath.Join(parent, "out.json")
 
-	err := writeFileSync(target, []byte("payload"), 0o600)
+	err := writeSnapshotAtomic(target, []byte("payload"))
 	if err == nil {
 		t.Fatal("expected error when parent is a file, got nil")
 	}

@@ -64,6 +64,10 @@ jobs:
           shellcheck --severity=warning assets/runtime/refresh.sh
           shellcheck --severity=warning install.sh
           shellcheck --severity=warning uninstall.sh
+          shellcheck --severity=warning scripts/container-smoke.sh
+
+      - name: Verify runtime image
+        run: make container-test
 
       - name: Install syft (SBOM generator)
         # Pin exact: floating @v0 will silently disappear when syft v1 → v2.

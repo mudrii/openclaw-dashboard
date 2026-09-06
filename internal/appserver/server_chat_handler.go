@@ -20,6 +20,17 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		s.sendJSONRaw(w, r, http.StatusServiceUnavailable, errChatDisabled)
 		return
 	}
+	// Simple browser POSTs can reach this endpoint without a CORS preflight.
+	// Refuse foreign origins before using the server-side gateway credential.
+	if origin := r.Header.Get("Origin"); origin != "" {
+		u, valid := parseBrowserOrigin(origin)
+		// Match the authority across HTTP/HTTPS so TLS-terminating proxies can
+		// preserve Host without trusting client-supplied forwarding headers.
+		if (!valid || u.Host != r.Host) && !isLoopbackOrigin(origin) {
+			s.sendJSON(w, r, http.StatusForbidden, map[string]string{"error": "origin not allowed"})
+			return
+		}
+	}
 
 	// Rate limit: 10 req/min per IP (handles both IPv4 and IPv6)
 	ip, _, _ := net.SplitHostPort(r.RemoteAddr)

@@ -200,6 +200,8 @@ The host CLI must be able to access the selected engine/container. No host mount
 
 **Running the dashboard itself in Docker is a separate deployment mode.** The current image ships the dashboard, not the OpenClaw CLI or container-engine tooling. Mounting state alone does not provide migrated-runtime collection. Supply an appropriate CLI/runtime environment before expecting live data; the stock image is not end-to-end certified for that setup.
 
+The image includes Bash for the refresh wrapper, Git for workspace history, procps for process metrics, timezone data, and wget for its health check. CI's network-isolated container smoke test verifies these packaging basics without a live OpenClaw runtime.
+
 The dashboard binds to `127.0.0.1` by default. Container deployments must
 either opt into a non-loopback bind explicitly or share the host network
 namespace — port-publishing alone won't work, because the container's own
@@ -367,15 +369,17 @@ The entire frontend lives in a single `<script>` tag inside `web/index.html` —
 | **DataLayer** | Stateless fetch with `_reqId` counter for out-of-order protection. Returns parsed JSON or `null`. |
 | **LogTail** | Incremental log polling, filtering, pause/fast modes, and merged log rendering. |
 | **ErrorFeed** | Error-signature feed derived from `/api/errors`, including sort/window controls. |
-| **DirtyChecker** | Computes 13 boolean dirty flags by comparing current snapshot against `State.prev`. Uses `stableSnapshot()` to strip volatile timestamps from crons/sessions. |
-| **Renderer** | Pure DOM side-effects. Receives frozen snapshot + pre-computed flags, dispatches to 14 section renderers. Owns the agent hierarchy tree, recent-finished buffer, and all chart SVG rendering. |
+| **DirtyChecker** | Compares each section's data and collection state against its previous snapshot. Ignores attempt timestamps that do not change visible content. |
+| **Renderer** | Receives frozen snapshots and dirty flags, updates sections, and owns the agent hierarchy tree, recent-finished buffer, and chart SVG rendering. |
+| **RuntimePanels** | Runtime provenance, collection notices, paginated sessions/tasks, inventories, and detail dialogs. |
+| **OperationsPanel** | Probes operation availability and handles individually confirmed actions with a manually supplied operator token. |
 | **SystemBar** | Polls `/api/system`, renders host/runtime health, and feeds gateway readiness state back into the main health and alert panels. |
 | **Theme** | Self-contained theme engine — loads `themes.json`, applies CSS variables, persists choice to `localStorage`. |
 | **Sections** | Collapsible-section state and persistence. |
 | **Chat** | AI chat panel — manages history, sends stateless requests to `/api/chat`. |
 | **OCUI / App** | UI command handlers plus wiring layer — theme, timers, data refresh, render scheduling, and event handlers. |
 
-All inline `onclick` handlers route through `window.OCUI` — a thin namespace that calls `State.setTab()` / `App.renderNow()`. No bare globals remain outside the module objects and top-level utilities (`$`, `esc`, `safeColor`, `relTime`).
+Inline UI commands use `window.OCUI`; runtime details and operations also use delegated event handlers. Shared utilities include escaping, color validation, and timezone-aware time formatting. Keep new behavior with its owning module.
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for the full specification.
 

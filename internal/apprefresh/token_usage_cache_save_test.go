@@ -1,11 +1,29 @@
 package apprefresh
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"runtime"
 	"testing"
 )
+
+func TestSaveTokenUsageCacheDoesNotShareTemporaryFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "cache.json")
+	otherWriter, err := os.Create(path + ".tmp")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = otherWriter.Close() })
+	saveTokenUsageCache(path, tokenUsageCache{Version: tokenUsageCacheVersion, Files: map[string]tokenUsageFileSummary{}})
+	if _, err := otherWriter.WriteAt([]byte("not JSON"), 0); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil || !json.Valid(raw) {
+		t.Fatalf("another writer corrupted published cache: %s, %v", raw, err)
+	}
+}
 
 // TestSaveTokenUsageCache_EmptyPath asserts the early return on an empty path:
 // no file is written and no panic occurs.
@@ -35,8 +53,8 @@ func TestSaveTokenUsageCache_RenameFailureCleansUpTmp(t *testing.T) {
 
 	saveTokenUsageCache(dest, tokenUsageCache{Version: tokenUsageCacheVersion, Files: map[string]tokenUsageFileSummary{}})
 
-	if _, err := os.Stat(dest + ".tmp"); !os.IsNotExist(err) {
-		t.Fatalf("expected .tmp cleaned up, stat err: %v", err)
+	if files, err := filepath.Glob(dest + ".tmp*"); err != nil || len(files) != 0 {
+		t.Fatalf("temporary files leaked: %v, %v", files, err)
 	}
 	info, err := os.Stat(dest)
 	if err != nil {

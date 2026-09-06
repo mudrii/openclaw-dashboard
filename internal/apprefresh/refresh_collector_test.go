@@ -52,12 +52,22 @@ func TestRunRefreshCollectorWritesDashboardJSONAtomically(t *testing.T) {
 	cfg.Timezone = "UTC"
 	cfg.Refresh.IntervalSeconds = 30
 	cfg.AI.GatewayPort = 0
+	// Simulate another refresh holding the old shared temporary filename open.
+	// Publishing our snapshot must not let that writer change the final file.
+	otherWriter, err := os.Create(filepath.Join(dashboardDir, "data.json.tmp"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = otherWriter.Close() })
 
 	if err := apprefresh.RunRefreshCollector(context.Background(), dashboardDir, openclawPath, cfg); err != nil {
 		t.Fatalf("RunRefreshCollector() error = %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(dashboardDir, "data.json.tmp")); !os.IsNotExist(err) {
-		t.Fatalf("temporary file still exists after successful rename: %v", err)
+	if _, err := otherWriter.WriteAt([]byte("not JSON"), 0); err != nil {
+		t.Fatal(err)
+	}
+	if files, err := filepath.Glob(filepath.Join(dashboardDir, "data.json.tmp-*")); err != nil || len(files) != 0 {
+		t.Fatalf("temporary files leaked: %v, %v", files, err)
 	}
 	info, err := os.Stat(filepath.Join(dashboardDir, "data.json"))
 	if err != nil {

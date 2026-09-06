@@ -20,7 +20,8 @@ import (
 	"github.com/mudrii/openclaw-dashboard/internal/appopenclaw"
 )
 
-// RunRefreshCollector generates data.json from OpenClaw's filesystem data.
+// RunRefreshCollector generates data.json from the selected OpenClaw runtime
+// or legacy native filesystem data.
 // Callers must supply the active dashboard Config; use appconfig.Load(dir) at
 // the call site if no Config is on hand.
 func RunRefreshCollector(ctx context.Context, dashboardDir, openclawPath string, cfg appconfig.Config) error {
@@ -35,28 +36,22 @@ func RunRefreshCollector(ctx context.Context, dashboardDir, openclawPath string,
 		return fmt.Errorf("marshal data.json: %w", err)
 	}
 
-	tmpPath := filepath.Join(dashboardDir, "data.json.tmp")
 	finalPath := filepath.Join(dashboardDir, "data.json")
-
-	if err := writeFileSync(tmpPath, out, 0o600); err != nil {
-		_ = os.Remove(tmpPath)
-		return fmt.Errorf("write data.json.tmp: %w", err)
-	}
-	if err := os.Rename(tmpPath, finalPath); err != nil {
-		_ = os.Remove(tmpPath)
-		return fmt.Errorf("rename data.json.tmp: %w", err)
+	if err := writeSnapshotAtomic(finalPath, out); err != nil {
+		return fmt.Errorf("write data.json: %w", err)
 	}
 	return nil
 }
 
-// writeFileSync writes data to path and fsyncs it before returning, so a crash
-// or power loss between the write and the subsequent rename cannot leave a
-// zero-length or truncated file once the rename is observed.
-func writeFileSync(path string, data []byte, perm os.FileMode) error {
-	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, perm)
+// writeSnapshotAtomic gives each publisher its own 0600 temporary inode. A
+// separate --refresh process must never keep writing into our published file.
+func writeSnapshotAtomic(path string, data []byte) error {
+	f, err := os.CreateTemp(filepath.Dir(path), filepath.Base(path)+".tmp-*")
 	if err != nil {
 		return err
 	}
+	tmp := f.Name()
+	defer func() { _ = os.Remove(tmp) }()
 	if _, err := f.Write(data); err != nil {
 		_ = f.Close()
 		return err
@@ -65,7 +60,10 @@ func writeFileSync(path string, data []byte, perm os.FileMode) error {
 		_ = f.Close()
 		return err
 	}
-	return f.Close()
+	if err := f.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmp, path)
 }
 
 var reStripTelegramID = regexp.MustCompile(`(?i)\s*\bid\b[\s:=\-]*\d+`)

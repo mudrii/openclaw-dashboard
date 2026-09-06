@@ -269,7 +269,10 @@ Generated dashboard services omit `OPENCLAW_HOME` by default. This lets the dash
 | Variable | Description |
 |----------|-------------|
 | `OPENCLAW_HOME` | Optional custom OpenClaw environment passed through only when explicitly set before service install; normally unset |
-| `OPENCLAW_GATEWAY_TOKEN` | Gateway bearer token loaded from `ai.dotenvPath` |
+| `OPENCLAW_GATEWAY_TOKEN` | Gateway bearer token; process environment takes precedence over `ai.dotenvPath`, then supported literal/env SecretRef values in local gateway configuration |
+| `OPENCLAW_STATE_DIR` | Explicit local state directory; overrides the state path derived from `openclaw.profile` |
+| `OPENCLAW_CONTAINER` | Inherited container selection when `openclaw.mode` does not override it |
+| `OPENCLAW_DASHBOARD_OPERATOR_TOKEN` | Separate, manually provisioned operations credential of at least 32 characters; required in the service environment when operations are enabled |
 | `OPENCLAW_SYSTEMD_UNIT` | Overrides the systemd unit name used for the Linux journald log fallback (default `openclaw-gateway`). Takes precedence over `logs.systemdUnit`. |
 | `OPENCLAW_PROFILE` | When set, appends a `-<profile>` suffix to the resolved systemd unit name (matches openclaw's per-profile unit naming). |
 | `OPENCLAW_CONFIG_PATH` | Overrides the OpenClaw config path used to locate the gateway lock file. The lock supplies install-independent gateway PID/uptime/RSS. |
@@ -300,6 +303,12 @@ A few hard rules are enforced at startup or per-request:
   clickjacking are blocked.
 - **Gateway token redaction.** `appchat.CallGateway` strips the bearer token
   from any 5xx response body before surfacing the error to the browser.
+- **Chat origin checks.** Browser chat requests require an HTTP/HTTPS origin
+  matching the request Host (including port),
+  or an HTTP loopback development origin. Foreign and opaque (`null`) origins
+  receive HTTP 403 before gateway work; CORS response headers alone do not
+  prevent a simple cross-origin POST. Origin-less CLI clients remain supported.
+  A TLS reverse proxy must preserve the public Host for chat.
 
 ## Data Flow
 

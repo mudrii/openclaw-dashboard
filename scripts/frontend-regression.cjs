@@ -92,6 +92,19 @@ test('all cost charts distinguish unknown from zero', `
     assert.match($('chart').innerHTML,/<svg/);
   }
 `);
+test('dense cost charts retain every tooltip without overlapping labels or markers', `
+  for(const count of [7,30]){
+    const data=Array.from({length:count},(_,i)=>({label:'day-'+i,total:i===count-1?5:0}));
+    Renderer.renderCostChart('denseChart',data);
+    const svg=$('denseChart').innerHTML;
+    assert.equal((svg.match(/<title>/g)||[]).length,count);
+    assert.equal((svg.match(/font-weight=/g)||[]).length,count===7?7:0);
+    const radii=[...svg.matchAll(/<circle[^>]* r="([^"]+)"/g)].map(m=>Number(m[1]));
+    assert.equal(radii.length,count);
+    assert.ok(Math.max(...radii)*2<330/(count-1),'markers overlap');
+    assert.ok(svg.includes('day-'+(count-1)+': $5.00'));
+  }
+`);
 test('absolute time uses dashboard timezone, not browser timezone', `
   State.data={timezone:'UTC'};
   assert.match(formatAbsTime('2026-09-05T09:07:00Z'),/09:07/);

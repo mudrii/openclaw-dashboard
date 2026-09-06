@@ -13,7 +13,7 @@
 # Run (host-network — preserves loopback-only design, Linux only):
 #   docker run --network=host \
 #     -v ~/.openclaw:/home/dashboard/.openclaw \
-#     openclaw-dashboard
+#     openclaw-dashboard --bind 127.0.0.1 --port 8080
 #
 # The dashboard rejects 0.0.0.0 binds unless OPENCLAW_DASHBOARD_ALLOW_NON_LOOPBACK=1
 # is set. The opt-in is intentionally awkward — containers expose the chat
@@ -39,10 +39,11 @@ RUN VERSION="$(tr -d '[:space:]' < VERSION)" && \
 # --- Stage 2: Runtime ---
 FROM alpine:3.23@sha256:fd791d74b68913cbb027c6546007b3f0d3bc45125f797758156952bc2d6daf40
 
-# wget is needed for HEALTHCHECK. Busybox in Alpine ships a wget applet, but
-# install the full package so HEALTHCHECK behavior is stable across Alpine
-# minor releases regardless of busybox config.
-RUN apk add --no-cache wget
+# procps supplies the ps/pgrep options used by process collectors; tzdata is
+# needed for configured IANA zones in the shipped binary (no Go tree present).
+# bash runs the shipped refresh wrapper, git supplies workspace history, and
+# wget keeps HEALTHCHECK independent of BusyBox applet differences.
+RUN apk add --no-cache bash git procps tzdata wget
 
 WORKDIR /app
 COPY --from=builder /build/openclaw-dashboard .

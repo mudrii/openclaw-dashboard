@@ -66,7 +66,8 @@ gh api -X PUT repos/mudrii/openclaw-dashboard/branches/main/protection \
       {"context": "Go test suite (macos-latest)"},
       {"context": "govulncheck"},
       {"context": "Staticcheck"},
-      {"context": "Lint shell scripts"}
+      {"context": "Lint shell scripts"},
+      {"context": "Container smoke"}
     ]
   },
   "enforce_admins": false,

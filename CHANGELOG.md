@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+- Reject foreign browser origins before authenticated chat work, while preserving loopback development and Host-preserving TLS proxies.
+- Publish dashboard snapshots and token caches through unique private temporary files so concurrent refreshes cannot corrupt a published snapshot.
+- Sum chart costs when multiple model IDs share a display name.
+- Preserve runtime-selection environment variables in the refresh wrapper and locate binaries in extracted releases without requiring host state for container targets.
+- Include process tools, timezone data, Bash and Git in the runtime image; add `make container-test` and CI/release packaging smoke checks.
+- Correct architecture, nullable-field, runtime-source, build, testing and configuration documentation; record the full code audit.
+
 ## v2026.9.6 — 2026-09-06
 
 Release focused on selected-runtime (native, Docker, Podman) monitoring honesty,
@@ -172,6 +181,8 @@ shell-out pattern as `models list --json` / `status --json`):
   `⚡FLAPPING` badge.
 
 ### Fixed
+
+- Prevent overlapping value labels and markers in dense 30-day cost charts while retaining exact-value tooltips.
 
 - **Per-agent models from `agents.list[]`** (FIX-2) — confirmed already implemented
   in `loadAgentDefaultModels` (the `list[]` pass keyed by `entry.id`, string and
