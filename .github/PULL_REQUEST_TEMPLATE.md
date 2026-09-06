@@ -58,8 +58,8 @@ paste here
      Agents use this list to verify completeness before merging. -->
 
 ### Code quality
-- [ ] No new globals outside the 7 module objects + 4 utilities (`$`, `esc`, `safeColor`, `relTime`)
-- [ ] Every dynamic value inserted into the DOM goes through `esc()`
+- [ ] Frontend changes preserve the documented embedded module boundaries and avoid unnecessary globals
+- [ ] Dynamic HTML values are escaped with `esc()`; plain text uses `textContent`
 - [ ] No hardcoded hex colors — CSS variables only (`var(--accent)`, etc.)
 - [ ] No new frontend dependencies (no `import`, no CDN `<script>`)
 - [ ] No new Go module dependencies (`go.mod` stays stdlib-only)

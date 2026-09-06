@@ -62,12 +62,16 @@ and `make build`.
 | `make test` | `go test -race -count=1 ./...`. The race detector is non-negotiable for local runs. |
 | `make frontend-test` | Runs the actual embedded JavaScript regression harness with Node. Fails if Node is absent; requires no npm packages. |
 | `make container-test` | Builds the runtime image and executes its isolated smoke test. Requires Docker; use `CONTAINER_ENGINE=podman` for Podman. Separate from `make check`; required by CI and release workflows. |
+| `make release-check` | GoReleaser v2.4.5 snapshot rehearsal: validates config, runs frontend/race hooks, builds all four archives, checks checksums/assets, and refreshes using the extracted native archive. Skips publishing, signing and SBOM; output is confined to `dist/release`. |
+| `make brew-test` | Tests the generated Homebrew formula using local snapshot archives and an isolated keg-only fixture. Requires Homebrew and completed `make release-check`; the existing installation is preserved. |
+| `make workflow-test` | Executes the actual release CI gate against success, missing, pending, failure, cancelled, skipped and mismatched-commit responses. Included in `make check`. |
+| `make workflow-lint` | Pinned actionlint v1.7.12 validates workflow syntax, expressions, inputs and embedded shell (when ShellCheck is available). CI requires this in Release rehearsal. |
 | `make lint` | `golangci-lint run ./...`. Linters enabled in `.golangci.yml`: `errcheck`, `govet`, `staticcheck`, `ineffassign`, `unused`, `gocritic`, `gosec`, `errorlint`. |
 | `make vet` | `go vet ./...` only. Fast first pass before lint. |
 | `make cover` | Writes `coverage.out` and `coverage.html` for statement coverage on the current platform. This is separate from race testing and is not a branch-coverage or live-runtime guarantee. |
 | `make staticcheck` | `go run honnef.co/go/tools/cmd/staticcheck@v0.8.1 ./...`. Runs standalone Staticcheck without requiring a preinstalled binary. |
 | `make govulncheck` | `go run golang.org/x/vuln/cmd/govulncheck@v1.3.0 ./...`. Scans stdlib + module for known CVEs without requiring a preinstalled binary. |
-| `make check` | Runs `make frontend-test`, then `go vet ./...`, `golangci-lint run ./...`, `go test -race -count=1 ./...`, pinned `govulncheck`, pinned `staticcheck`, and `make build`. |
+| `make check` | Runs `make frontend-test`, `make workflow-test`, then `go vet ./...`, `golangci-lint run ./...`, `go test -race -count=1 ./...`, pinned `govulncheck`, pinned `staticcheck`, and `make build`. |
 
 `golangci-lint` v2.x must be on `PATH`; CI currently uses v2.13.2. The Nix
 `devShell` installs it; for non-Nix dev machines, `go install` works. Node is

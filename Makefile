@@ -1,7 +1,8 @@
-.PHONY: build build-debug test frontend-test container-test lint vet clean all staticcheck cover check fmt govulncheck
+.PHONY: build build-debug test frontend-test workflow-test workflow-lint container-test release-check archive-test brew-test lint vet clean all staticcheck cover check fmt govulncheck
 
 BINARY := openclaw-dashboard
 CONTAINER_ENGINE ?= docker
+GORELEASER ?= goreleaser
 VERSION := $(shell cat VERSION 2>/dev/null || echo "dev")
 
 # Pinned govulncheck version — must match .github/workflows/tests.yml so local
@@ -32,6 +33,26 @@ test:
 
 frontend-test:
 	node scripts/frontend-regression.cjs
+
+workflow-test:
+	node scripts/workflow-regression.cjs
+
+workflow-lint:
+	go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
+
+# Rehearse all four archives without publishing or requiring signing credentials.
+# GoReleaser's before hooks run the frontend and race suites.
+release-check:
+	$(GORELEASER) check
+	$(GORELEASER) release --snapshot --clean --skip=sign,sbom
+	$(MAKE) archive-test
+
+archive-test:
+	node scripts/archive-smoke.cjs
+
+# Installs a uniquely named, keg-only fixture from the generated formula.
+brew-test:
+	node scripts/brew-smoke.cjs
 
 # Separate from make check: requires an available Docker or Podman engine.
 container-test:
@@ -64,4 +85,4 @@ cover:
 	go test -coverprofile=coverage.out ./...
 	go tool cover -html=coverage.out -o coverage.html
 
-check: frontend-test vet lint test govulncheck staticcheck build
+check: frontend-test workflow-test vet lint test govulncheck staticcheck build

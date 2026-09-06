@@ -182,6 +182,10 @@ shell-out pattern as `models list --json` / `status --json`):
 
 ### Fixed
 
+- Fix Nix compiler selection, pin flake inputs, and verify installed Homebrew/Nix runtimes in Linux/macOS CI; supply Nix process tools and timezone data.
+
+- Require exact-commit main CI before release publication; add non-publishing archive rehearsal, workflow validation, and maintenance-friendly immutable action/image pin tests.
+
 - Prevent overlapping value labels and markers in dense 30-day cost charts while retaining exact-value tooltips.
 
 - **Per-agent models from `agents.list[]`** (FIX-2) — confirmed already implemented

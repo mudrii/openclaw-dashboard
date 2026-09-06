@@ -4,20 +4,22 @@ Post-audit user-side actions. Each command should be run once by a maintainer
 on a host that has the relevant tool installed. After completing each item,
 tick the box and commit the resulting file change (where applicable).
 
-## 1. Generate `flake.lock` for reproducible Nix builds
+## 1. Maintain the locked Nix build
 
-`flake.lock` is not committed. Without it the flake floats whatever nixpkgs
-revision the user's local CLI happens to cache, breaking reproducibility.
+`flake.lock` pins nixpkgs and flake-utils. The flake overrides `buildGoModule`
+with Go 1.27 explicitly, provides Bash/Git and Linux process tooling, and wraps
+the executable with IANA timezone data. `nix flake check --no-update-lock-file`
+builds the package and verifies its installed runtime: version, asset seeding,
+refresh, timezone and private snapshot permissions. CI runs it on Linux/macOS.
+
+Update inputs deliberately and validate before committing:
 
 ```sh
 nix flake update
-git add flake.lock
-git commit -m "build(nix): commit flake.lock for reproducible builds"
+nix flake check --no-update-lock-file --print-build-logs
 ```
 
-Re-run `nix flake update` periodically (monthly is a reasonable cadence) to
-pick up nixpkgs security updates. The dependabot config in
-`.github/dependabot.yml` does not cover flake inputs today.
+Dependabot does not update flake inputs; review these regularly for fixes.
 
 ## 2. Keep Docker base image digests current
 
@@ -67,7 +69,11 @@ gh api -X PUT repos/mudrii/openclaw-dashboard/branches/main/protection \
       {"context": "govulncheck"},
       {"context": "Staticcheck"},
       {"context": "Lint shell scripts"},
-      {"context": "Container smoke"}
+      {"context": "Container smoke"},
+      {"context": "Release rehearsal (ubuntu-latest)"},
+      {"context": "Release rehearsal (macos-latest)"},
+      {"context": "Nix flake (ubuntu-latest)"},
+      {"context": "Nix flake (macos-latest)"}
     ]
   },
   "enforce_admins": false,
@@ -97,24 +103,37 @@ gh api repos/mudrii/openclaw-dashboard/branches/main/protection/required_status_
   --jq '.checks[].context'
 ```
 
-## 4. (Optional) Verify release pipeline end-to-end
+## 4. Rehearse before publishing
 
-The `release.yml` workflow installs `syft` (SBOM), `cosign` (keyless signing),
-and `shellcheck`, then rejects release tags whose commit is not reachable from
-`origin/main` or whose tag does not exactly match `VERSION`. Use a real
-release-candidate commit on `main` for end-to-end verification:
+Run `make check`, `make container-test`, and `make release-check` on the candidate.
+`make release-check` requires GoReleaser **v2.4.5**, Node and Go. It validates
+configuration, runs the configured frontend/race hooks, builds all four archives
+under `dist/release`, verifies their checksums and required assets, then exercises
+an extracted native archive. It uses snapshot mode and skips signing/SBOM; it
+never publishes a release, changes a tag, or updates the Homebrew tap. CI runs
+this rehearsal on PRs and pushes to main, release-readiness and codex branches.
+On macOS, `make brew-test` installs the generated formula from local archives in a
+uniquely named keg-only fixture, runs its formula test, checks runtime seeding and
+refresh, then removes only the fixture. It preserves the existing dashboard
+installation and disables Homebrew auto-update, cleanup and autoremove. CI runs
+this after the macOS archive rehearsal.
 
-```sh
-version="$(tr -d '[:space:]' < VERSION)"
-git fetch origin main
-git merge-base --is-ancestor HEAD origin/main
-git tag "$version"
-git push origin "$version"
+Use `make workflow-test workflow-lint` for the executable publication-gate tests
+and pinned actionlint validation.
 
-# Watch the run. If this was only a gate rehearsal and no release should remain:
-gh release delete "$version" --yes --cleanup-tag
-git push origin ":$version"
-```
+Snapshot metadata follows GoReleaser's latest reachable tag, so it may differ
+from the next release's `VERSION`. A real release requires the exact tag to match
+`VERSION`, ancestry from main, and a successful **main push Tests run for that
+exact commit**, covering Linux and macOS. Wait for all required checks after
+merging; then a maintainer can create the intended release tag. Tagging publishes
+artifacts and updates the Homebrew tap. Do not create/delete production tags as
+a smoke test.
+
+The rehearsal does not validate GitHub OIDC signing or exercise the tap app's
+private key. The real release job installs Syft and Cosign and retains both
+signing and SBOM generation. Confirm the repository variable
+`HOMEBREW_TAP_APP_CLIENT_ID` and secret `HOMEBREW_TAP_APP_PRIVATE_KEY` are configured
+before authorizing publication. See [Homebrew credentials](HOMEBREW.md).
 
 ## 5. Sigstore outage runbook
 
@@ -135,22 +154,11 @@ If any of the three is unavailable, the `Run GoReleaser` step in
    <https://status.sigstore.dev>. Re-run the failed workflow run from the
    GitHub Actions UI once status is green.
 
-2. **Skip signing for this release.** Add a job-level env var to bypass
-   the signs block:
-
-   ```yaml
-   # release.yml — temporary while Sigstore is down
-   env:
-     GORELEASER_SKIP: sign
-   ```
-
-   Push a no-op commit, retag, and re-release. **Remove the env var the
-   moment Sigstore is restored** — unsigned releases are not a steady state.
-
-3. **Manual SHA-256 verification only.** Document in the GitHub Release
-   body that the cosign bundle is missing for this version and that users
-   should verify via `sha256sum -c checksums-sha256.txt` against the
-   archives. Acceptable as a one-off; do not normalize.
+2. **Keep publication blocked if signing cannot recover.** Investigate the
+   failed signing step and retry the same release workflow after service recovery.
+   Do not bypass signing with an undocumented environment variable or retag a
+   published version. If publication partially succeeded, inspect existing assets
+   and the tap commit before choosing a recovery action.
 
 **Verifying a signed release as a user:**
 

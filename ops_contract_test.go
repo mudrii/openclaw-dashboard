@@ -11,13 +11,15 @@ import (
 func TestCIUsesCanonicalMakeTargets(t *testing.T) {
 	workflow := readTextFile(t, ".github/workflows/tests.yml")
 	for _, want := range []string{
-		`uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6`,
-		`uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6`,
+		`uses: actions/checkout@`,
+		`uses: actions/setup-go@`,
 		`run: make vet`,
 		`run: make test`,
 		`run: make build`,
 		`run: make govulncheck`,
 		`run: make staticcheck`,
+		`run: make container-test`,
+		`run: make workflow-test workflow-lint release-check`,
 		`sudo apt-get update && sudo apt-get install -y shellcheck`,
 	} {
 		if !strings.Contains(workflow, want) {
@@ -65,7 +67,7 @@ func TestPRValidationSkipsDependabotTemplateGate(t *testing.T) {
 	workflow := readTextFile(t, ".github/workflows/pr-validate.yml")
 	for _, want := range []string{
 		`if: ${{ github.actor != 'dependabot[bot]' }}`,
-		`uses: actions/github-script@373c709c69115d41ff229c7e5df9f8788daa9553 # v9`,
+		`uses: actions/github-script@`,
 		`Expected exactly one checked PR type`,
 		`What Changed`,
 		`"## Checklist" section is missing`,
@@ -123,6 +125,9 @@ func TestReleaseWorkflowContracts(t *testing.T) {
 		`permissions:`,
 		`contents: write`,
 		`id-token: write`,
+		`actions: read`,
+		`Require successful main CI for this exact commit`,
+		`group: release-publication`,
 		`Verify release commit is on main`,
 		`git merge-base --is-ancestor "$GITHUB_SHA" origin/main`,
 		`Verify release tag matches VERSION`,
@@ -132,14 +137,14 @@ func TestReleaseWorkflowContracts(t *testing.T) {
 		`run: make check`,
 		`Install shellcheck`,
 		`shellcheck --severity=warning assets/runtime/refresh.sh`,
-		`uses: anchore/sbom-action/download-syft@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0`,
-		`uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2`,
-		`uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0`,
+		`uses: anchore/sbom-action/download-syft@`,
+		`uses: sigstore/cosign-installer@`,
+		`uses: actions/create-github-app-token@`,
 		`HOMEBREW_TAP_APP_CLIENT_ID`,
 		`client-id: ${{ vars.HOMEBREW_TAP_APP_CLIENT_ID }}`,
 		`repositories: homebrew-tap`,
 		`permission-contents: write`,
-		`uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7`,
+		`uses: goreleaser/goreleaser-action@`,
 		`HOMEBREW_TAP_TOKEN: ${{ steps.tap-token.outputs.token }}`,
 	} {
 		if !strings.Contains(workflow, want) {
@@ -178,6 +183,11 @@ func TestInfraChecklistTracksRequiredChecks(t *testing.T) {
 		`{"context": "Go test suite (macos-latest)"}`,
 		`{"context": "govulncheck"}`,
 		`{"context": "Staticcheck"}`,
+		`{"context": "Container smoke"}`,
+		`{"context": "Release rehearsal (ubuntu-latest)"}`,
+		`{"context": "Release rehearsal (macos-latest)"}`,
+		`{"context": "Nix flake (ubuntu-latest)"}`,
+		`{"context": "Nix flake (macos-latest)"}`,
 		`{"context": "Lint shell scripts"}`,
 	} {
 		if !strings.Contains(infra, want) {
@@ -197,12 +207,9 @@ func TestPackagingDocsMatchCurrentDockerBaseTags(t *testing.T) {
 			t.Fatalf("INFRA-CHECKLIST.md missing current Docker tag %q", tag)
 		}
 	}
-	for _, digest := range []string{
-		"golang:1.27-alpine@sha256:cf6fca6641884b8433441b2b0652976f975e1d0fdd26d177eaaf8596087f3125",
-		"alpine:3.23@sha256:fd791d74b68913cbb027c6546007b3f0d3bc45125f797758156952bc2d6daf40",
-	} {
-		if !strings.Contains(dockerfile, digest) {
-			t.Fatalf("Dockerfile missing pinned base image %q", digest)
+	for _, tag := range []string{"golang:1.27-alpine", "alpine:3.23"} {
+		if !regexp.MustCompile(regexp.QuoteMeta(tag) + `@sha256:[0-9a-f]{64}(?:\s|$)`).MatchString(dockerfile) {
+			t.Fatalf("Dockerfile base %q must be digest pinned", tag)
 		}
 	}
 	if strings.Contains(dockerfile, "ARG VERSION=dev") {

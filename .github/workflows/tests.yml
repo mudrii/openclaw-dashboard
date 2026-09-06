@@ -1,8 +1,9 @@
 name: Tests
 
 on:
+  workflow_dispatch:
   push:
-    branches: [main]
+    branches: [main, release-readiness, 'codex/**']
   pull_request:
     branches: [main]
 
@@ -123,3 +124,47 @@ jobs:
 
       - name: Verify packaged runtime without OpenClaw or network access
         run: make container-test
+
+  release-rehearsal:
+    name: Release rehearsal
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: go.mod
+          cache: true
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: "22"
+      - uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7
+        with:
+          distribution: goreleaser
+          version: "v2.4.5"
+          install-only: true
+      - name: Validate release archives without publishing
+        run: make workflow-test workflow-lint release-check
+      - name: Install and test generated Homebrew formula
+        if: runner.os == 'macOS'
+        run: make brew-test
+
+  nix:
+    name: Nix flake
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+      - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31.11.1
+      - name: Build and test locked flake
+        run: nix flake check --no-update-lock-file --print-build-logs

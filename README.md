@@ -234,6 +234,14 @@ nix develop github:mudrii/openclaw-dashboard
 
 The Nix package installs immutable defaults under its package share directory
 and seeds the writable runtime directory at `~/.openclaw/dashboard` on first run.
+Flake inputs are locked, the builder uses Go 1.27, and the package includes
+runtime tools and timezone data. Run `nix flake check --no-update-lock-file` in
+the checkout to verify the build and installed runtime. CI checks Linux and macOS.
+
+Maintainer installation checks: `make release-check` builds and validates all
+four release archives; `make brew-test` tests the generated formula in an isolated
+fixture; `make container-test` verifies the image's refresh and HTTP UI/API.
+These use fixture state and do not require or certify a live OpenClaw gateway.
 
 ## Themes
 

@@ -5,8 +5,14 @@ on:
     tags:
       - "v*"
 
+# Serialize publication and Homebrew updates across release tags.
+concurrency:
+  group: release-publication
+  cancel-in-progress: false
+
 permissions:
   contents: write
+  actions: read
   # id-token is required for cosign keyless signing via the GitHub OIDC issuer.
   id-token: write
   # NOTE: attestations: write is intentionally NOT granted yet. Add it back
@@ -47,6 +53,24 @@ jobs:
             echo "::error file=VERSION::release tag $GITHUB_REF_NAME does not match VERSION file $version"
             exit 1
           fi
+
+      - name: Require successful main CI for this exact commit
+        uses: actions/github-script@373c709c69115d41ff229c7e5df9f8788daa9553 # v9
+        with:
+          script: |
+            const {data} = await github.rest.actions.listWorkflowRuns({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: 'tests.yml',
+              branch: 'main',
+              event: 'push',
+              head_sha: context.sha,
+              per_page: 1,
+            });
+            const run = data.workflow_runs[0];
+            if (!run || run.head_sha !== context.sha || run.status !== 'completed' || run.conclusion !== 'success') {
+              core.setFailed('Release requires a successful main Tests run for the tagged commit. Wait for CI or repair it before retrying.');
+            }
 
       - name: Install golangci-lint
         run: |
