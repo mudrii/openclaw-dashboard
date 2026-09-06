@@ -388,7 +388,6 @@ body{font-family:-apple-system,BlinkMacSystemFont,'SF Pro','Helvetica Neue',sans
     </div>
   </div>
 </div>
-<div id="providerUsageSection" class="glass panel" style="margin-top:12px" hidden><h3 style="font-size:13px;margin-bottom:8px">Provider plans, balances and quotas</h3><div id="providerUsagePanel"></div></div>
   </div>
 </section>
 
@@ -1554,29 +1553,9 @@ const RuntimePanels = {
       ['Process source','Selected container gateway · '+collectionLabel(D.collections?.runtimeInfo)],
     ]);
   },
-  renderProviders(D){
-    $('providerUsageSection').hidden=!D.collections?.providerUsage&&!D.providerUsage;
-    const providers=new Map((D.providerUsage?.providers||[]).filter(p=>typeof p.provider==='string'&&p.provider).map(p=>[p.provider.toLowerCase(),{...p,provider:p.provider.toLowerCase()}]));
-    for(const m of [...(D.availableModels||[]),...(D.modelReadiness||[]),...(D.tokenUsage30d||[])]){
-      const modelId=String(m.modelId||m.id||'');
-      const id=(modelId.includes('/')?modelId.split('/')[0]:String(m.provider||'')).toLowerCase();
-      if(id&&!providers.has(id))providers.set(id,{provider:id});
-    }
-    const cards=[...providers.values()].sort((a,b)=>a.provider.localeCompare(b.provider)).map(p=>{
-      const windows=(p.windows||[]).map(w=>'<div>'+esc(w.label||'Quota')+': <strong>'+(Number.isFinite(w.usedPercent)?Math.max(0,Math.min(100,100-w.usedPercent))+'% left':'Not reported')+'</strong>'+(w.resetAt?' · resets '+esc(formatAbsTime(w.resetAt)):'')+'</div>').join('');
-      const billing=(p.billing||[]).map(b=>'<div>'+esc(b.label||b.type||'Billing')+': <strong>'+esc(Number.isFinite(b.amount)?b.amount+' '+(b.unit||''):'Not reported')+'</strong></div>').join('');
-      const rows=(D.tokenUsage30d||[]).filter(m=>String(m.modelId||'').startsWith(p.provider+'/'));
-      const missing=rows.reduce((n,m)=>n+(m.missingCostEntries||0),0);
-      const known=rows.filter(m=>Number.isFinite(m.knownCost));
-      const spend=rows.length?'<p style="margin-top:8px">Recorded session spend · 30d: <strong>'+(known.length?runtimeMoney(known.reduce((n,m)=>n+m.knownCost,0),4):'Not reported')+'</strong>'+(missing?' · '+missing+' unpriced entries (subtotal only)':known.length<rows.length?' · subtotal only; some costs not reported':'')+(D.usage30d?.tokensComplete===false?' · collection incomplete':'')+'</p>':'';
-      return '<div class="glass panel"><h4>'+esc(p.displayName||p.provider)+'</h4><div style="color:var(--muted)">'+esc(p.provider)+'</div>'+(p.plan?'<p>'+esc(p.plan)+'</p>':'')+windows+billing+(p.summary?'<p>'+esc(p.summary)+'</p>':'')+(!windows&&!billing&&!p.summary?'<p>No live usage data reported by this provider.</p>':'')+(p.hasError?'<p>Provider usage request failed.</p>':'')+spend+'</div>';
-    }).join('');
-    $('providerUsagePanel').innerHTML='<p>'+esc(collectionLabel(D.collections?.providerUsage))+(D.providerUsage?.updatedAt?' · provider snapshot '+esc(formatAbsTime(D.providerUsage.updatedAt)):'')+'</p><p>Session spend: '+esc(collectionLabel(D.collections?.usage30d))+'</p><p style="color:var(--muted);margin-bottom:8px">Provider quotas and balances are separate from recorded session costs. Unpriced entries are not zero-cost usage.</p><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr));gap:10px">'+(cards||'<p>No provider data reported.</p>')+'</div>';
-  },
   render(D){
     const statuses=D.collections||{};
     this.renderGateway(D);
-    this.renderProviders(D);
 	const runtimeLogs=statuses.sessions?.source==='gateway.sessions.list';
 	['logSourceCron','logSourceSession','logSourceSubagent'].forEach(id=>{$(id).disabled=runtimeLogs;$(id).title=runtimeLogs?'Separate legacy files are unavailable; use gateway logs':'';});
 	if(runtimeLogs&&!['all','gateway'].includes(LogTail._source))LogTail.setSource('all');

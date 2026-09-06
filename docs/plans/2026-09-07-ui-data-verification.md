@@ -59,3 +59,7 @@ The cost section now displays provider plan names, quota percentages remaining, 
 Computer verification compared the dashboard with the authenticated native provider page: MiniMax, z.ai, Copilot, and DeepSeek values were present. The selected container reported a successful health RPC and the dashboard displayed Online. Its own `/healthz` and `/readyz` also returned HTTP 200 during read-only diagnosis. The production implementation uses the portable CLI/RPC path and does not require direct access to container-engine sockets.
 
 Regression coverage includes false health verdicts versus RPC errors, missing responses, credential projection, zero balances and quotas, known subtotal labelling, stale health, and independence from failed host-metric polls. No provider credential or historical billing record was changed.
+
+## Design revision
+
+The provider card section was subsequently removed at the user's request to restore the previous dashboard layout. Provider collection remains available in the data contract; replacement presentation is pending design selection. Gateway health and known-subtotal corrections remain in place.

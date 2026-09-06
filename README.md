@@ -59,7 +59,6 @@ It's not trying to replace the OpenClaw CLI or Telegram interface. It's the at-a
 - 💬 **AI Chat** — Natural language queries about costs, sessions, crons, and config via OpenClaw gateway
 - 🎯 **Accurate Model Display** — 5-level resolution chain ensures every session/sub-agent shows its real model, not the default
 - 🔍 **Runtime Observability** — `/api/system` includes live gateway runtime state (liveness, readiness, failing deps, uptime, PID, memory) sourced from `/healthz`, `/readyz`, and `openclaw status --json` for native probes; container status uses the selected gateway's `health` RPC and never a host-loopback guess
-- 💳 **Provider Plans and Balances** — Selected-gateway `usage.status` supplies reported subscription quotas, reset times, and balances alongside separately labelled 30-day recorded session spend.
 - 🟡 **Gateway Readiness Alerts** — Alert banner shows `🟡 Gateway not ready: discord` (or any failing dep) and auto-clears on recovery
 - ⚡ **Gateway Runtime + Config Cards** — System Settings split into two panels: Gateway Runtime (live probes) and Gateway Config (static config snapshot)
 - 📶 **Live Channel Health** — Migrated runtimes report gateway account-level configuration, connection and probe state separately; unknown fields stay unknown. Legacy collection retains readiness/session-activity fallbacks

@@ -138,13 +138,6 @@ test('selected container health uses its RPC verdict and does not retain stale O
   TestedRuntimePanels.renderGateway(data);
   assert.match($('hGw').innerHTML,/Unhealthy/);
 `);
-test('provider data renders balances quotas and explicit partial spend', `
-  TestedRuntimePanels.renderProviders({collections:{providerUsage:{state:'ready'}},providerUsage:{providers:[{provider:'minimax',plan:'Coding Plan',windows:[{label:'5h',usedPercent:0}],billing:[{type:'balance',amount:0,unit:'USD'}]}]},tokenUsage30d:[{modelId:'minimax/M3',knownCost:0,missingCostEntries:3}]});
-  const html=$('providerUsagePanel').innerHTML;
-  assert.match(html,/Coding Plan/);assert.match(html,/100% left/);assert.match(html,/0 USD/);
-  assert.match(html,/3 unpriced entries/);
-  assert.doesNotMatch(html,/undefined|NaN/);
-`);
 test('known cost is visible as a subtotal and never relabelled a complete total', `
   const data={usageToday:{knownCost:1.2345,missingCostEntries:2,tokensComplete:true},usageAll:{knownCost:2,missingCostEntries:3,tokensComplete:true}};
   Renderer.render({data,tabs:{}},{cost:true});
