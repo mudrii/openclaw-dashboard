@@ -12,7 +12,6 @@ import (
 	"unicode/utf8"
 
 	appchat "github.com/mudrii/openclaw-dashboard/internal/appchat"
-	"github.com/mudrii/openclaw-dashboard/internal/appopenclaw"
 )
 
 // handleChat handles the AI chat endpoint.
@@ -61,13 +60,6 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		s.sendJSONRaw(w, r, http.StatusBadRequest, errQTooLong)
 		return
 	}
-	if s.cfg.Openclaw != (appopenclaw.Target{}) || s.cfg.Openclaw.IsContainer() {
-		capability := s.chatCapability(r.Context())
-		if !capability.Available {
-			s.sendJSON(w, r, http.StatusServiceUnavailable, map[string]string{"error": "Chat unavailable: " + capability.State + ". Use the native OpenClaw control UI.", "errorCode": capability.State})
-			return
-		}
-	}
 
 	// Validate + sanitise history — inline switch avoids per-request map alloc
 	maxHist := s.cfg.AI.MaxHistory
@@ -102,6 +94,14 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.sendJSON(w, r, http.StatusInternalServerError, map[string]string{"error": "dashboard data is invalid"})
+		return
+	}
+
+	// Every install is gated, native included: an unusable chat endpoint or a
+	// missing gateway credential must be named here rather than discovered as
+	// an opaque transport failure after the request reaches the gateway.
+	if capability := s.chatCapability(r.Context()); !capability.Available {
+		s.sendJSON(w, r, http.StatusServiceUnavailable, map[string]string{"error": "Chat unavailable: " + capability.State + ". Use the native OpenClaw control UI.", "errorCode": capability.State})
 		return
 	}
 

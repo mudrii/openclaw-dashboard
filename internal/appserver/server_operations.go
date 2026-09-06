@@ -6,12 +6,14 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -27,6 +29,11 @@ type operationRequest struct {
 	SessionKey     string `json:"sessionKey,omitempty"`
 	RunID          string `json:"runId,omitempty"`
 }
+
+// maxOperationAuditFiles bounds the operation audit directory. Reservations are
+// kept newest-first: the identity of a long-past operation cannot be replayed
+// by a client that no longer remembers it, so old records are safe to drop.
+const maxOperationAuditFiles = 500
 
 var operationIDPattern = regexp.MustCompile(`^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$`)
 
@@ -186,5 +193,40 @@ func (s *Server) handleOperation(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewEncoder(audit).Encode(record); err != nil || audit.Sync() != nil {
 		outcome, status, code = "unknown", 500, "audit_unavailable"
 	}
+	pruneOperationAudit(auditDir)
 	s.sendJSON(w, r, status, map[string]any{"operationId": request.OperationID, "outcome": outcome, "errorCode": code})
+}
+
+// pruneOperationAudit deletes the oldest records once the directory exceeds
+// maxOperationAuditFiles. Retention is best effort: a failure to prune is
+// logged for the operator but never fails the operation it followed.
+func pruneOperationAudit(dir string) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		slog.Warn("[dashboard] operation audit pruning skipped", "error", err)
+		return
+	}
+	if len(entries) <= maxOperationAuditFiles {
+		return
+	}
+	type record struct {
+		name     string
+		modified time.Time
+	}
+	records := make([]record, 0, len(entries))
+	for _, entry := range entries {
+		info, err := entry.Info()
+		if err != nil {
+			slog.Warn("[dashboard] operation audit pruning skipped", "error", err)
+			return
+		}
+		records = append(records, record{name: entry.Name(), modified: info.ModTime()})
+	}
+	slices.SortFunc(records, func(a, b record) int { return a.modified.Compare(b.modified) })
+	for _, stale := range records[:len(records)-maxOperationAuditFiles] {
+		if err := os.Remove(filepath.Join(dir, stale.name)); err != nil {
+			slog.Warn("[dashboard] operation audit pruning failed", "error", err)
+			return
+		}
+	}
 }

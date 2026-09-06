@@ -1,10 +1,12 @@
 package dashboard
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"flag"
 	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -119,7 +121,6 @@ func TestMainRefreshContainerWithoutLocalState(t *testing.T) {
 func TestMainInvalidPortExitsBeforeListen(t *testing.T) {
 	setMainArgs(t, []string{"openclaw-dashboard", "--bind", "127.0.0.1", "--port", "0"})
 	resetMainFlags(t)
-	t.Setenv("DASHBOARD_AI_TOKEN_OPTIONAL", "1")
 
 	_, stderr, code := captureMainStdio(t, Main)
 	if code == 0 {
@@ -178,4 +179,35 @@ func captureMainStdio(t *testing.T, fn func() int) (string, string, int) {
 	_ = errR.Close()
 
 	return outBuf.String(), errBuf.String(), code
+}
+
+// TestMainWarnsChatCredentialsRefuseRequests pins the startup warning an
+// operator needs: enabling AI without a gateway token leaves monitoring up but
+// makes every chat request fail, and the log line has to say so by name.
+func TestMainWarnsChatCredentialsRefuseRequests(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "config.json"), []byte(`{"ai":{"enabled":true}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("OPENCLAW_DASHBOARD_DIR", dir)
+	t.Setenv("OPENCLAW_HOME", filepath.Join(t.TempDir(), "empty-openclaw"))
+	t.Setenv("OPENCLAW_STATE_DIR", "")
+	t.Setenv("OPENCLAW_CONTAINER", "")
+	t.Setenv("OPENCLAW_GATEWAY_TOKEN", "")
+	// Port 0 is rejected right after credential resolution, so Main returns
+	// without binding a listener.
+	setMainArgs(t, []string{"openclaw-dashboard", "--bind", "127.0.0.1", "--port", "0"})
+	resetMainFlags(t)
+
+	var logs bytes.Buffer
+	previous := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, nil)))
+	t.Cleanup(func() { slog.SetDefault(previous) })
+
+	if _, _, code := captureMainStdio(t, Main); code == 0 {
+		t.Fatal("invalid port exited 0")
+	}
+	if !strings.Contains(logs.String(), "credentials_missing") {
+		t.Fatalf("startup log = %q, want the credentials_missing consequence", logs.String())
+	}
 }

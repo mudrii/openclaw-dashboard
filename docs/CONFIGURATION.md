@@ -277,7 +277,6 @@ Generated dashboard services omit `OPENCLAW_HOME` by default. This lets the dash
 | `OPENCLAW_DASHBOARD_ALLOW_NON_LOOPBACK` | Set to the literal value `1` to permit non-loopback bind hosts (e.g., `0.0.0.0`). Required for containerized deployments where the bind has to be reachable from outside the container. Off by default; see Security below. |
 | `DASHBOARD_PORT` | Override the HTTP listen port (takes precedence over `server.port` in config) |
 | `DASHBOARD_BIND` | Override the HTTP bind address (takes precedence over `server.host` in config) |
-| `DASHBOARD_AI_TOKEN_OPTIONAL` | When `ai.enabled=true` but `OPENCLAW_GATEWAY_TOKEN` is missing, set to `1` to downgrade the startup fatal to a warning (useful for dev gateways without auth). Default unset; only the literal value `1` enables the bypass. |
 
 ## Security
 

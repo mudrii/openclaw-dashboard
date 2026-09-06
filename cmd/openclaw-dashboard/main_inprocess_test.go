@@ -84,8 +84,6 @@ func setArgs(t *testing.T, args []string) {
 func TestInProcessVersionFlag(t *testing.T) {
 	setArgs(t, []string{"openclaw-dashboard", "--version"})
 	resetFlagCommandLine(t)
-	// AI gating is downstream of --version, but be defensive.
-	t.Setenv("DASHBOARD_AI_TOKEN_OPTIONAL", "1")
 
 	out, errOut, code := captureStdio(t, run)
 	if code != 0 {
@@ -99,7 +97,6 @@ func TestInProcessVersionFlag(t *testing.T) {
 func TestInProcessShortVersionFlag(t *testing.T) {
 	setArgs(t, []string{"openclaw-dashboard", "-V"})
 	resetFlagCommandLine(t)
-	t.Setenv("DASHBOARD_AI_TOKEN_OPTIONAL", "1")
 
 	out, errOut, code := captureStdio(t, run)
 	if code != 0 {
