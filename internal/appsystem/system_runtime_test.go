@@ -2,6 +2,7 @@ package appsystem
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -11,6 +12,7 @@ import (
 	"testing"
 
 	appconfig "github.com/mudrii/openclaw-dashboard/internal/appconfig"
+	"github.com/mudrii/openclaw-dashboard/internal/appopenclaw"
 )
 
 // writeFakeOclawBin writes an executable shell script to a t.TempDir that emits
@@ -234,6 +236,9 @@ func TestGetProcessInfo_RealPath(t *testing.T) {
 // so CollectVersionsLocal falls through to the HTTP probe (routed via the shared
 // client seam to a local server).
 func TestCollectVersionsLocal_FallbackHTTP(t *testing.T) {
+	// The fallback path is native-only; keep it native regardless of the
+	// developer's OPENCLAW_CONTAINER environment.
+	t.Setenv("OPENCLAW_CONTAINER", "")
 	ctx := context.Background()
 
 	t.Run("non-json gateway stdout falls back to reachable HTTP probe", func(t *testing.T) {
@@ -331,4 +336,47 @@ func TestParseGatewayStatusJSON_ProcessInfoAndTextFallback(t *testing.T) {
 			t.Fatalf("Status = %q, want online via text substring fallback", gw.Status)
 		}
 	})
+}
+
+// hostProbeGuardTransport fails the test if any HTTP request is issued. It is
+// the seam that proves container gateway status never falls back to a
+// 127.0.0.1 probe of the host.
+type hostProbeGuardTransport struct{ t *testing.T }
+
+func (h hostProbeGuardTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	h.t.Errorf("host probe must not run in container mode: %s", req.URL)
+	return nil, errors.New("host probe blocked")
+}
+
+// TestCollectVersionsLocal_ContainerSkipsHostProbe pins the container
+// invariant: a loopback probe reports the host, never the container, so an
+// unresolvable gateway status stays "unknown" with a reason instead of a
+// plausible host-derived value.
+func TestCollectVersionsLocal_ContainerSkipsHostProbe(t *testing.T) {
+	for _, tt := range []struct {
+		name     string
+		exitCode int
+		wantErr  string
+	}{
+		{"cli succeeds with no usable json", 0, "host_probe_not_applicable"},
+		{"cli fails", 1, "unavailable"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			swapSharedSystemHTTPClient(t, &http.Client{Transport: hostProbeGuardTransport{t: t}})
+			ctx := appopenclaw.WithTarget(t.Context(), appopenclaw.Target{Mode: "container", Container: "gateway"})
+			bin := writeFakeOclawBin(t, "", tt.exitCode)
+
+			v := CollectVersionsLocal(ctx, "dash-1.0", 500, 18789, bin)
+
+			if v.Gateway.Status != "unknown" {
+				t.Fatalf("Gateway.Status = %q, want unknown", v.Gateway.Status)
+			}
+			if v.Gateway.Error == nil {
+				t.Fatal("Gateway.Error = nil, want a reason code")
+			}
+			if *v.Gateway.Error != tt.wantErr {
+				t.Fatalf("Gateway.Error = %q, want %q", *v.Gateway.Error, tt.wantErr)
+			}
+		})
+	}
 }

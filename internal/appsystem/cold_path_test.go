@@ -160,6 +160,7 @@ func TestRefresh_ColdPath_HostMetricsAlwaysShipped(t *testing.T) {
 // partial/empty result. Otherwise the next request would hit a poisoned
 // "warm" cache and skip a real collection silently.
 func TestRefresh_ColdPath_PoisonsNoCache(t *testing.T) {
+	t.Setenv("OPENCLAW_CONTAINER", "")
 	port, closeSrv := hangingGateway(t, 5*time.Second)
 	defer closeSrv()
 

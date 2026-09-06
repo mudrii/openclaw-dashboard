@@ -413,6 +413,11 @@ func CollectDiskRoot(path string) SystemDisk {
 	return d
 }
 
+// gatewayReasonHostProbeNotApplicable marks a gateway status that could not be
+// determined because the only remaining probe would have measured the host
+// rather than the selected container.
+const gatewayReasonHostProbeNotApplicable = "host_probe_not_applicable"
+
 // collectVersionsLocal probes openclaw + gateway CLIs without performing any
 // outbound network request. Latest-version lookup is handled asynchronously.
 func CollectVersionsLocal(ctx context.Context, dashVer string, timeoutMs int, gatewayPort int, oclawBin string) SystemVersions {
@@ -438,13 +443,24 @@ func CollectVersionsLocal(ctx context.Context, dashVer string, timeoutMs int, ga
 	// I2 fix: attempt to parse stdout even on non-zero exit — many CLIs emit valid JSON
 	// to stdout while exiting non-zero (e.g., gateway offline but status successfully queried).
 	gw := SystemGateway{Status: "unknown"}
-	gwOut, _ := runOpenclawWithTimeout(ctx, timeoutMs, oclawBin, "gateway", "status", "--json")
+	gwOut, gwErr := runOpenclawWithTimeout(ctx, timeoutMs, oclawBin, "gateway", "status", "--json")
 	if gwOut != "" {
 		gw = ParseGatewayStatusJSON(ctx, gwOut)
 	}
 	if gw.Status == "unknown" {
-		// stdout had no usable JSON — fall back to HTTP probe
-		gw = DetectGatewayFallback(ctx, gatewayPort, timeoutMs)
+		if target.IsContainer() {
+			// DetectGatewayFallback probes 127.0.0.1, which describes the host,
+			// not the container: an unpublished container port would report a
+			// healthy gateway as offline. Report the gap instead.
+			reason := gatewayReasonHostProbeNotApplicable
+			if gwErr != nil {
+				reason = appopenclaw.ErrorCode(gwErr)
+			}
+			gw.Error = &reason
+		} else {
+			// stdout had no usable JSON — fall back to HTTP probe
+			gw = DetectGatewayFallback(ctx, gatewayPort, timeoutMs)
+		}
 	}
 	v.Gateway = gw
 
