@@ -61,6 +61,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'SF Pro','Helvetica Neue',sans
 .alert-medium{background:rgba(250,204,21,.06);border:1px solid rgba(250,204,21,.1)}
 .alert-low{background:rgba(99,102,241,.06);border:1px solid rgba(99,102,241,.1)}
 .alert-icon{font-size:16px}
+.collection-notice{color:var(--yellow);font-size:11px;margin:0 0 8px;padding:0 4px}
 .alert-msg{font-size:12px;color:var(--text);flex:1}
 
 /* System health row */
@@ -324,6 +325,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'SF Pro','Helvetica Neue',sans
     </button>
   </div>
   <div class="oc-section-body" id="oc-body-alerts">
+    <div class="alert-item alert-critical" id="fetchError" role="alert" hidden></div>
     <div class="alerts-section" id="alertsSection" aria-live="polite"></div>
   </div>
 </section>
@@ -337,6 +339,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'SF Pro','Helvetica Neue',sans
     </button>
   </div>
   <div class="oc-section-body" id="oc-body-health">
+    <div class="collection-notice" id="healthNotice" role="status" hidden></div>
     <div class="health-row" id="healthRow">
       <div class="glass health-item"><div class="health-label">Gateway</div><div class="health-value" id="hGw">—</div></div>
       <div class="glass health-item"><div class="health-label">PID</div><div class="health-value" id="hPid">—</div></div>
@@ -357,6 +360,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'SF Pro','Helvetica Neue',sans
     </button>
   </div>
   <div class="oc-section-body" id="oc-body-cost">
+<div class="collection-notice" id="costNotice" role="status" hidden></div>
 <div class="cost-row">
   <div class="glass cost-card">
     <div class="cost-label">Today's Cost</div>
@@ -399,6 +403,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'SF Pro','Helvetica Neue',sans
     </div>
   </div>
   <div class="oc-section-body" id="oc-body-charts">
+  <div class="collection-notice" id="chartNotice" role="status" hidden></div>
     <div id="chartsContainer">
       <div class="grid-2">
         <div class="glass chart-container"><div id="costChartTitle" class="chart-title">Daily Cost Trend</div><div id="costChart"></div></div>
@@ -419,6 +424,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'SF Pro','Helvetica Neue',sans
     <span class="section-count" id="cronCount"></span>
   </div>
   <div class="oc-section-body" id="oc-body-crons">
+    <div class="collection-notice" id="cronNotice" role="status" hidden></div>
     <div class="glass panel" style="overflow-x:auto">
       <table class="dtable" id="cronTable">
         <thead><tr><th>Status</th><th>Name</th><th>Schedule</th><th>Last Run</th><th>Next Run</th><th class="r">Duration</th><th>Model</th></tr></thead>
@@ -653,10 +659,12 @@ body{font-family:-apple-system,BlinkMacSystemFont,'SF Pro','Helvetica Neue',sans
     <span class="section-count" id="agentCount"></span>
   </div>
   <div class="oc-section-body" id="oc-body-agent-config">
+  <div class="collection-notice" id="agentConfigNotice" role="status" hidden></div>
   <!-- Models / Skills / Git Log row -->
   <div class="grid-3" style="margin-bottom:16px">
     <div class="glass panel">
       <div class="section-header"><span class="section-title">🧠 Available Models</span></div>
+      <div class="collection-notice" id="modelsNotice" role="status" hidden></div>
       <div class="models-grid" id="modelsGrid"></div>
     </div>
     <div class="glass panel">
@@ -762,7 +770,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'SF Pro','Helvetica Neue',sans
 <div style="text-align:center;padding:12px;font-size:10px;color:var(--darker)">OpenClaw Dashboard · Auto-refresh 60s</div>
 </div>
 
-<dialog id="runtimeDetail" style="background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:12px;max-width:90vw;max-height:85vh">
+<dialog id="runtimeDetail" aria-labelledby="runtimeDetailTitle" style="background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:12px;max-width:90vw;max-height:85vh">
   <button class="refresh-btn" data-close-runtime style="float:right">Close</button><h3 id="runtimeDetailTitle">Runtime details</h3><div id="runtimeDetailBody" style="overflow:auto"></div>
 </dialog>
 <script>
@@ -850,7 +858,49 @@ function usageExplanation(u){
   if(u.missingCostEntries)parts.push(u.missingCostEntries+' unpriced entries: '+Object.entries(u.missingCostByModel||{}).map(([m,n])=>m+' ('+n+')').join(', '));
   return parts.join(' · ');
 }
-function collectionLabel(s){return s?[s.state,s.errorCode,s.collectedAt?'collected '+s.collectedAt:'no successful collection'].filter(Boolean).join(' · '):'Legacy source';}
+// collectionLabel summarises one collection status object. A stale collection is
+// only interpretable against the moment it was collected, so that timestamp is
+// rendered in the dashboard timezone rather than as a raw ISO string. failedAgents
+// names the agents whose per-agent probe failed inside an otherwise partial result.
+function collectionLabel(s){
+  if(!s)return 'Legacy source';
+  const collected=s.collectedAt?'collected '+(s.state==='stale'?formatAbsTime(s.collectedAt):s.collectedAt):'no successful collection';
+  const failed=Array.isArray(s.failedAgents)&&s.failedAgents.length?'failed agents: '+s.failedAgents.join(', '):'';
+  return [s.state,s.errorCode,collected,failed].filter(Boolean).join(' · ');
+}
+// collectionNotice writes an inline collection-status line into the panel that
+// renders retained fields, and hides it while the collection is ready. Panels
+// that keep showing the last good value must say so when the data behind them
+// is stale, partial or unavailable.
+// setStatusText writes into an aria-live status region only when the text
+// actually changed. These regions are rewritten on every render, and assigning
+// identical text re-announces them on some screen readers.
+function setStatusText(id,text){
+  const el=$(id);
+  if(!el)return;
+  const next=String(text==null?'':text);
+  if(el.textContent===next)return;
+  el.textContent=next;
+}
+function collectionNotice(id,status,prefix){
+  const el=$(id);
+  if(!el)return;
+  const state=status&&status.state;
+  if(!state||state==='ready'){el.textContent='';el.hidden=true;return;}
+  el.textContent=(prefix?prefix+': ':'')+collectionLabel(status);
+  el.hidden=false;
+}
+// gatewayUnknownHtml returns the health-cell markup for a gateway whose status
+// could not be determined because the only available probe measures the host
+// rather than the selected container, and '' otherwise. The refresh payload
+// carries the code in gateway.statusReason; /api/system carries it in
+// gateway.error. Painting this case "Offline" would assert a fact the backend
+// explicitly refused to assert.
+function gatewayUnknownHtml(gw){
+  const reason=gw?(gw.statusReason||gw.error):null;
+  if(String(gw&&gw.status||'').toLowerCase()!=='unknown'||reason!=='host_probe_not_applicable')return '';
+  return '<span style="color:var(--yellow)">●</span> Unknown (container: host probe not applicable)';
+}
 function runtimeActivity(s){return s.active===true?'Running'+(Array.isArray(s.activeRunIds)?' ('+s.activeRunIds.length+')':''):s.active===false?'Idle':'Activity not reported';}
 function runtimeValue(v){return v===true?'Yes':v===false?'No':v==null||String(v).trim()===''?'Not reported':String(v);}
 function runtimeTable(headers,rows){return '<table class="dtable"><thead><tr>'+headers.map(h=>'<th>'+esc(h)+'</th>').join('')+'</tr></thead><tbody>'+rows.map(row=>'<tr class="dr">'+row.map(v=>'<td>'+esc(runtimeValue(v))+'</td>').join('')+'</tr>').join('')+'</tbody></table>'+(rows.length?'':'<p>No rows returned. Check collection status above.</p>');}
@@ -989,6 +1039,7 @@ const LogTail = {
   normalMs: 15000,
   _reqId: 0,
   _timer: null,
+  _timerMs: null,
   _source: 'all',
   _severity: 'all',
   _regex: '',
@@ -1029,12 +1080,17 @@ const LogTail = {
     this._renderControls();
   },
 
+  // _startPoll is idempotent: a running timer with the same effective interval is
+  // left alone. applyRuntimeConfig runs on every 60s refresh, and restarting the
+  // timer each time would reset the countdown and starve any interval above 60s.
   _startPoll() {
     const next = this._fast ? this.fastMs : this.normalMs;
+    if (this._timer && this._timerMs === next) return;
     if (this._timer) {
       clearInterval(this._timer);
       this._timer = null;
     }
+    this._timerMs = next;
     this._timer = setInterval(() => this.fetch(), next);
   },
 
@@ -1243,6 +1299,7 @@ const ErrorFeed = {
   _sort: 'count',
   _items: [],
   _expanded: {},
+  _rowKeys: [],
   _windowHours: 24,
 
   init() {
@@ -1366,14 +1423,17 @@ const ErrorFeed = {
     if (empty) empty.style.display = 'none';
     let html = '';
     let totalErrors = 0;
+    this._rowKeys = [];
     this._items.forEach((item, i) => {
       if ((item.severity || '').toLowerCase() === 'error') totalErrors += Number(item.count || 0);
       const rowId = 'errRow' + i;
+      const key = this._expandKey(item);
+      this._rowKeys[i] = key;
       const sev = (item.severity || 'warn').toLowerCase();
       const samples = Array.isArray(item.lastOccurrences) ? item.lastOccurrences : [];
       const sample = item.sampleMessage || '';
       const sampleRows = samples.map((s) => `<div style="margin-bottom:4px;color:var(--dim)">${formatAbsTime(s.timestamp)} — ${esc(s.message || s.line || '—')}</div>`).join('');
-      html += `<tr class="dr"><td><span class="badge ${sev === 'error' ? 'badge-err' : 'badge-none'}">${esc(sev)}</span></td><td>${esc(item.source || '—')}</td><td class="r">${item.count || 0}</td><td title="${esc(sample)}">${esc(sample).slice(0, 120)}</td><td>${formatAbsTime(item.lastSeen)}</td><td style="white-space:nowrap"><button class="tab-btn" style="padding:2px 8px;font-size:10px" onclick="ErrorFeed.toggle('${i}')">${this._expanded[rowId] ? 'Hide' : 'View'}</button></td></tr><tr id="${rowId}" style="display:${this._expanded[rowId] ? 'table-row' : 'none'}"><td colspan="6"><div style="padding:8px 0 10px;color:var(--dim)">${'Signature: ' + esc(item.signature || '—')}</div><div style="padding-bottom:6px;color:var(--muted)">${'First seen: ' + formatAbsTime(item.firstSeen)} · ${'Last seen: ' + formatAbsTime(item.lastSeen)}</div><div style="padding-bottom:4px;color:var(--text)">${esc(item.sampleMessage || '—')}</div>${sampleRows ? `<div style="margin-top:8px"><div style="margin-bottom:4px;color:var(--muted)">Recent occurrences</div>${sampleRows}</div>` : ''}</td></tr>`;
+      html += `<tr class="dr"><td><span class="badge ${sev === 'error' ? 'badge-err' : 'badge-none'}">${esc(sev)}</span></td><td>${esc(item.source || '—')}</td><td class="r">${item.count || 0}</td><td title="${esc(sample)}">${esc(sample.slice(0, 120))}</td><td>${formatAbsTime(item.lastSeen)}</td><td style="white-space:nowrap"><button class="tab-btn" style="padding:2px 8px;font-size:10px" onclick="ErrorFeed.toggle('${i}')">${this._expanded[key] ? 'Hide' : 'View'}</button></td></tr><tr id="${rowId}" style="display:${this._expanded[key] ? 'table-row' : 'none'}"><td colspan="6"><div style="padding:8px 0 10px;color:var(--dim)">${'Signature: ' + esc(item.signature || '—')}</div><div style="padding-bottom:6px;color:var(--muted)">${'First seen: ' + formatAbsTime(item.firstSeen)} · ${'Last seen: ' + formatAbsTime(item.lastSeen)}</div><div style="padding-bottom:4px;color:var(--text)">${esc(item.sampleMessage || '—')}</div>${sampleRows ? `<div style="margin-top:8px"><div style="margin-bottom:4px;color:var(--muted)">Recent occurrences</div>${sampleRows}</div>` : ''}</td></tr>`;
     });
     body.innerHTML = html;
     const count = $('errorCount');
@@ -1390,16 +1450,24 @@ const ErrorFeed = {
     this._renderControls();
   },
 
+  // _expandKey identifies a row by its content, not its position, so the expanded
+  // set survives re-sorting and re-fetching. Signature is the backend's stable
+  // grouping key; the sample message is the fallback when it is absent.
+  _expandKey(item) {
+    return (item && item.signature) || (item && item.sampleMessage) || '';
+  },
+
   toggle(index) {
-    const id = 'errRow' + index;
-    const row = $(id);
+    const row = $('errRow' + index);
     if (!row) return;
-    this._expanded[id] = !this._expanded[id];
-    row.style.display = this._expanded[id] ? 'table-row' : 'none';
+    const key = this._rowKeys[index];
+    if (key == null) return;
+    this._expanded[key] = !this._expanded[key];
+    row.style.display = this._expanded[key] ? 'table-row' : 'none';
     const btn = row.previousElementSibling
       ? row.previousElementSibling.querySelector('button')
       : null;
-    if (btn) btn.textContent = this._expanded[id] ? 'Hide' : 'View';
+    if (btn) btn.textContent = this._expanded[key] ? 'Hide' : 'View';
   }
 };
 
@@ -1446,12 +1514,12 @@ const RuntimePanels = {
 	['logSourceCron','logSourceSession','logSourceSubagent'].forEach(id=>{$(id).disabled=runtimeLogs;$(id).title=runtimeLogs?'Separate legacy files are unavailable; use gateway logs':'';});
 	if(runtimeLogs&&!['all','gateway'].includes(LogTail._source))LogTail.setSource('all');
     const target=D.runtimeTarget||{};
-    $('runtimeSource').textContent=['Runtime: '+(D.runtimeHealth?.runtimeVersion||'version unavailable'),target.mode,target.container,target.profile?'profile '+target.profile:'',D.stateDir].filter(Boolean).join(' · ');
+    setStatusText('runtimeSource',['Runtime: '+(D.runtimeHealth?.runtimeVersion||'version unavailable'),target.mode,target.container,target.profile?'profile '+target.profile:'',D.stateDir].filter(Boolean).join(' · '));
     const port=Number(D.gateway?.port);
     $('nativeControl').href='http://127.0.0.1:'+(Number.isInteger(port)&&port>0&&port<65536?port:18789)+'/';
 	$('nativeChat').href=$('nativeControl').href;
     $('collectionStatus').innerHTML=runtimeTable(['Collection','Source','State','Last good'],Object.entries(statuses).map(([name,s])=>[name,s.source,[s.state,s.errorCode].filter(Boolean).join(' · '),s.collectedAt]));
-    $('sessionSource').textContent=collectionLabel(statuses.sessions);
+    setStatusText('sessionSource',collectionLabel(statuses.sessions));
     const selected=$('workSessionSelect').value;
     $('workSessionSelect').innerHTML=(D.sessions||[]).map(s=>'<option value="'+esc(s.key)+'">'+esc(s.name||s.key)+'</option>').join('');
     if((D.sessions||[]).some(s=>s.key===selected))$('workSessionSelect').value=selected;
@@ -1483,7 +1551,7 @@ const RuntimePanels = {
     $('taskPage').textContent='Page '+(this.taskPage+1)+' · '+rows.length+' matching';
     $('taskPrev').disabled=this.taskPage===0;
     $('taskNext').disabled=(this.taskPage+1)*this.pageSize>=rows.length;
-    $('taskSource').textContent=collectionLabel(D.collections?.tasks);
+    setStatusText('taskSource',collectionLabel(D.collections?.tasks));
     $('taskLedger').innerHTML=runtimeTable(['Task / stable ID','Agent','Runtime','Status','Owner / session','Run ID','Progress','Delivery','Duration'],page.map(t=>[(t.task||'')+' · '+t.id,taskAgentLabel(t),t.runtime,t.status,taskOwnerLabel(t),t.runId,t.progressSummary||t.terminalSummary,t.deliveryStatus,t.durationSec==null?null:t.durationSec+'s']));
   },
   renderHealth(D){
@@ -1520,7 +1588,27 @@ const RuntimePanels = {
 };
 document.addEventListener('change',e=>{if(['taskStatus','taskRuntime'].includes(e.target.id)){RuntimePanels.taskPage=0;RuntimePanels.renderTasks(State.data);}if(e.target.id==='workSessionSelect')RuntimePanels.linkSession();});
 document.addEventListener('input',e=>{if(e.target.id==='taskSearch'){RuntimePanels.taskPage=0;RuntimePanels.renderTasks(State.data);}});
-fetch('/api/operations/status').then(r=>r.json()).then(s=>{$('operationPanel').hidden=!s.enabled;}).catch(()=>{});
+// OperationsPanel gates the operator controls on the backend feature flag. A
+// failed probe leaves the panel hidden: an unreachable endpoint is not evidence
+// that operations are enabled. The warning is emitted once so a polling caller
+// cannot flood the console.
+const OperationsPanel = {
+  _warned: false,
+  async probe(){
+    try{
+      const r=await fetch('/api/operations/status');
+      if(!r.ok)throw new Error('http '+r.status);
+      const s=await r.json();
+      $('operationPanel').hidden=!s.enabled;
+    }catch(e){
+      $('operationPanel').hidden=true;
+      if(this._warned)return;
+      this._warned=true;
+      console.warn('operations status probe failed; operator controls stay hidden:',e&&e.message?e.message:e);
+    }
+  }
+};
+OperationsPanel.probe();
 $('operationSubmit').addEventListener('click',async()=>{
   const button=$('operationSubmit'),result=$('operationResult');
   if(button.disabled)return;
@@ -1599,7 +1687,7 @@ const Renderer = {
 
   // Health — skip gateway-specific fields if SystemBar has already populated them (prevents flicker)
   if(!window._sysBarActive) {
-    $('hGw').innerHTML=on?'<span style="color:var(--green)">●</span> Online':'<span style="color:var(--red)">●</span> Offline';
+    $('hGw').innerHTML=gatewayUnknownHtml(gw)||(on?'<span style="color:var(--green)">●</span> Online':'<span style="color:var(--red)">●</span> Offline');
     $('hGw').style.color='var(--textStrong)';
     $('hPid').textContent=gw.pid||'—';
     $('hUp').textContent=gw.uptime||'—';
@@ -1613,9 +1701,14 @@ const Renderer = {
     $('hMem').textContent=metrics.memory;
   }
   $('hSess').textContent=activeSessionSummary(D);
+  collectionNotice('healthNotice',D.collections?.sessions,'Sessions');
 
   // Cost
   if (flags.cost) {
+    // The cards and donut render retained totals; disclose the weaker of the two
+    // usage collections behind them rather than implying both are current.
+    const usageStatus=[D.collections?.usageToday,D.collections?.usageAll].find(c=>c&&c.state&&c.state!=='ready');
+    collectionNotice('costNotice',usageStatus,'Usage');
     $('cToday').textContent=usageMoney(D.totalCostToday,D.usageToday);
     $('cAll').textContent=usageMoney(D.totalCostAllTime,D.usageAll);
     $('cProj').textContent=usageMoney(D.projectedMonthly,D.usageToday,0);
@@ -1644,6 +1737,7 @@ const Renderer = {
   // Crons
   if (flags.crons) {
     const crons=D.crons||[];
+    collectionNotice('cronNotice',D.collections?.crons,'Automations');
     $('cronCount').textContent=crons.length+' jobs';
     const cronContainer = $('cronBody').closest('[style*="overflow"]') || $('cronBody').parentElement;
     const cronScrollTop = cronContainer ? cronContainer.scrollTop : 0;
@@ -1660,7 +1754,7 @@ const Renderer = {
       const dsBadge=(ds&&ds!=='not-requested')?` <span style="font-size:9px;color:${dsColor}" data-tip="delivery: ${esc(ds)}">●</span>`:'';
       const flapTip=diagnostics||(`${String(c.consecutiveErrors||0)} consecutive errors`);
       const flap=c.flapping?` <span style="font-size:8px;font-weight:700;color:var(--red)" data-tip="${esc(flapTip)}">⚡FLAPPING</span>`:'';
-      return `<tr class="dr"><td><span class="sd ${dotCls}"${tip}></span>${esc(st)||'—'}${dsBadge}${flap}</td><td class="w"><button class="tab-btn" data-automation-id="${esc(c.id)}">${esc(c.name)}</button><div style="font-size:10px;color:var(--muted)">${esc(c.payloadKind||'')} · ${esc(c.sessionTarget||'')}</div></td><td>${esc(c.schedule)} ${esc(c.timezone||'')}</td><td>${esc(c.lastRun||'No run reported')}</td><td>${esc(c.nextRun||(c.enabled===false?'Disabled':'Not scheduled / reported'))}</td><td class="r">${dur}</td><td>${esc(model)}</td></tr>`;
+      return `<tr class="dr"><td><span class="sd ${dotCls}"${tip}></span>${esc(st)||'—'}${dsBadge}${flap}</td><td class="w"><button class="tab-btn" data-automation-id="${esc(c.id)}">${esc(c.name)}</button><div style="font-size:10px;color:var(--muted)">${esc(c.payloadKind||'')} · ${esc(c.sessionTarget||'')}</div></td><td>${esc(c.schedule)} ${esc(c.timezone||'')}</td><td>${esc(c.lastRun||'No run reported')}</td><td>${esc(c.nextRun||(c.enabled===false?'Disabled':'Not scheduled / reported'))}</td><td class="r">${esc(String(dur))}</td><td>${esc(model)}</td></tr>`;
     });
     if (cronContainer) cronContainer.scrollTop = cronScrollTop;
   }
@@ -1691,7 +1785,7 @@ const Renderer = {
   Renderer.setTabCls4('uTab',snap.tabs.usage,'active');
   const usageSuffix=snap.tabs.usage==='all'?'All':snap.tabs.usage==='today'?'Today':snap.tabs.usage;
   const usageMeta=D['usage'+usageSuffix];
-  $('usageSource').textContent=collectionLabel(D.collections?.['usage'+usageSuffix])+(usageMeta?' · '+usageMeta.timezone+' · all agents · '+(usageMeta.costComplete?'pricing complete':(usageMeta.missingCostEntries||0)+' entries missing prices; cost incomplete'):'');
+  setStatusText('usageSource',collectionLabel(D.collections?.['usage'+usageSuffix])+(usageMeta?' · '+usageMeta.timezone+' · all agents · '+(usageMeta.costComplete?'pricing complete':(usageMeta.missingCostEntries||0)+' entries missing prices; cost incomplete'):''));
   if (flags.usage) {
     const uData=snap.tabs.usage==='today'?D.tokenUsageToday:snap.tabs.usage==='7d'?D.tokenUsage7d:snap.tabs.usage==='30d'?D.tokenUsage30d:D.tokenUsage;
     Renderer.renderTokenTbl('uBody',uData,'var(--accent)');
@@ -1708,7 +1802,7 @@ const Renderer = {
       const ds=r.durationSec||0;
       const dur=r.durationSec==null?'Duration not reported':ds>=3600?(ds/3600).toFixed(1)+'h':ds>=60?Math.round(ds/60)+'m':ds+'s';
       const sc=r.status==='succeeded'?'badge-ok':(['failed','timed_out','cancelled','lost','error'].includes(r.status)?'badge-err':'');
-      return `<tr class="dr"><td class="w" style="max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(r.task)}</td><td>${esc(r.agent)}</td><td class="r">${dur}</td><td><span class="badge ${sc}">${esc(r.status)}</span></td><td>${esc(r.timestamp)}</td></tr>`;
+      return `<tr class="dr"><td class="w" style="max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(r.task)}</td><td>${esc(r.agent)}</td><td class="r">${esc(String(dur))}</td><td><span class="badge ${sc}">${esc(r.status)}</span></td><td>${esc(r.timestamp)}</td></tr>`;
     });
   }
 
@@ -1721,11 +1815,13 @@ const Renderer = {
 
   // Charts
   if (flags.charts) {
+    collectionNotice('chartNotice',D.collections?.usage30d,'Daily usage');
     Renderer.renderCharts(D,snap.chartDays);
   }
 
   // Models
   if (flags.models) {
+    collectionNotice('modelsNotice',D.collections?.configuration,'Configuration');
     const availableModels=D.availableModels||[];
     $('modelsGrid').innerHTML=availableModels.length
       ? availableModels.map(m=>`<div class="glass model-card"><span class="badge badge-${esc(m.status)}">${esc(m.status)}</span><div class="model-name">${esc(m.name)}</div><div class="model-id">${esc(m.provider)}</div></div>`).join('')
@@ -1734,6 +1830,9 @@ const Renderer = {
 
   // Agent Configuration
   if (flags.agentConfig) {
+    // Agent cards, routing, bindings and the agent table all read the same
+    // configuration snapshot; one notice covers the whole section.
+    collectionNotice('agentConfigNotice',D.collections?.configuration,'Configuration');
     const AC = D.agentConfig||{};
     const arr = v => Array.isArray(v) ? v : [];
     const PALETTE = ['var(--green)','var(--blue,#3b82f6)','var(--purple)','var(--yellow)','var(--cyan,#22d3ee)','var(--orange,#fb923c)'];
@@ -2338,6 +2437,14 @@ const SystemBar = {
         this._kv('Reason',reason,'var(--muted)'),
       ].join('');
     }
+    // The health cell keeps whatever the last successful poll painted, which
+    // would leave a stale "Online" standing after the probe itself failed.
+    const hGw=$('hGw');
+    if(hGw){
+      hGw.innerHTML='<span style="color:var(--yellow)">●</span> Unknown';
+      hGw.style.color='var(--textStrong)';
+      hGw.title='Gateway status unavailable: '+reason;
+    }
     const gwReadyAlert=$('gw-readiness-alert');
     if(gwReadyAlert)gwReadyAlert.remove();
     window._sysBarActive=false;
@@ -2400,7 +2507,10 @@ const SystemBar = {
     $('sysStale').style.display=d.stale?'inline':'none';
 
     // Also update health panel gateway from /api/system (runtime-first when trustworthy, versions fallback otherwise)
-    if(gwState.source==='runtime'){
+    const gwUnknown=gatewayUnknownHtml(gwVersion);
+    if(gwUnknown&&gwState.source!=='runtime'){
+      $('hGw').innerHTML=gwUnknown;
+    }else if(gwState.source==='runtime'){
       if(gwLive&&gwReady){
         $('hGw').innerHTML='<span style="color:var(--green)">●</span> Online';
       }else if(gwLive&&!gwReady){
@@ -2658,9 +2768,24 @@ const App = {
       ErrorFeed.fetch().catch(()=>{});
       $('lastUpdate').textContent='Updated: '+new Date().toLocaleTimeString();
       State.resetCountdown();
+      App.setFetchError('');
     }catch(e){
-      $('alertsSection').innerHTML='<div class="alert-item alert-critical"><span class="alert-icon">⚠️</span><span class="alert-msg">Failed to load data.json</span></div>';
+      App.setFetchError('Failed to load data.json: '+(e&&e.message?e.message:'unknown error'));
     }
+  },
+  // setFetchError drives the dedicated #fetchError banner. It is independent of
+  // #alertsSection, which only re-renders when the alerts payload changes and so
+  // cannot carry a failure that prevented the payload from arriving at all.
+  setFetchError(message) {
+    const el=$('fetchError');
+    if(!el)return;
+    if(message){
+      el.textContent='⚠️ '+message;
+      el.hidden=false;
+      return;
+    }
+    el.textContent='';
+    el.hidden=true;
   },
   renderNow() {
     const snap=State.snapshot();

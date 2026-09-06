@@ -9,28 +9,76 @@ function section(start, end) {
   return html.slice(a, b);
 }
 const nodes = new Map();
+// absent models ids that are not in the static markup: they only exist once the
+// page creates and inserts them, and go away again on remove(). Everything else
+// is auto-created on first access so tests stay terse.
+const absent = new Set(['gw-readiness-alert']);
+function makeNode(id) {
+  return {
+    id, className:'', title:'', innerHTML:'', textContent:'', style:{}, value:'all', hidden:false, disabled:false,
+    children:[],
+    replaceChildren(){this.innerHTML='';this.children=[];},
+    append(...kids){for(const c of kids){this.children.push(c);this.innerHTML+=c==null?'':(c.innerHTML||c.textContent||'');}},
+    appendChild(c){this.append(c);return c;},
+    querySelector(sel){return this.children.find(c=>String(c.className||'').split(/\s+/).includes(sel.replace(/^\./,'')))||null;},
+    querySelectorAll(){return [];},
+    insertAdjacentElement(_pos, el){if(el&&el.id){absent.delete(el.id);nodes.set(el.id, el);}},
+    addEventListener(){},
+    remove(){if(this.id){absent.add(this.id);nodes.delete(this.id);}},
+    closest(){return null;}, setAttribute(){}, removeAttribute(){},
+  };
+}
 const $ = id => {
-  if (!nodes.has(id)) nodes.set(id, {innerHTML:'', textContent:'', style:{}, value:'all', replaceChildren(){this.innerHTML='';}});
+  if (absent.has(id)) return null;
+  if (!nodes.has(id)) nodes.set(id, makeNode(id));
   return nodes.get(id);
 };
+// Deterministic fetch stub: tests set fetchResponses to an array of handlers keyed by URL prefix.
+const fetchRoutes = new Map();
+const timers = {intervals:new Map(), nextId:1, setCount:0, clearCount:0};
 const context = vm.createContext({$, console, URL, URLSearchParams, AbortSignal, setTimeout, clearTimeout,
-  window:{},RuntimePanels:{render(){}},
-  COLORS:['red'], esc:s=>String(s??'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;'),
-  document:{addEventListener(){},querySelectorAll(){return [];}},
+  window:{},
+  COLORS:['red'],
+  document:{addEventListener(){},querySelectorAll(){return [];},getElementById:$,createElement(tag){const n=makeNode('');n.tag=tag;return n;}},
+  requestAnimationFrame:fn=>fn(),
+  fetchRoutes, timers,
+  setInterval(fn,ms){const id=timers.nextId++;timers.intervals.set(id,{fn,ms});timers.setCount++;return id;},
+  clearInterval(id){if(timers.intervals.delete(id))timers.clearCount++;},
+  async fetch(url){
+    for(const [prefix,handler] of fetchRoutes) if(String(url).startsWith(prefix)) return handler(String(url));
+    throw new Error('no fetch route for '+url);
+  },
 });
-vm.runInContext(section('function relTime(', '// === Theme ===') +
-  section('const State =', '// === DataLayer ===') +
-  section('const LogTail =', 'const ErrorFeed =') +
+context.globalThis = context;
+vm.runInContext(section('const COLORS=', '// === Theme ===') +
+  section('const State =', '// === Diagnostics ===') +
+  section('const LogTail =', '// === DirtyChecker ===') +
   section('const DirtyChecker =', 'const RuntimePanels =') +
-  section('const Renderer =', '// === Chat ==='), context);
+  section('const Renderer =', '// === Chat ===') +
+  section('const SystemBar =', '// === Collapsible Sections ===') +
+  section('const OperationsPanel =', 'OperationsPanel.probe();') +
+  section('const App =', 'App.init();'), context);
+// Renderer reads paging fields off RuntimePanels; the tested object is TestedRuntimePanels below.
+context.RuntimePanels = {render(){}, pageSize:50, sessionPage:0};
 let failed = 0;
+const pending = [];
+// testAsync defers the body so tests can await App.refresh() and other promise-based flows.
+function testAsync(name, code) {
+  pending.push(async () => {
+    try { await vm.runInContext('(async()=>{'+code+'\n})()', context); console.log('PASS', name); }
+    catch (e) { failed++; console.error('FAIL', name, e.message); }
+  });
+}
 function test(name, code) {
   try { vm.runInContext('{'+code+'}', context); console.log('PASS', name); }
   catch (e) { failed++; console.error('FAIL', name, e.message); }
 }
 context.assert = assert;
 context.html = html;
-vm.runInContext(section('const RuntimePanels =',"fetch('/api/operations/status')").replace('const RuntimePanels =','const TestedRuntimePanels ='),context);
+vm.runInContext(section('const RuntimePanels =',"document.addEventListener('change'").replace('const RuntimePanels =','const TestedRuntimePanels ='),context);
+// SystemBar delegates the runtime-health panel to RuntimePanels; wire it to the
+// real implementation so renderHealth is exercised rather than stubbed out.
+vm.runInContext('RuntimePanels.renderHealth=D=>TestedRuntimePanels.renderHealth(D);', context);
 test('runtime diagnostic cards stack on mobile and contain wide content', `
   assert.ok(/@media\\(max-width:768px\\)[^\\n]*#runtimeDiagnosticsRow[^\\n]*grid-template-columns:1fr!important/.test(html), 'missing mobile diagnostic stacking');
   assert.ok(/#runtimeDiagnosticsRow>div\\{min-width:0;overflow:auto\\}/.test(html), 'missing diagnostic overflow containment');
@@ -132,15 +180,15 @@ test('actual summary renderer maps runtime metrics, skills and partial-price exp
   assert.match($('cTodaySub').textContent,/Known subtotal.*2 unpriced entries.*p\\/m/);
 `);
 test('runtime panels distinguish absent features from failed probes', `
-  const link=TestedRuntimePanels.linkSession,tasks=TestedRuntimePanels.renderTasks,health=TestedRuntimePanels.renderHealth;
+  const link=TestedRuntimePanels.linkSession,tasks=TestedRuntimePanels.renderTasks;
   try{
-    TestedRuntimePanels.linkSession=()=>{};TestedRuntimePanels.renderTasks=()=>{};TestedRuntimePanels.renderHealth=()=>{};
+    TestedRuntimePanels.linkSession=()=>{};TestedRuntimePanels.renderTasks=()=>{};
     TestedRuntimePanels.render({sessions:[{name:'idle',active:false}],memory:[{embedding:{checked:false,ok:false}}],channels:[{channel:'telegram',probe:{},connected:true}],pluginInventory:[{id:'bundled'}]});
     assert.match($('sessionWork').innerHTML,/Not applicable/);
     assert.match($('memoryHealth').innerHTML,/Not checked/);
     assert.match($('channelAccounts').innerHTML,/Not probed/);
     assert.match($('pluginInventory').innerHTML,/Not reported/);
-  }finally{TestedRuntimePanels.linkSession=link;TestedRuntimePanels.renderTasks=tasks;TestedRuntimePanels.renderHealth=health;}
+  }finally{TestedRuntimePanels.linkSession=link;TestedRuntimePanels.renderTasks=tasks;}
 `);
 test('channel config renderer preserves separate live accounts and unknown booleans', `
   const d={agentConfig:{channels:['telegram'],channelStatus:{telegram:{connected:false}}},channels:[{channel:'telegram',accountId:'a',connected:true},{channel:'telegram',accountId:'b',connected:false}]};
@@ -217,10 +265,10 @@ test('backup dates use collected alternate fields and auth does not infer readin
   assert.match(taskAgentLabel({id:'cron-runlog-import:job'}),/Imported.*not reported/);
 `);
 test('actual renderers expose field reasons, pricing source, and backup configuration', `
-  const reconcile=Renderer.reconcileRows,tree=Renderer.renderAgentTree,link=TestedRuntimePanels.linkSession,health=TestedRuntimePanels.renderHealth;
+  const reconcile=Renderer.reconcileRows,tree=Renderer.renderAgentTree,link=TestedRuntimePanels.linkSession;
   try{
     Renderer.reconcileRows=(id,rows,key,render)=>{$(id).innerHTML=rows.map(render).join('');};Renderer.renderAgentTree=()=>{};
-    TestedRuntimePanels.linkSession=()=>{};TestedRuntimePanels.renderHealth=()=>{};
+    TestedRuntimePanels.linkSession=()=>{};
     $('sessBody').closest=()=>null;RuntimePanels.pageSize=50;RuntimePanels.sessionPage=0;
     const data={sessions:[{name:'automation',tokenState:'stale',contextState:'tokens_stale',totalTokens:null,contextPct:null}],agentConfig:{backupConfig:{enabled:false},diagnosticConfig:{enabled:false,otel:{enabled:false}},modelPricing:{'p/m':{input:1,output:2,cacheRead:0}}},usageAll:{tokensComplete:true,missingCostEntries:2,missingCostByModel:{'p/m':2}},usageToday:{tokensComplete:true,missingCostEntries:2},diagnostics:{backup:{latestSuccess:{completedAt:'2026-09-06T00:00:00Z'}}}};
     Renderer.render({data,tabs:{}},{sessions:true,cost:true});TestedRuntimePanels.render(data);
@@ -229,6 +277,248 @@ test('actual renderers expose field reasons, pricing source, and backup configur
     assert.match($('pricingCoverage').innerHTML,/p\\/m/);assert.match($('pricingCoverage').innerHTML,/\\$0.000000/);
     assert.match($('backupHealth').innerHTML,/explicit config.*No/);assert.match($('backupHealth').innerHTML,/06\\/09\\/2026/);
     assert.doesNotMatch($('backupHealth').innerHTML,/Unknown/);
-  }finally{Renderer.reconcileRows=reconcile;Renderer.renderAgentTree=tree;TestedRuntimePanels.linkSession=link;TestedRuntimePanels.renderHealth=health;}
+  }finally{Renderer.reconcileRows=reconcile;Renderer.renderAgentTree=tree;TestedRuntimePanels.linkSession=link;}
 `);
-process.exitCode = failed ? 1 : 0;
+test('live status regions are only rewritten when their text changes', `
+  const node=$('usageSource');
+  let writes=0,value='';
+  Object.defineProperty(node,'textContent',{configurable:true,get(){return value;},set(v){writes++;value=v;}});
+  try{
+    setStatusText('usageSource','same');
+    setStatusText('usageSource','same');
+    setStatusText('usageSource','other');
+    assert.equal(writes,2,'identical text must not be re-announced');
+    assert.equal(value,'other');
+  }finally{delete node.textContent;node.textContent='';}
+  for(const id of ['sessionSource','usageSource','runtimeSource','taskSource'])
+    assert.ok(html.includes("setStatusText('"+id+"'"),id+' must be written through setStatusText');
+`);
+test('the runtime detail dialog is labelled by its own title', `
+  const dialog=html.match(/<dialog id="runtimeDetail"[^>]*>/);
+  assert.ok(dialog,'runtimeDetail dialog missing');
+  assert.match(dialog[0],/aria-labelledby="runtimeDetailTitle"/);
+  assert.match(html,/id="runtimeDetailTitle"/);
+`);
+test('collection labels format stale timestamps and name failed agents', `
+  State.data={timezone:'UTC'};
+  const stale=collectionLabel({state:'stale',errorCode:'row_limit',collectedAt:'2026-09-05T09:07:00Z'});
+  assert.match(stale,/stale/);
+  assert.match(stale,/row_limit/);
+  assert.match(stale,/09:07/,'stale label must show collectedAt in the dashboard timezone');
+  assert.match(stale,/UTC/);
+  assert.doesNotMatch(stale,/2026-09-05T09:07:00Z/,'raw ISO timestamps are not the dashboard timezone');
+  assert.match(collectionLabel({state:'partial',errorCode:'configuration_unavailable',failedAgents:['main','ops']}),/failed agents: main, ops/);
+  assert.equal(collectionLabel(null),'Legacy source');
+`);
+test('panels reading retained data disclose stale and unavailable collections', `
+  window._sysBarActive=false;
+  State.data={timezone:'UTC'};
+  const D={timezone:'UTC',crons:[],collections:{
+    crons:{state:'stale',errorCode:'row_limit',collectedAt:'2026-09-05T09:07:00Z'},
+    usageToday:{state:'partial',errorCode:'row_limit'},
+    usageAll:{state:'ready'},
+    usage30d:{state:'unavailable',errorCode:'configuration_unavailable'},
+    sessions:{state:'stale',errorCode:'permission_denied',collectedAt:'2026-09-05T09:07:00Z'},
+    configuration:{state:'unavailable',errorCode:'configuration_unavailable'}}};
+  Renderer.render({data:D,tabs:{}},{crons:true,cost:true,charts:true,models:true,agentConfig:true});
+  assert.match($('cronNotice').textContent,/stale.*row_limit/);
+  assert.match($('cronNotice').textContent,/09:07/);
+  assert.equal($('cronNotice').hidden,false);
+  assert.match($('costNotice').textContent,/partial/);
+  assert.match($('chartNotice').textContent,/unavailable.*configuration_unavailable/);
+  assert.match($('healthNotice').textContent,/stale.*permission_denied/);
+  assert.match($('modelsNotice').textContent,/unavailable/);
+  assert.match($('agentConfigNotice').textContent,/unavailable/);
+  const R={timezone:'UTC',crons:[],collections:{crons:{state:'ready'},usageToday:{state:'ready'},usageAll:{state:'ready'},usage30d:{state:'ready'},sessions:{state:'ready'},configuration:{state:'ready'}}};
+  Renderer.render({data:R,tabs:{}},{crons:true,cost:true,charts:true,models:true,agentConfig:true});
+  for(const id of ['cronNotice','costNotice','chartNotice','healthNotice','modelsNotice','agentConfigNotice']){
+    assert.equal($(id).hidden,true,id+' must be hidden when the collection is ready');
+    assert.equal($(id).textContent,'',id+' must be cleared when the collection is ready');
+  }
+`);
+test('container gateway status is Unknown, never Offline', `
+  // Refresh payload shape (internal/apprefresh/refresh_gateway.go).
+  window._sysBarActive=false;
+  Renderer.render({data:{gateway:{status:'unknown',processScope:'container',statusReason:'host_probe_not_applicable'}},tabs:{}},{});
+  assert.match($('hGw').innerHTML,/Unknown \\(container: host probe not applicable\\)/);
+  assert.doesNotMatch($('hGw').innerHTML,/Offline/);
+  Renderer.render({data:{gateway:{status:'offline'}},tabs:{}},{});
+  assert.match($('hGw').innerHTML,/Offline/);
+  // /api/system payload shape (internal/appsystem/system_types.go: SystemGateway.Error).
+  SystemBar.render({cpu:{},ram:{},swap:{},disk:{},versions:{gateway:{status:'unknown',error:'host_probe_not_applicable'}}});
+  assert.match($('hGw').innerHTML,/Unknown \\(container: host probe not applicable\\)/);
+  assert.doesNotMatch($('hGw').innerHTML,/Offline/);
+  SystemBar.render({cpu:{},ram:{},swap:{},disk:{},versions:{gateway:{status:'offline'}}});
+  assert.match($('hGw').innerHTML,/Offline/);
+  window._sysBarActive=false;
+`);
+test('a failed system probe reports the gateway as unknown, not online', `
+  SystemBar.render({cpu:{},ram:{},swap:{},disk:{},versions:{gateway:{status:'online'}}});
+  assert.match($('hGw').innerHTML,/Online/);
+  SystemBar.renderGatewayDegraded('timeout');
+  assert.doesNotMatch($('hGw').innerHTML,/Online/,'a degraded system probe must not leave the gateway painted Online');
+  assert.match($('hGw').innerHTML,/Unknown/);
+  assert.match($('gatewayRuntimePanelInner').innerHTML,/Unavailable/);
+  window._sysBarActive=false;
+`);
+testAsync('an unreachable operations endpoint hides the panel and warns once', `
+  const warn=console.warn;const seen=[];
+  try{
+    console.warn=(...a)=>seen.push(a.join(' '));
+    $('operationPanel').hidden=false;
+    await OperationsPanel.probe();
+    await OperationsPanel.probe();
+    assert.equal($('operationPanel').hidden,true,'panel must stay hidden when the probe fails');
+    assert.equal(seen.length,1,'probe failure must be logged exactly once, got '+seen.length);
+    assert.match(seen[0],/operations/i);
+  }finally{console.warn=warn;}
+`);
+test('duration cells are escaped like every other interpolated field', `
+  const reconcile=Renderer.reconcileRows;
+  try{
+    Renderer.reconcileRows=(id,rows,key,render)=>{$(id).innerHTML=rows.map(render).join('');};
+    Renderer.render({data:{subagentRuns:[{id:'r',task:'t',agent:'a',status:'ok',timestamp:'x',durationSec:'<img src=x onerror=alert(1)>'}]},tabs:{subRuns:'all'}},{subRuns:true});
+    assert.doesNotMatch($('srBody').innerHTML,/<img/,'duration must not emit raw markup');
+    assert.match($('srBody').innerHTML,/&lt;img/);
+    Renderer.render({data:{crons:[{id:'c',name:'n',schedule:'s',lastDurationMs:1500}]},tabs:{}},{crons:true});
+    assert.match($('cronBody').innerHTML,/1.5s/);
+  }finally{Renderer.reconcileRows=reconcile;}
+`);
+test('error feed expand state follows the signature, not the row position', `
+  const A={severity:'error',source:'gw',count:1,signature:'sig-A',sampleMessage:'alpha'};
+  const B={severity:'warn',source:'gw',count:2,signature:'sig-B',sampleMessage:'beta'};
+  ErrorFeed._expanded={};
+  ErrorFeed._items=[A,B];ErrorFeed.render();
+  ErrorFeed.toggle(0);
+  assert.match($('errorBody').innerHTML,/sig-A/);
+  ErrorFeed._items=[B,A];ErrorFeed.render();
+  const rows=$('errorBody').innerHTML.split('<tr class="dr">');
+  assert.match(rows[1],/display:none/,'sig-B must stay collapsed after reorder');
+  assert.match(rows[2],/display:table-row/,'sig-A must stay expanded after reorder');
+  assert.match(rows[2],/>Hide</,'expanded row button must read Hide');
+  assert.match(rows[1],/>View</);
+  ErrorFeed._items=[{severity:'warn',source:'gw',count:1,sampleMessage:'no signature here'}];
+  ErrorFeed.render();
+  assert.doesNotThrow(()=>ErrorFeed.toggle(0));
+  ErrorFeed._expanded={};ErrorFeed._items=[];
+`);
+test('error feed truncates the sample before escaping it', `
+  ErrorFeed._expanded={};
+  ErrorFeed._items=[{severity:'warn',source:'gw',count:1,signature:'s',sampleMessage:'<'.repeat(130)}];
+  ErrorFeed.render();
+  const cell=$('errorBody').innerHTML.match(/<td title="[^"]*">([^<]*(?:&lt;)*)<\\/td>/);
+  assert.ok(cell,'sample cell not found');
+  assert.equal((cell[1].match(/&lt;/g)||[]).length,120,'sample must be truncated to 120 source characters, not 120 escaped bytes');
+  assert.doesNotMatch($('errorBody').innerHTML,/&l<\\/td>|&<\\/td>|&lt<\\/td>/,'truncation must not split an HTML entity');
+  ErrorFeed._items=[];
+`);
+test('log polling restarts only when the effective interval changes', `
+  const stop=LogTail._stopPoll;
+  try{
+    LogTail._stopPoll=()=>{};
+    LogTail._timer=null;LogTail._fast=false;LogTail.normalMs=60000;
+    timers.setCount=0;timers.clearCount=0;
+    LogTail._startPoll();
+    assert.equal(timers.setCount,1,'first configuration must start the poll');
+    LogTail.applyRuntimeConfig({logRefreshIntervalMs:120000});
+    assert.equal(timers.setCount,2,'changed interval must restart the poll');
+    assert.equal(timers.clearCount,1);
+    LogTail.applyRuntimeConfig({logRefreshIntervalMs:120000});
+    LogTail.applyRuntimeConfig({logRefreshIntervalMs:120000});
+    assert.equal(timers.setCount,2,'unchanged interval must not restart the poll');
+    LogTail._fast=true;
+    LogTail._startPoll();
+    assert.equal(timers.setCount,3,'fast toggle changes the effective interval');
+  }finally{LogTail._stopPoll=stop;LogTail._fast=false;LogTail.normalMs=60000;}
+`);
+test('the real runtime health panel renders ready and unavailable collections', `
+  State.data={timezone:'UTC'};
+  $('runtimeHealthPanelInner').innerHTML='';
+  TestedRuntimePanels.renderHealth({collections:{runtimeHealth:{state:'ready',source:'gateway.status',collectedAt:'2026-09-05T09:07:00Z'}},
+    runtimeHealth:{eventLoop:{degraded:false,delayP99Ms:12},processMemory:{rssBytes:1048576},degradedPluginsCount:0}});
+  const ready=$('runtimeHealthPanelInner').innerHTML;
+  assert.match(ready,/ready/);
+  assert.match(ready,/Loop delay p99/);
+  assert.match(ready,/>12</);
+  assert.match(ready,/>No</,'degraded=false must render No, not Not reported');
+  TestedRuntimePanels.renderHealth({collections:{runtimeHealth:{state:'unavailable',source:'gateway.status',errorCode:'host_probe_not_applicable'}}});
+  const gone=$('runtimeHealthPanelInner').innerHTML;
+  assert.match(gone,/unavailable.*host_probe_not_applicable/);
+  assert.match(gone,/no successful collection/);
+  assert.match(gone,/Not reported/);
+  // A collection sourced elsewhere is owned by Renderer, so renderHealth leaves it alone.
+  $('runtimeHealthPanelInner').innerHTML='owned by renderer';
+  TestedRuntimePanels.renderHealth({collections:{runtimeHealth:{state:'ready',source:'cli'}}});
+  assert.equal($('runtimeHealthPanelInner').innerHTML,'owned by renderer');
+`);
+test('SystemBar creates and tears down the readiness alert across a degraded transition', `
+  State.data={timezone:'UTC'};
+  window._sysBarActive=false;window._gwOnlineConfirmed=false;
+  const base={cpu:{},ram:{},swap:{},disk:{},versions:{gateway:{status:'online'}}};
+  // Live but not ready: the alert node is created and inserted.
+  SystemBar.render({...base,openclaw:{gateway:{live:true,ready:false,healthEndpointOk:true,failing:['db','queue']}}});
+  const alertEl=$('gw-readiness-alert');
+  assert.ok(alertEl,'readiness alert must be inserted while the gateway is live but not ready');
+  assert.match(alertEl.innerHTML,/Gateway not ready: db, queue/);
+  assert.equal(window._gwOnlineConfirmed,true);
+  assert.match($('hGw').innerHTML,/Live/);
+  // Still not ready: the existing node is reused, not duplicated.
+  SystemBar.render({...base,openclaw:{gateway:{live:true,ready:false,healthEndpointOk:true,failing:['db']}}});
+  assert.equal($('gw-readiness-alert'),alertEl,'the readiness alert node must be reused');
+  assert.equal(alertEl.querySelector('.alert-msg').textContent,'Gateway not ready: db');
+  // Ready again: the node is removed.
+  SystemBar.render({...base,openclaw:{gateway:{live:true,ready:true,healthEndpointOk:true}}});
+  assert.equal($('gw-readiness-alert'),null,'readiness alert must be removed once the gateway is ready');
+  assert.match($('hGw').innerHTML,/Online/);
+  // A failed probe removes it too and stops claiming the gateway is up.
+  SystemBar.render({...base,openclaw:{gateway:{live:true,ready:false,healthEndpointOk:true,failing:[]}}});
+  assert.ok($('gw-readiness-alert'));
+  SystemBar.renderGatewayDegraded('network error');
+  assert.equal($('gw-readiness-alert'),null);
+  assert.equal(window._gwOnlineConfirmed,false);
+  assert.equal(window._sysBarActive,false);
+  assert.match($('hGw').innerHTML,/Unknown/);
+`);
+test('the real error feed renders counts, badges and escapes sample text', `
+  ErrorFeed._expanded={};
+  ErrorFeed._items=[];ErrorFeed.render();
+  assert.equal($('errorCount').textContent,'0 issues');
+  assert.equal($('diagErrorBadge').style.display,'none');
+  assert.equal($('errorFeedEmpty').textContent,'No errors detected.');
+  ErrorFeed._items=[
+    {severity:'error',source:'gateway',count:3,signature:'s1',sampleMessage:'<b>boom</b>',firstSeen:0,lastSeen:0,lastOccurrences:[{timestamp:1,message:'<i>once</i>'}]},
+    {severity:'warn',source:'cron',count:1,signature:'s2',sampleMessage:'slow'}];
+  ErrorFeed.render();
+  const out=$('errorBody').innerHTML;
+  assert.equal($('errorCount').textContent,'2 issues');
+  assert.equal($('diagErrorBadge').textContent,'⚠ 3 errors');
+  assert.equal($('diagErrorBadge').style.display,'inline-block');
+  assert.equal($('errorFeedEmpty').style.display,'none');
+  assert.match(out,/&lt;b&gt;boom&lt;\\/b&gt;/);
+  assert.doesNotMatch(out,/<b>boom<\\/b>/);
+  assert.match(out,/&lt;i&gt;once&lt;\\/i&gt;/);
+  assert.match(out,/Signature: s1/);
+  ErrorFeed._items=[];ErrorFeed._expanded={};
+`);
+testAsync('fetch failure raises a sticky banner that clears on the next success', `
+  assert.match(html,/id="fetchError"[^>]*role="alert"/,'missing dedicated #fetchError element');
+  const renderNow=App.renderNow, logFetch=LogTail.fetch, errFetch=ErrorFeed.fetch;
+  try{
+    App.renderNow=()=>{};LogTail.fetch=async()=>{};ErrorFeed.fetch=async()=>{};
+    $('alertsSection').innerHTML='<div class="alert-item">keep me</div>';
+    fetchRoutes.set('/api/refresh',()=>{throw new Error('boom')});
+    await App.refresh();
+    assert.equal($('fetchError').hidden,false,'banner stays hidden after a failed refresh');
+    assert.match($('fetchError').textContent,/Failed to load/);
+    assert.equal($('alertsSection').innerHTML,'<div class="alert-item">keep me</div>','catch must not overwrite #alertsSection');
+    fetchRoutes.set('/api/refresh',()=>({ok:true,status:200,json:async()=>({timezone:'UTC'})}));
+    await App.refresh();
+    assert.equal($('fetchError').hidden,true,'banner not hidden after a successful refresh');
+    assert.equal($('fetchError').textContent,'','banner text not cleared after a successful refresh');
+  }finally{App.renderNow=renderNow;LogTail.fetch=logFetch;ErrorFeed.fetch=errFetch;fetchRoutes.delete('/api/refresh');}
+`);
+
+(async () => {
+  for (const run of pending) await run();
+  process.exitCode = failed ? 1 : 0;
+})();
