@@ -1,5 +1,58 @@
 # Changelog
 
+## v2026.9.6 — 2026-09-06
+
+Release focused on selected-runtime (native, Docker, Podman) monitoring honesty,
+Go 1.27.1, and hardening of the chat, log and operations endpoints.
+
+- **Go 1.27.1** — `go.mod`, the Docker builder image, the Nix flake and CI now
+  pin Go 1.27 (toolchain go1.27.1) and golangci-lint v2.13.2. `encoding/json`
+  is backed by the v2 implementation in Go 1.27: the once-per-refresh
+  `data.json` write is about 48% faster with 97% fewer allocations, and the
+  dashboard's own `data.json` read uses the strict v2 decoder. The release
+  binary grows by roughly 7% (about 0.7 MB) because `encoding/json/v2` is
+  linked in. Because the strict decoder is used for the dashboard's own
+  `data.json`, a hand-edited file with duplicate keys is now rejected with a
+  clear error instead of silently keeping the last value.
+- **Container monitoring never substitutes host data** — in container mode the
+  dashboard no longer probes `127.0.0.1` to decide gateway status. Both the
+  refresh payload and `/api/system` report `unknown` with reason
+  `host_probe_not_applicable`, and the UI renders "Unknown (container: host
+  probe not applicable)" instead of "Offline".
+- **Collections report `partial` instead of `ready` when degraded** — the
+  legacy `jobs.json` cron fallback, a failed configuration read (dependent
+  memory, skill and model collections), per-agent health failures (with
+  `failedAgents`), and the task row limit all publish `partial` with an error
+  code. Stale retention is capped at 24 hours.
+- **Chat credential gate for every install** — `/api/chat` now returns
+  `503 credentials_missing` (or `endpoint_disabled`) before any gateway
+  request on native installs too; startup logs the consequence when
+  `ai.enabled` is set without a token. `DASHBOARD_AI_TOKEN_OPTIONAL` is
+  removed.
+- **Runtime log cache and errors endpoint** — one CLI exec at a time, bound to
+  the server lifecycle, never poisoned by a client that disconnected;
+  `/api/errors` maps runtime error codes to 403/501/502 like `/api/logs`.
+- **Operations audit retention** — `operations/*.jsonl` is pruned to the newest
+  500 files.
+- **Server-side diagnostics** — failed OpenClaw CLI reads log a warning with
+  method, error code, target and a redacted stderr tail. Browser payloads stay
+  code-only.
+- **Dashboard UI** — fetch failures show a dedicated banner that clears on
+  recovery; cron, cost, chart, health, model and agent panels show inline
+  stale/partial/unavailable notices with the collection timestamp; error-feed
+  expansion follows the error signature; log polling honours
+  `logRefreshIntervalMs` above 60 s; accessibility and escaping fixes. The
+  embedded frontend regression harness now evaluates the real `SystemBar`,
+  `ErrorFeed`, `App.refresh`, health and escaping code (45 checks) and is a
+  mandatory gate in `make check`, CI and GoReleaser.
+- **Root facade** — `OpenclawTarget`, `OpenclawClient`, `CollectionStatus`,
+  `RuntimeLogs`, `ChatCapability`, `RedactOpenclawOutput`,
+  `OpenclawErrorCode`, `ResolveGatewayToken` and `ReadRuntimeLogs` are
+  re-exported from the root package.
+- **Tooling** — CI installs Node via `actions/setup-node`; the Nix dev shell
+  includes Node; benchmarks are hermetic and use realistic payloads; a
+  goroutine-leak test guards server shutdown.
+
 ## v2026.7.12 — 2026-07-12
 
 Patch release for installed dashboard services that showed empty **Cron Jobs**
