@@ -36,11 +36,11 @@ Runtime database-lock symptoms will be rechecked using the supported gateway-own
 
 ## Deployment and rollback
 
-Installed binary: `/Users/mudrii/.openclaw/dashboard/bin/openclaw-dashboard-oc2026.8.2-20260905-r2`, built with Go 1.26.8. This is a local source build; repository release VERSION remains v2026.7.12, and no release/tag was published.
+Installed binary: `$HOME/.openclaw/dashboard/bin/openclaw-dashboard-oc2026.8.2-20260905-r2`, built with Go 1.26.8. This is a local source build; repository release VERSION remains v2026.7.12, and no release/tag was published.
 
-The launchd service now persists `OPENCLAW_CONTAINER=openclaw` and `OPENCLAW_DASHBOARD_DIR=/Users/mudrii/.openclaw/dashboard`. Dashboard config gained only the explicit container target; the existing UTC timezone, theme, bot, refresh and AI settings were preserved. OpenClaw's own config and gateway service were not changed.
+The launchd service now persists `OPENCLAW_CONTAINER=openclaw` and `OPENCLAW_DASHBOARD_DIR=$HOME/.openclaw/dashboard`. Dashboard config gained only the explicit container target; the existing UTC timezone, theme, bot, refresh and AI settings were preserved. OpenClaw's own config and gateway service were not changed.
 
-Original config, generated data and launchd plist are recoverable in `/Users/mudrii/.openclaw/dashboard/rollback-20260905.m1qZ5g`. The original Homebrew binary at `/opt/homebrew/Cellar/openclaw-dashboard/2026.7.12/bin/openclaw-dashboard` remains untouched. To roll back, stop the dashboard LaunchAgent, restore that backup's config and plist to their original paths, and load the original plist. Do not overwrite newer user configuration without reviewing its diff.
+Original config, generated data and launchd plist are recoverable in `$HOME/.openclaw/dashboard/rollback-20260905.m1qZ5g`. The original Homebrew binary at `/opt/homebrew/Cellar/openclaw-dashboard/2026.7.12/bin/openclaw-dashboard` remains untouched. To roll back, stop the dashboard LaunchAgent, restore that backup's config and plist to their original paths, and load the original plist. Do not overwrite newer user configuration without reviewing its diff.
 
 ## Intentionally unchanged upstream state
 

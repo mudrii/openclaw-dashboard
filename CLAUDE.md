@@ -19,10 +19,11 @@ Zero-dependency Go HTTP server with embedded SPA frontend for OpenClaw bot metri
 | `appserver` | HTTP server, routing, caching, rate limiting |
 | `appsystem` | System metrics (CPU/RAM/disk), version probes, OpenClaw runtime |
 | `appservice` | OS service management (launchd/systemd) |
+| `appopenclaw` | Bounded access to the selected OpenClaw runtime: CLI target selection, gateway RPC reads, allow-listed operations, secret redaction |
 
 ## Environment
 
-- Go 1.26 (toolchain `go1.26.4` per `go.mod`), darwin/arm64 + linux/amd64+arm64
+- Go 1.27 (toolchain `go1.27.1` per `go.mod`), darwin/arm64 + linux/amd64+arm64
 - Treat `go.mod`, `toolchain`, CI config as the source of truth
 - Prefer `make` targets over raw commands when a Makefile exists
 - `make check` is the canonical gate: `vet`, `lint` (golangci-lint with `gosec` + `errorlint` enabled), `test -race`, `govulncheck`
@@ -51,7 +52,7 @@ go test -race ./...  # when the package has race support
 go mod tidy          # only when imports or dependencies changed
 ```
 
-## Go 1.26 Idioms
+## Go 1.27 Idioms
 
 Write modern Go — never generate pre-1.24 patterns when go.mod allows it. Key features: `new(expr)`, self-referential generics, `iter.Seq`/`iter.Seq2`, range-over-func, `omitzero` struct tags, generic type aliases. See `.claude/rules/go-idioms.md` for the full catalog and go fix modernizers.
 

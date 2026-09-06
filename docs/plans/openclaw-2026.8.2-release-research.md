@@ -8,7 +8,7 @@ Date: 2026-09-05. Scope: official release evidence and the integration contracts
 | --- | --- | --- |
 | Requested target | 2026.8.2 | User request |
 | Routed CLI and running Gateway | 2026.8.2, commit `0965053`; Gateway build `2026.8.2-0965053fe6b9-2026-09-01T17-11-58.000Z` | Runtime inspection in the accompanying analysis: `OPENCLAW_CONTAINER=openclaw` forwards execution into the container |
-| Host npm package behind asdf | 2026.9.1 | `/Users/mudrii/.asdf/installs/nodejs/24.18.0/lib/node_modules/openclaw/package.json`; this is not proof of the container version |
+| Host npm package behind asdf | 2026.9.1 | `$HOME/.asdf/installs/nodejs/24.18.0/lib/node_modules/openclaw/package.json`; this is not proof of the container version |
 | Public stable package at research time | 2026.9.1 | Live [npm latest metadata](https://registry.npmjs.org/openclaw/latest) |
 | 2026.8.1 publication | 2026-08-31 03:30:51 UTC | [Official release API](https://api.github.com/repos/openclaw/openclaw/releases/tags/v2026.8.1) |
 | 2026.8.2 publication | 2026-09-01 16:00:56 UTC | [Official release API](https://api.github.com/repos/openclaw/openclaw/releases/tags/v2026.8.2) |

@@ -83,7 +83,7 @@ Backup runtime status and explicit backup/diagnostic/OpenTelemetry configuration
 
 Node is required for `make frontend-test` and therefore `make check`; CI and release hooks require the same harness. Rebuild and restart the candidate after changes to the embedded frontend. See the [field-reason implementation record](plans/2026-09-06-field-reasons.md) for remaining upstream and live-validation gates.
 
-`go.mod` still declares Go 1.26 with toolchain 1.26.8. Go 1.27.1 was validated explicitly using `GOTOOLCHAIN=go1.27.1`; it is not yet the coordinated Docker/Nix/CI pin. The Makefile uses Staticcheck v0.8.1 for Go 1.27 compatibility. Network access is required when tool modules or vulnerability data are not cached, and the full race suite requires permission to bind local test listeners. Sandbox failures are not a passing gate.
+Go 1.27 is now the coordinated pin: `go.mod` declares `go 1.27` with `toolchain go1.27.1`, the Dockerfile builder is `golang:1.27-alpine` at a pinned digest, `flake.nix` selects `pkgs.go_1_27`, and CI resolves the same toolchain through `go-version-file: go.mod`. The Makefile uses Staticcheck v0.8.1 for Go 1.27 compatibility. Network access is required when tool modules or vulnerability data are not cached, and the full race suite requires permission to bind local test listeners. Sandbox failures are not a passing gate.
 
 The dependency-free frontend regression harness checks the embedded functions and CSS contracts; it is not a substitute for rendering the rebuilt candidate in a browser. See the [2026.9.1 release-validation record](plans/2026-09-05-release-validation.md) for the current evidence, fixes and release gates. Native and Docker end-to-end runs remain distinct from the live Podman UI observations.
 

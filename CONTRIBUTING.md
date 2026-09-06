@@ -67,8 +67,10 @@ and `make build`.
 | `make govulncheck` | `go run golang.org/x/vuln/cmd/govulncheck@v1.3.0 ./...`. Scans stdlib + module for known CVEs without requiring a preinstalled binary. |
 | `make check` | Runs `make frontend-test`, then `go vet ./...`, `golangci-lint run ./...`, `go test -race -count=1 ./...`, pinned `govulncheck`, pinned `staticcheck`, and `make build`. |
 
-`golangci-lint` v2.x must be on `PATH`; CI currently uses v2.12.2. The Nix
-`devShell` installs it; for non-Nix dev machines, `go install` works. If you
+`golangci-lint` v2.x must be on `PATH`; CI currently uses v2.13.2. The Nix
+`devShell` installs it; for non-Nix dev machines, `go install` works. Node is
+required by `make frontend-test`; CI installs it via `actions/setup-node`, and
+the Nix `devShell` provides `nodejs`. If you
 touch `assets/runtime/refresh.sh`, `install.sh`, or `uninstall.sh`, also run
 `shellcheck --severity=warning` on the changed script(s); CI and release tags
 enforce those shell checks separately.

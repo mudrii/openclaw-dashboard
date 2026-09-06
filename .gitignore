@@ -51,3 +51,4 @@ coverage.html
 
 # understand-anything dashboard runtime log
 .understand-anything/.dashboard.log
+.superpowers/

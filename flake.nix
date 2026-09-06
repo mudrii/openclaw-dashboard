@@ -10,9 +10,9 @@
     flake-utils.lib.eachDefaultSystem (system:
       let
         pkgs = nixpkgs.legacyPackages.${system};
-        # Project requires Go 1.26+ (see go.mod). Pin explicitly so we don't
+        # Project requires Go 1.27+ (see go.mod). Pin explicitly so we don't
         # silently drift to whatever the nixpkgs channel default is.
-        go = pkgs.go_1_26 or pkgs.go;
+        go = pkgs.go_1_27 or pkgs.go;
         runtimeDeps = [ pkgs.bash pkgs.git ];
         version = pkgs.lib.fileContents ./VERSION;
       in {
@@ -67,6 +67,7 @@
             pkgs.bash pkgs.git
             pkgs.gopls pkgs.gotools pkgs.gofumpt
             pkgs.golangci-lint pkgs.govulncheck
+            pkgs.nodejs # required by `make frontend-test`
           ];
           shellHook = ''
             echo "OpenClaw Dashboard dev shell"

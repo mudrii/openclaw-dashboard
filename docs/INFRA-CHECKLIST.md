@@ -22,12 +22,12 @@ pick up nixpkgs security updates. The dependabot config in
 ## 2. Keep Docker base image digests current
 
 `Dockerfile` pins the base images by digest while keeping the human-readable
-tags (`golang:1.26-alpine` and `alpine:3.23`) for Dependabot matching. When
+tags (`golang:1.27-alpine` and `alpine:3.23`) for Dependabot matching. When
 refreshing the pins manually, resolve the current digests:
 
 ```sh
-docker pull golang:1.26-alpine
-docker inspect --format='{{index .RepoDigests 0}}' golang:1.26-alpine
+docker pull golang:1.27-alpine
+docker inspect --format='{{index .RepoDigests 0}}' golang:1.27-alpine
 # → golang@sha256:<DIGEST_A>
 
 docker pull alpine:3.23
@@ -38,7 +38,7 @@ docker inspect --format='{{index .RepoDigests 0}}' alpine:3.23
 Then edit `Dockerfile` if the digests changed:
 
 ```dockerfile
-FROM golang:1.26-alpine@sha256:<DIGEST_A> AS builder
+FROM golang:1.27-alpine@sha256:<DIGEST_A> AS builder
 ...
 FROM alpine:3.23@sha256:<DIGEST_B>
 ```

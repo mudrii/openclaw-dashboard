@@ -17,7 +17,7 @@ This skill **complements** `CLAUDE.md`.
 - Key style, error, context, and concurrency rules
 
 `.claude/rules/` owns:
-- Go 1.26 idioms and go fix modernizer catalog (`go-idioms.md`)
+- Go 1.27 idioms and go fix modernizer catalog (`go-idioms.md`)
 - Detailed style, API, documentation, and testing patterns (`go-patterns.md`)
 
 This skill adds:

@@ -28,7 +28,7 @@ jobs:
 
       - uses: golangci/golangci-lint-action@db9de0fc1a667e1a49d2291a1a042dff081d78f6 # v9
         with:
-          version: v2.12.2
+          version: v2.13.2
 
   test:
     name: Go test suite
@@ -45,6 +45,10 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
+
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: "22"
 
       - name: Run vet
         run: make vet

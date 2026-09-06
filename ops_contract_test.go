@@ -127,7 +127,7 @@ func TestReleaseWorkflowContracts(t *testing.T) {
 		`Verify release tag matches VERSION`,
 		`if [ "$version" != "$GITHUB_REF_NAME" ]; then`,
 		`Install golangci-lint`,
-		`go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.12.2`,
+		`go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.13.2`,
 		`run: make check`,
 		`Install shellcheck`,
 		`shellcheck --severity=warning assets/runtime/refresh.sh`,
@@ -188,7 +188,7 @@ func TestInfraChecklistTracksRequiredChecks(t *testing.T) {
 func TestPackagingDocsMatchCurrentDockerBaseTags(t *testing.T) {
 	dockerfile := readTextFile(t, "Dockerfile")
 	infra := readTextFile(t, "docs/INFRA-CHECKLIST.md")
-	for _, tag := range []string{"golang:1.26-alpine", "alpine:3.23"} {
+	for _, tag := range []string{"golang:1.27-alpine", "alpine:3.23"} {
 		if !strings.Contains(dockerfile, tag) {
 			t.Fatalf("Dockerfile missing %q", tag)
 		}
@@ -197,7 +197,7 @@ func TestPackagingDocsMatchCurrentDockerBaseTags(t *testing.T) {
 		}
 	}
 	for _, digest := range []string{
-		"golang:1.26-alpine@sha256:0178a641fbb4858c5f1b48e34bdaabe0350a330a1b1149aabd498d0699ff5fb2",
+		"golang:1.27-alpine@sha256:cf6fca6641884b8433441b2b0652976f975e1d0fdd26d177eaaf8596087f3125",
 		"alpine:3.23@sha256:fd791d74b68913cbb027c6546007b3f0d3bc45125f797758156952bc2d6daf40",
 	} {
 		if !strings.Contains(dockerfile, digest) {
