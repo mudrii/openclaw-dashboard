@@ -57,7 +57,12 @@ assert.match(collectionLabel({state:'partial',errorCode:'configuration_unavailab
 assert.equal(gatewayUnknownHtml({status:'unknown',statusReason:'host_probe_not_applicable'}).includes('Unknown (container: host probe not applicable)'),true);
 assert.equal(gatewayUnknownHtml({status:'unknown',error:'host_probe_not_applicable'}).includes('Unknown (container: host probe not applicable)'),true);
 assert.equal(gatewayUnknownHtml({status:'offline'}),'');
-assert.equal(gatewayUnknownHtml({status:'unknown',statusReason:'permission_denied'}),'');
+// An unknown status is never repainted as Offline; only the parenthetical
+// explanation depends on the backend's reason code.
+assert.match(gatewayUnknownHtml({status:'unknown',statusReason:'permission_denied'}),/Unknown/);
+assert.doesNotMatch(gatewayUnknownHtml({status:'unknown',statusReason:'permission_denied'}),/container/);
+assert.match(gatewayUnknownHtml({status:'unknown'}),/Unknown/);
+assert.doesNotMatch(gatewayUnknownHtml({status:'unknown'}),/container/);
 assert.equal(runtimeActivity({active:null}),'Activity not reported');
 assert.equal(runtimeActivity({active:false,activeRunIds:[]}), 'Idle');
 assert.equal(runtimeActivity({active:true,activeRunIds:['run']}),'Running (1)');

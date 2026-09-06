@@ -413,9 +413,7 @@ test('error feed truncates the sample before escaping it', `
   ErrorFeed._items=[];
 `);
 test('log polling restarts only when the effective interval changes', `
-  const stop=LogTail._stopPoll;
   try{
-    LogTail._stopPoll=()=>{};
     LogTail._timer=null;LogTail._fast=false;LogTail.normalMs=60000;
     timers.setCount=0;timers.clearCount=0;
     LogTail._startPoll();
@@ -429,7 +427,7 @@ test('log polling restarts only when the effective interval changes', `
     LogTail._fast=true;
     LogTail._startPoll();
     assert.equal(timers.setCount,3,'fast toggle changes the effective interval');
-  }finally{LogTail._stopPoll=stop;LogTail._fast=false;LogTail.normalMs=60000;}
+  }finally{LogTail._fast=false;LogTail.normalMs=60000;}
 `);
 test('the real runtime health panel renders ready and unavailable collections', `
   State.data={timezone:'UTC'};
@@ -516,6 +514,77 @@ testAsync('fetch failure raises a sticky banner that clears on the next success'
     assert.equal($('fetchError').hidden,true,'banner not hidden after a successful refresh');
     assert.equal($('fetchError').textContent,'','banner text not cleared after a successful refresh');
   }finally{App.renderNow=renderNow;LogTail.fetch=logFetch;ErrorFeed.fetch=errFetch;fetchRoutes.delete('/api/refresh');}
+`);
+
+test('hidden elements stay hidden regardless of component display rules', `
+  assert.match(html,/\\[hidden\\]\\s*\\{[^}]*display:none\\s*!important/,'stylesheet must neutralise component display rules for [hidden]');
+`);
+test('collection notices fire on the ready to stale transition with byte-identical data', `
+  window._sysBarActive=false;
+  State.data={timezone:'UTC'};
+  const base={timezone:'UTC',crons:[],availableModels:[],dailyChart:[]};
+  const readyCollections={crons:{state:'ready'},usageToday:{state:'ready'},usageAll:{state:'ready'},usage30d:{state:'ready'},configuration:{state:'ready'}};
+  const ready={...base,collections:readyCollections};
+  const staleCollections={crons:{state:'stale',errorCode:'row_limit',collectedAt:'2026-09-05T09:07:00Z'},usageToday:{state:'stale',errorCode:'row_limit',collectedAt:'2026-09-05T09:07:00Z'},usageAll:{state:'ready'},usage30d:{state:'unavailable',errorCode:'configuration_unavailable'},configuration:{state:'unavailable',errorCode:'configuration_unavailable'}};
+  const stale={...base,collections:staleCollections};
+  const render=payload=>{State.data=payload;const snap={data:payload,tabs:{},chartDays:7};Renderer.render(snap,DirtyChecker.diff(snap));State.prev=payload;State.prevTabs=snap.tabs;State.prevChartDays=snap.chartDays;};
+  State.prev=null;State.prevTabs={};State.prevChartDays=7;
+  render(ready);
+  render(stale);
+  for(const id of ['cronNotice','costNotice','chartNotice','modelsNotice'])
+    assert.equal($(id).hidden,false,id+' must fire when only the collection state changed');
+  render(ready);
+  for(const id of ['cronNotice','costNotice','chartNotice','modelsNotice'])
+    assert.equal($(id).hidden,true,id+' must clear on the stale to ready transition');
+  State.prev=null;State.prevTabs={};
+`);
+test('the cost notice discloses the weakest usage collection, not the first', `
+  window._sysBarActive=false;
+  State.data={timezone:'UTC'};
+  const D={timezone:'UTC',collections:{usageToday:{state:'partial',errorCode:'row_limit'},usageAll:{state:'unavailable',errorCode:'configuration_unavailable'}}};
+  Renderer.render({data:D,tabs:{}},{cost:true});
+  assert.match($('costNotice').textContent,/unavailable/,'unavailable is weaker than partial whatever the order');
+  D.collections={usageToday:{state:'stale',errorCode:'row_limit',collectedAt:'2026-09-05T09:07:00Z'},usageAll:{state:'partial',errorCode:'row_limit'}};
+  Renderer.render({data:D,tabs:{}},{cost:true});
+  assert.match($('costNotice').textContent,/stale/,'stale is weaker than partial');
+`);
+test('the gateway runtime card never contradicts the health row', `
+  window._sysBarActive=false;
+  SystemBar.render({cpu:{},ram:{},swap:{},disk:{},versions:{gateway:{status:'unknown',error:'host_probe_not_applicable'}}});
+  assert.match($('hGw').innerHTML,/Unknown \\(container: host probe not applicable\\)/);
+  assert.match($('gatewayRuntimePanelInner').innerHTML,/Unknown \\(container: host probe not applicable\\)/);
+  assert.doesNotMatch($('gatewayRuntimePanelInner').innerHTML,/Offline/,'the card must not say Offline under an Unknown health row');
+  SystemBar.render({cpu:{},ram:{},swap:{},disk:{},versions:{gateway:{status:'unknown'}}});
+  assert.match($('hGw').innerHTML,/Unknown/);
+  assert.doesNotMatch($('hGw').innerHTML,/Offline/,'a native unknown status is not Offline');
+  assert.doesNotMatch($('gatewayRuntimePanelInner').innerHTML,/Offline/);
+  window._sysBarActive=false;
+  Renderer.render({data:{gateway:{status:'unknown'}},tabs:{}},{});
+  assert.match($('hGw').innerHTML,/Unknown/);
+  assert.doesNotMatch($('hGw').innerHTML,/Offline/);
+  window._sysBarActive=false;
+`);
+test('a skipped container host probe renders the reason instead of Live and Ready false', `
+  window._sysBarActive=false;window._gwOnlineConfirmed=false;
+  SystemBar.render({cpu:{},ram:{},swap:{},disk:{},versions:{gateway:{status:'unknown'}},
+    openclaw:{gateway:{live:false,ready:false,healthEndpointOk:false,readyEndpointOk:false,reason:'host_probe_not_applicable'}}});
+  assert.match($('hGw').innerHTML,/Unknown \\(container: host probe not applicable\\)/);
+  assert.doesNotMatch($('hGw').innerHTML,/Offline/);
+  assert.doesNotMatch($('hGw').innerHTML,/Live/);
+  assert.match($('gatewayRuntimePanelInner').innerHTML,/Unknown \\(container: host probe not applicable\\)/);
+  assert.equal($('gw-readiness-alert'),null,'a skipped probe must not raise a readiness alert');
+  window._sysBarActive=false;
+`);
+test('the degraded gateway tooltip is cleared once the probe recovers', `
+  SystemBar.renderGatewayDegraded('timeout');
+  assert.match($('hGw').title,/timeout/);
+  SystemBar.render({cpu:{},ram:{},swap:{},disk:{},versions:{gateway:{status:'online'}}});
+  assert.equal($('hGw').title,'','SystemBar must clear the degraded tooltip after recovery');
+  SystemBar.renderGatewayDegraded('timeout');
+  window._sysBarActive=false;
+  Renderer.render({data:{gateway:{status:'online'}},tabs:{}},{});
+  assert.equal($('hGw').title,'','Renderer must clear the degraded tooltip after recovery');
+  window._sysBarActive=false;
 `);
 
 (async () => {

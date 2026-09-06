@@ -6,6 +6,9 @@
 <title>OpenClaw Dashboard</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
+/* Component classes such as .alert-item set display, which overrides the UA
+   [hidden] rule; without this every hidden element would stay visible. */
+[hidden]{display:none!important}
 :root{--bg:#0a0a0f;--surface:rgba(255,255,255,0.03);--surfaceHover:rgba(255,255,255,0.045);--glass:rgba(255,255,255,0.02);--border:rgba(255,255,255,0.06);--accent:#6366f1;--accent2:#9333ea;--green:#4ade80;--yellow:#facc15;--red:#f87171;--orange:#fb923c;--purple:#a78bfa;--text:#e5e5e5;--textStrong:#ffffff;--muted:#737373;--dim:#525252;--darker:#404040;--tableBg:rgba(255,255,255,0.025);--tableHover:rgba(255,255,255,0.05);--scrollThumb:rgba(255,255,255,0.1)}
 body{font-family:-apple-system,BlinkMacSystemFont,'SF Pro','Helvetica Neue',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;padding:20px}
 .container{max-width:1440px;margin:0 auto}
@@ -868,10 +871,6 @@ function collectionLabel(s){
   const failed=Array.isArray(s.failedAgents)&&s.failedAgents.length?'failed agents: '+s.failedAgents.join(', '):'';
   return [s.state,s.errorCode,collected,failed].filter(Boolean).join(' · ');
 }
-// collectionNotice writes an inline collection-status line into the panel that
-// renders retained fields, and hides it while the collection is ready. Panels
-// that keep showing the last good value must say so when the data behind them
-// is stale, partial or unavailable.
 // setStatusText writes into an aria-live status region only when the text
 // actually changed. These regions are rewritten on every render, and assigning
 // identical text re-announces them on some screen readers.
@@ -882,6 +881,22 @@ function setStatusText(id,text){
   if(el.textContent===next)return;
   el.textContent=next;
 }
+// weakestCollection returns the least trustworthy of several collection status
+// objects, or undefined when they are all ready. Panels fed by more than one
+// collection must disclose the worst of them rather than whichever came first.
+const COLLECTION_SEVERITY={unavailable:3,stale:2,partial:1};
+function weakestCollection(statuses){
+  let worst;
+  for(const s of statuses){
+    const rank=COLLECTION_SEVERITY[s&&s.state]||0;
+    if(rank&&rank>(COLLECTION_SEVERITY[worst&&worst.state]||0))worst=s;
+  }
+  return worst;
+}
+// collectionNotice writes an inline collection-status line into the panel that
+// renders retained fields, and hides it while the collection is ready. Panels
+// that keep showing the last good value must say so when the data behind them
+// is stale, partial or unavailable.
 function collectionNotice(id,status,prefix){
   const el=$(id);
   if(!el)return;
@@ -890,16 +905,21 @@ function collectionNotice(id,status,prefix){
   el.textContent=(prefix?prefix+': ':'')+collectionLabel(status);
   el.hidden=false;
 }
+// gatewayUnknownText labels a gateway status the backend refused to assert.
+// host_probe_not_applicable means the only available probe measures the host
+// rather than the selected container; any other (or absent) reason still yields
+// a plain "Unknown".
+function gatewayUnknownText(reason){
+  return reason==='host_probe_not_applicable'?'Unknown (container: host probe not applicable)':'Unknown';
+}
 // gatewayUnknownHtml returns the health-cell markup for a gateway whose status
-// could not be determined because the only available probe measures the host
-// rather than the selected container, and '' otherwise. The refresh payload
-// carries the code in gateway.statusReason; /api/system carries it in
-// gateway.error. Painting this case "Offline" would assert a fact the backend
-// explicitly refused to assert.
+// could not be determined, and '' otherwise. The refresh payload carries the
+// code in gateway.statusReason; /api/system carries it in gateway.error or, for
+// a skipped container probe, in openclaw.gateway.reason. Painting this case
+// "Offline" would assert a fact the backend explicitly refused to assert.
 function gatewayUnknownHtml(gw){
-  const reason=gw?(gw.statusReason||gw.error):null;
-  if(String(gw&&gw.status||'').toLowerCase()!=='unknown'||reason!=='host_probe_not_applicable')return '';
-  return '<span style="color:var(--yellow)">●</span> Unknown (container: host probe not applicable)';
+  if(String(gw&&gw.status||'').toLowerCase()!=='unknown')return '';
+  return '<span style="color:var(--yellow)">●</span> '+gatewayUnknownText(gw.statusReason||gw.error);
 }
 function runtimeActivity(s){return s.active===true?'Running'+(Array.isArray(s.activeRunIds)?' ('+s.activeRunIds.length+')':''):s.active===false?'Idle':'Activity not reported';}
 function runtimeValue(v){return v===true?'Yes':v===false?'No':v==null||String(v).trim()===''?'Not reported':String(v);}
@@ -1491,14 +1511,14 @@ const DirtyChecker = {
     return {
       alerts: this.sectionChanged(['alerts']),
       health: true,
-      cost: this.sectionChanged(['totalCostToday','totalCostAllTime','projectedMonthly','costBreakdown','usageToday','usageAll']),
-      crons: this.sectionChanged(['crons']),
+      cost: this.sectionChanged(['totalCostToday','totalCostAllTime','projectedMonthly','costBreakdown','usageToday','usageAll','collections']),
+      crons: this.sectionChanged(['crons','collections']),
       sessions: !prevD || this.stableSnapshot(D.sessions, ['key','name','model','type','contextPct','totalTokens','active','spawnedBy','label','subject']) !== this.stableSnapshot(prevD.sessions, ['key','name','model','type','contextPct','totalTokens','active','spawnedBy','label','subject']),
       usage: this.sectionChanged(['tokenUsage','tokenUsageToday','tokenUsage7d','tokenUsage30d','subagentUsage','subagentUsageToday','subagentUsage7d','subagentUsage30d']) || snap.tabs.usage !== State.prevTabs.usage,
       subRuns: (!prevD || ['subagentRuns','subagentRuns7d','subagentRuns30d','subagentRunsToday'].some(k => this.stableSnapshot(D[k], ['task','agent','status','durationSec','timestamp']) !== this.stableSnapshot((prevD||{})[k], ['task','agent','status','durationSec','timestamp']))) || snap.tabs.subRuns !== State.prevTabs.subRuns,
       subTokens: this.sectionChanged(['tokenUsage','tokenUsageToday','tokenUsage7d','tokenUsage30d','subagentUsage','subagentUsageToday','subagentUsage7d','subagentUsage30d']) || snap.tabs.subTokens !== State.prevTabs.subTokens,
-      charts: this.sectionChanged(['dailyChart']) || snap.chartDays !== State.prevChartDays,
-      models: this.sectionChanged(['availableModels']),
+      charts: this.sectionChanged(['dailyChart','collections']) || snap.chartDays !== State.prevChartDays,
+      models: this.sectionChanged(['availableModels','collections']),
       skills: this.sectionChanged(['skills','skillInventory','collections']),
       git: this.sectionChanged(['gitLog']),
       agentConfig: this.sectionChanged(['agentConfig','subagentConfig','channels','collections']),
@@ -1689,6 +1709,7 @@ const Renderer = {
   if(!window._sysBarActive) {
     $('hGw').innerHTML=gatewayUnknownHtml(gw)||(on?'<span style="color:var(--green)">●</span> Online':'<span style="color:var(--red)">●</span> Offline');
     $('hGw').style.color='var(--textStrong)';
+    $('hGw').title='';
     $('hPid').textContent=gw.pid||'—';
     $('hUp').textContent=gw.uptime||'—';
     $('hMem').textContent=gw.memory||'—';
@@ -1707,7 +1728,7 @@ const Renderer = {
   if (flags.cost) {
     // The cards and donut render retained totals; disclose the weaker of the two
     // usage collections behind them rather than implying both are current.
-    const usageStatus=[D.collections?.usageToday,D.collections?.usageAll].find(c=>c&&c.state&&c.state!=='ready');
+    const usageStatus=weakestCollection([D.collections?.usageToday,D.collections?.usageAll]);
     collectionNotice('costNotice',usageStatus,'Usage');
     $('cToday').textContent=usageMoney(D.totalCostToday,D.usageToday);
     $('cAll').textContent=usageMoney(D.totalCostAllTime,D.usageAll);
@@ -2453,6 +2474,9 @@ const SystemBar = {
   _gatewayState(d) {
     const gwRuntime=d.openclaw?.gateway||{};
     const gwVersion=d.versions?.gateway||{};
+    // The backend skipped the host probe (container target), so live/ready are
+    // absent rather than false and must not be painted as Offline.
+    if(gwRuntime.reason)return {source:'runtime',ok:false,live:false,ready:false,reason:gwRuntime.reason};
     const runtimeTrusted=!!(gwRuntime.healthEndpointOk||gwRuntime.readyEndpointOk||(gwRuntime.uptimeMs||0)>0||((gwRuntime.failing||[]).length>0));
     if(runtimeTrusted){
       const live=!!gwRuntime.live,ready=!!gwRuntime.ready;
@@ -2507,8 +2531,10 @@ const SystemBar = {
     $('sysStale').style.display=d.stale?'inline':'none';
 
     // Also update health panel gateway from /api/system (runtime-first when trustworthy, versions fallback otherwise)
-    const gwUnknown=gatewayUnknownHtml(gwVersion);
-    if(gwUnknown&&gwState.source!=='runtime'){
+    const gwUnknown=gwState.reason
+      ?'<span style="color:var(--yellow)">●</span> '+gatewayUnknownText(gwState.reason)
+      :gatewayUnknownHtml(gwVersion);
+    if(gwUnknown&&(gwState.reason||gwState.source!=='runtime')){
       $('hGw').innerHTML=gwUnknown;
     }else if(gwState.source==='runtime'){
       if(gwLive&&gwReady){
@@ -2522,6 +2548,9 @@ const SystemBar = {
       $('hGw').innerHTML=gwok?'<span style="color:var(--green)">●</span> Online':'<span style="color:var(--red)">●</span> Offline';
     }
     $('hGw').style.color='var(--textStrong)';
+    // renderGatewayDegraded parks the failure reason here; a successful poll owns
+    // the cell again and must not leave the stale tooltip behind.
+    $('hGw').title='';
     if(gwVersion.pid)$('hPid').textContent=gwVersion.pid;
     if(gwState.source==='runtime'){
       const upTxt=this.fmtDurationMs(gwRuntime.uptimeMs);
@@ -2576,12 +2605,16 @@ const SystemBar = {
     // Gateway Runtime card — populated from live /api/system data
     const gwRtEl=$('gatewayRuntimePanelInner');
     if(gwRtEl){
-      const stateLabel=gwState.source==='runtime'
+      // Same verdict as the health row: an undeterminable status is Unknown.
+      const gwUnknownLabel=gwState.reason
+        ?gatewayUnknownText(gwState.reason)
+        :(gwUnknown?gatewayUnknownText(gwVersion.statusReason||gwVersion.error):'');
+      const stateLabel=gwUnknownLabel||(gwState.source==='runtime'
         ?(gwLive?'Online':'Offline')
-        :(gwok?'Online':'Offline');
-      const stateColor=gwState.source==='runtime'
+        :(gwok?'Online':'Offline'));
+      const stateColor=gwUnknownLabel?'var(--yellow)':(gwState.source==='runtime'
         ?(gwLive?'var(--green)':'var(--red)')
-        :(gwok?'var(--green)':'var(--red)');
+        :(gwok?'var(--green)':'var(--red)'));
       const upTxt=gwState.source==='runtime'?this.fmtDurationMs(gwRuntime.uptimeMs)||gwVersion.uptime||'—':gwVersion.uptime||'—';
       const probeSource=gwState.source==='runtime'?'live probes':'status fallback';
       gwRtEl.innerHTML=[
