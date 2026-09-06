@@ -30,6 +30,8 @@ var collectionFields = map[string][]string{
 	"pluginInventory": {"pluginInventory"},
 	"channels":        {"channels"},
 	"runtimeHealth":   {"runtimeHealth"},
+	"gatewayHealth":   {"gatewayHealth"},
+	"providerUsage":   {"providerUsage"},
 	"runtimeInfo":     {"runtimeInfo"},
 	"diagnostics":     {"diagnostics"},
 	"modelReadiness":  {"modelReadiness"},

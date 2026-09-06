@@ -366,12 +366,12 @@ body{font-family:-apple-system,BlinkMacSystemFont,'SF Pro','Helvetica Neue',sans
 <div class="collection-notice" id="costNotice" role="status" hidden></div>
 <div class="cost-row">
   <div class="glass cost-card">
-    <div class="cost-label">Today's Cost</div>
+    <div class="cost-label" id="cTodayLabel">Today's Cost</div>
     <div class="cost-value" id="cToday">—</div>
     <div class="cost-sub" id="cTodaySub" style="display:none"></div>
   </div>
   <div class="glass cost-card">
-    <div class="cost-label">All-Time Cost</div>
+    <div class="cost-label" id="cAllLabel">All-Time Cost</div>
     <div class="cost-value" id="cAll">—</div>
     <div class="cost-sub" id="cAllSub" style="display:none"></div>
   </div>
@@ -381,13 +381,14 @@ body{font-family:-apple-system,BlinkMacSystemFont,'SF Pro','Helvetica Neue',sans
     <div class="cost-sub" id="cProjSub">Based on today's rate</div>
   </div>
   <div class="glass cost-card" style="padding:12px 16px">
-    <div class="cost-label" style="margin-bottom:8px">Cost Breakdown</div>
+    <div class="cost-label" id="donutLabel" style="margin-bottom:8px">Cost Breakdown</div>
     <div class="donut-container">
       <div class="donut" id="donut"><div class="donut-hole" id="donutCenter">$0</div></div>
       <div class="donut-legend" id="donutLegend"></div>
     </div>
   </div>
 </div>
+<div id="providerUsageSection" class="glass panel" style="margin-top:12px" hidden><h3 style="font-size:13px;margin-bottom:8px">Provider plans, balances and quotas</h3><div id="providerUsagePanel"></div></div>
   </div>
 </section>
 
@@ -1540,16 +1541,42 @@ const RuntimePanels = {
   sessionPage:0,taskPage:0,pageSize:50,
   renderGateway(D){
     if(D.runtimeTarget?.mode!=='container')return;
-    const metrics=runtimeGatewayMetrics(D),gateway=D.gateway||{};
-    const state=gateway.status==='online'?'Online':gateway.status==='offline'?'Offline':gatewayUnknownText(gateway.statusReason);
+    const metrics=runtimeGatewayMetrics(D),gateway=D.gateway||{},status=D.collections?.gatewayHealth;
+    const verified=status?.state==='ready'&&status.complete===true&&typeof D.gatewayHealth?.ok==='boolean';
+    const state=verified?(D.gatewayHealth.ok?'Online':'Unhealthy'):status?'Status '+status.state:gateway.status==='online'?'Online':gateway.status==='offline'?'Offline':gatewayUnknownText(gateway.statusReason);
+    const color=verified?(D.gatewayHealth.ok?'var(--green)':'var(--red)'):'var(--yellow)';
+    $('hGw').innerHTML='<span style="color:'+color+'">●</span> '+esc(state);
+    $('hGw').title='Selected container health RPC · '+collectionLabel(status);
+    window._gwOnlineConfirmed=verified&&D.gatewayHealth.ok;
     $('gatewayRuntimePanelInner').innerHTML=runtimeTable(['Gateway runtime','Value'],[
       ['State',state],['Version',D.runtimeHealth?.runtimeVersion],['PID',metrics.pid],['Uptime',metrics.uptime],['Memory',metrics.memory],
-      ['Source','Selected container gateway · '+collectionLabel(D.collections?.runtimeInfo)],
+      ['Health source',status?'Selected container health RPC · '+collectionLabel(status):'Health probe not collected'],
+      ['Process source','Selected container gateway · '+collectionLabel(D.collections?.runtimeInfo)],
     ]);
+  },
+  renderProviders(D){
+    $('providerUsageSection').hidden=!D.collections?.providerUsage&&!D.providerUsage;
+    const providers=new Map((D.providerUsage?.providers||[]).filter(p=>typeof p.provider==='string'&&p.provider).map(p=>[p.provider.toLowerCase(),{...p,provider:p.provider.toLowerCase()}]));
+    for(const m of [...(D.availableModels||[]),...(D.modelReadiness||[]),...(D.tokenUsage30d||[])]){
+      const modelId=String(m.modelId||m.id||'');
+      const id=(modelId.includes('/')?modelId.split('/')[0]:String(m.provider||'')).toLowerCase();
+      if(id&&!providers.has(id))providers.set(id,{provider:id});
+    }
+    const cards=[...providers.values()].sort((a,b)=>a.provider.localeCompare(b.provider)).map(p=>{
+      const windows=(p.windows||[]).map(w=>'<div>'+esc(w.label||'Quota')+': <strong>'+(Number.isFinite(w.usedPercent)?Math.max(0,Math.min(100,100-w.usedPercent))+'% left':'Not reported')+'</strong>'+(w.resetAt?' · resets '+esc(formatAbsTime(w.resetAt)):'')+'</div>').join('');
+      const billing=(p.billing||[]).map(b=>'<div>'+esc(b.label||b.type||'Billing')+': <strong>'+esc(Number.isFinite(b.amount)?b.amount+' '+(b.unit||''):'Not reported')+'</strong></div>').join('');
+      const rows=(D.tokenUsage30d||[]).filter(m=>String(m.modelId||'').startsWith(p.provider+'/'));
+      const missing=rows.reduce((n,m)=>n+(m.missingCostEntries||0),0);
+      const known=rows.filter(m=>Number.isFinite(m.knownCost));
+      const spend=rows.length?'<p style="margin-top:8px">Recorded session spend · 30d: <strong>'+(known.length?runtimeMoney(known.reduce((n,m)=>n+m.knownCost,0),4):'Not reported')+'</strong>'+(missing?' · '+missing+' unpriced entries (subtotal only)':known.length<rows.length?' · subtotal only; some costs not reported':'')+(D.usage30d?.tokensComplete===false?' · collection incomplete':'')+'</p>':'';
+      return '<div class="glass panel"><h4>'+esc(p.displayName||p.provider)+'</h4><div style="color:var(--muted)">'+esc(p.provider)+'</div>'+(p.plan?'<p>'+esc(p.plan)+'</p>':'')+windows+billing+(p.summary?'<p>'+esc(p.summary)+'</p>':'')+(!windows&&!billing&&!p.summary?'<p>No live usage data reported by this provider.</p>':'')+(p.hasError?'<p>Provider usage request failed.</p>':'')+spend+'</div>';
+    }).join('');
+    $('providerUsagePanel').innerHTML='<p>'+esc(collectionLabel(D.collections?.providerUsage))+(D.providerUsage?.updatedAt?' · provider snapshot '+esc(formatAbsTime(D.providerUsage.updatedAt)):'')+'</p><p>Session spend: '+esc(collectionLabel(D.collections?.usage30d))+'</p><p style="color:var(--muted);margin-bottom:8px">Provider quotas and balances are separate from recorded session costs. Unpriced entries are not zero-cost usage.</p><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr));gap:10px">'+(cards||'<p>No provider data reported.</p>')+'</div>';
   },
   render(D){
     const statuses=D.collections||{};
     this.renderGateway(D);
+    this.renderProviders(D);
 	const runtimeLogs=statuses.sessions?.source==='gateway.sessions.list';
 	['logSourceCron','logSourceSession','logSourceSubagent'].forEach(id=>{$(id).disabled=runtimeLogs;$(id).title=runtimeLogs?'Separate legacy files are unavailable; use gateway logs':'';});
 	if(runtimeLogs&&!['all','gateway'].includes(LogTail._source))LogTail.setSource('all');
@@ -1748,6 +1775,7 @@ const Renderer = {
     $('hUp').textContent=metrics.uptime;
     $('hMem').textContent=metrics.memory;
   }
+  RuntimePanels.renderGateway(D);
   $('hSess').textContent=activeSessionSummary(D);
   collectionNotice('healthNotice',D.collections?.sessions,'Sessions');
 
@@ -1757,8 +1785,11 @@ const Renderer = {
     // usage collections behind them rather than implying both are current.
     const usageStatus=weakestCollection([D.collections?.usageToday,D.collections?.usageAll]);
     collectionNotice('costNotice',usageStatus,'Usage');
-    $('cToday').textContent=usageMoney(D.totalCostToday,D.usageToday);
-    $('cAll').textContent=usageMoney(D.totalCostAllTime,D.usageAll);
+    for(const [id,label,total,usage] of [['cToday',"Today's",D.totalCostToday,D.usageToday],['cAll','All-Time',D.totalCostAllTime,D.usageAll]]){
+      const subtotal=!Number.isFinite(total)&&Number.isFinite(usage?.knownCost);
+      $(id+'Label').textContent=label+(subtotal?' known subtotal':' Cost');
+      $(id).textContent=subtotal?runtimeMoney(usage.knownCost,4):usageMoney(total,usage);
+    }
     $('cProj').textContent=usageMoney(D.projectedMonthly,D.usageToday,0);
     $('cProjSub').textContent=Number.isFinite(D.projectedMonthly)?"Based on today's rate":'Requires complete pricing and collection for today';
     for(const [id,usage] of [['cTodaySub',D.usageToday],['cAllSub',D.usageAll]]){
@@ -1778,7 +1809,9 @@ const Renderer = {
       legend+=`<div class="donut-legend-item"><span class="donut-legend-dot" style="background:${c}"></span>${esc(d.model)} $${(d.cost||0).toFixed(0)} (${Math.round(pct)}%)</div>`;
     });
     $('donut').style.background=grad?`conic-gradient(${grad.slice(0,-1)})`:'var(--surface)';
-    $('donutCenter').textContent=usageMoney(D.totalCostAllTime,D.usageAll,0);
+    const knownSubtotal=!Number.isFinite(D.totalCostAllTime)&&Number.isFinite(D.usageAll?.knownCost);
+    $('donutLabel').textContent=knownSubtotal?'Known subtotal (not a total)':'Cost Breakdown';
+    $('donutCenter').textContent=knownSubtotal?runtimeMoney(D.usageAll.knownCost,4):usageMoney(D.totalCostAllTime,D.usageAll,2);
     $('donutLegend').innerHTML=legend||'<span>'+esc(Number.isFinite(D.totalCostAllTime)?'No model breakdown reported':usageExplanation(D.usageAll)||'Cost not reported by source')+'</span>';
   }
 
@@ -2498,6 +2531,10 @@ const SystemBar = {
     if(gwReadyAlert)gwReadyAlert.remove();
     window._sysBarActive=false;
     window._gwOnlineConfirmed=false;
+    if(State.data?.runtimeTarget?.mode==='container'&&State.data.collections?.gatewayHealth){
+      RuntimePanels.renderGateway(State.data);
+      if(State.data.collections?.runtimeHealth?.source==='gateway.status')RuntimePanels.renderHealth(State.data);
+    }
   },
   _gatewayState(d) {
     const gwRuntime=d.openclaw?.gateway||{};

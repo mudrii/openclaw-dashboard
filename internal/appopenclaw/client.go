@@ -271,7 +271,7 @@ type Client struct {
 }
 
 var readMethods = map[string]bool{
-	"sessions.list": true, "sessions.usage": true, "usage.cost": true,
+	"sessions.list": true, "sessions.usage": true, "usage.cost": true, "usage.status": true, "health": true,
 	"tasks.list": true, "tasks.get": true, "cron.list": true, "cron.get": true, "cron.runs": true,
 	"channels.status": true, "logs.tail": true, "status": true, "config.get": true,
 	"doctor.memory.status": true, "skills.status": true, "system.info": true,
@@ -330,9 +330,12 @@ func (c Client) runJSON(ctx context.Context, method string, args []string, value
 		return err
 	}
 	var envelope struct {
-		OK *bool `json:"ok"`
+		OK    *bool `json:"ok"`
+		Error any   `json:"error"`
 	}
-	if DecodeJSON(out, &envelope) == nil && envelope.OK != nil && !*envelope.OK {
+	// A successful health RPC uses ok=false as its unhealthy verdict.
+	// An RPC error envelope must still be rejected.
+	if DecodeJSON(out, &envelope) == nil && envelope.OK != nil && !*envelope.OK && (method != "health" || envelope.Error != nil) {
 		return CommandError(out, errors.New("command failed"))
 	}
 	return DecodeJSON(out, value)

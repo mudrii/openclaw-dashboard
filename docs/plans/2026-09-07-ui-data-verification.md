@@ -4,7 +4,7 @@
 
 Reviewed the embedded dashboard against a freshly built server on port 8082 using the selected OpenClaw container, plus synthetic fixtures covering populated, empty, error, pagination, chat, and operation states. Computer control was used for the final hands-on verification. No production chat request or runtime operation was submitted.
 
-All 17 live collections were ready on the final source check. Temporary collection timeouts during validation were displayed as stale, retaining the last successful data, and subsequently recovered. This is a point-in-time UI and data validation, not a production release approval.
+All 17 original live collections were ready on the initial source check. The follow-up below adds gateway health and provider usage collectors. Temporary collection timeouts during validation were displayed as stale, retaining the last successful data, and subsequently recovered. This is a point-in-time UI and data validation, not a production release approval.
 
 ## Repairs
 
@@ -20,7 +20,7 @@ All 17 live collections were ready on the final source check. Temporary collecti
 | Fields | Verified source and interpretation |
 | --- | --- |
 | Gateway PID, uptime, RSS, version | `gateway.system.info` and `gateway.status`; values now populate both health and runtime views without waiting for another system poll. |
-| Gateway readiness | Host readiness probes do not apply to the selected container. The UI explains this unknown status; collected process metrics do not establish readiness. |
+| Gateway health | Host readiness probes do not apply to the selected container. The follow-up adds its own `health` RPC verdict for Online/Unhealthy; stale or unavailable health remains explicit. Process metrics alone do not establish health. |
 | Sessions, activity, context, tokens | `gateway.sessions.list`; 18 stored sessions in the inspected snapshot. Source-marked stale token counts remain explicitly stale. |
 | Tasks, owners, runs, progress, duration | `gateway.tasks.list`; absent owner/agent metadata in imported records is explained, and zero-second durations are preserved. |
 | Automation schedule and history | `gateway.cron.list` and history endpoint; disabled heartbeat has no recorded run or duration, which is explicitly stated. |
@@ -49,3 +49,13 @@ After expanding the live and fixture data panels, the inspected visible tables h
 Run `make frontend-test` for dependency-free renderer regressions. For manual browser checks, run `node scripts/ui-fixture-server.cjs` and open `http://127.0.0.1:8083`; `/?scenario=empty` exercises empty session/automation/usage data, and `/?scenario=outage` exercises unavailable refresh/system endpoints. This fixture server binds only to loopback and never contacts OpenClaw.
 
 The optional `scripts/ui-browser-smoke.cjs` requires an external Playwright installation selected with `PLAYWRIGHT_MODULE` and a running dashboard selected with `DASHBOARD_TEST_URL`. It intercepts every API endpoint with synthetic responses and writes its results under `dist/ui-browser-results`. It adds no application dependencies and is not part of the standard CI gate.
+
+## Provider-page follow-up
+
+The authenticated native Model Providers page exposed data absent from the first dashboard collection path. Added `gateway.health` and `gateway.usage.status` through the existing bounded, selected-runtime CLI adapter. The adapter distinguishes an unhealthy health verdict from a failed RPC envelope. Credential/error payloads and channel details are excluded from the new projections.
+
+The cost section now displays provider plan names, quota percentages remaining, reset times, balances, and recorded 30-day session subtotals. It includes providers from model inventory and historical sessions, so a historical provider can appear even when it is no longer configured. Provider snapshot time and both collection statuses are visible. The main cost cards expose known dollar subtotals rather than hiding those amounts behind a missing-price label. Unknown historical prices remain explicitly incomplete; provider quota and balance data cannot establish those historical costs.
+
+Computer verification compared the dashboard with the authenticated native provider page: MiniMax, z.ai, Copilot, and DeepSeek values were present. The selected container reported a successful health RPC and the dashboard displayed Online. Its own `/healthz` and `/readyz` also returned HTTP 200 during read-only diagnosis. The production implementation uses the portable CLI/RPC path and does not require direct access to container-engine sockets.
+
+Regression coverage includes false health verdicts versus RPC errors, missing responses, credential projection, zero balances and quotas, known subtotal labelling, stale health, and independence from failed host-metric polls. No provider credential or historical billing record was changed.

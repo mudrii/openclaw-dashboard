@@ -364,10 +364,10 @@ func collectDashboardData(ctx context.Context, dashboardDir, openclawPath string
 	var runtimeSessions sessionSnapshot
 	var tasks []map[string]any
 	var sessionErr, taskErr error
-	var runtimeHealth, runtimeInventories map[string]any
+	var runtimeHealth, runtimeInventories, runtimeProviderStatus map[string]any
 	var modelReadiness []map[string]any
 	var modelsErr error
-	var healthStatuses, inventoryStatuses map[string]CollectionStatus
+	var healthStatuses, inventoryStatuses, providerStatuses map[string]CollectionStatus
 	usageRanges := []struct {
 		suffix, period, start string
 		result                runtimeUsage
@@ -383,7 +383,11 @@ func collectDashboardData(ctx context.Context, dashboardDir, openclawPath string
 		if len(agentIDs) == 0 {
 			agentIDs = []string{"main"}
 		}
-		cwg.Add(3)
+		cwg.Add(4)
+		go func() {
+			defer cwg.Done()
+			runtimeProviderStatus, providerStatuses = collectRuntimeProviderStatus(ctx, client)
+		}()
 		go func() { defer cwg.Done(); modelReadiness, modelsErr = collectRuntimeModels(ctx, client, agentIDs) }()
 		go func() { defer cwg.Done(); runtimeHealth, healthStatuses = collectRuntimeHealth(ctx, client, agentIDs) }()
 		go func() {
@@ -608,6 +612,8 @@ func collectDashboardData(ctx context.Context, dashboardDir, openclawPath string
 		data["sessionTotal"] = runtimeSessions.Total
 		data["modelReadiness"] = modelReadiness
 		collections["modelReadiness"] = collectionStatus("cli.models.status", modelsErr, modelsErr == nil)
+		maps.Copy(data, runtimeProviderStatus)
+		maps.Copy(collections, providerStatuses)
 		maps.Copy(data, runtimeHealth)
 		maps.Copy(data, runtimeInventories)
 		maps.Copy(collections, healthStatuses)

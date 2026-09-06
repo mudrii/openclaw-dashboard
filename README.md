@@ -32,10 +32,10 @@ It's not trying to replace the OpenClaw CLI or Telegram interface. It's the at-a
 2. **🔔 Header Bar** — Bot name, online/offline status, auto-refresh countdown, theme picker
 3. **⚠️ Alerts Banner** — Smart alerts for high costs, failed crons, high context usage, gateway offline
 4. **💚 System Health** — Gateway status, available process metadata, compaction mode, session inventory count
-5. **💰 Cost Cards** — Today's cost, all-time cost, projected monthly, cost breakdown donut chart
+5. **💰 Cost Cards** — Today's cost, all-time cost, clearly labelled known subtotals when pricing is incomplete, projected monthly, and cost breakdown
 6. **⏰ Cron Jobs** — All scheduled jobs with status, schedule, last/next run, duration, model, plus a delivery-outcome dot and a `⚡FLAPPING` badge for unstable jobs
 7. **📡 Active Sessions** — Recent sessions with model, type badges (DM/group/cron/subagent), context %, tokens
-8. **📊 Token Usage & Cost** — Per-model breakdown with Today/7d/30d/all-time tabs, usage bars and totals; incomplete pricing remains Unknown
+8. **📊 Token Usage & Cost** — Per-model breakdown with Today/7d/30d/all-time tabs, usage bars and totals; unpriced records stay explicit
 9. **🤖 Sub-Agent Activity** — Sub-agent runs with agent, task, status, and duration (Today/7d/30d/all-time tabs), sourced from the gateway's durable task store
 10. **📈 Charts & Trends** — Cost trend and model-cost charts, pure SVG with a 7d/30d toggle; unavailable pricing is explicit
 11. **📋 Live Logs and Error Feed** — Bounded runtime logs, severity/regex filters, grouped warnings and errors
@@ -58,7 +58,8 @@ It's not trying to replace the OpenClaw CLI or Telegram interface. It's the at-a
 - 📊 **Top Metrics Bar** — Always-on CPU/RAM/swap/disk + gateway status, per-metric thresholds, macOS + Linux
 - 💬 **AI Chat** — Natural language queries about costs, sessions, crons, and config via OpenClaw gateway
 - 🎯 **Accurate Model Display** — 5-level resolution chain ensures every session/sub-agent shows its real model, not the default
-- 🔍 **Runtime Observability** — `/api/system` includes live gateway runtime state (liveness, readiness, failing deps, uptime, PID, memory) sourced from `/healthz`, `/readyz`, and `openclaw status --json`
+- 🔍 **Runtime Observability** — `/api/system` includes live gateway runtime state (liveness, readiness, failing deps, uptime, PID, memory) sourced from `/healthz`, `/readyz`, and `openclaw status --json` for native probes; container status uses the selected gateway's `health` RPC and never a host-loopback guess
+- 💳 **Provider Plans and Balances** — Selected-gateway `usage.status` supplies reported subscription quotas, reset times, and balances alongside separately labelled 30-day recorded session spend.
 - 🟡 **Gateway Readiness Alerts** — Alert banner shows `🟡 Gateway not ready: discord` (or any failing dep) and auto-clears on recovery
 - ⚡ **Gateway Runtime + Config Cards** — System Settings split into two panels: Gateway Runtime (live probes) and Gateway Config (static config snapshot)
 - 📶 **Live Channel Health** — Migrated runtimes report gateway account-level configuration, connection and probe state separately; unknown fields stay unknown. Legacy collection retains readiness/session-activity fallbacks

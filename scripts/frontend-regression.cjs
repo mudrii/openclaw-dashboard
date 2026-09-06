@@ -126,6 +126,44 @@ test('empty session controls disable and recover when sessions arrive', `
     assert.equal($('nativeSession').hidden,false);
   }finally{TestedRuntimePanels.linkSession=link;TestedRuntimePanels.renderTasks=tasks;}
 `);
+test('selected container health uses its RPC verdict and does not retain stale Online', `
+  const data={runtimeTarget:{mode:'container'},gateway:{status:'unknown',statusReason:'host_probe_not_applicable'},gatewayHealth:{ok:true},collections:{gatewayHealth:{state:'ready',complete:true,source:'gateway.health'}}};
+  TestedRuntimePanels.renderGateway(data);
+  assert.match($('hGw').innerHTML,/Online/);
+  data.collections.gatewayHealth.state='stale';
+  TestedRuntimePanels.renderGateway(data);
+  assert.doesNotMatch($('hGw').innerHTML,/Online/);
+  assert.match($('hGw').innerHTML,/stale/i);
+  data.collections.gatewayHealth.state='ready';data.gatewayHealth.ok=false;
+  TestedRuntimePanels.renderGateway(data);
+  assert.match($('hGw').innerHTML,/Unhealthy/);
+`);
+test('provider data renders balances quotas and explicit partial spend', `
+  TestedRuntimePanels.renderProviders({collections:{providerUsage:{state:'ready'}},providerUsage:{providers:[{provider:'minimax',plan:'Coding Plan',windows:[{label:'5h',usedPercent:0}],billing:[{type:'balance',amount:0,unit:'USD'}]}]},tokenUsage30d:[{modelId:'minimax/M3',knownCost:0,missingCostEntries:3}]});
+  const html=$('providerUsagePanel').innerHTML;
+  assert.match(html,/Coding Plan/);assert.match(html,/100% left/);assert.match(html,/0 USD/);
+  assert.match(html,/3 unpriced entries/);
+  assert.doesNotMatch(html,/undefined|NaN/);
+`);
+test('known cost is visible as a subtotal and never relabelled a complete total', `
+  const data={usageToday:{knownCost:1.2345,missingCostEntries:2,tokensComplete:true},usageAll:{knownCost:2,missingCostEntries:3,tokensComplete:true}};
+  Renderer.render({data,tabs:{}},{cost:true});
+  assert.equal($('cToday').textContent,'$1.2345');assert.match($('cTodayLabel').textContent,/subtotal/);
+  assert.match($('cTodaySub').textContent,/not a total/);
+  data.totalCostToday=1.23;Renderer.render({data,tabs:{}},{cost:true});
+  assert.equal($('cTodayLabel').textContent,"Today's Cost");assert.equal($('cToday').textContent,'$1.23');
+`);
+test('host metrics failure does not erase fresh selected-container health', `
+  const previous=State.data;
+  try{
+    State.data={runtimeTarget:{mode:'container'},gatewayHealth:{ok:true},collections:{gatewayHealth:{state:'ready',complete:true,source:'gateway.health'}}};
+    SystemBar.renderGatewayDegraded('host metrics unavailable');
+    assert.match($('hGw').innerHTML,/Online/);
+    State.data.collections.gatewayHealth.state='stale';
+    SystemBar.renderGatewayDegraded('host metrics unavailable');
+    assert.doesNotMatch($('hGw').innerHTML,/Online/);
+  }finally{State.data=previous;}
+`);
 test('configuration preserves zeros and names missing values', `
   const data={agentConfig:{compaction:{mode:'safeguard',reserveTokensFloor:0,softThresholdTokens:0},telegramGroups:0,search:{provider:'fixture',maxResults:0,cacheTtlMinutes:0},gateway:{port:18789},agents:[{id:'main',model:'Alpha',fallbacks:[]}]}};
   Renderer.render({data,tabs:{usage:'today',subRuns:'today',subTokens:'today'}},{agentConfig:true});
