@@ -1527,7 +1527,7 @@ const DirtyChecker = {
       usage: this.sectionChanged(['tokenUsage','tokenUsageToday','tokenUsage7d','tokenUsage30d','subagentUsage','subagentUsageToday','subagentUsage7d','subagentUsage30d']) || snap.tabs.usage !== State.prevTabs.usage,
       subRuns: (!prevD || ['subagentRuns','subagentRuns7d','subagentRuns30d','subagentRunsToday'].some(k => this.stableSnapshot(D[k], ['task','agent','status','durationSec','timestamp']) !== this.stableSnapshot((prevD||{})[k], ['task','agent','status','durationSec','timestamp']))) || snap.tabs.subRuns !== State.prevTabs.subRuns,
       subTokens: this.sectionChanged(['tokenUsage','tokenUsageToday','tokenUsage7d','tokenUsage30d','subagentUsage','subagentUsageToday','subagentUsage7d','subagentUsage30d']) || snap.tabs.subTokens !== State.prevTabs.subTokens,
-      charts: this.sectionChanged(['dailyChart'], ['usage30d']) || snap.chartDays !== State.prevChartDays,
+      charts: this.sectionChanged(['dailyChart','tokenUsage7d','tokenUsage30d'], ['usage7d','usage30d']) || snap.chartDays !== State.prevChartDays,
       models: this.sectionChanged(['availableModels'], ['configuration']),
       skills: this.sectionChanged(['skills','skillInventory'], ['skillInventory']),
       git: this.sectionChanged(['gitLog']),
@@ -2280,7 +2280,8 @@ const Renderer = {
     }
     if(tokenTrend)Renderer.renderTokenChart('costChart',data);
     else Renderer.renderCostChart('costChart',data);
-    Renderer.renderModelChart('modelChart',data);
+    if(data.some(d=>!Number.isFinite(d.total)))this.renderKnownModelChart('modelChart',D,chartDays);
+    else Renderer.renderModelChart('modelChart',data);
     Renderer.renderSubagentChart('subagentChart',data);
   },
 
@@ -2325,6 +2326,18 @@ const Renderer = {
   const nth=Math.ceil(data.length/7);
   const xLabels=data.map((d,i)=>i%nth===0?`<text x="${P.l+i*stepX}" y="${H-P.b+16}" text-anchor="middle" fill="var(--dim)" font-size="9">${esc(d.label)}</text>`:'').join('');
   Renderer.patchSvg(id,`<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:350px">${yLabels}${xLabels}<path d="${area}" fill="var(--accent)" opacity="0.15"/><path d="${line}" fill="none" stroke="var(--accent)" stroke-width="2"/>${dots}</svg>`);
+  },
+
+  renderKnownModelChart(id,D,days){
+    const rows=(D['tokenUsage'+days+'d']||[]).filter(m=>Number.isFinite(m.knownCost)&&m.knownCost>0).slice().sort((a,b)=>b.knownCost-a.knownCost);
+    const status=collectionLabel(D.collections?.['usage'+days+'d']);
+    if(!rows.length){this.patchSvg(id,'<p class="chart-empty">No positive known model costs reported for '+days+' days.</p><p>'+esc(status)+'</p>');return;}
+    const max=rows[0].knownCost,height=rows.length*48+10;
+    const bars=rows.map((m,i)=>{
+      const name=m.modelId||m.model||'Unnamed model',y=i*48+8;
+      return '<g><title>'+esc(name)+': $'+m.knownCost.toFixed(4)+'</title><text x="0" y="'+(y+12)+'" fill="currentColor" font-size="11">'+esc(name.length>48?name.slice(0,45)+'…':name)+'</text><rect x="0" y="'+(y+20)+'" width="'+(m.knownCost/max*320)+'" height="12" rx="3" fill="'+COLORS[i%COLORS.length]+'"/><text x="330" y="'+(y+31)+'" fill="currentColor" font-size="11">$'+m.knownCost.toFixed(2)+'</text></g>';
+    }).join('');
+    this.patchSvg(id,'<p>Known costs · '+days+' days · excludes unpriced usage</p><svg viewBox="0 0 400 '+height+'" role="img" aria-label="Known cost by model" style="width:100%">'+bars+'</svg><p style="font-size:11px;color:var(--muted)">'+esc(status)+'</p>');
   },
 
   renderModelChart(id,data){

@@ -163,6 +163,16 @@ test('partial costs populate projection and donut without inventing unknown pric
   assert.equal($('donutLabel').textContent,'Cost Breakdown');
   assert.match($('donutLegend').innerHTML,/Complete/);
 `);
+test('model chart shows only known costs from the selected period', `
+  const data={dailyChart:[{label:'today',total:null,tokens:10,models:{}}],tokenUsage7d:[{model:'Seven',knownCost:2},{model:'Unknown',knownCost:null}],tokenUsage30d:[{model:'Thirty',knownCost:9}]};
+  Renderer.renderCharts(data,7);
+  assert.match($('modelChart').innerHTML,/Seven/);assert.match($('modelChart').innerHTML,/2.00/);
+  assert.doesNotMatch($('modelChart').innerHTML,/Unknown|Thirty|Cost unavailable/);
+  Renderer.renderCharts(data,30);
+  assert.match($('modelChart').innerHTML,/Thirty/);assert.doesNotMatch($('modelChart').innerHTML,/Seven/);
+  data.tokenUsage30d=[];Renderer.renderCharts(data,30);
+  assert.doesNotMatch($('modelChart').innerHTML,/Thirty/);
+`);
 test('host metrics failure does not erase fresh selected-container health', `
   const previous=State.data;
   try{
