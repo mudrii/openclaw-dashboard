@@ -1,6 +1,14 @@
 # Changelog
 
-## Unreleased
+## v2026.9.7 — 2026-09-07
+
+- Restore the original cost overview layout while displaying available cost data: partial monthly projections, known-cost model donuts, and 7/30-day model cost charts. Unpriced usage is explicitly excluded rather than treated as free.
+- Read gateway health from the selected container's health RPC; distinguish unhealthy verdicts from failed requests and prevent host metrics from overwriting container health.
+- Collect provider quota and balance data through the selected gateway without exposing credential fields. The provider card section is intentionally absent from the dashboard pending design selection.
+- Preserve zero-valued configuration fields, explain absent source data, improve empty-table states, and fix responsive header wrapping and runtime-card refreshes.
+- Verify Linux/macOS release archives, SBOMs, Homebrew installation, container startup, and locked Nix flake builds in CI. Release publication requires successful main-branch CI for the exact tagged commit.
+- Add renderer and collector regressions for partial costs, unhealthy/stale health, zero values, and missing data.
+
 
 - Reject foreign browser origins before authenticated chat work, while preserving loopback development and Host-preserving TLS proxies.
 - Publish dashboard snapshots and token caches through unique private temporary files so concurrent refreshes cannot corrupt a published snapshot.
