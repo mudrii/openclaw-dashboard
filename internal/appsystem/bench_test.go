@@ -1,14 +1,38 @@
 package appsystem
 
 import (
-	"context"
+	"io"
+	"log/slog"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
 	appconfig "github.com/mudrii/openclaw-dashboard/internal/appconfig"
 )
 
+// silenceSlog discards structured log output for the duration of a benchmark.
+// The cache-priming refresh emits WARN lines on the same stream as benchmark
+// results, which corrupts the samples benchstat parses.
+func silenceSlog(tb testing.TB) {
+	tb.Helper()
+	old := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(io.Discard, nil)))
+	tb.Cleanup(func() { slog.SetDefault(old) })
+}
+
 func BenchmarkGetJSON_CacheHit(b *testing.B) {
+	// Hermetic: every probe the priming refresh makes (gateway healthz/readyz,
+	// npm dist-tags) is routed to a local httptest server, so the benchmark
+	// never leaves the machine and never waits out a network timeout.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"latest":"2026.9.1","status":"ok"}`))
+	}))
+	b.Cleanup(srv.Close)
+	swapSharedSystemHTTPClient(b, &http.Client{Transport: &rewriteTransport{target: srv.URL}})
+	silenceSlog(b)
+
 	cfg := appconfig.SystemConfig{
 		Enabled:            true,
 		MetricsTTLSeconds:  3600,
@@ -23,8 +47,7 @@ func BenchmarkGetJSON_CacheHit(b *testing.B) {
 		Disk:               appconfig.MetricThreshold{Warn: 80, Critical: 95},
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := b.Context()
 
 	svc := NewSystemService(cfg, "1.0.0", ctx)
 

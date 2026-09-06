@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -111,11 +112,11 @@ func catalogNameIsBareID(model, name string) bool {
 // lower-cased model segment; token is the family as it appears in id (e.g.
 // "glm"); prefix is its canonical upper-case label (e.g. "GLM").
 func upperFamily(id, token, prefix string) string {
-	i := strings.Index(id, token)
-	if i < 0 {
+	_, after, ok := strings.Cut(id, token)
+	if !ok {
 		return prefix
 	}
-	rest := strings.TrimPrefix(id[i+len(token):], "-")
+	rest := strings.TrimPrefix(after, "-")
 	end := 0
 	for end < len(rest) && (rest[end] == '.' || (rest[end] >= '0' && rest[end] <= '9')) {
 		end++
@@ -133,11 +134,11 @@ func upperFamily(id, token, prefix string) string {
 // token is the lower-case family as it appears in the id ("opus"); family is the
 // display label ("Opus").
 func claudeFamilyName(id, token, family string) string {
-	i := strings.Index(id, token)
-	if i < 0 {
+	_, after, ok := strings.Cut(id, token)
+	if !ok {
 		return "Claude " + family
 	}
-	rest := strings.TrimPrefix(id[i+len(token):], "-")
+	rest := strings.TrimPrefix(after, "-")
 	if rest == "" {
 		return "Claude " + family
 	}
@@ -145,7 +146,7 @@ func claudeFamilyName(id, token, family string) string {
 	// Stop at a long numeric segment (a YYYYMMDD date snapshot) or any
 	// non-numeric suffix (e.g. "-thinking").
 	var parts []string
-	for _, seg := range strings.Split(rest, "-") {
+	for seg := range strings.SplitSeq(rest, "-") {
 		if len(seg) == 0 || len(seg) > 3 || !isAllDigits(seg) {
 			break
 		}
@@ -398,12 +399,10 @@ func collectDashboardData(ctx context.Context, dashboardDir, openclawPath string
 		}()
 		go func() { defer cwg.Done(); tasks, taskErr = collectRuntimeTasks(ctx, client, loc) }()
 		for i := range usageRanges {
-			cwg.Add(1)
-			go func() {
-				defer cwg.Done()
+			cwg.Go(func() {
 				r := &usageRanges[i]
 				r.result, r.err = collectRuntimeUsage(ctx, client, r.period, r.start, todayStr, loc.String())
-			}()
+			})
 		}
 	}
 
@@ -611,18 +610,10 @@ func collectDashboardData(ctx context.Context, dashboardDir, openclawPath string
 		data["sessionTotal"] = runtimeSessions.Total
 		data["modelReadiness"] = modelReadiness
 		collections["modelReadiness"] = collectionStatus("cli.models.status", modelsErr, modelsErr == nil)
-		for key, value := range runtimeHealth {
-			data[key] = value
-		}
-		for key, value := range runtimeInventories {
-			data[key] = value
-		}
-		for key, value := range healthStatuses {
-			collections[key] = value
-		}
-		for key, value := range inventoryStatuses {
-			collections[key] = value
-		}
+		maps.Copy(data, runtimeHealth)
+		maps.Copy(data, runtimeInventories)
+		maps.Copy(collections, healthStatuses)
+		maps.Copy(collections, inventoryStatuses)
 		if configErr != nil {
 			// Without configuration the agent roster is the guessed ["main"],
 			// so these per-agent collections cover an unknown fraction of the

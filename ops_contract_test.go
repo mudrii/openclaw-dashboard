@@ -3,6 +3,7 @@ package dashboard
 import (
 	"os"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -294,21 +295,11 @@ func makeTargetPrereqs(t *testing.T, makefile, target string) []string {
 }
 
 func containsWord(words []string, want string) bool {
-	for _, word := range words {
-		if word == want {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(words, want)
 }
 
 func containsString(values []string, want string) bool {
-	for _, value := range values {
-		if value == want {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(values, want)
 }
 
 func goReleaserBeforeHooks(t *testing.T, config string) []string {

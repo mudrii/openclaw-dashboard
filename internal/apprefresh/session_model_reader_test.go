@@ -177,10 +177,7 @@ func TestReadLastSessionModel(t *testing.T) {
 				}
 				padLen = targetStart - b.Len()
 			}
-			inner := padLen - len(`{"a":"`) - len(`"}`) - 1
-			if inner < 1 {
-				inner = 1
-			}
+			inner := max(padLen-len(`{"a":"`)-len(`"}`)-1, 1)
 			padLine := `{"a":"` + strings.Repeat("z", inner) + `"}` + "\n"
 			// Final tiny adjust by trimming or extending inner.
 			for len(padLine) < padLen {

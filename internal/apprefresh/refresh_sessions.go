@@ -34,7 +34,7 @@ func loadSessionStores(basePath string) []SessionStoreFile {
 			continue
 		}
 		rel, _ := filepath.Rel(basePath, f)
-		agentName := strings.SplitN(rel, string(filepath.Separator), 2)[0]
+		agentName, _, _ := strings.Cut(rel, string(filepath.Separator))
 		stores = append(stores, SessionStoreFile{AgentName: agentName, Store: store})
 	}
 	return stores
@@ -52,7 +52,7 @@ func buildGroupNames(stores []SessionStoreFile) map[string]string {
 			if len(parts) < 2 {
 				continue
 			}
-			gid := strings.SplitN(parts[1], ":", 2)[0]
+			gid, _, _ := strings.Cut(parts[1], ":")
 			if gid == "" {
 				continue
 			}
@@ -197,8 +197,8 @@ func readLastSessionModel(path string) (string, bool) {
 			tail = ""
 		}
 
-		for i := len(lines) - 1; i >= 0; i-- {
-			if model, ok := sessionModelFromLine(lines[i]); ok {
+		for _, line := range slices.Backward(lines) {
+			if model, ok := sessionModelFromLine(line); ok {
 				return model, true
 			}
 		}

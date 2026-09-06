@@ -198,7 +198,7 @@ func warnUnknownConfigKeys(raw []byte) {
 	if err := json.Unmarshal(raw, &generic); err != nil {
 		return
 	}
-	walkUnknownKeys("", generic, reflect.TypeOf(Config{}))
+	walkUnknownKeys("", generic, reflect.TypeFor[Config]())
 }
 
 // walkUnknownKeys recurses through a decoded JSON tree, comparing each
@@ -233,8 +233,7 @@ func walkUnknownKeys(prefix string, m map[string]any, structType reflect.Type) {
 // for every exported field in t. Used to validate config.json keys.
 func jsonFields(t reflect.Type) map[string]reflect.Type {
 	out := make(map[string]reflect.Type, t.NumField())
-	for i := 0; i < t.NumField(); i++ {
-		f := t.Field(i)
+	for f := range t.Fields() {
 		if !f.IsExported() {
 			continue
 		}

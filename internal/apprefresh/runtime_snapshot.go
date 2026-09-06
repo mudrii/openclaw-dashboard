@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"math"
 	"os"
 	"path/filepath"
@@ -83,7 +84,7 @@ func collectRuntimeSessions(ctx context.Context, client appopenclaw.Client, loc 
 	snapshot := sessionSnapshot{Rows: make([]map[string]any, 0)}
 	seen := map[string]bool{}
 	offset := 0
-	for page := 0; page < runtimeMaxRows/runtimePageSize; page++ {
+	for range runtimeMaxRows / runtimePageSize {
 		var response struct {
 			Sessions   []map[string]any `json:"sessions"`
 			TotalCount int              `json:"totalCount"`
@@ -191,7 +192,7 @@ func collectRuntimeTasks(ctx context.Context, client appopenclaw.Client, loc *ti
 	seenIDs := map[string]bool{}
 	seenCursors := map[string]bool{}
 	params := map[string]any{"limit": runtimePageSize}
-	for page := 0; page < runtimeMaxRows/runtimePageSize; page++ {
+	for range runtimeMaxRows / runtimePageSize {
 		var response struct {
 			Tasks      []map[string]any `json:"tasks"`
 			NextCursor string           `json:"nextCursor"`
@@ -215,9 +216,7 @@ func collectRuntimeTasks(ctx context.Context, client appopenclaw.Client, loc *ti
 			if ended, _ := task["endedAt"].(float64); ended <= 0 {
 				row["durationSec"] = nil
 			}
-			for k, v := range projectFields(task, "runtime", "kind", "sessionKey", "childSessionKey", "ownerKey", "runId", "createdAt", "startedAt", "endedAt", "progressSummary", "terminalSummary", "deliveryStatus", "terminalOutcome") {
-				row[k] = v
-			}
+			maps.Copy(row, projectFields(task, "runtime", "kind", "sessionKey", "childSessionKey", "ownerKey", "runId", "createdAt", "startedAt", "endedAt", "progressSummary", "terminalSummary", "deliveryStatus", "terminalOutcome"))
 			row["id"] = id
 			row["rawStatus"] = task["status"]
 			for _, field := range []string{"task", "error", "progressSummary", "terminalSummary"} {

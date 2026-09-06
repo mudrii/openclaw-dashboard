@@ -78,7 +78,7 @@ func TestConfigurationGuideFullExampleMatchesConfigSchema(t *testing.T) {
 		t.Fatalf("Full Example JSON is invalid: %v", err)
 	}
 
-	want := jsonFields(reflect.TypeOf(Config{}))
+	want := jsonFields(reflect.TypeFor[Config]())
 	for key := range want {
 		if _, ok := example[key]; !ok {
 			t.Errorf("Full Example missing top-level config key %q", key)

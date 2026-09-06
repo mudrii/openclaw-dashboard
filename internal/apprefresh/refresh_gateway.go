@@ -268,10 +268,7 @@ func collectGatewayRSS(ctx context.Context, pid string, gw map[string]any) {
 // formatUptimeSince renders elapsed time since the gateway lock's createdAt as a
 // compact d/h/m string, matching the dashboard's coarse uptime display.
 func formatUptimeSince(createdAt time.Time) string {
-	d := time.Since(createdAt)
-	if d < 0 {
-		d = 0
-	}
+	d := max(time.Since(createdAt), 0)
 	switch {
 	case d >= 24*time.Hour:
 		return fmt.Sprintf("%dd %dh", int(d.Hours())/24, int(d.Hours())%24)

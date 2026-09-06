@@ -162,7 +162,7 @@ func TestHandleChat_RateLimited(t *testing.T) {
 	s := chatTestServer(t, dir, 1)
 
 	// Burn the bucket
-	for i := 0; i < chatRateLimit; i++ {
+	for range chatRateLimit {
 		s.chatLimiter.allow("10.0.0.5")
 	}
 	req := httptest.NewRequest(http.MethodPost, "/api/chat", strings.NewReader(`{"question":"hi"}`))

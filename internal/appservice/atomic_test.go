@@ -127,7 +127,7 @@ func TestUniqueTempPath(t *testing.T) {
 
 	t.Run("errors when every candidate is occupied", func(t *testing.T) {
 		dir := t.TempDir()
-		for i := 0; i < 1000; i++ {
+		for i := range 1000 {
 			p := filepath.Join(dir, fmt.Sprintf(".unit.conf.tmp-%d-%d", os.Getpid(), i))
 			if err := os.WriteFile(p, nil, 0o600); err != nil {
 				t.Fatalf("seed candidate %d: %v", i, err)

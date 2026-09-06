@@ -168,8 +168,7 @@ func ErrorCode(err error) string {
 	if err == nil {
 		return "ok"
 	}
-	var e *readError
-	if errors.As(err, &e) {
+	if e, ok := errors.AsType[*readError](err); ok {
 		return e.code
 	}
 	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {

@@ -89,7 +89,7 @@ func TestLaunchd_Install_filtersBadPathEntries(t *testing.T) {
 	}
 	pathLine := extractPlistPath(t, string(data))
 	for _, bad := range []string{"", ".", "relative/dir"} {
-		for _, entry := range strings.Split(pathLine, ":") {
+		for entry := range strings.SplitSeq(pathLine, ":") {
 			if entry == bad {
 				t.Errorf("PATH entry %q should have been filtered, got: %q", bad, pathLine)
 			}
@@ -104,11 +104,10 @@ func TestLaunchd_Install_filtersBadPathEntries(t *testing.T) {
 func extractPlistPath(t *testing.T, plist string) string {
 	t.Helper()
 	const marker = "<key>PATH</key>"
-	i := strings.Index(plist, marker)
-	if i < 0 {
+	_, rest, ok := strings.Cut(plist, marker)
+	if !ok {
 		t.Fatalf("plist missing PATH key:\n%s", plist)
 	}
-	rest := plist[i+len(marker):]
 	open := strings.Index(rest, "<string>")
 	if open < 0 {
 		t.Fatalf("plist missing PATH value:\n%s", plist)

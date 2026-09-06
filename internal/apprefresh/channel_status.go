@@ -3,6 +3,7 @@ package apprefresh
 import (
 	"context"
 	"encoding/json"
+	"maps"
 	"os/exec"
 	"time"
 )
@@ -135,8 +136,6 @@ func overlayChannelStatus(agentConfig map[string]any, cliStatus map[string]any) 
 			current = map[string]any{}
 			cs[channel] = current
 		}
-		for k, v := range incoming {
-			current[k] = v
-		}
+		maps.Copy(current, incoming)
 	}
 }

@@ -1,7 +1,6 @@
 package appserver
 
 import (
-	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -13,13 +12,14 @@ import (
 func BenchmarkLoadData_CacheHit(b *testing.B) {
 	dir := b.TempDir()
 	dataPath := filepath.Join(dir, "data.json")
-	if err := os.WriteFile(dataPath, []byte(`{"botName":"test","lastRefresh":"2026-01-01"}`), 0o644); err != nil {
+	// A production-sized payload, so the cache-miss path measures JSON
+	// decoding rather than os.Stat/os.ReadFile syscall overhead.
+	if err := os.WriteFile(dataPath, marshalDashboardPayload(b), 0o644); err != nil {
 		b.Fatal(err)
 	}
 
 	cfg := appconfig.Default()
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := b.Context()
 
 	s := NewServer(dir, "1.0.0", cfg, "", []byte("<html></html>"), ctx, nil)
 
@@ -37,13 +37,14 @@ func BenchmarkLoadData_CacheHit(b *testing.B) {
 func BenchmarkLoadData_CacheMiss(b *testing.B) {
 	dir := b.TempDir()
 	dataPath := filepath.Join(dir, "data.json")
-	if err := os.WriteFile(dataPath, []byte(`{"botName":"test","lastRefresh":"2026-01-01"}`), 0o644); err != nil {
+	// A production-sized payload, so the cache-miss path measures JSON
+	// decoding rather than os.Stat/os.ReadFile syscall overhead.
+	if err := os.WriteFile(dataPath, marshalDashboardPayload(b), 0o644); err != nil {
 		b.Fatal(err)
 	}
 
 	cfg := appconfig.Default()
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := b.Context()
 
 	s := NewServer(dir, "1.0.0", cfg, "", []byte("<html></html>"), ctx, nil)
 

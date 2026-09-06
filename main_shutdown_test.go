@@ -152,8 +152,7 @@ func waitExit(cmd *exec.Cmd, timeout time.Duration) error {
 		if err == nil {
 			return nil // exit code 0 — clean shutdown
 		}
-		var exitErr *exec.ExitError
-		if errors.As(err, &exitErr) {
+		if exitErr, ok := errors.AsType[*exec.ExitError](err); ok {
 			return fmt.Errorf("process exited with code %d", exitErr.ExitCode())
 		}
 		return err

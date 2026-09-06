@@ -50,8 +50,8 @@ func ResolveSystemdUnit(configUnit string) string {
 }
 
 func appendSystemdProfile(unit, profile string) string {
-	if strings.HasSuffix(unit, ".service") {
-		return strings.TrimSuffix(unit, ".service") + "-" + profile + ".service"
+	if before, ok := strings.CutSuffix(unit, ".service"); ok {
+		return before + "-" + profile + ".service"
 	}
 	return unit + "-" + profile
 }
@@ -76,7 +76,7 @@ func collectJournaldRecords(ctx context.Context, unit, source string, limit int)
 		return nil
 	}
 	var records []LogRecord
-	for _, line := range strings.Split(string(out), "\n") {
+	for line := range strings.SplitSeq(string(out), "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" {
 			continue

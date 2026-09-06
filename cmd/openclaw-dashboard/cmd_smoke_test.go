@@ -94,8 +94,7 @@ func runBin(t *testing.T, args []string, timeout time.Duration) (string, int) {
 	select {
 	case err := <-done:
 		code := 0
-		var exitErr *exec.ExitError
-		if errors.As(err, &exitErr) {
+		if exitErr, ok := errors.AsType[*exec.ExitError](err); ok {
 			code = exitErr.ExitCode()
 		} else if err != nil {
 			t.Fatalf("wait: %v", err)

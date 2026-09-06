@@ -32,9 +32,8 @@ func redactedTail(output []byte) string {
 // diagnostic tail is redacted by CommandError before it is stored on the error,
 // so no un-redacted byte can reach the logger from here.
 func logCollectionFailure(ctx context.Context, method string, err error) {
-	var collection *readError
 	detail := ""
-	if errors.As(err, &collection) {
+	if collection, ok := errors.AsType[*readError](err); ok {
 		detail = collection.detail
 	}
 	slog.WarnContext(ctx, "[openclaw] collection failed",

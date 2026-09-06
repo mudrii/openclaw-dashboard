@@ -121,8 +121,7 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		// Default user-facing message — never leak upstream gateway bodies which
 		// may contain stack traces, model identifiers, or raw HTML 5xx pages.
 		userMsg := "gateway unavailable"
-		var ge *appchat.GatewayError
-		if errors.As(err, &ge) {
+		if ge, ok := errors.AsType[*appchat.GatewayError](err); ok {
 			status = ge.Status
 			if status == http.StatusGatewayTimeout {
 				userMsg = "gateway timed out"

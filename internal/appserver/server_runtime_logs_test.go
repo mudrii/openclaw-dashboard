@@ -102,7 +102,7 @@ func TestRuntimeLogsUseGatewayAndCache(t *testing.T) {
 		}
 		return exec.CommandContext(ctx, "printf", "%s", `{"lines":["2026-09-05T00:00:00Z error token=secret-value"],"truncated":true,"cursor":12}`)
 	}}
-	for i := 0; i < 2; i++ {
+	for range 2 {
 		w := httptest.NewRecorder()
 		s.ServeHTTP(w, httptest.NewRequest("GET", "/api/logs?source=gateway&limit=10", nil))
 		if w.Code != 200 || strings.Contains(w.Body.String(), "secret-value") || !strings.Contains(w.Body.String(), `"truncated":true`) {

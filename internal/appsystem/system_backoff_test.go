@@ -17,9 +17,9 @@ import (
 func TestGetJSON_HardFailBackOff(t *testing.T) {
 	s := NewSystemService(appconfig.SystemConfig{Enabled: true, MetricsTTLSeconds: 60}, "test", context.Background())
 
-	var calls int32
+	var calls atomic.Int32
 	s.refresh = func(context.Context) ([]byte, bool) {
-		atomic.AddInt32(&calls, 1)
+		calls.Add(1)
 		return nil, true // hard fail
 	}
 
@@ -40,7 +40,7 @@ func TestGetJSON_HardFailBackOff(t *testing.T) {
 	deadline := time.Now().Add(2 * time.Second)
 	for {
 		s.metricsMu.RLock()
-		settled := !s.metricsRefresh && atomic.LoadInt32(&calls) >= 1
+		settled := !s.metricsRefresh && calls.Load() >= 1
 		s.metricsMu.RUnlock()
 		if settled {
 			break
@@ -52,12 +52,12 @@ func TestGetJSON_HardFailBackOff(t *testing.T) {
 	}
 
 	// Second call within the 120s back-off window must NOT kick a new refresh.
-	before := atomic.LoadInt32(&calls)
+	before := calls.Load()
 	if code, _ := s.GetJSON(context.Background()); code != 200 {
 		t.Fatalf("second GetJSON code = %d, want 200 (stale still served)", code)
 	}
 	time.Sleep(20 * time.Millisecond) // let any erroneous goroutine run
-	if got := atomic.LoadInt32(&calls); got != before {
+	if got := calls.Load(); got != before {
 		t.Errorf("refresh called again during back-off window: calls %d -> %d", before, got)
 	}
 }

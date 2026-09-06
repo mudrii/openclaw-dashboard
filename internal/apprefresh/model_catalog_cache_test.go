@@ -38,7 +38,7 @@ func TestModelCatalogCache_Singleflight(t *testing.T) {
 	now := time.Now()
 	results := make([]modelCatalog, 20)
 	var wg sync.WaitGroup
-	for i := 0; i < 20; i++ {
+	for i := range 20 {
 		wg.Add(1)
 		go func(idx int) {
 			defer wg.Done()

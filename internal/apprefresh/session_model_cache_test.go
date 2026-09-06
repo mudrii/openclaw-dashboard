@@ -63,12 +63,10 @@ func TestLiveSessionModelCache_Singleflight(t *testing.T) {
 
 	now := time.Now()
 	var wg sync.WaitGroup
-	for i := 0; i < 20; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for range 20 {
+		wg.Go(func() {
 			_ = c.fetch(context.Background(), now, time.Hour)
-		}()
+		})
 	}
 	<-started
 	close(release)
@@ -111,7 +109,7 @@ func TestLiveSessionModelCache_PanicDoesNotHangWaiters(t *testing.T) {
 	}
 
 	deadline := time.After(5 * time.Second)
-	for i := 0; i < callers; i++ {
+	for i := range callers {
 		select {
 		case <-done:
 		case <-deadline:

@@ -114,8 +114,7 @@ func TestWriteRPCWrapsMarshalError(t *testing.T) {
 	if want := "encode cron.update params: "; !strings.HasPrefix(err.Error(), want) {
 		t.Fatalf("err = %q, want prefix %q", err.Error(), want)
 	}
-	var unsupported *json.UnsupportedTypeError
-	if !errors.As(err, &unsupported) {
+	if _, ok := errors.AsType[*json.UnsupportedTypeError](err); !ok {
 		t.Fatalf("err = %v, want a wrapped json.UnsupportedTypeError", err)
 	}
 }
