@@ -1493,9 +1493,18 @@ const ErrorFeed = {
 
 // === DirtyChecker ===
 const DirtyChecker = {
-  sectionChanged(keys) {
+  sectionChanged(keys, collectionNames) {
     if (!State.prev) return true;
-    return keys.some(k => JSON.stringify(State.data[k]) !== JSON.stringify(State.prev[k]));
+    if (keys.some(k => JSON.stringify(State.data[k]) !== JSON.stringify(State.prev[k]))) return true;
+    return (collectionNames || []).some(name => this.collectionSnapshot(State.data, name) !== this.collectionSnapshot(State.prev, name));
+  },
+  // collectionSnapshot projects only the status fields a panel renders. The raw
+  // status also carries attemptedAt, which moves on every poll even when the
+  // collection produced nothing new, so comparing whole statuses would re-render
+  // every section watching a collection on every refresh.
+  collectionSnapshot(data, name) {
+    const s = (data && data.collections && data.collections[name]) || {};
+    return JSON.stringify([s.state, s.errorCode, s.collectedAt, s.complete, s.failedAgents]);
   },
   stableSnapshot(arr, fields) {
     if (!arr) return '';
@@ -1511,17 +1520,17 @@ const DirtyChecker = {
     return {
       alerts: this.sectionChanged(['alerts']),
       health: true,
-      cost: this.sectionChanged(['totalCostToday','totalCostAllTime','projectedMonthly','costBreakdown','usageToday','usageAll','collections']),
-      crons: this.sectionChanged(['crons','collections']),
+      cost: this.sectionChanged(['totalCostToday','totalCostAllTime','projectedMonthly','costBreakdown','usageToday','usageAll'], ['usageToday','usageAll']),
+      crons: this.sectionChanged(['crons'], ['crons']),
       sessions: !prevD || this.stableSnapshot(D.sessions, ['key','name','model','type','contextPct','totalTokens','active','spawnedBy','label','subject']) !== this.stableSnapshot(prevD.sessions, ['key','name','model','type','contextPct','totalTokens','active','spawnedBy','label','subject']),
       usage: this.sectionChanged(['tokenUsage','tokenUsageToday','tokenUsage7d','tokenUsage30d','subagentUsage','subagentUsageToday','subagentUsage7d','subagentUsage30d']) || snap.tabs.usage !== State.prevTabs.usage,
       subRuns: (!prevD || ['subagentRuns','subagentRuns7d','subagentRuns30d','subagentRunsToday'].some(k => this.stableSnapshot(D[k], ['task','agent','status','durationSec','timestamp']) !== this.stableSnapshot((prevD||{})[k], ['task','agent','status','durationSec','timestamp']))) || snap.tabs.subRuns !== State.prevTabs.subRuns,
       subTokens: this.sectionChanged(['tokenUsage','tokenUsageToday','tokenUsage7d','tokenUsage30d','subagentUsage','subagentUsageToday','subagentUsage7d','subagentUsage30d']) || snap.tabs.subTokens !== State.prevTabs.subTokens,
-      charts: this.sectionChanged(['dailyChart','collections']) || snap.chartDays !== State.prevChartDays,
-      models: this.sectionChanged(['availableModels','collections']),
-      skills: this.sectionChanged(['skills','skillInventory','collections']),
+      charts: this.sectionChanged(['dailyChart'], ['usage30d']) || snap.chartDays !== State.prevChartDays,
+      models: this.sectionChanged(['availableModels'], ['configuration']),
+      skills: this.sectionChanged(['skills','skillInventory'], ['skillInventory']),
       git: this.sectionChanged(['gitLog']),
-      agentConfig: this.sectionChanged(['agentConfig','subagentConfig','channels','collections']),
+      agentConfig: this.sectionChanged(['agentConfig','subagentConfig','channels'], ['configuration']),
     };
   }
 };

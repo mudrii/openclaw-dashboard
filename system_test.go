@@ -1042,3 +1042,106 @@ exit 1
 		t.Error("expected non-zero exit error to be reported in openclaw.errors")
 	}
 }
+
+// TestHandleSystem_GatewayReasonForContainerTarget pins the container contract
+// at the handler boundary: /api/system must disclose why the gateway state is
+// not a measurement instead of falling back to a 127.0.0.1 probe, which would
+// describe the host rather than the selected container. The loopback stub fails
+// the test if that probe is issued, which is the seam that proves the skip.
+func TestHandleSystem_GatewayReasonForContainerTarget(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		target     OpenclawTarget
+		env        string
+		wantReason string
+		wantLive   bool
+	}{
+		{name: "config selected container", target: OpenclawTarget{Mode: "container", Container: "openclaw"}, wantReason: "host_probe_not_applicable"},
+		{name: "environment selected container", env: "openclaw", wantReason: "host_probe_not_applicable"},
+		{name: "native target", wantLive: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("HOME", t.TempDir())
+			t.Setenv("OPENCLAW_STATE_DIR", "")
+			t.Setenv("OPENCLAW_CONTAINER", tc.env)
+
+			container := tc.wantReason != ""
+			gw := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if container {
+					t.Errorf("host gateway probe must not run for a container target: %s", r.URL.Path)
+					http.Error(w, "blocked", http.StatusTeapot)
+					return
+				}
+				w.Header().Set("Content-Type", "application/json")
+				switch r.URL.Path {
+				case "/healthz":
+					_, _ = w.Write([]byte(`{"ok":true,"status":"live"}`))
+				case "/readyz":
+					_, _ = w.Write([]byte(`{"ready":true,"failing":[],"uptimeMs":1234}`))
+				default:
+					http.NotFound(w, r)
+				}
+			}))
+			defer gw.Close()
+			parts := strings.Split(gw.URL, ":")
+			port, err := strconv.Atoi(parts[len(parts)-1])
+			if err != nil {
+				t.Fatalf("parse stub gateway port from %q: %v", gw.URL, err)
+			}
+
+			// A CLI that exits cleanly with no output: no usable gateway status
+			// and no status error, so any reason reported comes from the target
+			// decision rather than from a failed command.
+			binDir := t.TempDir()
+			fake := filepath.Join(binDir, "openclaw")
+			if err := os.WriteFile(fake, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+				t.Fatalf("write fake openclaw: %v", err)
+			}
+			t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+			cfg := defaultConfig()
+			cfg.AI.Enabled = false
+			cfg.Openclaw = tc.target
+			cfg.System.GatewayPort = port
+			srv := NewServer(t.TempDir(), "test", cfg, "", []byte("<head><body>__VERSION__</body>"), t.Context())
+
+			w := httptest.NewRecorder()
+			srv.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/system", nil))
+			if w.Code != http.StatusOK {
+				t.Fatalf("status = %d, want 200: %s", w.Code, w.Body.String())
+			}
+			var raw map[string]any
+			if err := json.Unmarshal(w.Body.Bytes(), &raw); err != nil {
+				t.Fatalf("decode body: %v\nbody: %s", err, w.Body.String())
+			}
+			oc, ok := raw["openclaw"].(map[string]any)
+			if !ok {
+				t.Fatalf("openclaw block missing: %s", w.Body.String())
+			}
+			gwBlock, ok := oc["gateway"].(map[string]any)
+			if !ok {
+				t.Fatalf("openclaw.gateway missing: %s", w.Body.String())
+			}
+			reason, hasReason := gwBlock["reason"]
+			if tc.wantReason == "" {
+				if hasReason {
+					t.Fatalf("openclaw.gateway.reason = %v, want no reason for a native target", reason)
+				}
+			} else if reason != tc.wantReason {
+				t.Fatalf("openclaw.gateway.reason = %v, want %q", reason, tc.wantReason)
+			}
+			if gwBlock["live"] != tc.wantLive {
+				t.Fatalf("openclaw.gateway.live = %v, want %v", gwBlock["live"], tc.wantLive)
+			}
+			if errs, present := oc["errors"]; present {
+				t.Fatalf("openclaw.errors = %v, want none", errs)
+			}
+			topErrs, _ := raw["errors"].([]any)
+			for _, e := range topErrs {
+				if msg, _ := e.(string); strings.HasPrefix(msg, "openclaw:") {
+					t.Fatalf("top-level errors carry an openclaw failure: %q", msg)
+				}
+			}
+		})
+	}
+}

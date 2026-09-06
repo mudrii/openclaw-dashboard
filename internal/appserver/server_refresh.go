@@ -99,6 +99,7 @@ func (s *Server) loadData() ([]byte, map[string]any, error) {
 	// encoding/json/v2 therefore yields the same map as v1 while skipping v1's
 	// duplicate-name bookkeeping; a rejection here means the file is corrupt.
 	if err := jsonv2.Unmarshal(raw, &parsed); err != nil {
+		slog.Warn("[dashboard] data.json failed strict decode; regenerate it with --refresh", "path", dataPath, "error", err.Error())
 		return raw, nil, err
 	}
 	if parsed == nil {

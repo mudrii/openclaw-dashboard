@@ -538,6 +538,29 @@ test('collection notices fire on the ready to stale transition with byte-identic
     assert.equal($(id).hidden,true,id+' must clear on the stale to ready transition');
   State.prev=null;State.prevTabs={};
 `);
+test('collection attempt timestamps alone never dirty a section', `
+  const statuses=(attemptedAt,cronState)=>({
+    crons:{source:'gw',state:cronState,collectedAt:'c',complete:true,attemptedAt},
+    usageToday:{source:'gw',state:'ready',collectedAt:'c',complete:true,attemptedAt},
+    usageAll:{source:'gw',state:'ready',collectedAt:'c',complete:true,attemptedAt},
+    usage30d:{source:'gw',state:'ready',collectedAt:'c',complete:true,attemptedAt},
+    configuration:{source:'gw',state:'ready',collectedAt:'c',complete:true,attemptedAt},
+    skillInventory:{source:'gw',state:'ready',collectedAt:'c',complete:true,attemptedAt},
+  });
+  const base={crons:[],availableModels:[],dailyChart:[],skills:[],skillInventory:[],agentConfig:{},subagentConfig:{},channels:[],costBreakdown:[]};
+  const watchers=['cost','crons','charts','models','skills','agentConfig'];
+  State.prevTabs={};State.prevChartDays=7;
+  State.prev={...base,collections:statuses('2026-09-05T09:07:00Z','ready')};
+  State.data={...base,collections:statuses('2026-09-05T09:08:00Z','ready')};
+  const idle=DirtyChecker.diff({data:State.data,tabs:{},chartDays:7});
+  for(const k of watchers) assert.equal(idle[k],false,k+' must not re-render when only attemptedAt moved');
+  State.data={...base,collections:statuses('2026-09-05T09:08:00Z','stale')};
+  const changed=DirtyChecker.diff({data:State.data,tabs:{},chartDays:7});
+  assert.equal(changed.crons,true,'a crons collection state change must re-render the crons section');
+  for(const k of watchers.filter(k=>k!=='crons'))
+    assert.equal(changed[k],false,k+' must not re-render for an unrelated collection state change');
+  State.prev=null;State.prevTabs={};
+`);
 test('the cost notice discloses the weakest usage collection, not the first', `
   window._sysBarActive=false;
   State.data={timezone:'UTC'};

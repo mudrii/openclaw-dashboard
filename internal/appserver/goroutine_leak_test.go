@@ -11,9 +11,9 @@ import (
 )
 
 // goroutineLeakSnapshot returns the current goroutineleak profile count and its
-// text rendering. The runtime computes leak reachability during GC, and a
-// goroutine that becomes unreachable during one cycle is only reported after
-// the next, so two cycles are required before the profile settles.
+// text rendering. Profile.WriteTo for goroutineleak runs its own leak-detecting
+// GC; the explicit cycles below only make sure test-owned garbage from the
+// previous step is gone first, so the baseline diff is stable.
 func goroutineLeakSnapshot(tb testing.TB, prof *pprof.Profile) (int, string) {
 	tb.Helper()
 	runtime.GC()
