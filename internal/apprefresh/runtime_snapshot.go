@@ -2,6 +2,7 @@ package apprefresh
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
 	"os"
@@ -15,13 +16,19 @@ import (
 const runtimePageSize = 100
 const runtimeMaxRows = 1000
 
+// errTaskRowLimit reports a page walk stopped by runtimeMaxRows. The rows
+// gathered so far are real, so callers publish a partial collection instead of
+// discarding a truncated-but-valid page walk as unavailable.
+var errTaskRowLimit = errors.New("tasks collection reached row limit")
+
 type CollectionStatus struct {
-	Source      string `json:"source"`
-	State       string `json:"state"`
-	ErrorCode   string `json:"errorCode,omitempty"`
-	CollectedAt string `json:"collectedAt,omitempty"`
-	AttemptedAt string `json:"attemptedAt"`
-	Complete    bool   `json:"complete"`
+	Source       string   `json:"source"`
+	State        string   `json:"state"`
+	ErrorCode    string   `json:"errorCode,omitempty"`
+	CollectedAt  string   `json:"collectedAt,omitempty"`
+	AttemptedAt  string   `json:"attemptedAt"`
+	Complete     bool     `json:"complete"`
+	FailedAgents []string `json:"failedAgents,omitempty"`
 }
 
 func collectionStatus(source string, err error, complete bool) CollectionStatus {
@@ -37,6 +44,14 @@ func collectionStatus(source string, err error, complete bool) CollectionStatus 
 		status.Complete = false
 	}
 	return status
+}
+
+// partialCollectionStatus reports a collection that produced usable rows while
+// something still went wrong. collectionStatus cannot express this: any non-nil
+// error there means unavailable, which drops the rows a caller did collect.
+func partialCollectionStatus(source, code string) CollectionStatus {
+	stamp := time.Now().UTC().Format(time.RFC3339)
+	return CollectionStatus{Source: source, State: "partial", ErrorCode: code, CollectedAt: stamp, AttemptedAt: stamp}
 }
 
 func hasRuntimeState(basePath string, target appopenclaw.Target) bool {
@@ -224,5 +239,5 @@ func collectRuntimeTasks(ctx context.Context, client appopenclaw.Client, loc *ti
 		seenCursors[response.NextCursor] = true
 		params["cursor"] = response.NextCursor
 	}
-	return rows, fmt.Errorf("tasks collection reached row limit")
+	return rows, errTaskRowLimit
 }

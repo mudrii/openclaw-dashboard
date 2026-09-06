@@ -64,6 +64,25 @@ func TestCollectDashboardData_CronCLIFailureFallsBackToFile(t *testing.T) {
 	if crons[0]["lastStatus"] != "ok" {
 		t.Errorf("lastStatus = %v, want ok (from file state)", crons[0]["lastStatus"])
 	}
+	// The rows are real but the authoritative CLI failed, so the panel must not
+	// claim a healthy collection: the file snapshot can be arbitrarily stale.
+	collections, ok := data["collections"].(map[string]CollectionStatus)
+	if !ok {
+		t.Fatalf("collections type = %T, want map[string]CollectionStatus", data["collections"])
+	}
+	status := collections["crons"]
+	if status.Source != "legacy.cron.files" {
+		t.Errorf("crons source = %q, want legacy.cron.files", status.Source)
+	}
+	if status.State != "partial" {
+		t.Errorf("crons state = %q, want partial after the CLI failed", status.State)
+	}
+	if status.Complete {
+		t.Error("crons complete = true, want false when the CLI never answered")
+	}
+	if status.ErrorCode == "" || status.ErrorCode == "ok" {
+		t.Errorf("crons errorCode = %q, want the CLI failure code", status.ErrorCode)
+	}
 }
 
 // TestCollectDashboardData_CronModelPrettifiedFromCatalog drives the CLI-success

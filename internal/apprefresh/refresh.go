@@ -5,6 +5,7 @@ import (
 	"cmp"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -417,7 +418,10 @@ func collectDashboardData(ctx context.Context, dashboardDir, openclawPath string
 		collections["crons"] = collectionStatus("gateway.cron.list", cronErr, cronErr == nil)
 	}
 	if cronErr != nil && !modern && crons != nil {
-		collections["crons"] = collectionStatus("legacy.cron.files", nil, true)
+		// The file rows are real, but the authoritative CLI never answered, so
+		// the snapshot may be arbitrarily out of date. Report the fallback and
+		// the failure rather than a healthy collection.
+		collections["crons"] = partialCollectionStatus("legacy.cron.files", appopenclaw.ErrorCode(cronErr))
 	}
 
 	// Sessions
@@ -433,6 +437,11 @@ func collectDashboardData(ctx context.Context, dashboardDir, openclawPath string
 			}
 		}
 		collections["tasks"] = collectionStatus("gateway.tasks.list", taskErr, taskErr == nil)
+		if errors.Is(taskErr, errTaskRowLimit) {
+			// Truncation is not an outage: keep the collected rows visible and
+			// say the page walk stopped short, matching the sessions collector.
+			collections["tasks"] = partialCollectionStatus("gateway.tasks.list", "row_limit")
+		}
 	} else {
 		sessionsList = collectSessions(ctx, sessionStores, basePath, loc, now, modelAliases, knownSIDs, sessionLiveModelTTL)
 		collections["sessions"] = collectionStatus("legacy.session.files", nil, true)
@@ -613,6 +622,16 @@ func collectDashboardData(ctx context.Context, dashboardDir, openclawPath string
 		}
 		for key, value := range inventoryStatuses {
 			collections[key] = value
+		}
+		if configErr != nil {
+			// Without configuration the agent roster is the guessed ["main"],
+			// so these per-agent collections cover an unknown fraction of the
+			// runtime. Keep the rows, drop the claim that they are complete.
+			for _, name := range []string{"memory", "skillInventory", "modelReadiness"} {
+				if status, ok := collections[name]; ok && status.State == "ready" {
+					collections[name] = partialCollectionStatus(status.Source, "configuration_unavailable")
+				}
+			}
 		}
 		for _, r := range usageRanges {
 			collections["usage"+r.suffix] = collectionStatus("gateway.sessions.usage", r.err, r.result.CompleteTokens())
