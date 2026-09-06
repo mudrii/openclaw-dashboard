@@ -78,7 +78,7 @@ context.html = html;
 vm.runInContext(section('const RuntimePanels =',"document.addEventListener('change'").replace('const RuntimePanels =','const TestedRuntimePanels ='),context);
 // SystemBar delegates the runtime-health panel to RuntimePanels; wire it to the
 // real implementation so renderHealth is exercised rather than stubbed out.
-vm.runInContext('RuntimePanels.renderHealth=D=>TestedRuntimePanels.renderHealth(D);', context);
+vm.runInContext('RuntimePanels.renderHealth=D=>TestedRuntimePanels.renderHealth(D);RuntimePanels.renderGateway=D=>TestedRuntimePanels.renderGateway(D);', context);
 test('runtime diagnostic cards stack on mobile and contain wide content', `
   assert.ok(/@media\\(max-width:768px\\)[^\\n]*#runtimeDiagnosticsRow[^\\n]*grid-template-columns:1fr!important/.test(html), 'missing mobile diagnostic stacking');
   assert.ok(/#runtimeDiagnosticsRow>div\\{min-width:0;overflow:auto\\}/.test(html), 'missing diagnostic overflow containment');
@@ -104,6 +104,44 @@ test('dense cost charts retain every tooltip without overlapping labels or marke
     assert.ok(Math.max(...radii)*2<330/(count-1),'markers overlap');
     assert.ok(svg.includes('day-'+(count-1)+': $5.00'));
   }
+`);
+test('container runtime card updates when collection arrives after system poll', `
+  const data={runtimeTarget:{mode:'container'},gateway:{status:'unknown',statusReason:'host_probe_not_applicable'},runtimeInfo:{pid:42,uptimeMs:60000},runtimeHealth:{runtimeVersion:'2026.9.2',processMemory:{rssBytes:1048576}},collections:{runtimeInfo:{state:'ready',source:'gateway.status'}}};
+  TestedRuntimePanels.renderGateway(data);
+  assert.match($('gatewayRuntimePanelInner').innerHTML,/42/);
+  assert.match($('gatewayRuntimePanelInner').innerHTML,/1m 0s/);
+  assert.match($('gatewayRuntimePanelInner').innerHTML,/1.0 MiB/);
+  assert.match($('gatewayRuntimePanelInner').innerHTML,/host probe not applicable/);
+`);
+test('empty session controls disable and recover when sessions arrive', `
+  const link=TestedRuntimePanels.linkSession,tasks=TestedRuntimePanels.renderTasks;
+  try{
+    TestedRuntimePanels.linkSession=()=>{};TestedRuntimePanels.renderTasks=()=>{};
+    TestedRuntimePanels.render({sessions:[]});
+    assert.equal($('workSessionInspect').disabled,true);
+    assert.equal($('nativeSession').hidden,true);
+    assert.match($('workSessionSelect').innerHTML,/No sessions reported/);
+    TestedRuntimePanels.render({sessions:[{key:'agent:main:one',name:'One'}]});
+    assert.equal($('workSessionInspect').disabled,false);
+    assert.equal($('nativeSession').hidden,false);
+  }finally{TestedRuntimePanels.linkSession=link;TestedRuntimePanels.renderTasks=tasks;}
+`);
+test('configuration preserves zeros and names missing values', `
+  const data={agentConfig:{compaction:{mode:'safeguard',reserveTokensFloor:0,softThresholdTokens:0},telegramGroups:0,search:{provider:'fixture',maxResults:0,cacheTtlMinutes:0},gateway:{port:18789},agents:[{id:'main',model:'Alpha',fallbacks:[]}]}};
+  Renderer.render({data,tabs:{usage:'today',subRuns:'today',subTokens:'today'}},{agentConfig:true});
+  assert.match($('runtimeConfigPanel').innerHTML,/Reserve Tokens/);
+  assert.match($('runtimeConfigPanel').innerHTML,/0 configured/);
+  assert.doesNotMatch($('searchPanelInner').innerHTML,/—/);
+  assert.doesNotMatch($('gatewayConfigPanelInner').innerHTML,/undefined|null/);
+  assert.match($('agentTableBody').innerHTML,/None configured/);
+  assert.match($('agentTableBody').innerHTML,/Not reported/);
+`);
+test('empty session cron and usage tables have explicit messages', `
+  const data={sessions:[],crons:[]};
+  Renderer.render({data,tabs:{usage:'today',subRuns:'today',subTokens:'today'}},{sessions:true,crons:true,usage:true});
+  assert.match($('sessBody').innerHTML,/No sessions reported/);
+  assert.match($('cronBody').innerHTML,/No automations reported/);
+  assert.match($('uBody').innerHTML,/No usage reported/);
 `);
 test('absolute time uses dashboard timezone, not browser timezone', `
   State.data={timezone:'UTC'};

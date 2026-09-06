@@ -25,7 +25,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'SF Pro','Helvetica Neue',sans
 .dot-warn{background:var(--yellow);box-shadow:0 0 8px rgba(250,204,21,0.5)}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
 .pulse{animation:pulse 2s ease-in-out infinite}
-.header-right{display:flex;align-items:center;gap:12px}
+.header-right{display:flex;flex-wrap:wrap;align-items:center;gap:12px}
 .countdown{font-size:11px;color:var(--dim);font-variant-numeric:tabular-nums;min-width:24px}
 .refresh-btn{background:var(--surface);border:1px solid var(--border);padding:6px 14px;border-radius:8px;color:var(--muted);font-size:12px;cursor:pointer;transition:all .15s}
 .refresh-btn:hover{background:var(--surfaceHover);color:var(--textStrong)}
@@ -641,7 +641,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'SF Pro','Helvetica Neue',sans
 		</div>
 		<div id="taskSource" role="status"></div><div id="taskLedger"></div>
 	</div>
-	<div class="glass panel" style="overflow:auto;margin-bottom:12px"><h3 style="font-size:13px">Goals and session placement</h3><label>Session <select id="workSessionSelect"></select></label> <button class="tab-btn" data-open-work>Inspect progress and widgets</button> <a id="nativeSession" target="_blank" rel="noopener noreferrer">Open selected native session</a><div id="sessionWork"></div><p id="workboardState"></p><button id="workboardSummary" class="tab-btn" hidden>Inspect Workboard summary</button></div>
+	<div class="glass panel" style="overflow:auto;margin-bottom:12px"><h3 style="font-size:13px">Goals and session placement</h3><label>Session <select id="workSessionSelect"></select></label> <button id="workSessionInspect" class="tab-btn" data-open-work>Inspect progress and widgets</button> <a id="nativeSession" target="_blank" rel="noopener noreferrer">Open selected native session</a><div id="sessionWork"></div><p id="workboardState"></p><button id="workboardSummary" class="tab-btn" hidden>Inspect Workboard summary</button></div>
 	<div class="glass panel" style="overflow:auto;margin-bottom:12px"><h3 style="font-size:13px">Memory and dreaming</h3><div id="memoryHealth"></div><div id="memoryIndexHealth"></div></div>
 	<div class="glass panel" style="overflow:auto;margin-bottom:12px"><h3 style="font-size:13px">Channel accounts</h3><div id="channelAccounts"></div></div>
 	<details class="glass panel" style="overflow:auto;margin-bottom:12px"><summary>Plugin inventory and readiness</summary><div id="pluginInventory"></div></details>
@@ -1329,6 +1329,7 @@ const ErrorFeed = {
 
   jumpToSection() {
     const section = document.querySelector('[data-section="errors"]');
+    if (section && Sections._state.errors) Sections.toggle('errors');
     if (section) section.scrollIntoView({ behavior: 'smooth', block: 'start' });
   },
 
@@ -1537,8 +1538,18 @@ const DirtyChecker = {
 
 const RuntimePanels = {
   sessionPage:0,taskPage:0,pageSize:50,
+  renderGateway(D){
+    if(D.runtimeTarget?.mode!=='container')return;
+    const metrics=runtimeGatewayMetrics(D),gateway=D.gateway||{};
+    const state=gateway.status==='online'?'Online':gateway.status==='offline'?'Offline':gatewayUnknownText(gateway.statusReason);
+    $('gatewayRuntimePanelInner').innerHTML=runtimeTable(['Gateway runtime','Value'],[
+      ['State',state],['Version',D.runtimeHealth?.runtimeVersion],['PID',metrics.pid],['Uptime',metrics.uptime],['Memory',metrics.memory],
+      ['Source','Selected container gateway · '+collectionLabel(D.collections?.runtimeInfo)],
+    ]);
+  },
   render(D){
     const statuses=D.collections||{};
+    this.renderGateway(D);
 	const runtimeLogs=statuses.sessions?.source==='gateway.sessions.list';
 	['logSourceCron','logSourceSession','logSourceSubagent'].forEach(id=>{$(id).disabled=runtimeLogs;$(id).title=runtimeLogs?'Separate legacy files are unavailable; use gateway logs':'';});
 	if(runtimeLogs&&!['all','gateway'].includes(LogTail._source))LogTail.setSource('all');
@@ -1552,6 +1563,11 @@ const RuntimePanels = {
     const selected=$('workSessionSelect').value;
     $('workSessionSelect').innerHTML=(D.sessions||[]).map(s=>'<option value="'+esc(s.key)+'">'+esc(s.name||s.key)+'</option>').join('');
     if((D.sessions||[]).some(s=>s.key===selected))$('workSessionSelect').value=selected;
+    const noSessions=!(D.sessions||[]).length;
+    $('workSessionSelect').disabled=noSessions;
+    if(noSessions)$('workSessionSelect').innerHTML='<option value="">No sessions reported</option>';
+    $('workSessionInspect').disabled=noSessions;
+    $('nativeSession').hidden=noSessions;
 	this.linkSession();
     const workboard=(D.pluginInventory||[]).find(p=>p.id==='workboard');
 	$('workboardSummary').hidden=workboard?.status!=='loaded';
@@ -1681,7 +1697,9 @@ const Renderer = {
   reconcileRows(tbodyId, rows, _keyFn, rowHtmlFn) {
     // DirtyChecker gates calls, so innerHTML replacement is safe for all sizes.
     // _keyFn retained for caller compatibility but unused after simplification.
-    $(tbodyId).innerHTML = rows.map(rowHtmlFn).join('');
+    const emptyRows = {cronBody:[7,'No automations reported'],sessBody:[6,'No sessions reported'],srBody:[5,'No sub-agent runs reported']};
+    const empty = emptyRows[tbodyId];
+    $(tbodyId).innerHTML = rows.map(rowHtmlFn).join('') || (empty ? '<tr><td colspan="'+empty[0]+'">'+empty[1]+'</td></tr>' : '');
   },
 
   patchSvg(id, html) {
@@ -1876,7 +1894,7 @@ const Renderer = {
     $('agentCards').innerHTML = agentList.length ? agentList.map((a,i)=>{
       const col = PALETTE[i % PALETTE.length];
       const em  = EMOJIS[i % EMOJIS.length];
-      const provider = (a.modelId||'').split('/')[0]||'—';
+      const provider = (a.modelId||'').split('/')[0]||'Not reported';
       return `<div style="background:var(--glass);border:1px solid var(--border);border-left:3px solid ${col};border-radius:8px;padding:12px 14px;min-width:180px;flex:1">
         <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px">
           <span style="font-size:16px">${em}</span>
@@ -1939,13 +1957,13 @@ const Renderer = {
     const comp = AC.compaction||{};
     const compCards = [
       comp.mode                      ? {k:'Compaction Mode',  v:comp.mode,                                         c:'var(--yellow)'} : null,
-      comp.reserveTokensFloor        ? {k:'Reserve Tokens',   v:comp.reserveTokensFloor.toLocaleString(),           c:'var(--text)'}   : null,
+      comp.reserveTokensFloor!=null  ? {k:'Reserve Tokens',   v:comp.reserveTokensFloor.toLocaleString(),           c:'var(--text)'}   : null,
       comp.memoryFlush!=null         ? {k:'Memory Flush',     v:comp.memoryFlush?.enabled?'Enabled':'Disabled',     c:comp.memoryFlush?.enabled?'var(--green)':'var(--dim)'} : null,
-      comp.softThresholdTokens       ? {k:'Soft Threshold',   v:comp.softThresholdTokens.toLocaleString()+' tok',   c:'var(--text)'}   : null,
+      comp.softThresholdTokens!=null ? {k:'Soft Threshold',   v:comp.softThresholdTokens.toLocaleString()+' tok',   c:'var(--text)'}   : null,
     ].filter(Boolean);
     const runtimeRows = [
       AC.telegramDmPolicy            ? {k:'Telegram DM Policy', v:AC.telegramDmPolicy}                             : null,
-      AC.telegramGroups              ? {k:'Telegram Groups',    v:AC.telegramGroups+' configured'}                 : null,
+      AC.telegramGroups!=null        ? {k:'Telegram Groups',    v:AC.telegramGroups+' configured'}                 : null,
     ].filter(Boolean);
     $('runtimeConfigPanel').innerHTML = [
       compCards.length ? `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:6px;margin-bottom:${runtimeRows.length?8:0}px">
@@ -1964,7 +1982,7 @@ const Renderer = {
     ].join('');
 
     // Helper: key-value row
-    const kv = (k,v,c='var(--text)') => `<div style="display:flex;justify-content:space-between;margin-bottom:4px"><span style="font-size:12px;color:var(--muted)">${esc(k)}</span><span style="font-size:12px;color:${c};font-weight:600">${esc(String(v))}</span></div>`;
+    const kv = (k,v,c='var(--text)') => `<div style="display:flex;justify-content:space-between;margin-bottom:4px"><span style="font-size:12px;color:var(--muted)">${esc(k)}</span><span style="font-size:12px;color:${c};font-weight:600">${esc(runtimeValue(v))}</span></div>`;
     const badge = (label,on) => `<span style="display:inline-block;margin:2px 2px;padding:2px 7px;border-radius:4px;font-size:10px;font-weight:600;background:${on?'rgba(74,222,128,.12)':'rgba(255,255,255,.05)'};color:${on?'var(--green)':'var(--dim)'};border:1px solid ${on?'rgba(74,222,128,.3)':'var(--border)'}">${esc(label)}</span>`;
 
     // Channels Panel — dynamic rendering for all configured/runtime channels
@@ -2019,8 +2037,8 @@ const Renderer = {
     const SR = AC.search||{};
     $('searchPanelInner').innerHTML = SR.provider && SR.provider !== '—' ? [
       kv('Provider', SR.provider, 'var(--blue,#3b82f6)'),
-      kv('Max Results', SR.maxResults||'—'),
-      kv('Cache TTL', (SR.cacheTtlMinutes||'—')+' min'),
+      kv('Max Results', SR.maxResults),
+      kv('Cache TTL', (SR.cacheTtlMinutes??'Not reported')+' min'),
     ].join('') : '<span style="color:var(--dim);font-size:12px">Not configured</span>';
 
     // Gateway Config Panel (config snapshot from data.json / agentConfig.gateway)
@@ -2099,15 +2117,15 @@ const Renderer = {
     // Per-agent fallbacks in table — use agent-specific fallbacks
     $('agentTableBody').innerHTML = agentList.map((a,i)=>{
       const col = PALETTE[i % PALETTE.length];
-      const provider = (a.modelId||'').split('/')[0]||'—';
-      const ctx1m = a.context1m===true?'✅':a.context1m===false?'❌':'—';
-      const agentFallbacks = (Array.isArray(a.fallbacks)?a.fallbacks:fallbacks).join(' → ');
+      const provider = (a.modelId||'').split('/')[0]||'Not reported';
+      const ctx1m = a.context1m===true?'✅':a.context1m===false?'❌':'Not reported';
+      const agentFallbacks = (Array.isArray(a.fallbacks)?a.fallbacks:fallbacks).join(' → ')||'None configured';
       return `<tr class="dr">
         <td style="padding:6px 8px;font-weight:700;color:${col}">${esc(a.id)}${a.isDefault?' <span style="font-size:9px;color:var(--green);font-weight:400">(default)</span>':''}</td>
         <td style="padding:6px 8px;color:var(--text)">${esc(a.role||a.id)}</td>
-        <td style="padding:6px 8px;color:var(--textStrong);font-weight:600">${esc(a.model)}</td>
+        <td style="padding:6px 8px;color:var(--textStrong);font-weight:600">${esc(runtimeValue(a.model))}</td>
         <td style="padding:6px 8px;color:var(--dim);font-size:12px">${esc(provider)}</td>
-        <td style="padding:6px 8px;color:var(--dim);font-size:12px;font-family:monospace">${esc(a.workspace)}</td>
+        <td style="padding:6px 8px;color:var(--dim);font-size:12px;font-family:monospace">${esc(runtimeValue(a.workspace))}</td>
         <td style="padding:6px 8px;color:var(--dim);font-size:12px">${esc(agentFallbacks)}</td>
         <td style="padding:6px 8px;text-align:center">${ctx1m}</td>
       </tr>`;
@@ -2217,9 +2235,10 @@ const Renderer = {
   renderTokenTbl(bodyId,data,accentColor){
   data=data||[];
   const max=Math.max(...data.map(u=>Number.isFinite(u.totalTokensRaw)?u.totalTokensRaw:0))||1;
+  if(!data.length){$(bodyId).innerHTML='<tr><td colspan="8">No usage reported</td></tr>';return;}
   $(bodyId).innerHTML=data.map(u=>{
     const pct=Number.isFinite(u.totalTokensRaw)?Math.round(u.totalTokensRaw/max*100):0;
-    return `<tr class="dr"><td class="w">${esc(u.model)}</td><td class="r">${(u.calls||0).toLocaleString()}</td><td class="r">${esc(u.input||'')}</td><td class="r">${esc(u.output||'')}</td><td class="r">${esc(u.cacheRead||'')}</td><td class="r" style="color:var(--textStrong);font-weight:500">${esc(u.totalTokens||'')}</td><td class="r cost">${usageMoney(u.cost,u)}</td><td><div class="usage-bar"><div class="usage-fill" style="width:${pct}%;background:${accentColor}"></div></div></td></tr>`;
+    return `<tr class="dr"><td class="w">${esc(u.model)}</td><td class="r">${(u.calls||0).toLocaleString()}</td><td class="r">${esc(runtimeValue(u.input))}</td><td class="r">${esc(runtimeValue(u.output))}</td><td class="r">${esc(runtimeValue(u.cacheRead))}</td><td class="r" style="color:var(--textStrong);font-weight:500">${esc(runtimeValue(u.totalTokens))}</td><td class="r cost">${usageMoney(u.cost,u)}</td><td><div class="usage-bar" role="img" aria-label="${pct}% of largest model token volume"><div class="usage-fill" style="width:${pct}%;background:${accentColor}"></div></div></td></tr>`;
   }).join('')+(data.length?`<tr class="total-row"><td class="w">TOTAL</td><td class="r">${data.reduce((a,u)=>a+(u.calls||0),0).toLocaleString()}</td>${['inputRaw','outputRaw','cacheReadRaw','totalTokensRaw'].map(key=>'<td class="r">'+(data.every(u=>Number.isFinite(u[key]))?data.reduce((a,u)=>a+u[key],0).toLocaleString():'Not reported')+'</td>').join('')}<td class="r cost">${data.every(u=>Number.isFinite(u.cost))?runtimeMoney(data.reduce((a,u)=>a+u.cost,0)):usageMoney(null,{tokensComplete:!data.some(u=>u.tokensComplete===false),missingCostEntries:data.reduce((a,u)=>a+(u.missingCostEntries||0),0)})}</td><td>Token volume</td></tr>`:'');
   },
 
@@ -2439,7 +2458,7 @@ const SystemBar = {
     if(im<lm)return(lm-im)>=2?2:1;if(im>lm)return 0;
     return(ld-id)>=2?2:1;
   },
-  _kv(k,v,c='var(--text)'){return `<div style="display:flex;justify-content:space-between;margin-bottom:4px"><span style="font-size:12px;color:var(--muted)">${esc(k)}</span><span style="font-size:12px;color:${c};font-weight:600">${esc(String(v))}</span></div>`;},
+  _kv(k,v,c='var(--text)'){return `<div style="display:flex;justify-content:space-between;margin-bottom:4px"><span style="font-size:12px;color:var(--muted)">${esc(k)}</span><span style="font-size:12px;color:${c};font-weight:600">${esc(runtimeValue(v))}</span></div>`;},
   renderGatewayDegraded(reason){
     const gw=State.data?.gateway||{};
     const hasCached=!!(gw.status||gw.version||gw.pid||gw.uptime||gw.memory);
@@ -2696,6 +2715,7 @@ const SystemBar = {
       }
     }
 
+    RuntimePanels.renderGateway(State.data);
     RuntimePanels.renderHealth(State.data);
     if(d.pollSeconds&&d.pollSeconds>0&&d.pollSeconds*1000!==this._lastMs)this.start(d.pollSeconds*1000);
   },
