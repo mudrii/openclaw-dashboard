@@ -149,10 +149,15 @@ jobs:
           distribution: goreleaser
           version: "v2.4.5"
           install-only: true
+      - uses: anchore/sbom-action/download-syft@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
+        with:
+          syft-version: v1.51.1
       - name: Validate release archives without publishing
         run: make workflow-test workflow-lint release-check
+      - name: Add preinstalled Linux Homebrew to PATH
+        if: runner.os == 'Linux'
+        run: echo "/home/linuxbrew/.linuxbrew/bin" >> "$GITHUB_PATH"
       - name: Install and test generated Homebrew formula
-        if: runner.os == 'macOS'
         run: make brew-test
 
   nix:

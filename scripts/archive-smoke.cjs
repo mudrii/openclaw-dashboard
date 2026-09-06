@@ -13,7 +13,13 @@ assert.deepEqual(fs.readdirSync(dir).filter(name => name.endsWith('.tar.gz')).so
 const checksums = new Map(fs.readFileSync(path.join(dir, 'checksums-sha256.txt'), 'utf8').trim().split('\n')
   .map(line => { const match = line.match(/^([a-f0-9]{64})\s+\*?(.+)$/); assert.ok(match, 'malformed checksum'); return [match[2], match[1]]; }));
 for (const name of archives) {
-  assert.equal(crypto.createHash('sha256').update(fs.readFileSync(path.join(dir, name))).digest('hex'), checksums.get(name), `checksum: ${name}`);
+  for (const artifact of [name, name + '.sbom.json']) {
+    assert.equal(crypto.createHash('sha256').update(fs.readFileSync(path.join(dir, artifact))).digest('hex'), checksums.get(artifact), `checksum: ${artifact}`);
+  }
+  const sbom = JSON.parse(fs.readFileSync(path.join(dir, name + '.sbom.json'), 'utf8'));
+  assert.match(sbom.spdxVersion, /^SPDX-/);
+  assert.ok(sbom.packages.some(pkg => pkg.name === 'github.com/mudrii/openclaw-dashboard'), `${name} SBOM omits dashboard`);
+  assert.ok(sbom.packages.some(pkg => pkg.name === 'stdlib'), `${name} SBOM omits Go runtime`);
   const files = new Set(execFileSync('tar', ['-tzf', path.join(dir, name)], {encoding:'utf8'}).trim().split('\n'));
   for (const required of ['openclaw-dashboard', 'VERSION', 'README.md', 'LICENSE', 'install.sh', 'uninstall.sh',
     'assets/runtime/refresh.sh', 'assets/runtime/config.json', 'assets/runtime/themes.json',
@@ -39,7 +45,7 @@ try {
   const data = JSON.parse(fs.readFileSync(path.join(temp, 'data.json'), 'utf8'));
   assert.equal(data.timezone, 'Asia/Kuala_Lumpur');
   assert.equal(fs.statSync(path.join(temp, 'data.json')).mode & 0o777, 0o600);
-  console.log('Archive smoke passed: four targets, checksums, runtime assets, native version, extracted refresh, timezone, private snapshot');
+  console.log('Archive smoke passed: four targets, checksums, SBOMs, runtime assets, native version, extracted refresh, timezone, private snapshot');
 } finally {
   fs.rmSync(temp, {recursive:true,force:true});
 }

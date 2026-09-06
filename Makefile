@@ -44,7 +44,7 @@ workflow-lint:
 # GoReleaser's before hooks run the frontend and race suites.
 release-check:
 	$(GORELEASER) check
-	$(GORELEASER) release --snapshot --clean --skip=sign,sbom
+	$(GORELEASER) release --snapshot --clean --skip=sign
 	$(MAKE) archive-test
 
 archive-test:

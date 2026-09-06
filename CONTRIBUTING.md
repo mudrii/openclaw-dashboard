@@ -62,7 +62,7 @@ and `make build`.
 | `make test` | `go test -race -count=1 ./...`. The race detector is non-negotiable for local runs. |
 | `make frontend-test` | Runs the actual embedded JavaScript regression harness with Node. Fails if Node is absent; requires no npm packages. |
 | `make container-test` | Builds the runtime image and executes its isolated smoke test. Requires Docker; use `CONTAINER_ENGINE=podman` for Podman. Separate from `make check`; required by CI and release workflows. |
-| `make release-check` | GoReleaser v2.4.5 snapshot rehearsal: validates config, runs frontend/race hooks, builds all four archives, checks checksums/assets, and refreshes using the extracted native archive. Skips publishing, signing and SBOM; output is confined to `dist/release`. |
+| `make release-check` | GoReleaser v2.4.5 snapshot rehearsal: validates config, runs frontend/race hooks, builds all four archives, checks checksums/assets, and refreshes using the extracted native archive. Generates SBOMs; skips publishing and signing; output is confined to `dist/release`. |
 | `make brew-test` | Tests the generated Homebrew formula using local snapshot archives and an isolated keg-only fixture. Requires Homebrew and completed `make release-check`; the existing installation is preserved. |
 | `make workflow-test` | Executes the actual release CI gate against success, missing, pending, failure, cancelled, skipped and mismatched-commit responses. Included in `make check`. |
 | `make workflow-lint` | Pinned actionlint v1.7.12 validates workflow syntax, expressions, inputs and embedded shell (when ShellCheck is available). CI requires this in Release rehearsal. |

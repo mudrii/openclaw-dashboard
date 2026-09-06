@@ -133,7 +133,7 @@ func TestReleaseWorkflowContracts(t *testing.T) {
 		`Verify release tag matches VERSION`,
 		`if [ "$version" != "$GITHUB_REF_NAME" ]; then`,
 		`Install golangci-lint`,
-		`go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.13.2`,
+		`go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@`,
 		`run: make check`,
 		`Install shellcheck`,
 		`shellcheck --severity=warning assets/runtime/refresh.sh`,
@@ -156,6 +156,24 @@ func TestReleaseWorkflowContracts(t *testing.T) {
 	}
 	if strings.Contains(workflow, "HOMEBREW_TAP_APP_ID") {
 		t.Fatal("release workflow must use GitHub App Client ID, not numeric App ID")
+	}
+}
+
+func TestReleaseAndCIToolVersionsAgree(t *testing.T) {
+	ci := readTextFile(t, ".github/workflows/tests.yml")
+	release := readTextFile(t, ".github/workflows/release.yml")
+	for _, tc := range []struct{ name, ciPattern, releasePattern string }{
+		{"Syft", `syft-version: (v[0-9]+\.[0-9]+\.[0-9]+)`, `syft-version: (v[0-9]+\.[0-9]+\.[0-9]+)`},
+		{"golangci-lint", `version: (v[0-9]+\.[0-9]+\.[0-9]+)`, `golangci-lint@(v[0-9]+\.[0-9]+\.[0-9]+)`},
+		{"GoReleaser", `version: "(v[0-9]+\.[0-9]+\.[0-9]+)"`, `version: "(v[0-9]+\.[0-9]+\.[0-9]+)"`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			left := regexp.MustCompile(tc.ciPattern).FindStringSubmatch(ci)
+			right := regexp.MustCompile(tc.releasePattern).FindStringSubmatch(release)
+			if len(left) != 2 || len(right) != 2 || left[1] != right[1] {
+				t.Fatalf("%s CI/release pins differ or are missing: %v vs %v", tc.name, left, right)
+			}
+		})
 	}
 }
 

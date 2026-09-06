@@ -106,17 +106,17 @@ gh api repos/mudrii/openclaw-dashboard/branches/main/protection/required_status_
 ## 4. Rehearse before publishing
 
 Run `make check`, `make container-test`, and `make release-check` on the candidate.
-`make release-check` requires GoReleaser **v2.4.5**, Node and Go. It validates
+`make release-check` requires GoReleaser **v2.4.5**, Syft **v1.51.1**, Node and Go. It validates
 configuration, runs the configured frontend/race hooks, builds all four archives
 under `dist/release`, verifies their checksums and required assets, then exercises
-an extracted native archive. It uses snapshot mode and skips signing/SBOM; it
+an extracted native archive. It uses snapshot mode and generates SBOMs and skips signing; it
 never publishes a release, changes a tag, or updates the Homebrew tap. CI runs
 this rehearsal on PRs and pushes to main, release-readiness and codex branches.
-On macOS, `make brew-test` installs the generated formula from local archives in a
+On Linux/macOS, `make brew-test` installs the generated formula from local archives in a
 uniquely named keg-only fixture, runs its formula test, checks runtime seeding and
 refresh, then removes only the fixture. It preserves the existing dashboard
 installation and disables Homebrew auto-update, cleanup and autoremove. CI runs
-this after the macOS archive rehearsal.
+this after both platform archive rehearsals.
 
 Use `make workflow-test workflow-lint` for the executable publication-gate tests
 and pinned actionlint validation.
