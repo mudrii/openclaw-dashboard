@@ -146,6 +146,23 @@ test('known cost is visible as a subtotal and never relabelled a complete total'
   data.totalCostToday=1.23;Renderer.render({data,tabs:{}},{cost:true});
   assert.equal($('cTodayLabel').textContent,"Today's Cost");assert.equal($('cToday').textContent,'$1.23');
 `);
+test('partial costs populate projection and donut without inventing unknown prices', `
+  const data={usageToday:{knownCost:2,tokensComplete:true},usageAll:{knownCost:3},tokenUsage:[{model:'Known',knownCost:3},{model:'Unknown',knownCost:null}]};
+  Renderer.render({data,tabs:{}},{cost:true});
+  assert.equal($('cProj').textContent,'$60.00');
+  assert.match($('cProjSub').textContent,/Known costs only/);
+  assert.match($('donut').style.background,/conic-gradient/);
+  assert.match($('donutLegend').innerHTML,/Known.*3.00/);
+  assert.doesNotMatch($('donutLegend').innerHTML,/Unknown/);
+  data.usageToday.tokensComplete=false;
+  Renderer.render({data,tabs:{}},{cost:true});
+  assert.notEqual($('cProj').textContent,'$60.00');
+  data.projectedMonthly=90;data.totalCostAllTime=4;data.costBreakdown=[{model:'Complete',cost:4}];
+  Renderer.render({data,tabs:{}},{cost:true});
+  assert.equal($('cProj').textContent,'$90');
+  assert.equal($('donutLabel').textContent,'Cost Breakdown');
+  assert.match($('donutLegend').innerHTML,/Complete/);
+`);
 test('host metrics failure does not erase fresh selected-container health', `
   const previous=State.data;
   try{

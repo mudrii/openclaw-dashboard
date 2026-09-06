@@ -1521,7 +1521,7 @@ const DirtyChecker = {
     return {
       alerts: this.sectionChanged(['alerts']),
       health: true,
-      cost: this.sectionChanged(['totalCostToday','totalCostAllTime','projectedMonthly','costBreakdown','usageToday','usageAll'], ['usageToday','usageAll']),
+      cost: this.sectionChanged(['totalCostToday','totalCostAllTime','projectedMonthly','costBreakdown','tokenUsage','usageToday','usageAll'], ['usageToday','usageAll']),
       crons: this.sectionChanged(['crons'], ['crons']),
       sessions: !prevD || this.stableSnapshot(D.sessions, ['key','name','model','type','contextPct','totalTokens','active','spawnedBy','label','subject']) !== this.stableSnapshot(prevD.sessions, ['key','name','model','type','contextPct','totalTokens','active','spawnedBy','label','subject']),
       usage: this.sectionChanged(['tokenUsage','tokenUsageToday','tokenUsage7d','tokenUsage30d','subagentUsage','subagentUsageToday','subagentUsage7d','subagentUsage30d']) || snap.tabs.usage !== State.prevTabs.usage,
@@ -1769,15 +1769,16 @@ const Renderer = {
       $(id+'Label').textContent=label+(subtotal?' known subtotal':' Cost');
       $(id).textContent=subtotal?runtimeMoney(usage.knownCost,4):usageMoney(total,usage);
     }
-    $('cProj').textContent=usageMoney(D.projectedMonthly,D.usageToday,0);
-    $('cProjSub').textContent=Number.isFinite(D.projectedMonthly)?"Based on today's rate":'Requires complete pricing and collection for today';
+    const partialProjection=!Number.isFinite(D.projectedMonthly)&&D.usageToday?.tokensComplete===true&&Number.isFinite(D.usageToday?.knownCost);
+    $('cProj').textContent=partialProjection?runtimeMoney(D.usageToday.knownCost*30,2):usageMoney(D.projectedMonthly,D.usageToday,0);
+    $('cProjSub').textContent=partialProjection?'Known costs only · today × 30; excludes unpriced usage':Number.isFinite(D.projectedMonthly)?"Based on today's rate":'Requires complete collection for today';
     for(const [id,usage] of [['cTodaySub',D.usageToday],['cAllSub',D.usageAll]]){
       $(id).textContent=usageExplanation(usage);
       $(id).style.display=$(id).textContent?'block':'none';
     }
 
     // Donut (CSS conic-gradient)
-    const bd=D.costBreakdown||[];
+    const bd=D.costBreakdown??(D.tokenUsage||[]).filter(m=>Number.isFinite(m.knownCost)&&m.knownCost>0).map(m=>({model:m.modelId||m.model,cost:m.knownCost}));
     const total=bd.reduce((a,d)=>a+(d.cost||0),0)||1;
     let grad='',cum=0,legend='';
     bd.forEach((d,i)=>{
@@ -1785,11 +1786,11 @@ const Renderer = {
       const c=COLORS[i%COLORS.length];
       grad+=`${c} ${cum}% ${cum+pct}%,`;
       cum+=pct;
-      legend+=`<div class="donut-legend-item"><span class="donut-legend-dot" style="background:${c}"></span>${esc(d.model)} $${(d.cost||0).toFixed(0)} (${Math.round(pct)}%)</div>`;
+      legend+=`<div class="donut-legend-item"><span class="donut-legend-dot" style="background:${c}"></span>${esc(d.model)} $${(d.cost||0).toFixed(2)} (${Math.round(pct)}%)</div>`;
     });
     $('donut').style.background=grad?`conic-gradient(${grad.slice(0,-1)})`:'var(--surface)';
     const knownSubtotal=!Number.isFinite(D.totalCostAllTime)&&Number.isFinite(D.usageAll?.knownCost);
-    $('donutLabel').textContent=knownSubtotal?'Known subtotal (not a total)':'Cost Breakdown';
+    $('donutLabel').textContent=knownSubtotal?'Known costs by model (partial)':'Cost Breakdown';
     $('donutCenter').textContent=knownSubtotal?runtimeMoney(D.usageAll.knownCost,4):usageMoney(D.totalCostAllTime,D.usageAll,2);
     $('donutLegend').innerHTML=legend||'<span>'+esc(Number.isFinite(D.totalCostAllTime)?'No model breakdown reported':usageExplanation(D.usageAll)||'Cost not reported by source')+'</span>';
   }
