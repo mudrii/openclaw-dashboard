@@ -106,17 +106,18 @@ func TestConfigurationRetentionRequiresSameRuntimeAndSource(t *testing.T) {
 // a timestamp we cannot parse is never treated as recent.
 func TestStaleRetentionExpiresAtCap(t *testing.T) {
 	for _, tc := range []struct {
-		name, collectedAt string
-		retain            bool
+		name, collectedAt, previousState string
+		retain                           bool
 	}{
-		{"inside cap", collectedStamp(maxStaleAge - time.Hour), true},
-		{"outside cap", collectedStamp(maxStaleAge + time.Hour), false},
-		{"unparsable timestamp", "old", false},
-		{"missing timestamp", "", false},
+		{"inside cap", collectedStamp(maxStaleAge - time.Hour), "ready", true},
+		{"outside cap", collectedStamp(maxStaleAge + time.Hour), "ready", false},
+		{"unparsable timestamp", "old", "ready", false},
+		{"missing timestamp", "", "ready", false},
+		{"chained stale beyond cap", collectedStamp(maxStaleAge + time.Hour), "stale", false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			current := map[string]any{"stateDir": "/s", "runtimeTarget": appopenclaw.Target{}, "sessions": []any{}, "collections": map[string]CollectionStatus{"sessions": {Source: "gateway.sessions.list", State: "unavailable", AttemptedAt: "new"}}}
-			previous := map[string]any{"stateDir": "/s", "runtimeTarget": map[string]any{}, "sessions": []any{map[string]any{"key": "s"}}, "collections": map[string]any{"sessions": map[string]any{"source": "gateway.sessions.list", "state": "ready", "collectedAt": tc.collectedAt}}}
+			previous := map[string]any{"stateDir": "/s", "runtimeTarget": map[string]any{}, "sessions": []any{map[string]any{"key": "s"}}, "collections": map[string]any{"sessions": map[string]any{"source": "gateway.sessions.list", "state": tc.previousState, "collectedAt": tc.collectedAt}}}
 			retainLastGoodCollections(current, previous)
 			got := current["collections"].(map[string]CollectionStatus)["sessions"]
 			if (got.State == "stale") != tc.retain {

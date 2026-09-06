@@ -88,6 +88,10 @@ type SystemOpenclaw struct {
 }
 
 type SystemOpenclawGateway struct {
+	// Reason names why the gateway state below is not a measurement, e.g.
+	// host_probe_not_applicable when the only available probe would have
+	// described the host rather than the selected container.
+	Reason           string   `json:"reason,omitempty"`
 	Live             bool     `json:"live"`
 	Ready            bool     `json:"ready"`
 	UptimeMs         int64    `json:"uptimeMs"`

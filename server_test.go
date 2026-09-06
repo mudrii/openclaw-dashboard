@@ -31,6 +31,24 @@ func testServer(t *testing.T, dir string) *Server {
 	return NewServer(dir, "test", cfg, "", []byte("<head><body>__VERSION__</body>"), context.Background())
 }
 
+// chatEnabledTestServer builds an AI-enabled server whose capability gate reads
+// a fixture openclaw.json. Without OPENCLAW_HOME the gate would read the
+// developer's real ~/.openclaw and the result would differ per machine.
+func chatEnabledTestServer(t *testing.T, dir string) *Server {
+	t.Helper()
+	t.Setenv("OPENCLAW_CONTAINER", "")
+	t.Setenv("OPENCLAW_STATE_DIR", "")
+	home := t.TempDir()
+	t.Setenv("OPENCLAW_HOME", home)
+	runtimeConfig := []byte(`{"gateway":{"http":{"endpoints":{"chatCompletions":{"enabled":true}}}}}`)
+	if err := os.WriteFile(filepath.Join(home, "openclaw.json"), runtimeConfig, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg := defaultConfig()
+	cfg.AI.Enabled = true
+	return NewServer(dir, "test", cfg, "tok", []byte("<head></head>"), context.Background())
+}
+
 func testServerWithConfig(t *testing.T, dir string, cfg Config) *Server {
 	t.Helper()
 	t.Setenv("OPENCLAW_CONTAINER", "")
@@ -286,9 +304,7 @@ func TestChat_DisabledReturns503(t *testing.T) {
 
 func TestChat_EmptyQuestion(t *testing.T) {
 	dir := t.TempDir()
-	cfg := defaultConfig()
-	cfg.AI.Enabled = true
-	srv := NewServer(dir, "test", cfg, "tok", []byte("<head></head>"), context.Background())
+	srv := chatEnabledTestServer(t, dir)
 
 	body := `{"question":"   "}`
 	req := httptest.NewRequest(http.MethodPost, "/api/chat", strings.NewReader(body))
@@ -302,9 +318,7 @@ func TestChat_EmptyQuestion(t *testing.T) {
 
 func TestChat_QuestionTooLong(t *testing.T) {
 	dir := t.TempDir()
-	cfg := defaultConfig()
-	cfg.AI.Enabled = true
-	srv := NewServer(dir, "test", cfg, "tok", []byte("<head></head>"), context.Background())
+	srv := chatEnabledTestServer(t, dir)
 
 	q := strings.Repeat("a", maxQuestionLen+1)
 	body := `{"question":"` + q + `"}`
@@ -319,9 +333,7 @@ func TestChat_QuestionTooLong(t *testing.T) {
 
 func TestChat_BodyTooLarge(t *testing.T) {
 	dir := t.TempDir()
-	cfg := defaultConfig()
-	cfg.AI.Enabled = true
-	srv := NewServer(dir, "test", cfg, "tok", []byte("<head></head>"), context.Background())
+	srv := chatEnabledTestServer(t, dir)
 
 	body := strings.Repeat("x", maxBodyBytes+100)
 	req := httptest.NewRequest(http.MethodPost, "/api/chat", strings.NewReader(body))
@@ -335,9 +347,7 @@ func TestChat_BodyTooLarge(t *testing.T) {
 
 func TestChat_InvalidJSON(t *testing.T) {
 	dir := t.TempDir()
-	cfg := defaultConfig()
-	cfg.AI.Enabled = true
-	srv := NewServer(dir, "test", cfg, "tok", []byte("<head></head>"), context.Background())
+	srv := chatEnabledTestServer(t, dir)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/chat", strings.NewReader("{bad"))
 	w := httptest.NewRecorder()
@@ -349,11 +359,8 @@ func TestChat_InvalidJSON(t *testing.T) {
 }
 
 func TestChat_MissingDataJSON_Returns503(t *testing.T) {
-	t.Setenv("OPENCLAW_CONTAINER", "")
 	dir := t.TempDir()
-	cfg := defaultConfig()
-	cfg.AI.Enabled = true
-	srv := NewServer(dir, "test", cfg, "tok", []byte("<head></head>"), context.Background())
+	srv := chatEnabledTestServer(t, dir)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/chat", strings.NewReader(`{"question":"hello"}`))
 	w := httptest.NewRecorder()
@@ -365,11 +372,8 @@ func TestChat_MissingDataJSON_Returns503(t *testing.T) {
 }
 
 func TestChat_InvalidDataJSON_Returns500(t *testing.T) {
-	t.Setenv("OPENCLAW_CONTAINER", "")
 	dir := t.TempDir()
-	cfg := defaultConfig()
-	cfg.AI.Enabled = true
-	srv := NewServer(dir, "test", cfg, "tok", []byte("<head></head>"), context.Background())
+	srv := chatEnabledTestServer(t, dir)
 
 	if err := os.WriteFile(filepath.Join(dir, "data.json"), []byte("{bad json"), 0o644); err != nil {
 		t.Fatal(err)
@@ -385,11 +389,8 @@ func TestChat_InvalidDataJSON_Returns500(t *testing.T) {
 }
 
 func TestChat_NullDataJSON_Returns500(t *testing.T) {
-	t.Setenv("OPENCLAW_CONTAINER", "")
 	dir := t.TempDir()
-	cfg := defaultConfig()
-	cfg.AI.Enabled = true
-	srv := NewServer(dir, "test", cfg, "tok", []byte("<head></head>"), context.Background())
+	srv := chatEnabledTestServer(t, dir)
 
 	nullData, err := os.ReadFile(filepath.Join("testdata", "dashboard", "data-null.json"))
 	if err != nil {
@@ -567,11 +568,8 @@ func TestRefresh_DataMissing_WaitsForRefreshAndReturnsFreshData(t *testing.T) {
 // --- Rate limiting ---
 
 func TestChat_RateLimitExceeded(t *testing.T) {
-	t.Setenv("OPENCLAW_CONTAINER", "")
 	dir := t.TempDir()
-	cfg := defaultConfig()
-	cfg.AI.Enabled = true
-	srv := NewServer(dir, "test", cfg, "tok", []byte("<head></head>"), context.Background())
+	srv := chatEnabledTestServer(t, dir)
 
 	// Send chatRateLimit requests — all should be accepted (400 because no gateway, but not 429)
 	for i := range chatRateLimit {
@@ -601,11 +599,8 @@ func TestChat_RateLimitExceeded(t *testing.T) {
 }
 
 func TestChat_RateLimitPerIP(t *testing.T) {
-	t.Setenv("OPENCLAW_CONTAINER", "")
 	dir := t.TempDir()
-	cfg := defaultConfig()
-	cfg.AI.Enabled = true
-	srv := NewServer(dir, "test", cfg, "tok", []byte("<head></head>"), context.Background())
+	srv := chatEnabledTestServer(t, dir)
 
 	// Exhaust rate limit for IP A
 	for range chatRateLimit {

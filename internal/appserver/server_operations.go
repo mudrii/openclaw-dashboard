@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"io/fs"
 	"log/slog"
 	"net"
 	"net/http"
@@ -217,14 +218,28 @@ func pruneOperationAudit(dir string) {
 	for _, entry := range entries {
 		info, err := entry.Info()
 		if err != nil {
+			// A concurrent pruner already removed this record: it is one fewer
+			// file to delete, not a reason to abandon the pass.
+			if errors.Is(err, fs.ErrNotExist) {
+				continue
+			}
 			slog.Warn("[dashboard] operation audit pruning skipped", "error", err)
 			return
 		}
 		records = append(records, record{name: entry.Name(), modified: info.ModTime()})
 	}
-	slices.SortFunc(records, func(a, b record) int { return a.modified.Compare(b.modified) })
+	if len(records) <= maxOperationAuditFiles {
+		return
+	}
+	// Name breaks mtime ties so the same records are chosen on every pass.
+	slices.SortFunc(records, func(a, b record) int {
+		if c := a.modified.Compare(b.modified); c != 0 {
+			return c
+		}
+		return strings.Compare(a.name, b.name)
+	})
 	for _, stale := range records[:len(records)-maxOperationAuditFiles] {
-		if err := os.Remove(filepath.Join(dir, stale.name)); err != nil {
+		if err := os.Remove(filepath.Join(dir, stale.name)); err != nil && !errors.Is(err, fs.ErrNotExist) {
 			slog.Warn("[dashboard] operation audit pruning failed", "error", err)
 			return
 		}

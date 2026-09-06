@@ -87,6 +87,6 @@ Go 1.27 is now the coordinated pin: `go.mod` declares `go 1.27` with `toolchain 
 
 The dependency-free frontend regression harness checks the embedded functions and CSS contracts; it is not a substitute for rendering the rebuilt candidate in a browser. See the [2026.9.1 release-validation record](plans/2026-09-05-release-validation.md) for the current evidence, fixes and release gates. Native and Docker end-to-end runs remain distinct from the live Podman UI observations.
 
-The toolchain pin was advanced from 1.26.5 to 1.26.8 after the vulnerability scan found six reachable standard-library issues; the subsequent full scan reported no vulnerabilities. Go's [release history](https://go.dev/doc/devel/release) documents the intervening security and maintenance fixes. No OpenClaw upgrade is involved.
+The toolchain pin was advanced from 1.26.5 to 1.26.8 after the vulnerability scan found six reachable standard-library issues; the subsequent full scan reported no vulnerabilities. The pin was advanced again from 1.26.8 to Go 1.27.1 (see above). Go's [release history](https://go.dev/doc/devel/release) documents the intervening security and maintenance fixes. No OpenClaw upgrade is involved.
 
 Unsupported or deliberately unverified: provider inference, embedding execution, backup restore, arbitrary widget execution, cloud/team administration, automatic upgrades, broad approvals and direct SQLite repair. These are not inferred from healthy read-only collection.

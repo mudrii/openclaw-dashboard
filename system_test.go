@@ -262,6 +262,9 @@ func TestHandleSystem_DegradedReturns200(t *testing.T) {
 }
 
 func TestCollectOpenclawRuntime_GracefulDegradation(t *testing.T) {
+	// The loopback gateway probe is native-mode only, so this case must not
+	// inherit the developer's OPENCLAW_CONTAINER environment.
+	t.Setenv("OPENCLAW_CONTAINER", "")
 	gw := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/healthz":

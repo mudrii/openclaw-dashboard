@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log"
 	"log/slog"
 	"os/exec"
 	"strings"
@@ -12,13 +13,20 @@ import (
 )
 
 // captureLogs redirects the default slog logger into a buffer for the duration
-// of the test.
+// of the test. slog.SetDefault also rewires the stdlib log package, and
+// restoring the previous handler does not undo that, so the log writer and
+// flags are saved and restored explicitly.
 func captureLogs(t *testing.T) *bytes.Buffer {
 	t.Helper()
 	buffer := &bytes.Buffer{}
 	previous := slog.Default()
+	previousWriter, previousFlags := log.Writer(), log.Flags()
 	slog.SetDefault(slog.New(slog.NewTextHandler(buffer, &slog.HandlerOptions{Level: slog.LevelDebug})))
-	t.Cleanup(func() { slog.SetDefault(previous) })
+	t.Cleanup(func() {
+		slog.SetDefault(previous)
+		log.SetOutput(previousWriter)
+		log.SetFlags(previousFlags)
+	})
 	return buffer
 }
 

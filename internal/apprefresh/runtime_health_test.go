@@ -136,6 +136,7 @@ func TestRuntimeHealthPerAgentFailures(t *testing.T) {
 			name:      "every agent fails",
 			failures:  map[string]string{"a": "permission_denied", "b": "permission_denied", "c": "timeout"},
 			wantState: "unavailable", wantCode: "permission_denied", wantRows: 0,
+			wantAgent: []string{"a", "b", "c"},
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

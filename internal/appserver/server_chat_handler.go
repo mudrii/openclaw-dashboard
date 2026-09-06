@@ -61,6 +61,16 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Every install is gated, native included: an unusable chat endpoint or a
+	// missing gateway credential must be named here rather than discovered as
+	// an opaque transport failure after the request reaches the gateway. The
+	// gate runs before any work on the payload so credentials_missing wins over
+	// a broken data.json.
+	if capability := s.chatCapability(r.Context()); !capability.Available {
+		s.sendJSON(w, r, http.StatusServiceUnavailable, map[string]string{"error": "Chat unavailable: " + capability.State + ". Use the native OpenClaw control UI.", "errorCode": capability.State})
+		return
+	}
+
 	// Validate + sanitise history — inline switch avoids per-request map alloc
 	maxHist := s.cfg.AI.MaxHistory
 	history := make([]appchat.Message, 0, maxHist)
@@ -94,14 +104,6 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.sendJSON(w, r, http.StatusInternalServerError, map[string]string{"error": "dashboard data is invalid"})
-		return
-	}
-
-	// Every install is gated, native included: an unusable chat endpoint or a
-	// missing gateway credential must be named here rather than discovered as
-	// an opaque transport failure after the request reaches the gateway.
-	if capability := s.chatCapability(r.Context()); !capability.Available {
-		s.sendJSON(w, r, http.StatusServiceUnavailable, map[string]string{"error": "Chat unavailable: " + capability.State + ". Use the native OpenClaw control UI.", "errorCode": capability.State})
 		return
 	}
 

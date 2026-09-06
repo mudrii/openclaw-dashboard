@@ -11,7 +11,83 @@ import (
 
 	"github.com/mudrii/openclaw-dashboard/internal/appconfig"
 	"github.com/mudrii/openclaw-dashboard/internal/appopenclaw"
+	"github.com/mudrii/openclaw-dashboard/internal/apprefresh"
 )
+
+// TestRuntimeLogCacheRecoversAfterPanic pins that a panicking read leaves the
+// cache usable. If the leader's bookkeeping is not deferred, every later poll
+// waits on the closed channel and serves an empty log page forever.
+func TestRuntimeLogCacheRecoversAfterPanic(t *testing.T) {
+	var cache runtimeLogCache
+	calls := 0
+	fetch := func() (apprefresh.RuntimeLogs, error) {
+		calls++
+		if calls == 1 {
+			panic("runtime log runner exploded")
+		}
+		return apprefresh.RuntimeLogs{Cursor: 7}, nil
+	}
+
+	func() {
+		defer func() {
+			if recover() == nil {
+				t.Error("panic did not reach the caller")
+			}
+		}()
+		_, _ = cache.read(t.Context(), fetch)
+	}()
+
+	snapshot, err := cache.read(t.Context(), fetch)
+	if err != nil || snapshot.Cursor != 7 || calls != 2 {
+		t.Fatalf("cache did not recover: snapshot=%+v err=%v calls=%d", snapshot, err, calls)
+	}
+}
+
+// TestRuntimeLogsWaiterSurvivesLeaderCancellation pins that the client which
+// happened to start the shared read cannot cancel it for everyone else: the
+// waiter still gets its page, and only one CLI process runs.
+func TestRuntimeLogsWaiterSurvivesLeaderCancellation(t *testing.T) {
+	cfg := appconfig.Default()
+	cfg.Openclaw = appopenclaw.Target{Mode: "container", Container: "test"}
+	cfg.Logs.Enabled = true
+	s := NewServer(t.TempDir(), "test", cfg, "", nil, t.Context(), nil)
+	var mu sync.Mutex
+	calls := 0
+	started := make(chan struct{})
+	s.runtimeClient = appopenclaw.Client{Runner: func(ctx context.Context, _ string, _ ...string) *exec.Cmd {
+		mu.Lock()
+		calls++
+		first := calls == 1
+		mu.Unlock()
+		if first {
+			close(started)
+		}
+		return exec.CommandContext(ctx, "sh", "-c", `sleep 0.3; printf '%s' '{"lines":[],"cursor":3}'`)
+	}}
+
+	leaderCtx, cancelLeader := context.WithCancel(t.Context())
+	leaderDone := make(chan struct{})
+	go func() {
+		defer close(leaderDone)
+		w := httptest.NewRecorder()
+		s.ServeHTTP(w, httptest.NewRequest("GET", "/api/logs?source=gateway", nil).WithContext(leaderCtx))
+	}()
+
+	<-started
+	cancelLeader()
+
+	w := httptest.NewRecorder()
+	s.ServeHTTP(w, httptest.NewRequest("GET", "/api/logs?source=gateway", nil))
+	if w.Code != http.StatusOK {
+		t.Fatalf("waiter inherited the leader's cancellation: %d %s", w.Code, w.Body.String())
+	}
+	<-leaderDone
+	mu.Lock()
+	defer mu.Unlock()
+	if calls != 1 {
+		t.Fatalf("calls=%d want a single shared runtime read", calls)
+	}
+}
 
 func TestRuntimeLogsUseGatewayAndCache(t *testing.T) {
 	cfg := appconfig.Default()

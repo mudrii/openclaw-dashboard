@@ -121,7 +121,7 @@ func parseReadyzFailingOK(body []byte) ([]string, bool) {
 // In container mode no probe runs at all: they would all measure the host, so
 // status is reported as unknown with a statusReason.
 //
-// Best-effort: all failures collapse to status=offline.
+// Best-effort in native mode: all failures collapse to status=offline.
 func collectGatewayHealth(ctx context.Context, gatewayPort int) map[string]any {
 	return collectGatewayHealthWithLock(ctx, "", gatewayPort)
 }

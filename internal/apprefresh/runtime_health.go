@@ -19,7 +19,10 @@ func perAgentStatus(source string, firstErr error, failed []string, agents int) 
 		return collectionStatus(source, nil, true)
 	}
 	if len(failed) >= agents {
-		return collectionStatus(source, firstErr, false)
+		// Uniform field: a total outage names its agents like a partial one.
+		status := collectionStatus(source, firstErr, false)
+		status.FailedAgents = failed
+		return status
 	}
 	status := partialCollectionStatus(source, appopenclaw.ErrorCode(firstErr))
 	status.FailedAgents = failed

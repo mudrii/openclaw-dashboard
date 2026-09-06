@@ -32,6 +32,17 @@ func writeFakeOclawBin(t *testing.T, stdout string, exitCode int) string {
 	return bin
 }
 
+// writeSleepingOclawBin writes a fake CLI that outlives any probe deadline, so
+// the caller's timeout is the only thing that can end the call.
+func writeSleepingOclawBin(t *testing.T) string {
+	t.Helper()
+	bin := filepath.Join(t.TempDir(), "openclaw")
+	if err := os.WriteFile(bin, []byte("#!/bin/sh\nsleep 30\n"), 0o755); err != nil {
+		t.Fatalf("write sleeping oclaw bin: %v", err)
+	}
+	return bin
+}
+
 func writeArgCheckingOclawBin(t *testing.T, stdout string, exitCode int, wantArgs ...string) string {
 	t.Helper()
 	dir := t.TempDir()
@@ -84,6 +95,9 @@ func newGatewayHTTPTestServer(t *testing.T, healthy bool) (*httptest.Server, int
 // reachable through refresh()): deep vs lean status parsing, non-zero-exit with
 // valid stdout, and independent gateway/status error accumulation.
 func TestCollectOpenclawRuntime(t *testing.T) {
+	// These cases assert the native gateway probe, so they must not inherit the
+	// developer's OPENCLAW_CONTAINER environment.
+	t.Setenv("OPENCLAW_CONTAINER", "")
 	ctx := context.Background()
 
 	t.Run("deepStatus populates tasks and eventLoop", func(t *testing.T) {
@@ -357,14 +371,19 @@ func TestCollectVersionsLocal_ContainerSkipsHostProbe(t *testing.T) {
 		name     string
 		exitCode int
 		wantErr  string
+		hang     bool
 	}{
-		{"cli succeeds with no usable json", 0, "host_probe_not_applicable"},
-		{"cli fails", 1, "unavailable"},
+		{"cli succeeds with no usable json", 0, "host_probe_not_applicable", false},
+		{"cli fails", 1, "unavailable", false},
+		{"cli times out", 0, "timeout", true},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			swapSharedSystemHTTPClient(t, &http.Client{Transport: hostProbeGuardTransport{t: t}})
 			ctx := appopenclaw.WithTarget(t.Context(), appopenclaw.Target{Mode: "container", Container: "gateway"})
 			bin := writeFakeOclawBin(t, "", tt.exitCode)
+			if tt.hang {
+				bin = writeSleepingOclawBin(t)
+			}
 
 			v := CollectVersionsLocal(ctx, "dash-1.0", 500, 18789, bin)
 
@@ -378,5 +397,33 @@ func TestCollectVersionsLocal_ContainerSkipsHostProbe(t *testing.T) {
 				t.Fatalf("Gateway.Error = %q, want %q", *v.Gateway.Error, tt.wantErr)
 			}
 		})
+	}
+}
+
+// TestCollectOpenclawRuntime_ContainerSkipsGatewayProbe pins that the runtime
+// collector never GETs 127.0.0.1 for a container target: that probe describes
+// the host gateway, so its liveness and its connection-refused errors would
+// both be wrong. The gap is reported as a reason instead.
+func TestCollectOpenclawRuntime_ContainerSkipsGatewayProbe(t *testing.T) {
+	swapSharedSystemHTTPClient(t, &http.Client{Transport: hostProbeGuardTransport{t: t}})
+	ctx := appopenclaw.WithTarget(t.Context(), appopenclaw.Target{Mode: "container", Container: "gateway"})
+	bin := writeFakeOclawBin(t, gatewayStatusLeanJSON, 0)
+
+	oc := CollectOpenclawRuntime(ctx, bin, 500, 18789, SystemVersions{}, false)
+
+	if oc.Gateway.Reason != gatewayReasonHostProbeNotApplicable {
+		t.Fatalf("Gateway.Reason = %q, want %q", oc.Gateway.Reason, gatewayReasonHostProbeNotApplicable)
+	}
+	if oc.Gateway.Live || oc.Gateway.Ready || oc.Gateway.HealthEndpointOk || oc.Gateway.ReadyEndpointOk {
+		t.Fatalf("host gateway state leaked into the container view: %+v", oc.Gateway)
+	}
+	if len(oc.Errors) != 0 {
+		t.Fatalf("Errors = %v, want none from a skipped probe", oc.Errors)
+	}
+	if oc.Freshness.Gateway != "" {
+		t.Fatalf("Freshness.Gateway = %q, want empty for a probe that never ran", oc.Freshness.Gateway)
+	}
+	if oc.Status.CurrentVersion != "2026.5.0" {
+		t.Fatalf("Status.CurrentVersion = %q, want the CLI-reported version", oc.Status.CurrentVersion)
 	}
 }

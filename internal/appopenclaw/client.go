@@ -309,9 +309,12 @@ func (c Client) ReadAgentModels(ctx context.Context, agent string, value any) er
 // is the operator-facing label used for diagnostics only; every failure is
 // logged once, here, with a redacted output tail.
 func (c Client) runJSON(ctx context.Context, method string, args []string, value any) (err error) {
+	// The diagnostic runs after cancel() (deferred LIFO), so it reads the
+	// caller's context rather than this call's already-cancelled bound one.
+	logCtx := ctx
 	defer func() {
 		if err != nil {
-			logCollectionFailure(ctx, method, err)
+			logCollectionFailure(logCtx, method, err)
 		}
 	}()
 	ctx, cancel := context.WithTimeout(ctx, 12*time.Second)

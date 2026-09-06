@@ -500,6 +500,13 @@ func CollectOpenclawRuntime(ctx context.Context, oclawBin string, timeoutMs int,
 	wg.Add(2)
 	go func() {
 		defer wg.Done()
+		// The probe GETs 127.0.0.1, which describes the host gateway: for a
+		// container target both its liveness and its connection-refused errors
+		// would be about the wrong process, so report the gap instead.
+		if appopenclaw.TargetFromContext(ctx).IsContainer() {
+			gw.Reason = gatewayReasonHostProbeNotApplicable
+			return
+		}
 		gw, gwErrs = probeOpenclawGatewayEndpoints(ctx, gatewayPort, timeoutMs)
 		if len(gwErrs) == 0 {
 			gwFresh = stamp()
@@ -1004,8 +1011,10 @@ func runOpenclawWithTimeout(ctx context.Context, timeoutMs int, name string, arg
 	ctx, cancel := context.WithTimeout(ctx, time.Duration(timeoutMs)*time.Millisecond)
 	defer cancel()
 	out, err := appopenclaw.Output(appopenclaw.CommandContext(ctx, name, args...), appopenclaw.MaxOutputBytes)
-	if ctx.Err() != nil {
-		return string(out), fmt.Errorf("%w: OpenClaw", ErrCommandTimeout)
+	if err := ctx.Err(); err != nil {
+		// Wrap the context error too: callers classify the failure with
+		// errors.Is, and "timeout" must not degrade to a generic "unavailable".
+		return string(out), fmt.Errorf("%w: %w", ErrCommandTimeout, err)
 	}
 	return strings.TrimSpace(string(out)), err
 }
