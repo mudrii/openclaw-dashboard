@@ -51,7 +51,8 @@ internal packages. Run the full suite before every commit:
 make check
 ```
 
-`make check` runs the full Go gate locally: `go vet ./...`, `golangci-lint run ./...`,
+`make check` requires Node on `PATH` and runs the embedded frontend regression harness,
+then the Go gate locally: `go vet ./...`, `golangci-lint run ./...`,
 `go test -race -count=1 ./...`, pinned `govulncheck`, pinned `staticcheck`,
 and `make build`.
 
@@ -59,11 +60,12 @@ and `make build`.
 |--------|--------------|
 | `make build` | Build a static binary with `CGO_ENABLED=0`, `-trimpath`, `-s -w` strip, and the VERSION embedded via `-X main.BuildVersion=…`. Matches the binary produced by `Dockerfile`, `.goreleaser.yml`, and `flake.nix`. |
 | `make test` | `go test -race -count=1 ./...`. The race detector is non-negotiable for local runs. |
+| `make frontend-test` | Runs the actual embedded JavaScript regression harness with Node. Fails if Node is absent; requires no npm packages. |
 | `make lint` | `golangci-lint run ./...`. Linters enabled in `.golangci.yml`: `errcheck`, `govet`, `staticcheck`, `ineffassign`, `unused`, `gocritic`, `gosec`, `errorlint`. |
 | `make vet` | `go vet ./...` only. Fast first pass before lint. |
-| `make staticcheck` | `go run honnef.co/go/tools/cmd/staticcheck@v0.7.0 ./...`. Runs standalone Staticcheck without requiring a preinstalled binary. |
+| `make staticcheck` | `go run honnef.co/go/tools/cmd/staticcheck@v0.8.1 ./...`. Runs standalone Staticcheck without requiring a preinstalled binary. |
 | `make govulncheck` | `go run golang.org/x/vuln/cmd/govulncheck@v1.3.0 ./...`. Scans stdlib + module for known CVEs without requiring a preinstalled binary. |
-| `make check` | Runs the required local Go gate: `go vet ./...`, `golangci-lint run ./...`, `go test -race -count=1 ./...`, pinned `govulncheck`, pinned `staticcheck`, and `make build`. |
+| `make check` | Runs `make frontend-test`, then `go vet ./...`, `golangci-lint run ./...`, `go test -race -count=1 ./...`, pinned `govulncheck`, pinned `staticcheck`, and `make build`. |
 
 `golangci-lint` v2.x must be on `PATH`; CI currently uses v2.12.2. The Nix
 `devShell` installs it; for non-Nix dev machines, `go install` works. If you
@@ -105,13 +107,15 @@ When you change the shape of `data.json`, add or extend Go tests that assert the
 
 ### Changing `web/index.html` JS
 
-There are no static-analysis tests for the frontend. Rely on:
+Run `make frontend-test` for dependency-free tests of the actual embedded functions and CSS contracts. This is required by `make check`, the Linux/macOS CI test jobs, and GoReleaser hooks. It fails if Node is absent. Go tests in `web_runtime_test.go` also check embedded JavaScript syntax, missing values and escaping; those individual Go tests skip when Node is unavailable, but the release gate does not. These checks do not replace:
 
 - **Manual exercise** of the UI after your change
 - **Code review discipline** for the 7-module structure and dirty-flag wiring
 - **XSS audit** — search for template literals that insert dynamic data without `esc()` (see [Security Testing](#security-testing))
 
 For behavior that is easy to get wrong (tab switching, chart toggles, scroll preservation), describe the manual scenario in the PR and run through it locally.
+
+Use an isolated rebuilt candidate with chat and operations disabled for live UI validation. The optional `scripts/runtime-browser-smoke.cjs` uses an externally installed browser/Playwright and expects a container-backed candidate; it is not a native/Docker/Podman compatibility matrix. See [runtime validation](docs/RUNTIME-COMPATIBILITY.md#validation) and record the exact binary tested.
 
 ### Changing the Go HTTP server (`internal/appserver`, `internal/appchat`, etc.)
 

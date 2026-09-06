@@ -38,9 +38,6 @@ func BuildSystemPrompt(data map[string]any) string {
 	fmtCost2 := func(v float64) string {
 		return strconv.FormatFloat(v, 'f', 2, 64)
 	}
-	fmtCost4 := func(v float64) string {
-		return strconv.FormatFloat(v, 'f', 4, 64)
-	}
 	fmtCost0 := func(v float64) string {
 		return strconv.FormatFloat(v, 'f', 0, 64)
 	}
@@ -87,15 +84,23 @@ func BuildSystemPrompt(data map[string]any) string {
 	b.WriteByte('\n')
 
 	b.WriteString("\n=== COSTS ===\n")
-	b.WriteString("Today: $")
-	b.WriteString(fmtCost4(flt(data, "totalCostToday")))
-	b.WriteString(" (sub-agents: $")
-	b.WriteString(fmtCost4(flt(data, "subagentCostToday")))
+	writeMoney := func(key string, precision int) {
+		if data["schemaVersion"] != nil && data[key] == nil {
+			b.WriteString("Unknown (pricing or collection incomplete)")
+			return
+		}
+		b.WriteByte('$')
+		b.WriteString(strconv.FormatFloat(flt(data, key), 'f', precision, 64))
+	}
+	b.WriteString("Today: ")
+	writeMoney("totalCostToday", 4)
+	b.WriteString(" (sub-agents: ")
+	writeMoney("subagentCostToday", 4)
 	b.WriteString(")\n")
-	b.WriteString("All-time: $")
-	b.WriteString(fmtCost2(flt(data, "totalCostAllTime")))
-	b.WriteString(" | Projected monthly: $")
-	b.WriteString(fmtCost0(flt(data, "projectedMonthly")))
+	b.WriteString("All-time: ")
+	writeMoney("totalCostAllTime", 2)
+	b.WriteString(" | Projected monthly: ")
+	writeMoney("projectedMonthly", 0)
 	b.WriteByte('\n')
 
 	if bd, ok := data["costBreakdown"].([]any); ok && len(bd) > 0 {
@@ -138,8 +143,12 @@ func BuildSystemPrompt(data map[string]any) string {
 		b.WriteString(" | ")
 		b.WriteString(str(s, "type"))
 		b.WriteString(" | context: ")
-		b.WriteString(fmtPct(flt(s, "contextPct")))
-		b.WriteString("%\n")
+		if s["contextPct"] == nil && data["schemaVersion"] != nil {
+			b.WriteString("Unknown\n")
+		} else {
+			b.WriteString(fmtPct(flt(s, "contextPct")))
+			b.WriteString("%\n")
+		}
 	}
 
 	crons, _ := data["crons"].([]any)

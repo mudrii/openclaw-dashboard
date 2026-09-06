@@ -6,6 +6,7 @@ before:
   hooks:
     - go mod tidy
     - git diff --exit-code -- go.mod go.sum
+    - make frontend-test
     - make test
 
 builds:
@@ -32,6 +33,7 @@ archives:
       - LICENSE
       - VERSION
       - docs/CONFIGURATION.md
+      - docs/RUNTIME-COMPATIBILITY.md
       - assets/runtime/refresh.sh
       - install.sh
       - uninstall.sh
@@ -91,6 +93,7 @@ brews:
       pkgshare.install "assets/runtime/config.json"
       pkgshare.install "VERSION"
       pkgshare.install "docs/CONFIGURATION.md"
+      pkgshare.install "docs/RUNTIME-COMPATIBILITY.md"
       pkgshare.install "install.sh"
       pkgshare.install "uninstall.sh"
       pkgshare.install "web/index.html"

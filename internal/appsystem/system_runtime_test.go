@@ -309,6 +309,7 @@ exit 64
 // GetProcessInfo branch and the non-JSON substring fallback.
 func TestParseGatewayStatusJSON_ProcessInfoAndTextFallback(t *testing.T) {
 	t.Run("real pid populates uptime and memory", func(t *testing.T) {
+		t.Setenv("OPENCLAW_CONTAINER", "")
 		input := fmt.Sprintf(
 			`{"service":{"loaded":true,"runtime":{"status":"running","pid":%d}},"version":"3.0.0"}`,
 			os.Getpid())

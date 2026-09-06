@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"reflect"
 	"strings"
+
+	"github.com/mudrii/openclaw-dashboard/internal/appopenclaw"
 )
 
 type BotConfig struct {
@@ -114,15 +116,22 @@ type SystemConfig struct {
 }
 
 type Config struct {
-	Bot      BotConfig     `json:"bot"`
-	Theme    ThemeConfig   `json:"theme"`
-	Timezone string        `json:"timezone"`
-	Refresh  RefreshConfig `json:"refresh"`
-	Server   ServerConfig  `json:"server"`
-	AI       AIConfig      `json:"ai"`
-	Logs     LogsConfig    `json:"logs"`
-	Alerts   AlertsConfig  `json:"alerts"`
-	System   SystemConfig  `json:"system"`
+	Operations OperationsConfig   `json:"operations,omitzero"`
+	Openclaw   appopenclaw.Target `json:"openclaw,omitzero"`
+	Bot        BotConfig          `json:"bot"`
+	Theme      ThemeConfig        `json:"theme"`
+	Timezone   string             `json:"timezone"`
+	Refresh    RefreshConfig      `json:"refresh"`
+	Server     ServerConfig       `json:"server"`
+	AI         AIConfig           `json:"ai"`
+	Logs       LogsConfig         `json:"logs"`
+	Alerts     AlertsConfig       `json:"alerts"`
+	System     SystemConfig       `json:"system"`
+}
+
+// Operations are opt-in and also require a separate operator credential.
+type OperationsConfig struct {
+	Enabled bool `json:"enabled"`
 }
 
 func Default() Config {

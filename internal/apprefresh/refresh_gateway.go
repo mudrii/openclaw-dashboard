@@ -11,6 +11,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/mudrii/openclaw-dashboard/internal/appopenclaw"
 )
 
 // pgrepGateway shells out to pgrep and returns the matching PID list. Stubbed
@@ -141,6 +143,16 @@ func collectGatewayHealthWithLock(ctx context.Context, openclawPath string, gate
 		probeCtx, probeCancel := context.WithTimeout(ctx, 2*time.Second)
 		httpOnline = healthzProbe(probeCtx, gatewayPort)
 		probeCancel()
+	}
+	if appopenclaw.TargetFromContext(ctx).IsContainer() {
+		gw["processScope"] = "container"
+		if httpOnline {
+			gw["status"] = "online"
+		}
+		if gatewayPort <= 0 {
+			gw["status"] = "unknown"
+		}
+		return gw
 	}
 
 	// INT-3: prefer the gateway lock for pid/uptime metadata only when liveness

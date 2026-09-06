@@ -28,9 +28,13 @@ After=network.target
 [Service]
 Type=simple
 WorkingDirectory={{systemdQuote .WorkDir}}
+Environment={{systemdQuote (printf "OPENCLAW_DASHBOARD_DIR=%s" .WorkDir)}}
 Environment={{systemdQuote (printf "PATH=%s" .PathEnv)}}
 {{- if .OpenclawHome}}
 Environment={{systemdQuote (printf "OPENCLAW_HOME=%s" .OpenclawHome)}}
+{{- end}}
+{{- if .OpenclawContainer}}
+Environment={{systemdQuote (printf "OPENCLAW_CONTAINER=%s" .OpenclawContainer)}}
 {{- end}}
 {{- if .AllowNonLoopback}}
 Environment="OPENCLAW_DASHBOARD_ALLOW_NON_LOOPBACK=1"
@@ -44,13 +48,14 @@ WantedBy=default.target
 `))
 
 type unitData struct {
-	BinPath          string
-	Host             string
-	Port             int
-	WorkDir          string
-	OpenclawHome     string
-	PathEnv          string
-	AllowNonLoopback bool
+	BinPath           string
+	Host              string
+	Port              int
+	WorkDir           string
+	OpenclawHome      string
+	OpenclawContainer string
+	PathEnv           string
+	AllowNonLoopback  bool
 }
 
 var unitPortRe = regexp.MustCompile(`(?:^|\s)--port\s+"?([0-9]+)"?`)
@@ -111,13 +116,14 @@ func (sb *systemdBackend) Install(cfg InstallConfig) error {
 		return fmt.Errorf("resolve OPENCLAW_HOME: %w", err)
 	}
 	data := unitData{
-		BinPath:          cfg.BinPath,
-		Host:             cfg.Host,
-		Port:             cfg.Port,
-		WorkDir:          cfg.WorkDir,
-		OpenclawHome:     openclawHome,
-		PathEnv:          systemdPathEnv(),
-		AllowNonLoopback: cfg.AllowNonLoopback,
+		BinPath:           cfg.BinPath,
+		Host:              cfg.Host,
+		Port:              cfg.Port,
+		WorkDir:           cfg.WorkDir,
+		OpenclawHome:      openclawHome,
+		OpenclawContainer: os.Getenv("OPENCLAW_CONTAINER"),
+		PathEnv:           systemdPathEnv(),
+		AllowNonLoopback:  cfg.AllowNonLoopback,
 	}
 	var buf bytes.Buffer
 	if err := unitTmpl.Execute(&buf, data); err != nil {

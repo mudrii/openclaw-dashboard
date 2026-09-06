@@ -19,6 +19,7 @@ import (
 // restore func. Use t.Cleanup to undo the override after each test.
 func stubPgrep(t *testing.T, output string, err error) {
 	t.Helper()
+	t.Setenv("OPENCLAW_CONTAINER", "")
 	prev := pgrepGateway
 	pgrepGateway = func(_ context.Context) ([]byte, error) {
 		return []byte(output), err

@@ -52,6 +52,9 @@ jobs:
       - name: Run tests with race detector
         run: make test
 
+      - name: Require embedded frontend regression tests (Node required)
+        run: make frontend-test
+
       - name: Build binary
         run: make build
 

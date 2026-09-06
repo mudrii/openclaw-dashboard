@@ -13,8 +13,20 @@ the binary reports the installed release version correctly after upgrades.
 
 ### Full Example
 
+The optional `openclaw` object selects the collector runtime. `{}` preserves
+the CLI's environment-based selection. For a Podman/Docker gateway use
+`{"mode":"container","container":"openclaw"}`; for an explicitly native
+installation use `{"mode":"native"}`. `binary` overrides the CLI executable
+and `profile` adds the OpenClaw profile argument. Arguments are passed directly
+without a shell. Invalid target names or conflicting settings prevent execution.
+Service installation preserves `OPENCLAW_CONTAINER`; an explicit config target
+takes precedence over that inherited environment. Versions distinguish the
+selected CLI, host CLI (when containerized), and gateway runtime.
+
 ```json
 {
+  "openclaw": {},
+  "operations": {"enabled": false},
   "bot": {
     "name": "My OpenClaw Bot",
     "emoji": "🤖"
@@ -75,6 +87,14 @@ the binary reports the installed release version correctly after upgrades.
   }
 }
 ```
+
+### Runtime compatibility and optional operations
+
+For migrated OpenClaw state, see [runtime compatibility](RUNTIME-COMPATIBILITY.md) for authoritative data sources, capability states, API endpoints and validation commands.
+
+`operations.enabled` defaults to `false`. Enabling it also requires `OPENCLAW_DASHBOARD_OPERATOR_TOKEN` (at least 32 characters) in the dashboard **service** environment. It is separate from the gateway token and is never returned to the browser. The operator supplies it manually for each confirmed action; the UI clears it afterward. Keep operations disabled unless the selected gateway identity has the narrowly required write scope.
+
+Supported actions are automation enable/disable, run an enabled automation, and abort one exact active run. The server requires loopback access, a matching browser origin, authorization, a unique operation UUID, and a fresh target/revision check. Requests are rate limited; audit records under `operations/<UUID>.jsonl` prevent replay across restarts. They contain target/action/outcome metadata, not credentials. Preserve these files; deleting an audit reservation removes its replay protection. An uncertain result requires manual runtime verification, never blind retry. These controls do not enable gateway HTTP chat or approve devices.
 
 ### Bot Settings
 

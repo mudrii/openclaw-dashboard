@@ -2,6 +2,8 @@ package apprefresh
 
 import (
 	"fmt"
+	"math"
+	"path/filepath"
 	"strings"
 )
 
@@ -95,6 +97,15 @@ func parseOpenclawConfig(oc map[string]any, basePath string) (
 	compaction, compactionMode := parseCompaction(defaults)
 	skills = parseSkills(oc)
 	primary, fallbacks, imageModel, models := parseModelDefaults(defaults)
+	if allowed, ok := jsonObj(defaults, "modelPolicy")["allow"].([]any); ok {
+		filtered := map[string]any{}
+		for _, entry := range allowed {
+			if id, ok := entry.(string); ok {
+				filtered[id] = models[id]
+			}
+		}
+		models = filtered
+	}
 	availableModels, modelAliases = parseAvailableModels(models, primary)
 
 	channelsCfg := jsonObj(oc, "channels")
@@ -120,6 +131,19 @@ func parseOpenclawConfig(oc map[string]any, basePath string) (
 	modelParams := parseModelParams(models)
 	availModels := parseAvailModelsList(models)
 	agentEntries := parseAgents(agents, primary, fallbacks, modelAliases, modelParams)
+	for _, entry := range agentEntries {
+		a := asObj(entry)
+		if jsonStr(a, "workspace") == "" {
+			workspace := jsonStr(defaults, "workspace")
+			if workspace == "" {
+				workspace = filepath.Join(filepath.Dir(basePath), "workspace")
+				if a["id"] != "main" {
+					workspace += "-" + jsonStr(a, "id")
+				}
+			}
+			a["workspace"] = workspace
+		}
+	}
 
 	var fb3 []string
 	for i, f := range fallbacks {
@@ -188,6 +212,38 @@ func parseOpenclawConfig(oc map[string]any, basePath string) (
 	agentConfig["contextWindow"] = contextWindow
 	agentConfig["maxOutputTokens"] = maxOutputTokens
 	agentConfig["memoryPolicy"] = parseMemoryPolicy(defaults)
+	if search := asObj(jsonObj(oc, "memory")["search"]); search != nil {
+		agentConfig["memoryPolicy"] = projectFields(search, "enabled", "provider", "model", "sources", "fallback")
+	}
+	agentConfig["dreaming"] = projectFields(jsonObj(jsonObj(oc, "memory"), "dreaming"), "enabled", "schedule", "mode")
+	agentConfig["modelPolicy"] = projectFields(jsonObj(defaults, "modelPolicy"), "allow")
+	diagnostics := jsonObj(oc, "diagnostics")
+	agentConfig["diagnosticConfig"] = map[string]any{
+		"enabled":    diagnostics["enabled"],
+		"otel":       projectFields(jsonObj(diagnostics, "otel"), "enabled", "protocol", "serviceName"),
+		"cacheTrace": projectFields(jsonObj(diagnostics, "cacheTrace"), "enabled"),
+	}
+	agentConfig["backupConfig"] = projectFields(jsonObj(oc, "backup"), "enabled", "schedule", "retention")
+	// Project only numeric prices, never provider credentials or connection URLs.
+	// These are configured estimates, not evidence of billed or complete usage.
+	pricing := map[string]any{}
+	for provider, value := range jsonObj(jsonObj(oc, "models"), "providers") {
+		for _, entry := range jsonArr(asObj(value), "models") {
+			model := asObj(entry)
+			id := jsonStr(model, "id")
+			if id == "" {
+				continue
+			}
+			cost := map[string]any{}
+			for _, key := range []string{"input", "output", "cacheRead", "cacheWrite"} {
+				if n, ok := jsonObj(model, "cost")[key].(float64); ok && n >= 0 && !math.IsNaN(n) && !math.IsInf(n, 0) {
+					cost[key] = n
+				}
+			}
+			pricing[provider+"/"+id] = cost
+		}
+	}
+	agentConfig["modelPricing"] = pricing
 
 	return compactionMode, skills, availableModels, modelAliases, agentConfig
 }
@@ -489,9 +545,9 @@ func parseAgents(agents map[string]any, primary string, fallbacks []string, mode
 			ctx1m = params["context1m"]
 		}
 		out = append(out, map[string]any{
-			"id": "default", "role": "Default",
+			"id": "main", "role": "Default",
 			"model": agentModelDisplay(modelAliases, primary), "modelId": primary,
-			"workspace": "~/.openclaw/workspace", "isDefault": true,
+			"workspace": jsonStr(jsonObj(agents, "defaults"), "workspace"), "isDefault": true,
 			"context1m": ctx1m,
 		})
 		return out
@@ -557,7 +613,7 @@ func parseAgents(agents map[string]any, primary string, fallbacks []string, mode
 			"id": aid, "role": role,
 			"model":     agentModelDisplay(modelAliases, amodel),
 			"modelId":   amodel,
-			"workspace": jsonStrDefault(am, "workspace", "~/.openclaw/workspace"),
+			"workspace": jsonStr(am, "workspace"),
 			"isDefault": isDefault,
 			"context1m": ctx1m,
 			"fallbacks": fb,

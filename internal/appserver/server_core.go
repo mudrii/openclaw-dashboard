@@ -8,12 +8,14 @@ import (
 	"html"
 	"log/slog"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	appconfig "github.com/mudrii/openclaw-dashboard/internal/appconfig"
+	"github.com/mudrii/openclaw-dashboard/internal/appopenclaw"
 	"github.com/mudrii/openclaw-dashboard/internal/appruntime"
 	appsystem "github.com/mudrii/openclaw-dashboard/internal/appsystem"
 )
@@ -104,11 +106,15 @@ func (rl *chatRateLimiter) cleanup() {
 }
 
 type Server struct {
-	dir          string
-	version      string
-	cfg          appconfig.Config
-	gatewayToken string
-	openclawPath string
+	dir              string
+	version          string
+	cfg              appconfig.Config
+	gatewayToken     string
+	openclawPath     string
+	runtimeClient    appopenclaw.Client
+	runtimeLogs      runtimeLogCache
+	operatorToken    string
+	operationLimiter chatRateLimiter
 
 	indexHTMLRendered  []byte
 	indexContentLength string // pre-computed strconv.Itoa(len(indexHTMLRendered))
@@ -141,7 +147,8 @@ type Server struct {
 }
 
 func NewServer(dir, version string, cfg appconfig.Config, gatewayToken string, indexHTML []byte, serverCtx context.Context, refreshFn func(context.Context, string, string, appconfig.Config) error) *Server {
-	openclawPath := appruntime.ResolveOpenclawPath()
+	serverCtx = appopenclaw.WithTarget(serverCtx, cfg.Openclaw)
+	openclawPath := cfg.Openclaw.StatePath(appruntime.ResolveOpenclawPath())
 	content := string(indexHTML)
 	preset := html.EscapeString(cfg.Theme.Preset)
 	meta := "<head>\n<meta name=\"oc-theme\" content=\"" + preset + "\">"
@@ -154,7 +161,9 @@ func NewServer(dir, version string, cfg appconfig.Config, gatewayToken string, i
 		version:            version,
 		cfg:                cfg,
 		gatewayToken:       gatewayToken,
+		operatorToken:      os.Getenv("OPENCLAW_DASHBOARD_OPERATOR_TOKEN"),
 		openclawPath:       openclawPath,
+		runtimeClient:      appopenclaw.Client{Binary: appsystem.ResolveOpenclawBin()},
 		indexHTMLRendered:  rendered,
 		indexContentLength: strconv.Itoa(len(rendered)),
 		corsDefault:        "http://localhost:" + strconv.Itoa(cfg.Server.Port),
@@ -172,6 +181,7 @@ func NewServer(dir, version string, cfg appconfig.Config, gatewayToken string, i
 			select {
 			case <-ticker.C:
 				s.chatLimiter.cleanup()
+				s.operationLimiter.cleanup()
 			case <-serverCtx.Done():
 				return
 			}

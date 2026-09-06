@@ -2,6 +2,8 @@
 
 A beautiful, zero-dependency command center for [OpenClaw](https://github.com/openclaw/openclaw) AI agents.
 
+For the current working-tree runtime changes, see [OpenClaw runtime compatibility](docs/RUNTIME-COMPATIBILITY.md) and the [pre-release validation record](docs/plans/2026-09-05-release-validation.md). These changes are not a published release; screenshots below may show the earlier layout.
+
 ![OpenClaw Dashboard](screenshots/00-full-dashboard.png)
 
 ## Why This Exists
@@ -24,20 +26,22 @@ It's not trying to replace the OpenClaw CLI or Telegram interface. It's the at-a
 
 ## Features
 
-### 12 Dashboard Panels
+### Dashboard Views
 
 1. **📊 Top Metrics Bar** — Live CPU, RAM, swap, disk + OpenClaw version + gateway — always on, colour-coded by configurable thresholds (see [Top Metrics Bar](#top-metrics-bar))
 2. **🔔 Header Bar** — Bot name, online/offline status, auto-refresh countdown, theme picker
 3. **⚠️ Alerts Banner** — Smart alerts for high costs, failed crons, high context usage, gateway offline
-4. **💚 System Health** — Gateway status, PID, uptime, memory, compaction mode, active session count
+4. **💚 System Health** — Gateway status, available process metadata, compaction mode, session inventory count
 5. **💰 Cost Cards** — Today's cost, all-time cost, projected monthly, cost breakdown donut chart
 6. **⏰ Cron Jobs** — All scheduled jobs with status, schedule, last/next run, duration, model, plus a delivery-outcome dot and a `⚡FLAPPING` badge for unstable jobs
 7. **📡 Active Sessions** — Recent sessions with model, type badges (DM/group/cron/subagent), context %, tokens
-8. **📊 Token Usage & Cost** — Per-model breakdown with 7d/30d/all-time tabs, usage bars, totals
+8. **📊 Token Usage & Cost** — Per-model breakdown with Today/7d/30d/all-time tabs, usage bars and totals; incomplete pricing remains Unknown
 9. **🤖 Sub-Agent Activity** — Sub-agent runs with agent, task, status, and duration (Today/7d/30d/all-time tabs), sourced from the gateway's durable task store
-10. **📈 Charts & Trends** — Cost trend line, model cost breakdown bars, sub-agent activity — all pure SVG, 7d/30d toggle
-11. **🧩 Bottom Row** — Available models grid, skills list, git log
-12. **💬 AI Chat** — Ask questions about your dashboard in natural language, powered by your OpenClaw gateway
+10. **📈 Charts & Trends** — Cost trend and model-cost charts, pure SVG with a 7d/30d toggle; unavailable pricing is explicit
+11. **📋 Live Logs and Error Feed** — Bounded runtime logs, severity/regex filters, grouped warnings and errors
+12. **📊 Runtime Diagnostics** — Collection freshness, tasks, session work context, memory, channels, model/plugin/skill inventories and reported backup state
+13. **⚙️ Agent & Model Configuration** — Selected-runtime configuration, model routing, channel policy and limits
+14. **💬 AI Chat** — Optional dashboard questions through an enabled gateway HTTP endpoint; unavailable capability disables input
 
 ### Key Features
 
@@ -57,9 +61,9 @@ It's not trying to replace the OpenClaw CLI or Telegram interface. It's the at-a
 - 🔍 **Runtime Observability** — `/api/system` includes live gateway runtime state (liveness, readiness, failing deps, uptime, PID, memory) sourced from `/healthz`, `/readyz`, and `openclaw status --json`
 - 🟡 **Gateway Readiness Alerts** — Alert banner shows `🟡 Gateway not ready: discord` (or any failing dep) and auto-clears on recovery
 - ⚡ **Gateway Runtime + Config Cards** — System Settings split into two panels: Gateway Runtime (live probes) and Gateway Config (static config snapshot)
-- 📶 **Live Channel Health** — Per-channel up/down driven by the gateway's own `/readyz failing[]`, so idle-but-healthy channels stop looking dead and actually-failing ones (bad token, API down) show red; falls back to the session-activity heuristic when the probe is unavailable
+- 📶 **Live Channel Health** — Migrated runtimes report gateway account-level configuration, connection and probe state separately; unknown fields stay unknown. Legacy collection retains readiness/session-activity fallbacks
 - 📊 **Runtime Health Panel** — Task queue (active/total, failures, by-status breakdown), event-loop health + utilization, plugin-compatibility warnings, last-heartbeat age, and channel summary from `openclaw status --json` (event-loop/heartbeat require `system.deepStatus`)
-- 🐧 **Linux journald Logs** — On systemd hosts the gateway logs to journald with no file to tail; the Logs panel and error feed populate from `journalctl --user -u <unit>.service -o json` (configurable via `logs.systemdUnit`)
+- 🐧 **Linux journald Logs** — Legacy collection can use `journalctl --user -u <unit>.service -o json`; migrated runtimes use the selected gateway's bounded `logs.tail` instead
 - 🏷️ **Live Model Catalog** — Display names and context-window limits come from `openclaw models list --json`, so current and future models get real names and accurate context bars; the curated names win, the catalog fills unknown ids
 - 🔧 **Install-Independent Gateway Metadata** — PID/uptime/RSS read from openclaw's gateway lock file, correct on homebrew/binary/bun/source installs, not just npm
 - 📬 **Cron Delivery & Flapping** — Cron rows show whether a job actually delivered output and flag unstable jobs (`⚡FLAPPING`) from `consecutiveErrors`
@@ -186,6 +190,16 @@ make build
 
 ### Docker
 
+**Monitoring OpenClaw in Docker or Podman:** run the dashboard on the host with a working OpenClaw CLI and select the container in dashboard `config.json`:
+
+```json
+{"openclaw":{"mode":"container","container":"openclaw"}}
+```
+
+The host CLI must be able to access the selected engine/container. No host mount of the container's state is required. An inaccessible target stays unavailable; it must not silently fall back to host data. See [runtime selection](docs/RUNTIME-COMPATIBILITY.md#selecting-the-runtime).
+
+**Running the dashboard itself in Docker is a separate deployment mode.** The current image ships the dashboard, not the OpenClaw CLI or container-engine tooling. Mounting state alone does not provide migrated-runtime collection. Supply an appropriate CLI/runtime environment before expecting live data; the stock image is not end-to-end certified for that setup.
+
 The dashboard binds to `127.0.0.1` by default. Container deployments must
 either opt into a non-loopback bind explicitly or share the host network
 namespace — port-publishing alone won't work, because the container's own
@@ -275,6 +289,7 @@ cmd/openclaw-dashboard/      CLI entrypoint
 internal/appconfig/          config loading
 internal/appruntime/         runtime-dir resolution
 internal/appchat/            chat prompt + gateway client
+internal/appopenclaw/        selected-runtime CLI adapter and operation allowlists
 internal/apprefresh/         data collector
 internal/appserver/          HTTP server
 internal/appsystem/          metrics and runtime probes
@@ -293,6 +308,14 @@ data.json                   generated dashboard data
 | `/api/system` | GET | Live host metrics (CPU/RAM/Swap/Disk) + gateway status |
 | `/api/logs` | GET | Merged tail view of configured dashboard log sources |
 | `/api/errors` | GET | Aggregated warning/error signatures for the dashboard error feed |
+| `/api/automation/runs` | GET | Bounded history for an exact automation ID and offset |
+| `/api/session/context` | GET | Display-only progress/widget metadata for a selected session |
+| `/api/workboard` | GET | Capability-gated workboard summary |
+| `/api/chat/status` | GET | Chat configuration/credential capability; no inference probe |
+| `/api/operations/status` | GET | Whether opt-in operator actions are configured |
+| `/api/operations` | POST | Authenticated, loopback-only exact-target actions with replay protection |
+
+Read routes also support HEAD. Operations are disabled by default; see [authorization and audit requirements](docs/CONFIGURATION.md#runtime-compatibility-and-optional-operations). Migrated logs/errors represent a bounded tail, not a guaranteed complete historical window.
 
 | Feature | Details |
 |---|---|
@@ -581,14 +604,14 @@ Per-model token and cost breakdown with 7d / 30d / all-time tabs. Includes input
 ---
 
 ### 🤖 Sub-Agent Activity
-All sub-agent runs with agent, task, status, and duration, across Today/7d/30d/all-time tabs. Runs come from OpenClaw's durable task store (`openclaw tasks list --runtime subagent`); per-run cost and token usage are not exposed by that store (and the zero-dependency build cannot read the gateway SQLite directly), so they are not shown. Useful for tracking which tasks spawn the most agents and how they fare.
+Sub-agent runs with agent, task, status, and duration, across Today/7d/30d/all-time tabs. Migrated runtimes use bounded gateway `tasks.list` pages and select sub-agent tasks; legacy collection uses the CLI task reader. Per-run cost/token usage is not asserted from these records. The collection state distinguishes complete data from unavailable or stale snapshots.
 
 ![Sub-Agent Activity](screenshots/06-subagent-activity.png)
 
 ---
 
 ### 🧩 Available Models, Skills & Git Log
-Quick reference panel showing all configured models, active skills, and the last 5 git commits from your OpenClaw workspace — so you always know what's deployed.
+This screenshot shows the earlier quick-reference layout. Current model and skill diagnostics live in Runtime Diagnostics and Agent & Model Configuration. Legacy Git data is not mixed into container snapshots; it is not proof of the selected container's deployed code.
 
 ![Models Skills Git](screenshots/07-models-skills-git.png)
 
@@ -620,9 +643,9 @@ Or using the uninstall script to remove the runtime directory as well:
 
 ## Requirements
 
-- Pre-built Go binary — no runtime dependencies
+- Pre-built Go binary — no third-party Go libraries or frontend package installation required
 - `bash` (only needed if using the optional `refresh.sh` wrapper script, not required for the binary itself)
-- **OpenClaw** — Installed at `~/.openclaw` ([docs](https://docs.openclaw.ai))
+- **OpenClaw** — Accessible host CLI and selected native installation or Docker/Podman container. Migrated data requires the CLI/gateway; state files alone are insufficient. The default native state directory is `~/.openclaw`
 - **macOS** 10.15+ or **Linux** (Ubuntu 18.04+, Debian 10+, ARM64)
 - Modern web browser
 

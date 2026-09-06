@@ -19,6 +19,8 @@ import (
 // isolation; this locks the wired fallback branch a regression could silently
 // break.
 func TestCollectDashboardData_CronCLIFailureFallsBackToFile(t *testing.T) {
+	t.Setenv("OPENCLAW_CONTAINER", "")
+	t.Setenv("OPENCLAW_STATE_DIR", "")
 	prev := execCommandContext
 	t.Cleanup(func() { execCommandContext = prev })
 	execCommandContext = func(ctx context.Context, _ string, _ ...string) *exec.Cmd {
@@ -72,6 +74,8 @@ func TestCollectDashboardData_CronCLIFailureFallsBackToFile(t *testing.T) {
 // this test — which the unit cronJobToMap test (hand-seeded catalog) cannot
 // catch.
 func TestCollectDashboardData_CronModelPrettifiedFromCatalog(t *testing.T) {
+	t.Setenv("OPENCLAW_CONTAINER", "")
+	t.Setenv("OPENCLAW_STATE_DIR", "")
 	cronJSON := `{"jobs":[{"id":"j1","name":"C","enabled":true,` +
 		`"schedule":{"kind":"cron","expr":"0 0 * * *"},` +
 		`"payload":{"model":"minimax/MiniMax-M3"},"state":{"lastRunStatus":"ok"}}]}`

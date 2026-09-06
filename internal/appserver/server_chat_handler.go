@@ -12,6 +12,7 @@ import (
 	"unicode/utf8"
 
 	appchat "github.com/mudrii/openclaw-dashboard/internal/appchat"
+	"github.com/mudrii/openclaw-dashboard/internal/appopenclaw"
 )
 
 // handleChat handles the AI chat endpoint.
@@ -59,6 +60,13 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 	if utf8.RuneCountInString(q) > maxQuestionLen {
 		s.sendJSONRaw(w, r, http.StatusBadRequest, errQTooLong)
 		return
+	}
+	if s.cfg.Openclaw != (appopenclaw.Target{}) || s.cfg.Openclaw.IsContainer() {
+		capability := s.chatCapability(r.Context())
+		if !capability.Available {
+			s.sendJSON(w, r, http.StatusServiceUnavailable, map[string]string{"error": "Chat unavailable: " + capability.State + ". Use the native OpenClaw control UI.", "errorCode": capability.State})
+			return
+		}
 	}
 
 	// Validate + sanitise history — inline switch avoids per-request map alloc

@@ -8,6 +8,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"time"
+
+	"github.com/mudrii/openclaw-dashboard/internal/appopenclaw"
 )
 
 // cronFlappingThreshold is the consecutiveErrors count at or above which a cron
@@ -46,7 +48,7 @@ func loadCronStateSidecar(statePath string) map[string]map[string]any {
 }
 
 // cronScheduleString renders a job's schedule block into the compact label the
-// dashboard shows (cron expression, "Every Nh", an "at" timestamp, or raw JSON).
+// dashboard shows without exposing command arguments or unknown configuration.
 func cronScheduleString(sched map[string]any) string {
 	switch jsonStr(sched, "kind") {
 	case "cron":
@@ -64,6 +66,10 @@ func cronScheduleString(sched map[string]any) string {
 		default:
 			return fmt.Sprintf("Every %dms", msInt)
 		}
+	case "on-exit":
+		return "On process exit"
+	case "stream":
+		return "Process stream"
 	case "at":
 		at := jsonStr(sched, "at")
 		if len(at) > 16 {
@@ -71,8 +77,7 @@ func cronScheduleString(sched map[string]any) string {
 		}
 		return at
 	default:
-		b, _ := json.Marshal(sched)
-		return string(b)
+		return "Unknown schedule"
 	}
 }
 
@@ -115,6 +120,22 @@ func cronJobToMap(jm map[string]any, sidecarStates map[string]map[string]any, lo
 	// INT-5: richer state — delivery outcome + flapping signal.
 	deliveryStatus := jsonStrDefault(state, "lastDeliveryStatus", "")
 	lastDiagnostics := stringSliceFromAny(state["lastDiagnostics"])
+	if diagnostics := asObj(state["lastDiagnostics"]); diagnostics != nil {
+		if summary := jsonStr(diagnostics, "summary"); summary != "" {
+			lastDiagnostics = append(lastDiagnostics, summary)
+		}
+		for _, entry := range jsonArr(diagnostics, "entries") {
+			if len(lastDiagnostics) >= 20 {
+				break
+			}
+			if message := jsonStr(asObj(entry), "message"); message != "" {
+				lastDiagnostics = append(lastDiagnostics, message)
+			}
+		}
+	}
+	for i, message := range lastDiagnostics {
+		lastDiagnostics[i] = appopenclaw.Redact(truncateRunes(message, 1000))
+	}
 	consecutiveErrors, _ := state["consecutiveErrors"].(float64)
 	consecutiveSkipped, _ := state["consecutiveSkipped"].(float64)
 	// Flapping keys on errors only — a skipped run (deduped/throttled) is not an
@@ -124,7 +145,10 @@ func cronJobToMap(jm map[string]any, sidecarStates map[string]map[string]any, lo
 
 	lastRunMs, _ := state["lastRunAtMs"].(float64)
 	nextRunMs, _ := state["nextRunAtMs"].(float64)
-	durationMs, _ := state["lastDurationMs"].(float64)
+	var durationMs any
+	if value, ok := state["lastDurationMs"].(float64); ok && value >= 0 {
+		durationMs = int(value)
+	}
 
 	var lastRunStr, nextRunStr string
 	if lastRunMs > 0 {
@@ -138,25 +162,41 @@ func cronJobToMap(jm map[string]any, sidecarStates map[string]map[string]any, lo
 	if e, ok := jm["enabled"].(bool); ok {
 		enabled = e
 	}
+	status := lastStatus
+	if !enabled {
+		status = "disabled"
+	} else if running, _ := state["runningAtMs"].(float64); running > 0 {
+		status = "running"
+	}
 
 	model := ModelName(jsonStr(asObj(jm["payload"]), "model"))
 
 	return map[string]any{
-		"id":                 jsonStr(jm, "id"),
-		"name":               jsonStrDefault(jm, "name", "Unknown"),
-		"agentId":            jsonStr(jm, "agentId"),
-		"schedule":           schedStr,
-		"enabled":            enabled,
-		"lastRun":            lastRunStr,
-		"lastStatus":         lastStatus,
-		"lastDurationMs":     int(durationMs),
-		"nextRun":            nextRunStr,
-		"model":              model,
-		"lastDeliveryStatus": deliveryStatus,
-		"lastDiagnostics":    lastDiagnostics,
-		"consecutiveErrors":  int(consecutiveErrors),
-		"consecutiveSkipped": int(consecutiveSkipped),
-		"flapping":           flapping,
+		"id":                        jsonStr(jm, "id"),
+		"configRevision":            jm["configRevision"],
+		"owner":                     projectFields(asObj(jm["owner"]), "agentId", "sessionKey", "accountId"),
+		"payloadKind":               jsonStr(asObj(jm["payload"]), "kind"),
+		"sessionKey":                jm["sessionKey"],
+		"sessionTarget":             jm["sessionTarget"],
+		"timezone":                  asObj(jm["schedule"])["tz"],
+		"delivery":                  projectFields(asObj(jm["delivery"]), "mode", "channel", "bestEffort"),
+		"name":                      jsonStrDefault(jm, "name", "Unknown"),
+		"agentId":                   jsonStr(jm, "agentId"),
+		"schedule":                  schedStr,
+		"enabled":                   enabled,
+		"lastRun":                   lastRunStr,
+		"lastStatus":                lastStatus,
+		"status":                    status,
+		"lastRunStatus":             state["lastRunStatus"],
+		"lastDurationMs":            durationMs,
+		"nextRun":                   nextRunStr,
+		"model":                     model,
+		"lastDeliveryStatus":        deliveryStatus,
+		"deliverySuppressionReason": appopenclaw.Redact(jsonStr(state, "deliverySuppressionReason")),
+		"lastDiagnostics":           lastDiagnostics,
+		"consecutiveErrors":         int(consecutiveErrors),
+		"consecutiveSkipped":        int(consecutiveSkipped),
+		"flapping":                  flapping,
 	}
 }
 
@@ -214,6 +254,11 @@ func CollectCrons(cronPath string, loc *time.Location) []map[string]any {
 // unparseable output) and the caller should fall back to CollectCrons. A valid
 // empty response is authoritative (true, no jobs).
 func collectCronsViaCLI(ctx context.Context, runner func(context.Context, string, ...string) *exec.Cmd, resolve func() string, loc *time.Location) ([]map[string]any, bool) {
+	rows, err := collectCronsSnapshot(ctx, runner, resolve, loc)
+	return rows, err == nil
+}
+
+func collectCronsSnapshot(ctx context.Context, runner func(context.Context, string, ...string) *exec.Cmd, resolve func() string, loc *time.Location) ([]map[string]any, error) {
 	if runner == nil {
 		runner = execCommandContext
 	}
@@ -226,13 +271,13 @@ func collectCronsViaCLI(ctx context.Context, runner func(context.Context, string
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
-	out, err := boundedOutput(runner(ctx, resolve(), "cron", "list", "--json"), maxCLIOutputBytes)
+	out, err := boundedOutput(runner(ctx, resolve(), "cron", "list", "--all", "--json"), maxCLIOutputBytes)
 	if err != nil {
-		return nil, false
+		return nil, err
 	}
 	jobs, ok := cronJobsFromBytes(out)
 	if !ok {
-		return nil, false
+		return nil, fmt.Errorf("invalid cron response")
 	}
 	crons := make([]map[string]any, 0, len(jobs))
 	for _, job := range jobs {
@@ -240,5 +285,5 @@ func collectCronsViaCLI(ctx context.Context, runner func(context.Context, string
 			crons = append(crons, entry)
 		}
 	}
-	return crons, true
+	return crons, nil
 }

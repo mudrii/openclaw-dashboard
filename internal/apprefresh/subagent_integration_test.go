@@ -21,6 +21,9 @@ import (
 // subagent path is under test. Exercises the integration the unit test
 // (collectSubagentRuns) cannot: the collector wiring + JSON projection.
 func TestCollectDashboardData_SubagentRunsFromCLI(t *testing.T) {
+	// These pre-migration fixtures must not inherit a selected modern runtime.
+	t.Setenv("OPENCLAW_CONTAINER", "")
+	t.Setenv("OPENCLAW_STATE_DIR", "")
 	now := time.Now().UnixMilli()
 	taskJSON := `{"tasks":[{"agentId":"main","task":"demo research task","status":"succeeded",` +
 		`"createdAt":` + strconv.FormatInt(now, 10) + `,"startedAt":` + strconv.FormatInt(now, 10) +
@@ -78,6 +81,8 @@ func TestCollectDashboardData_SubagentRunsFromCLI(t *testing.T) {
 }
 
 func TestCollectDashboardData_LegacySubagentUsageDoesNotCreateRuns(t *testing.T) {
+	t.Setenv("OPENCLAW_CONTAINER", "")
+	t.Setenv("OPENCLAW_STATE_DIR", "")
 	prev := execCommandContext
 	t.Cleanup(func() { execCommandContext = prev })
 	execCommandContext = func(ctx context.Context, _ string, _ ...string) *exec.Cmd {
@@ -147,6 +152,8 @@ func TestCollectDashboardData_LegacySubagentUsageDoesNotCreateRuns(t *testing.T)
 }
 
 func TestCollectDashboardData_TopLevelContractKeys(t *testing.T) {
+	t.Setenv("OPENCLAW_CONTAINER", "")
+	t.Setenv("OPENCLAW_STATE_DIR", "")
 	prev := execCommandContext
 	t.Cleanup(func() { execCommandContext = prev })
 	execCommandContext = func(ctx context.Context, _ string, _ ...string) *exec.Cmd {

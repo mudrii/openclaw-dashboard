@@ -219,7 +219,7 @@ func TestParseAgents(t *testing.T) {
 			t.Fatalf("want 1 synthetic default, got %d", len(out))
 		}
 		a := out[0].(map[string]any)
-		if a["id"] != "default" || a["role"] != "Default" || a["isDefault"] != true {
+		if a["id"] != "main" || a["role"] != "Default" || a["isDefault"] != true {
 			t.Errorf("synthetic default fields mismatch: %v", a)
 		}
 		if a["model"] != "GPT-5" || a["modelId"] != "openai/gpt-5" {

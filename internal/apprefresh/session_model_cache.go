@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/mudrii/openclaw-dashboard/internal/appopenclaw"
 	appsystem "github.com/mudrii/openclaw-dashboard/internal/appsystem"
 )
 
@@ -20,6 +21,7 @@ import (
 // fields so tests can construct an isolated cache without touching globals —
 // enables t.Parallel() in test packages that previously had to serialize.
 type liveSessionModelCache struct {
+	target     appopenclaw.Target
 	mu         sync.Mutex
 	cond       *sync.Cond
 	expiresAt  time.Time
@@ -49,11 +51,10 @@ var resolveOpenclawBin = appsystem.ResolveOpenclawBin
 var execCommandContext = openclawCommandContext
 
 func openclawCommandContext(ctx context.Context, name string, args ...string) *exec.Cmd {
-	cmd := exec.CommandContext(ctx, name, args...)
-	if env := appsystem.OpenclawCLIEnv(name); env != nil {
-		cmd.Env = env
+	if name == "git" {
+		return exec.CommandContext(ctx, name, args...)
 	}
-	return cmd
+	return appopenclaw.CommandContext(ctx, name, args...)
 }
 
 // fetch returns the cached map or refreshes it. Uses the receiver's injected
@@ -68,7 +69,7 @@ func (c *liveSessionModelCache) fetch(ctx context.Context, now time.Time, ttl ti
 		c.cond = sync.NewCond(&c.mu)
 	}
 	for {
-		if now.Before(c.expiresAt) {
+		if now.Before(c.expiresAt) && c.target == appopenclaw.TargetFromContext(ctx).Effective() {
 			models := maps.Clone(c.models)
 			c.mu.Unlock()
 			return models
@@ -100,6 +101,7 @@ func (c *liveSessionModelCache) refreshAndStore(ctx context.Context, now time.Ti
 
 	c.mu.Lock()
 	c.models = maps.Clone(models)
+	c.target = appopenclaw.TargetFromContext(ctx).Effective()
 	c.expiresAt = now.Add(ttl)
 	cached = maps.Clone(c.models)
 	c.mu.Unlock()

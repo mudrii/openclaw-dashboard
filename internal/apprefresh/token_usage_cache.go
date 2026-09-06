@@ -54,7 +54,7 @@ func CollectTokenUsageWithCache(
 	allFiles := make([]string, 0, len(activeFiles)+len(deletedFiles))
 	allFiles = append(allFiles, activeFiles...)
 	allFiles = append(allFiles, deletedFiles...)
-	slices.Sort(allFiles)
+	allFiles = canonicalLegacyUsageFiles(allFiles)
 
 	cache := loadTokenUsageCache(cachePath)
 	nextCache := tokenUsageCache{
@@ -90,6 +90,29 @@ func CollectTokenUsageWithCache(
 
 	saveTokenUsageCache(cachePath, nextCache)
 	return subagentRuns
+}
+
+// Recovery copies describe one session lineage, not additional usage. Prefer
+// its active transcript; when only dated deleted copies survive, use the last
+// one. Keep agents separate even when their session filenames coincide.
+func canonicalLegacyUsageFiles(files []string) []string {
+	selected := map[string]string{}
+	for _, path := range files {
+		key := path
+		if i := strings.Index(path, ".jsonl.deleted."); i >= 0 {
+			key = path[:i+len(".jsonl")]
+		}
+		old, ok := selected[key]
+		if !ok || path == key || (old != key && path > old) {
+			selected[key] = path
+		}
+	}
+	result := make([]string, 0, len(selected))
+	for _, path := range selected {
+		result = append(result, path)
+	}
+	slices.Sort(result)
+	return result
 }
 
 func loadTokenUsageCache(path string) tokenUsageCache {

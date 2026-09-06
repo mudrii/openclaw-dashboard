@@ -20,6 +20,8 @@ import (
 
 func chatTestServer(t *testing.T, dir string, gatewayPort int) *Server {
 	t.Helper()
+	// This fixture tests the legacy HTTP transport, not a developer's container.
+	t.Setenv("OPENCLAW_CONTAINER", "")
 	cfg := appconfig.Default()
 	cfg.System.Enabled = false
 	cfg.AI.Enabled = true

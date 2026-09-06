@@ -12,6 +12,8 @@ import (
 )
 
 func TestRunRefreshCollectorWritesDashboardJSONAtomically(t *testing.T) {
+	t.Setenv("OPENCLAW_CONTAINER", "unrelated-test-container")
+	t.Setenv("OPENCLAW_STATE_DIR", "")
 	tmp := t.TempDir()
 	dashboardDir := filepath.Join(tmp, "dashboard")
 	openclawPath := filepath.Join(tmp, "openclaw")
@@ -42,6 +44,9 @@ func TestRunRefreshCollectorWritesDashboardJSONAtomically(t *testing.T) {
 	}
 
 	cfg := appconfig.Default()
+	cfg.Openclaw.Mode = "native"
+	// Exercise file collection without contacting an installed CLI or gateway.
+	cfg.Openclaw.Binary = filepath.Join(tmp, "missing-openclaw")
 	cfg.Bot.Name = "Test Dashboard"
 	cfg.Bot.Emoji = "*"
 	cfg.Timezone = "UTC"

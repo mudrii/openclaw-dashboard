@@ -31,6 +31,13 @@ func TestLoad_DeepStatusBinds(t *testing.T) {
 	}
 }
 
+func TestLoad_OpenclawTarget(t *testing.T) {
+	cfg := Load(writeConfig(t, `{"openclaw":{"mode":"container","container":"openclaw","profile":"work","binary":"/opt/bin/openclaw"}}`))
+	if cfg.Openclaw.Mode != "container" || cfg.Openclaw.Container != "openclaw" || cfg.Openclaw.Profile != "work" || cfg.Openclaw.Binary != "/opt/bin/openclaw" {
+		t.Fatalf("target = %+v", cfg.Openclaw)
+	}
+}
+
 // TestLoad_SystemdUnitBinds verifies logs.systemdUnit binds to SystemdUnit and
 // does not trigger an unknown-key warning.
 func TestLoad_SystemdUnitBinds(t *testing.T) {

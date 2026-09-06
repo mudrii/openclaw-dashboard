@@ -467,7 +467,7 @@ func TestCollectCrons_SidecarEmptyStateFallsBackToInline(t *testing.T) {
 // replaces inline state even when the sidecar entry has fewer populated fields
 // than inline. This prevents stale inline data from leaking through into the UI.
 // The inline state has lastDurationMs=999; the sidecar has lastStatus only
-// (no duration). Result must reflect the sidecar's missing duration as 0,
+// (no duration). Result must preserve the sidecar's missing duration as nil,
 // not the inline 999.
 func TestCollectCrons_SidecarPartialOverridesInlineFully(t *testing.T) {
 	dir := t.TempDir()
@@ -508,8 +508,8 @@ func TestCollectCrons_SidecarPartialOverridesInlineFully(t *testing.T) {
 	if crons[0]["lastStatus"] != "ok-from-sidecar" {
 		t.Errorf("lastStatus = %v, want ok-from-sidecar", crons[0]["lastStatus"])
 	}
-	if crons[0]["lastDurationMs"] != 0 {
-		t.Errorf("lastDurationMs = %v, want 0 — sidecar must fully replace inline, not merge",
+	if crons[0]["lastDurationMs"] != nil {
+		t.Errorf("lastDurationMs = %v, want nil — sidecar must fully replace inline, not merge",
 			crons[0]["lastDurationMs"])
 	}
 }

@@ -30,6 +30,7 @@ func TestLaunchd_Install_writesPlist(t *testing.T) {
 	t.Setenv("HOME", "/home/user")
 	t.Setenv("PATH", "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin")
 	t.Setenv("OPENCLAW_HOME", "/srv/openclaw")
+	t.Setenv("OPENCLAW_CONTAINER", "openclaw")
 	cfg := InstallConfig{
 		BinPath: "/usr/local/bin/openclaw-dashboard",
 		WorkDir: "/home/user/.openclaw/dashboard",
@@ -58,12 +59,15 @@ func TestLaunchd_Install_writesPlist(t *testing.T) {
 		"/home/user/.openclaw/dashboard",
 		"/home/user/.openclaw/dashboard/server.log",
 		"<key>EnvironmentVariables</key>",
+		"<key>OPENCLAW_DASHBOARD_DIR</key>\n    <string>/home/user/.openclaw/dashboard</string>",
 		"<key>HOME</key>",
 		"<string>/home/user</string>",
 		"<key>PATH</key>",
 		"<string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>",
 		"<key>OPENCLAW_HOME</key>",
 		"<string>/srv/openclaw</string>",
+		"<key>OPENCLAW_CONTAINER</key>",
+		"<string>openclaw</string>",
 		"<true/>", // RunAtLoad
 	} {
 		if !strings.Contains(content, want) {

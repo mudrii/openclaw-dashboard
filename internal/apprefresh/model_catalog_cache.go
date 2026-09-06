@@ -10,6 +10,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/mudrii/openclaw-dashboard/internal/appopenclaw"
 )
 
 // modelCatalog is the parsed `openclaw models list --json` result: model id
@@ -151,6 +153,7 @@ func indexCatalogByBareID[T comparable](m map[string]T) {
 // singleflight refresh, mirroring liveSessionModelCache. Collaborators are
 // injectable so tests run without real shell-out.
 type modelCatalogCache struct {
+	target     appopenclaw.Target
 	mu         sync.Mutex
 	cond       *sync.Cond
 	expiresAt  time.Time
@@ -186,7 +189,7 @@ func (c *modelCatalogCache) fetch(ctx context.Context, now time.Time, ttl time.D
 		c.cond = sync.NewCond(&c.mu)
 	}
 	for {
-		if now.Before(c.expiresAt) {
+		if now.Before(c.expiresAt) && c.target == appopenclaw.TargetFromContext(ctx).Effective() {
 			cat := c.catalog.clone()
 			c.mu.Unlock()
 			return cat
@@ -213,6 +216,7 @@ func (c *modelCatalogCache) refreshAndStore(ctx context.Context, now time.Time, 
 
 	c.mu.Lock()
 	c.catalog = cat.clone()
+	c.target = appopenclaw.TargetFromContext(ctx).Effective()
 	c.expiresAt = now.Add(ttl)
 	cached = c.catalog.clone()
 	c.mu.Unlock()

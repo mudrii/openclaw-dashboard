@@ -154,10 +154,14 @@ func Main() int {
 		fmt.Printf("openclaw-dashboard %s\n", version)
 		return 0
 	}
+	if err := cfg.Openclaw.Validate(); err != nil {
+		fmt.Fprintf(os.Stderr, "[dashboard] invalid runtime target: %v\n", err)
+		return 1
+	}
 
 	if *doRefresh {
-		openclawPath := appruntime.ResolveOpenclawPath()
-		if _, err := os.Stat(openclawPath); errors.Is(err, os.ErrNotExist) {
+		openclawPath := cfg.Openclaw.StatePath(appruntime.ResolveOpenclawPath())
+		if _, err := os.Stat(openclawPath); !cfg.Openclaw.IsContainer() && errors.Is(err, os.ErrNotExist) {
 			fmt.Fprintf(os.Stderr, "OpenClaw not found at %s\n", openclawPath)
 			return 1
 		}
@@ -173,21 +177,10 @@ func Main() int {
 		return 0
 	}
 
-	// Load gateway token from .env
-	env := readDotenv(cfg.AI.DotenvPath)
-	gatewayToken := env["OPENCLAW_GATEWAY_TOKEN"]
+	// Resolve credentials server-side; absence must not disable read-only monitoring.
+	gatewayToken := appconfig.ResolveGatewayToken(cfg.AI.DotenvPath, cfg.Openclaw.StatePath(appruntime.ResolveOpenclawPath()))
 	if cfg.AI.Enabled && gatewayToken == "" {
-		// Fail fast at startup rather than letting the first /api/chat request
-		// hit the gateway with an empty Authorization header. Set
-		// DASHBOARD_AI_TOKEN_OPTIONAL=1 to downgrade this to a warning (useful
-		// for dev environments where the gateway runs without auth).
-		if os.Getenv("DASHBOARD_AI_TOKEN_OPTIONAL") == "1" {
-			slog.Warn("[dashboard] ai.enabled=true but OPENCLAW_GATEWAY_TOKEN missing — proceeding because DASHBOARD_AI_TOKEN_OPTIONAL=1")
-		} else {
-			fmt.Fprintln(os.Stderr, "[dashboard] fatal: ai.enabled=true but OPENCLAW_GATEWAY_TOKEN missing from "+cfg.AI.DotenvPath)
-			fmt.Fprintln(os.Stderr, "[dashboard] set OPENCLAW_GATEWAY_TOKEN in the dotenv, or DASHBOARD_AI_TOKEN_OPTIONAL=1 to bypass")
-			return 1
-		}
+		slog.Warn("[dashboard] chat credentials unavailable; monitoring remains enabled")
 	}
 
 	// Server lifecycle context — follows the top-level CLI lifecycle.

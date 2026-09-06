@@ -99,7 +99,7 @@ func TestIssue26FrontendFixtureContract(t *testing.T) {
 		"Runtime Health unavailable",
 		"No models detected",
 		"SR.provider && SR.provider !== '—'",
-		"No skills configured",
+		"No skill entries reported",
 		// Sub-agent panel post-migration: agent/duration/status columns, no cost.
 		"<th>Task</th><th>Agent</th><th class=\"r\">Duration</th><th>Status</th><th>Time</th>",
 		"$('subCostLbl').textContent=runs.length+(runs.length===1?' run':' runs');",

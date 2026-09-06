@@ -13,6 +13,9 @@ import (
 )
 
 func TestMainRefreshCLI(t *testing.T) {
+	t.Setenv("OPENCLAW_CONTAINER", "")
+	t.Setenv("OPENCLAW_STATE_DIR", "")
+	t.Setenv("OPENCLAW_DASHBOARD_DIR", t.TempDir())
 	t.Run("missing OpenClaw exits non-zero", func(t *testing.T) {
 		setMainArgs(t, []string{"openclaw-dashboard", "--refresh"})
 		resetMainFlags(t)
@@ -77,6 +80,40 @@ func TestMainRefreshCLI(t *testing.T) {
 			t.Fatalf("stdout = %q, want refreshed message", stdout)
 		}
 	})
+}
+
+func TestMainRefreshContainerWithoutLocalState(t *testing.T) {
+	for _, configured := range []bool{false, true} {
+		t.Run(map[bool]string{false: "inherited", true: "configured"}[configured], func(t *testing.T) {
+			setMainArgs(t, []string{"openclaw-dashboard", "--refresh"})
+			resetMainFlags(t)
+			dir := t.TempDir()
+			t.Setenv("OPENCLAW_DASHBOARD_DIR", dir)
+			t.Setenv("OPENCLAW_HOME", filepath.Join(t.TempDir(), "not-mounted"))
+			t.Setenv("OPENCLAW_STATE_DIR", "")
+			t.Setenv("OPENCLAW_CONTAINER", "fixture-container")
+			if configured {
+				t.Setenv("OPENCLAW_CONTAINER", "")
+				if err := os.WriteFile(filepath.Join(dir, "config.json"), []byte(`{"openclaw":{"mode":"container","container":"fixture-container"}}`), 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			previous := refreshCollectorFunc
+			t.Cleanup(func() { refreshCollectorFunc = previous })
+			called := false
+			refreshCollectorFunc = func(_ context.Context, _, _ string, cfg Config) error {
+				called = true
+				if !cfg.Openclaw.IsContainer() {
+					t.Fatal("lost container target")
+				}
+				return nil
+			}
+			_, stderr, code := captureMainStdio(t, Main)
+			if code != 0 || !called {
+				t.Fatalf("code=%d collector called=%v stderr=%s", code, called, stderr)
+			}
+		})
+	}
 }
 
 func TestMainInvalidPortExitsBeforeListen(t *testing.T) {

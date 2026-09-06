@@ -105,10 +105,10 @@ func TestResolveOpenclawBin(t *testing.T) {
 // seam (sharedSystemHTTPClient + rewriteTransport), covering success and every
 // best-effort failure mode (all return "").
 func TestFetchLatestNpmVersion(t *testing.T) {
-	t.Run("200 with version", func(t *testing.T) {
+	t.Run("200 with latest tag", func(t *testing.T) {
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`{"version":"2026.4.11"}`))
+			_, _ = w.Write([]byte(`{"latest":"2026.4.11"}`))
 		}))
 		t.Cleanup(srv.Close)
 		swapSharedSystemHTTPClient(t, &http.Client{Transport: &rewriteTransport{target: srv.URL}})

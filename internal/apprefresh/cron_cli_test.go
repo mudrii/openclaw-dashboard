@@ -71,7 +71,7 @@ func TestCollectCronsViaCLI_CommandContract(t *testing.T) {
 	if gotName != "/bin/openclaw" {
 		t.Fatalf("runner name = %q, want /bin/openclaw", gotName)
 	}
-	wantArgs := []string{"cron", "list", "--json"}
+	wantArgs := []string{"cron", "list", "--all", "--json"}
 	if !slices.Equal(gotArgs, wantArgs) {
 		t.Fatalf("runner args = %v, want %v", gotArgs, wantArgs)
 	}
@@ -165,7 +165,7 @@ func TestCronJobToMap_ModelPrettified(t *testing.T) {
 
 // TestCronScheduleString covers every schedule kind the renderer must format:
 // cron expr, the "every" duration tiers (d/h/m/ms), the truncated "at" form, and
-// the raw-JSON default for an unknown kind.
+// privacy-safe labels for process and unknown schedule kinds.
 func TestCronScheduleString(t *testing.T) {
 	tests := []struct {
 		name  string
@@ -178,8 +178,10 @@ func TestCronScheduleString(t *testing.T) {
 		{"every minutes", map[string]any{"kind": "every", "everyMs": float64(300000)}, "Every 5m"},
 		{"every millis", map[string]any{"kind": "every", "everyMs": float64(500)}, "Every 500ms"},
 		{"at truncated to 16", map[string]any{"kind": "at", "at": "2026-06-15T10:00:00Z"}, "2026-06-15T10:00"},
-		{"unknown kind falls back to raw json", map[string]any{"kind": "weird"}, `{"kind":"weird"}`},
-		{"nil schedule", nil, "null"},
+		{"on exit excludes command", map[string]any{"kind": "on-exit", "command": "private-token"}, "On process exit"},
+		{"stream excludes command", map[string]any{"kind": "stream", "command": "private-token"}, "Process stream"},
+		{"unknown kind excludes private fields", map[string]any{"kind": "weird", "secret": "private-token"}, "Unknown schedule"},
+		{"nil schedule", nil, "Unknown schedule"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

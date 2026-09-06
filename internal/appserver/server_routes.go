@@ -31,6 +31,18 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		s.handleLogs(w, r)
 	case isRead && r.URL.Path == "/api/errors":
 		s.handleErrors(w, r)
+	case isRead && r.URL.Path == "/api/automation/runs":
+		s.handleAutomationRuns(w, r)
+	case isRead && r.URL.Path == "/api/session/context":
+		s.handleSessionWork(w, r)
+	case isRead && r.URL.Path == "/api/workboard":
+		s.handleWorkboard(w, r)
+	case isRead && r.URL.Path == "/api/chat/status":
+		s.handleChatCapability(w, r)
+	case isRead && r.URL.Path == "/api/operations/status":
+		s.sendJSON(w, r, http.StatusOK, map[string]bool{"enabled": s.cfg.Operations.Enabled && len(s.operatorToken) >= 32})
+	case r.Method == http.MethodPost && r.URL.Path == "/api/operations":
+		s.handleOperation(w, r)
 	case r.Method == http.MethodOptions:
 		s.setCORSHeaders(w, r)
 		w.Header().Set("Access-Control-Allow-Methods", "GET, HEAD, POST, OPTIONS")

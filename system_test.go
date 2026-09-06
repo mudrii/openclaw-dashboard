@@ -344,6 +344,7 @@ func TestSystemConfig_Defaults(t *testing.T) {
 // ── Tests for parseGatewayStatusJSON (Fix #12) ────────────────────────────
 
 func TestParseGatewayStatusJSON_RunningService(t *testing.T) {
+	t.Setenv("OPENCLAW_CONTAINER", "")
 	ctx := context.Background()
 	input := `{"service":{"loaded":true,"runtime":{"status":"running","pid":1234}},"version":"1.0.0"}`
 	got := parseGatewayStatusJSON(ctx, input)
@@ -942,6 +943,7 @@ func TestStaleByteInjection_JSONRoundTrip(t *testing.T) {
 // ── Tests for I2 fix: collectVersions parses stdout on non-zero exit ──────
 
 func TestParseGatewayStatusJSON_I2_NonZeroExitStillParsed(t *testing.T) {
+	t.Setenv("OPENCLAW_CONTAINER", "")
 	// I2 fix: parseGatewayStatusJSON should extract status from stdout JSON even
 	// when the calling code received a non-zero exit from the CLI.
 	// This test verifies the parsing function correctly handles the JSON that

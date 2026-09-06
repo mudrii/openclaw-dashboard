@@ -21,6 +21,7 @@ import (
 	"time"
 
 	appconfig "github.com/mudrii/openclaw-dashboard/internal/appconfig"
+	"github.com/mudrii/openclaw-dashboard/internal/appopenclaw"
 )
 
 // ErrCommandTimeout is returned when runWithTimeout's context deadline fired.
@@ -75,8 +76,7 @@ type SystemService struct {
 var sharedSystemHTTPClient = &http.Client{Timeout: 30 * time.Second}
 
 // maxJSONResponseBytes caps every JSON body we decode from the gateway or npm
-// registry. 64KB is comfortably above any payload these endpoints emit, while
-// staying low enough to bound memory if a misbehaving server streams forever.
+// dist-tags endpoint. Keep full package metadata out of this small-body path.
 const maxJSONResponseBytes = 1 << 16
 
 func NewSystemService(cfg appconfig.SystemConfig, dashVer string, serverCtx context.Context) *SystemService {
@@ -187,6 +187,7 @@ func (s *SystemService) GetJSON(ctx context.Context) (int, []byte) {
 // case from ~2 × GatewayTimeoutMs down to ~1 × GatewayTimeoutMs (or the cold
 // budget, whichever fires first).
 func (s *SystemService) refreshMetrics(ctx context.Context) ([]byte, bool) {
+	ctx = appopenclaw.WithTarget(ctx, appopenclaw.TargetFromContext(s.shutdownCtx))
 	coldPath := time.Duration(s.cfg.ColdPathTimeoutMs) * time.Millisecond
 	if coldPath <= 0 {
 		coldPath = time.Duration(appconfig.DefaultColdPathTimeoutMs) * time.Millisecond
@@ -418,22 +419,30 @@ func CollectVersionsLocal(ctx context.Context, dashVer string, timeoutMs int, ga
 	v := SystemVersions{Dashboard: dashVer}
 
 	// OpenClaw version
-	out, err := runWithTimeout(ctx, timeoutMs, oclawBin, "--version")
+	out, err := runOpenclawWithTimeout(ctx, timeoutMs, oclawBin, "--version")
 	if err != nil {
 		v.Openclaw = "unknown"
 	} else {
-		v.Openclaw = strings.TrimPrefix(strings.TrimSpace(out), "openclaw ")
+		v.Openclaw = normalizeCLIVersion(out)
+	}
+	target := appopenclaw.TargetFromContext(ctx)
+	v.Target = target.Effective()
+	if target.IsContainer() {
+		hostCtx := appopenclaw.WithTarget(ctx, appopenclaw.Target{Binary: target.Binary, Mode: "native"})
+		if hostOut, hostErr := runOpenclawWithTimeout(hostCtx, timeoutMs, oclawBin, "--version"); hostErr == nil {
+			v.HostOpenclaw = normalizeCLIVersion(hostOut)
+		}
 	}
 
 	// Gateway status — use --json flag for reliable parsing.
 	// I2 fix: attempt to parse stdout even on non-zero exit — many CLIs emit valid JSON
 	// to stdout while exiting non-zero (e.g., gateway offline but status successfully queried).
 	gw := SystemGateway{Status: "unknown"}
-	gwOut, err := runWithTimeout(ctx, timeoutMs, oclawBin, "gateway", "status", "--json")
+	gwOut, _ := runOpenclawWithTimeout(ctx, timeoutMs, oclawBin, "gateway", "status", "--json")
 	if gwOut != "" {
 		gw = ParseGatewayStatusJSON(ctx, gwOut)
 	}
-	if err != nil && gw.Status == "unknown" {
+	if gw.Status == "unknown" {
 		// stdout had no usable JSON — fall back to HTTP probe
 		gw = DetectGatewayFallback(ctx, gatewayPort, timeoutMs)
 	}
@@ -482,7 +491,7 @@ func CollectOpenclawRuntime(ctx context.Context, oclawBin string, timeoutMs int,
 	}()
 	go func() {
 		defer wg.Done()
-		out, err := runWithTimeout(ctx, timeoutMs, oclawBin, statusArgs(deepStatus)...)
+		out, err := runOpenclawWithTimeout(ctx, timeoutMs, oclawBin, statusArgs(deepStatus)...)
 		// I2 fix: attempt to parse stdout even on non-zero exit — CLIs often emit valid JSON while
 		// subprocess stdout is parsed regardless of returncode. Many CLIs emit valid JSON to
 		// stdout while exiting non-zero (e.g., status reported but gateway connect failed).
@@ -799,13 +808,24 @@ func stringSliceFromAny(v any) []string {
 func ParseGatewayStatusJSON(ctx context.Context, output string) SystemGateway {
 	var result struct {
 		Service struct {
-			Loaded  bool `json:"loaded"`
-			Runtime struct {
+			Loaded     bool   `json:"loaded"`
+			TargetRole string `json:"targetRole"`
+			Runtime    struct {
 				Status string `json:"status"`
 				PID    int    `json:"pid"`
 			} `json:"runtime"`
 		} `json:"service"`
 		Version string `json:"version"`
+		Gateway struct {
+			Version string `json:"version"`
+		} `json:"gateway"`
+		RPC *struct {
+			OK      bool   `json:"ok"`
+			Version string `json:"version"`
+			Server  struct {
+				Version string `json:"version"`
+			} `json:"server"`
+		} `json:"rpc"`
 	}
 	if err := decodeJSONObjectFromOutput(output, &result); err == nil {
 		// Prefer runtime.Status == "running" over just Loaded
@@ -814,6 +834,24 @@ func ParseGatewayStatusJSON(ctx context.Context, output string) SystemGateway {
 			status = "online"
 		}
 		gw := SystemGateway{Version: result.Version, Status: status, PID: result.Service.Runtime.PID}
+		if result.Gateway.Version != "" {
+			gw.Version = result.Gateway.Version
+		}
+		if result.RPC != nil {
+			gw.Status = "unknown"
+			if result.RPC.OK {
+				gw.Status = "online"
+			}
+			if result.RPC.Version != "" {
+				gw.Version = result.RPC.Version
+			}
+			if result.RPC.Server.Version != "" {
+				gw.Version = result.RPC.Server.Version
+			}
+		}
+		if result.Service.TargetRole == "diagnostic-only" || appopenclaw.TargetFromContext(ctx).IsContainer() {
+			gw.PID = 0
+		}
 		// Get uptime + memory from /proc or ps if we have a PID
 		if gw.PID > 0 {
 			gw.Uptime, gw.Memory = GetProcessInfo(ctx, gw.PID)
@@ -822,7 +860,8 @@ func ParseGatewayStatusJSON(ctx context.Context, output string) SystemGateway {
 	}
 	// Fallback: text parsing
 	lower := strings.ToLower(output)
-	if strings.Contains(lower, "loaded") || strings.Contains(lower, "running") {
+	if !strings.Contains(lower, "not loaded") && !strings.Contains(lower, "not running") &&
+		(strings.Contains(lower, "loaded") || strings.Contains(lower, "running")) {
 		return SystemGateway{Status: "online"}
 	}
 	return SystemGateway{Status: "offline"}
@@ -934,6 +973,27 @@ func runWithTimeout(ctx context.Context, timeoutMs int, name string, args ...str
 
 var versionishTokenRe = regexp.MustCompile(`[0-9]+|[A-Za-z]+`)
 
+func normalizeCLIVersion(out string) string {
+	parts := strings.Fields(out)
+	if len(parts) > 1 && strings.EqualFold(parts[0], "openclaw") {
+		return parts[1]
+	}
+	return strings.TrimSpace(out)
+}
+
+func runOpenclawWithTimeout(ctx context.Context, timeoutMs int, name string, args ...string) (string, error) {
+	if timeoutMs <= 0 {
+		timeoutMs = 5000
+	}
+	ctx, cancel := context.WithTimeout(ctx, time.Duration(timeoutMs)*time.Millisecond)
+	defer cancel()
+	out, err := appopenclaw.Output(appopenclaw.CommandContext(ctx, name, args...), appopenclaw.MaxOutputBytes)
+	if ctx.Err() != nil {
+		return string(out), fmt.Errorf("%w: OpenClaw", ErrCommandTimeout)
+	}
+	return strings.TrimSpace(string(out)), err
+}
+
 func versionishGreater(a, b string) bool {
 	ta := versionishTokenRe.FindAllString(strings.ToLower(a), -1)
 	tb := versionishTokenRe.FindAllString(strings.ToLower(b), -1)
@@ -1010,7 +1070,7 @@ func FetchLatestNpmVersion(ctx context.Context, timeoutMs int) string {
 	tctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	client := sharedSystemHTTPClient
-	req, err := http.NewRequestWithContext(tctx, http.MethodGet, "https://registry.npmjs.org/openclaw/latest", nil)
+	req, err := http.NewRequestWithContext(tctx, http.MethodGet, "https://registry.npmjs.org/-/package/openclaw/dist-tags", nil)
 	if err != nil {
 		slog.Warn("[dashboard] FetchLatestNpmVersion: request creation failed", "error", err)
 		return ""
@@ -1027,7 +1087,7 @@ func FetchLatestNpmVersion(ctx context.Context, timeoutMs int) string {
 		return ""
 	}
 	var pkg struct {
-		Version string `json:"version"`
+		Version string `json:"latest"`
 	}
 	if err := json.NewDecoder(io.LimitReader(resp.Body, maxJSONResponseBytes)).Decode(&pkg); err != nil {
 		slog.Warn("[dashboard] FetchLatestNpmVersion: JSON decode failed", "error", err)

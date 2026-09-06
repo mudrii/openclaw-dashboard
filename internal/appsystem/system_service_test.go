@@ -118,6 +118,7 @@ func TestDecodeJSONObjectFromOutput_NoJSON(t *testing.T) {
 }
 
 func TestParseGatewayStatusJSON_Online(t *testing.T) {
+	t.Setenv("OPENCLAW_CONTAINER", "")
 	input := `{"service":{"loaded":true,"runtime":{"status":"running","pid":42}},"version":"3.0.0"}`
 	gw := ParseGatewayStatusJSON(context.Background(), input)
 	if gw.Status != "online" {
@@ -382,7 +383,7 @@ func TestJSONFetchers_BodyCapAt64KB(t *testing.T) {
 		// could pass even if every fetch silently returned empty.
 		okSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`{"version":"2026.4.11"}`))
+			_, _ = w.Write([]byte(`{"latest":"2026.4.11"}`))
 		}))
 		t.Cleanup(okSrv.Close)
 

@@ -24,13 +24,16 @@ type logEntry struct {
 }
 
 type logsResponse struct {
-	OK       bool       `json:"ok"`
-	Limit    int        `json:"limit"`
-	Count    int        `json:"count"`
-	Sources  []string   `json:"sources"`
-	Entries  []logEntry `json:"entries"`
-	SinceMs  int64      `json:"sinceMs"`
-	FastMode int        `json:"fastModeMs"`
+	CollectionSource string     `json:"collectionSource,omitempty"`
+	Truncated        bool       `json:"truncated,omitempty"`
+	Cursor           int64      `json:"cursor,omitempty"`
+	OK               bool       `json:"ok"`
+	Limit            int        `json:"limit"`
+	Count            int        `json:"count"`
+	Sources          []string   `json:"sources"`
+	Entries          []logEntry `json:"entries"`
+	SinceMs          int64      `json:"sinceMs"`
+	FastMode         int        `json:"fastModeMs"`
 }
 
 type logErrorOccurrence struct {
@@ -51,13 +54,15 @@ type errorFeedItem struct {
 }
 
 type errorsResponse struct {
-	OK      bool            `json:"ok"`
-	Window  int             `json:"windowHours"`
-	Count   int             `json:"count"`
-	Sort    string          `json:"sort"`
-	Limit   int             `json:"limit"`
-	Items   []errorFeedItem `json:"items"`
-	Sources []string        `json:"sources"`
+	CollectionSource string          `json:"collectionSource,omitempty"`
+	BoundedTail      bool            `json:"boundedTail,omitempty"`
+	OK               bool            `json:"ok"`
+	Window           int             `json:"windowHours"`
+	Count            int             `json:"count"`
+	Sort             string          `json:"sort"`
+	Limit            int             `json:"limit"`
+	Items            []errorFeedItem `json:"items"`
+	Sources          []string        `json:"sources"`
 	// DroppedSignatures counts unique signatures rejected once the per-request
 	// dedup map reached cfg.Logs.MaxErrorSignatures. Ordering policy is
 	// first-seen: earlier signatures retain their slot, later ones are dropped
@@ -80,6 +85,11 @@ func (s *Server) handleLogs(w http.ResponseWriter, r *http.Request) {
 	}
 
 	query := r.URL.Query()
+	modern := apprefresh.UsesRuntimeData(s.openclawPath, s.cfg.Openclaw)
+	if modern && query.Get("source") != "" && query.Get("source") != "all" && query.Get("source") != "gateway" {
+		s.sendJSON(w, r, http.StatusBadRequest, map[string]string{"error": "selected runtime exposes gateway logs; separate legacy source unavailable"})
+		return
+	}
 	limit := clampInt(query.Get("limit"), s.defaultLogLimit(), 1, logLimitMax)
 	sources := resolveSources(query.Get("source"), apprefresh.GetEffectiveLogSources(s.cfg))
 	sourceList := append([]string(nil), sources...)
@@ -94,8 +104,21 @@ func (s *Server) handleLogs(w http.ResponseWriter, r *http.Request) {
 		sinceMs = v
 	}
 
-	entries, err := s.readMergedLogsWithContext(r.Context(), sources, limit)
+	var entries []apprefresh.LogRecord
+	var err error
+	var runtimeLogs apprefresh.RuntimeLogs
+	if modern {
+		runtimeLogs, err = s.readRuntimeLogs(r.Context(), limit)
+		entries = runtimeLogs.Entries
+		sourceList = []string{"gateway"}
+	} else {
+		entries, err = s.readMergedLogsWithContext(r.Context(), sources, limit)
+	}
 	if err != nil {
+		if modern {
+			s.runtimeReadError(w, r, err)
+			return
+		}
 		s.sendJSONRaw(w, r, http.StatusInternalServerError, []byte(`{"error":"failed to read logs"}`))
 		return
 	}
@@ -120,6 +143,11 @@ func (s *Server) handleLogs(w http.ResponseWriter, r *http.Request) {
 		SinceMs:  sinceMs,
 		FastMode: s.cfg.Logs.FastRefreshMs,
 		Entries:  make([]logEntry, 0, len(filtered)),
+	}
+	if modern {
+		payload.CollectionSource = "gateway.logs.tail"
+		payload.Truncated = runtimeLogs.Truncated
+		payload.Cursor = runtimeLogs.Cursor
 	}
 	for _, entry := range filtered {
 		payload.Entries = append(payload.Entries, logEntry{
@@ -150,6 +178,16 @@ func (s *Server) handleErrors(w http.ResponseWriter, r *http.Request) {
 	limit := clampInt(query.Get("limit"), errorLimitDefault, 1, errorLimitDefault)
 	windowHours := clampInt(query.Get("windowHours"), s.defaultErrorWindowHours(), 1, errorWindowHoursMax)
 	sources := resolveSources(query.Get("source"), apprefresh.GetEffectiveLogSources(s.cfg))
+	modern := apprefresh.UsesRuntimeData(s.openclawPath, s.cfg.Openclaw)
+	collectionSource := ""
+	if modern {
+		if source := query.Get("source"); source != "" && source != "all" && source != "gateway" {
+			s.sendJSON(w, r, 400, map[string]string{"error": "source unsupported by runtime logs"})
+			return
+		}
+		sources = []string{"gateway"}
+		collectionSource = "gateway.logs.tail"
+	}
 	rawSourceList := append([]string(nil), sources...)
 
 	entries, err := s.readMergedLogsWithContext(r.Context(), sources, errorLimitDefault)
@@ -231,6 +269,8 @@ func (s *Server) handleErrors(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.sendJSON(w, r, http.StatusOK, errorsResponse{
+		CollectionSource:  collectionSource,
+		BoundedTail:       modern,
 		OK:                true,
 		Window:            windowHours,
 		Count:             len(items),
@@ -247,6 +287,13 @@ func (s *Server) readMergedLogs(sources []string, globalLimit int) ([]apprefresh
 }
 
 func (s *Server) readMergedLogsWithContext(ctx context.Context, sources []string, globalLimit int) ([]apprefresh.LogRecord, error) {
+	if apprefresh.UsesRuntimeData(s.openclawPath, s.cfg.Openclaw) {
+		if len(sources) == 0 {
+			return nil, nil
+		}
+		result, err := s.readRuntimeLogs(ctx, globalLimit)
+		return result.Entries, err
+	}
 	unit := apprefresh.ResolveSystemdUnit(s.cfg.Logs.SystemdUnit)
 	return apprefresh.ReadMergedLogsWithUnitContext(ctx, s.openclawPath, sources, globalLimit, unit)
 }

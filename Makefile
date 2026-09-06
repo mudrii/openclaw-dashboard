@@ -1,4 +1,4 @@
-.PHONY: build build-debug test lint vet clean all staticcheck cover check fmt govulncheck
+.PHONY: build build-debug test frontend-test lint vet clean all staticcheck cover check fmt govulncheck
 
 BINARY := openclaw-dashboard
 VERSION := $(shell cat VERSION 2>/dev/null || echo "dev")
@@ -6,7 +6,8 @@ VERSION := $(shell cat VERSION 2>/dev/null || echo "dev")
 # Pinned govulncheck version — must match .github/workflows/tests.yml so local
 # and CI scans agree.
 GOVULNCHECK_VERSION := v1.3.0
-STATICCHECK_VERSION := v0.7.0
+# Staticcheck 2026.2.1 supports Go 1.27 export data; CI uses this target too.
+STATICCHECK_VERSION := v0.8.1
 
 # Release builds disable CGO for static-link parity with Docker, GoReleaser,
 # and Nix. The race-test target overrides this because Linux race builds need
@@ -27,6 +28,9 @@ build-debug:
 
 test:
 	CGO_ENABLED=1 go test -race -count=1 ./...
+
+frontend-test:
+	node scripts/frontend-regression.cjs
 
 lint:
 	golangci-lint run ./...
@@ -52,4 +56,4 @@ cover:
 	go test -coverprofile=coverage.out ./...
 	go tool cover -html=coverage.out -o coverage.html
 
-check: vet lint test govulncheck staticcheck build
+check: frontend-test vet lint test govulncheck staticcheck build

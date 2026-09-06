@@ -1,6 +1,8 @@
 // Package appsystem collects and caches system metrics including CPU, RAM, disk, and version information.
 package appsystem
 
+import "github.com/mudrii/openclaw-dashboard/internal/appopenclaw"
+
 // SystemThresholds holds per-metric warn/critical thresholds returned in the API.
 type SystemThresholds struct {
 	CPU  ThresholdPair `json:"cpu"`
@@ -70,10 +72,12 @@ type SystemGateway struct {
 }
 
 type SystemVersions struct {
-	Dashboard string        `json:"dashboard"`
-	Openclaw  string        `json:"openclaw"`
-	Latest    string        `json:"latest,omitempty"`
-	Gateway   SystemGateway `json:"gateway"`
+	HostOpenclaw string             `json:"hostOpenclaw,omitempty"`
+	Target       appopenclaw.Target `json:"target,omitzero"`
+	Dashboard    string             `json:"dashboard"`
+	Openclaw     string             `json:"openclaw"`
+	Latest       string             `json:"latest,omitempty"`
+	Gateway      SystemGateway      `json:"gateway"`
 }
 
 type SystemOpenclaw struct {

@@ -30,6 +30,7 @@ func TestSystemd_Install_writesUnitFile(t *testing.T) {
 	t.Setenv("HOME", "/home/user")
 	t.Setenv("PATH", "/usr/local/bin:/usr/bin:/bin")
 	t.Setenv("OPENCLAW_HOME", "/srv/openclaw")
+	t.Setenv("OPENCLAW_CONTAINER", "openclaw")
 	cfg := InstallConfig{
 		BinPath: "/usr/local/bin/openclaw-dashboard",
 		WorkDir: "/home/user/.openclaw/dashboard",
@@ -57,6 +58,8 @@ func TestSystemd_Install_writesUnitFile(t *testing.T) {
 		"Restart=always",
 		"WantedBy=default.target",
 		`Environment="OPENCLAW_HOME=/srv/openclaw"`,
+		`Environment="OPENCLAW_CONTAINER=openclaw"`,
+		`Environment="OPENCLAW_DASHBOARD_DIR=/home/user/.openclaw/dashboard"`,
 		`Environment="PATH=/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"`,
 	} {
 		if !strings.Contains(content, want) {

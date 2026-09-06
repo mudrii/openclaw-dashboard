@@ -23,6 +23,8 @@ const (
 
 func testServer(t *testing.T, dir string) *Server {
 	t.Helper()
+	t.Setenv("OPENCLAW_CONTAINER", "")
+	t.Setenv("OPENCLAW_STATE_DIR", "")
 	cfg := defaultConfig()
 	cfg.AI.Enabled = false
 	cfg.Refresh.IntervalSeconds = 1
@@ -31,6 +33,8 @@ func testServer(t *testing.T, dir string) *Server {
 
 func testServerWithConfig(t *testing.T, dir string, cfg Config) *Server {
 	t.Helper()
+	t.Setenv("OPENCLAW_CONTAINER", "")
+	t.Setenv("OPENCLAW_STATE_DIR", "")
 	cfg.AI.Enabled = false
 	return NewServer(dir, "test", cfg, "", []byte("<head><body>__VERSION__</body>"), context.Background())
 }
@@ -345,6 +349,7 @@ func TestChat_InvalidJSON(t *testing.T) {
 }
 
 func TestChat_MissingDataJSON_Returns503(t *testing.T) {
+	t.Setenv("OPENCLAW_CONTAINER", "")
 	dir := t.TempDir()
 	cfg := defaultConfig()
 	cfg.AI.Enabled = true
@@ -360,6 +365,7 @@ func TestChat_MissingDataJSON_Returns503(t *testing.T) {
 }
 
 func TestChat_InvalidDataJSON_Returns500(t *testing.T) {
+	t.Setenv("OPENCLAW_CONTAINER", "")
 	dir := t.TempDir()
 	cfg := defaultConfig()
 	cfg.AI.Enabled = true
@@ -379,6 +385,7 @@ func TestChat_InvalidDataJSON_Returns500(t *testing.T) {
 }
 
 func TestChat_NullDataJSON_Returns500(t *testing.T) {
+	t.Setenv("OPENCLAW_CONTAINER", "")
 	dir := t.TempDir()
 	cfg := defaultConfig()
 	cfg.AI.Enabled = true
@@ -560,6 +567,7 @@ func TestRefresh_DataMissing_WaitsForRefreshAndReturnsFreshData(t *testing.T) {
 // --- Rate limiting ---
 
 func TestChat_RateLimitExceeded(t *testing.T) {
+	t.Setenv("OPENCLAW_CONTAINER", "")
 	dir := t.TempDir()
 	cfg := defaultConfig()
 	cfg.AI.Enabled = true
@@ -593,6 +601,7 @@ func TestChat_RateLimitExceeded(t *testing.T) {
 }
 
 func TestChat_RateLimitPerIP(t *testing.T) {
+	t.Setenv("OPENCLAW_CONTAINER", "")
 	dir := t.TempDir()
 	cfg := defaultConfig()
 	cfg.AI.Enabled = true

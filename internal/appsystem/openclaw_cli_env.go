@@ -1,10 +1,6 @@
 package appsystem
 
-import (
-	"os"
-	"path/filepath"
-	"strings"
-)
+import "github.com/mudrii/openclaw-dashboard/internal/appopenclaw"
 
 // OpenclawCLIEnv returns a sanitized environment for openclaw CLI subprocesses.
 // Older dashboard services wrote OPENCLAW_HOME=$HOME/.openclaw, which is the
@@ -14,28 +10,5 @@ import (
 // falls back to HOME while the dashboard process can still use the variable for
 // file-based collectors.
 func OpenclawCLIEnv(name string) []string {
-	if filepath.Base(name) != "openclaw" {
-		return nil
-	}
-	raw := strings.TrimSpace(os.Getenv("OPENCLAW_HOME"))
-	if raw == "" || !looksLikeOpenclawDataDir(raw) {
-		return nil
-	}
-	env := os.Environ()
-	out := env[:0]
-	for _, kv := range env {
-		if !strings.HasPrefix(kv, "OPENCLAW_HOME=") {
-			out = append(out, kv)
-		}
-	}
-	return out
-}
-
-func looksLikeOpenclawDataDir(path string) bool {
-	clean := filepath.Clean(path)
-	if filepath.Base(clean) != ".openclaw" {
-		return false
-	}
-	info, err := os.Stat(filepath.Join(clean, "openclaw.json"))
-	return err == nil && !info.IsDir()
+	return appopenclaw.CLIEnv(name)
 }

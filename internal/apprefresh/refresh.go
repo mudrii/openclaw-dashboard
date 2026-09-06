@@ -15,13 +15,18 @@ import (
 	"time"
 
 	appconfig "github.com/mudrii/openclaw-dashboard/internal/appconfig"
+	"github.com/mudrii/openclaw-dashboard/internal/appopenclaw"
 )
 
 // RunRefreshCollector generates data.json from OpenClaw's filesystem data.
 // Callers must supply the active dashboard Config; use appconfig.Load(dir) at
 // the call site if no Config is on hand.
 func RunRefreshCollector(ctx context.Context, dashboardDir, openclawPath string, cfg appconfig.Config) error {
+	if err := cfg.Openclaw.Validate(); err != nil {
+		return err
+	}
 	data := collectDashboardData(ctx, dashboardDir, openclawPath, cfg)
+	retainLastGoodCollections(data, readPreviousSnapshot(filepath.Join(dashboardDir, "data.json")))
 
 	out, err := json.MarshalIndent(data, "", "  ")
 	if err != nil {
@@ -239,6 +244,8 @@ func ModelName(model string) string {
 // collectDashboardData orchestrates parallel data collectors and assembles the
 // dashboard JSON payload. Most work is delegated to refresh_*.go siblings.
 func collectDashboardData(ctx context.Context, dashboardDir, openclawPath string, cfg appconfig.Config) map[string]any {
+	ctx = appopenclaw.WithTarget(ctx, cfg.Openclaw)
+	openclawPath = cfg.Openclaw.StatePath(openclawPath)
 	now := time.Now()
 	tzName := cfg.Timezone
 	if tzName == "" {
@@ -263,6 +270,9 @@ func collectDashboardData(ctx context.Context, dashboardDir, openclawPath string
 	basePath := filepath.Join(openclawPath, "agents")
 	configPath := filepath.Join(openclawPath, "openclaw.json")
 	cronPath := filepath.Join(openclawPath, "cron/jobs.json")
+	modern := hasRuntimeState(basePath, cfg.Openclaw)
+	client := appopenclaw.Client{Binary: resolveOpenclawBin(), Runner: execCommandContext}
+	collections := map[string]CollectionStatus{}
 
 	// Bot config
 	botName := cfg.Bot.Name
@@ -301,6 +311,7 @@ func collectDashboardData(ctx context.Context, dashboardDir, openclawPath string
 	var gateway map[string]any
 	var crons []map[string]any
 	var gitLog []map[string]any
+	var cronErr error
 	var cwg sync.WaitGroup
 	cwg.Add(3)
 	go func() {
@@ -309,33 +320,91 @@ func collectDashboardData(ctx context.Context, dashboardDir, openclawPath string
 	}()
 	go func() {
 		defer cwg.Done()
+		if modern {
+			crons, cronErr = collectRuntimeCrons(ctx, client, loc)
+			return
+		}
 		// OpenClaw 2026.6+ moved cron jobs into shared SQLite, served via the
 		// gateway CLI. Prefer it; fall back to the legacy jobs.json file for
 		// pre-migration installs (or when the gateway is unavailable).
-		if c, ok := collectCronsViaCLI(ctx, nil, nil, loc); ok {
-			crons = c
-		} else {
+		crons, cronErr = collectCronsSnapshot(ctx, nil, nil, loc)
+		if cronErr != nil && !modern {
 			crons = CollectCrons(cronPath, loc)
 		}
 	}()
-	go func() { defer cwg.Done(); gitLog = collectGitLog(ctx, openclawPath) }()
+	go func() {
+		defer cwg.Done()
+		if !cfg.Openclaw.IsContainer() {
+			gitLog = collectGitLog(ctx, openclawPath)
+		}
+	}()
 
-	// OpenClaw config (file I/O — runs while subprocesses are in flight)
+	// Read configuration from the selected runtime while collectors are in flight.
 	compactionMode := "unknown"
 	var skills []map[string]any
 	var availableModels []map[string]any
 	modelAliases := map[string]string{}
 	agentConfig := defaultAgentConfig()
 
-	if data, err := os.ReadFile(configPath); err == nil {
-		var oc map[string]any
-		if err := json.Unmarshal(data, &oc); err == nil {
-			compactionMode, skills, availableModels, modelAliases, agentConfig =
-				parseOpenclawConfig(oc, basePath)
-		}
+	oc, selectedConfigPath, configErr := readSelectedConfig(ctx, client, configPath)
+	configSource := "native.config.file"
+	if cfg.Openclaw.IsContainer() {
+		configSource = "gateway.config.get"
+	}
+	collections["configuration"] = collectionStatus(configSource, configErr, configErr == nil)
+	if configErr == nil {
+		compactionMode, skills, availableModels, modelAliases, agentConfig =
+			parseOpenclawConfig(oc, filepath.Join(filepath.Dir(selectedConfigPath), "agents"))
 	}
 
-	sessionStores := loadSessionStores(basePath)
+	var sessionStores []SessionStoreFile
+	if !cfg.Openclaw.IsContainer() {
+		sessionStores = loadSessionStores(basePath)
+	}
+	var runtimeSessions sessionSnapshot
+	var tasks []map[string]any
+	var sessionErr, taskErr error
+	var runtimeHealth, runtimeInventories map[string]any
+	var modelReadiness []map[string]any
+	var modelsErr error
+	var healthStatuses, inventoryStatuses map[string]CollectionStatus
+	usageRanges := []struct {
+		suffix, period, start string
+		result                runtimeUsage
+		err                   error
+	}{{suffix: "All", period: "all"}, {suffix: "Today", start: todayStr}, {suffix: "7d", start: date7d}, {suffix: "30d", start: date30d}}
+	if modern {
+		agentIDs := []string{}
+		for _, a := range agentConfig["agents"].([]any) {
+			if id := jsonStr(asObj(a), "id"); id != "" {
+				agentIDs = append(agentIDs, id)
+			}
+		}
+		if len(agentIDs) == 0 {
+			agentIDs = []string{"main"}
+		}
+		cwg.Add(3)
+		go func() { defer cwg.Done(); modelReadiness, modelsErr = collectRuntimeModels(ctx, client, agentIDs) }()
+		go func() { defer cwg.Done(); runtimeHealth, healthStatuses = collectRuntimeHealth(ctx, client, agentIDs) }()
+		go func() {
+			defer cwg.Done()
+			runtimeInventories, inventoryStatuses = collectRuntimeInventories(ctx, client)
+		}()
+		cwg.Add(2)
+		go func() {
+			defer cwg.Done()
+			runtimeSessions, sessionErr = collectRuntimeSessions(ctx, client, loc, modelAliases)
+		}()
+		go func() { defer cwg.Done(); tasks, taskErr = collectRuntimeTasks(ctx, client, loc) }()
+		for i := range usageRanges {
+			cwg.Add(1)
+			go func() {
+				defer cwg.Done()
+				r := &usageRanges[i]
+				r.result, r.err = collectRuntimeUsage(ctx, client, r.period, r.start, todayStr, loc.String())
+			}()
+		}
+	}
 
 	// Build group names from session data for bindings
 	groupNames := buildGroupNames(sessionStores)
@@ -343,21 +412,47 @@ func collectDashboardData(ctx context.Context, dashboardDir, openclawPath string
 
 	// Wait for gateway before building sessions (sessions need gateway map)
 	cwg.Wait()
+	collections["crons"] = collectionStatus("cli.cron.list", cronErr, cronErr == nil)
+	if modern {
+		collections["crons"] = collectionStatus("gateway.cron.list", cronErr, cronErr == nil)
+	}
+	if cronErr != nil && !modern && crons != nil {
+		collections["crons"] = collectionStatus("legacy.cron.files", nil, true)
+	}
 
 	// Sessions
 	knownSIDs := map[string]string{}
 	sessionLiveModelTTL := time.Duration(cfg.Refresh.IntervalSeconds) * time.Second
-	sessionsList := collectSessions(ctx, sessionStores, basePath, loc, now, modelAliases, knownSIDs, sessionLiveModelTTL)
+	var sessionsList []map[string]any
+	if modern {
+		sessionsList = runtimeSessions.Rows
+		collections["sessions"] = collectionStatus("gateway.sessions.list", sessionErr, runtimeSessions.Complete)
+		for _, row := range sessionsList {
+			if sid := jsonStr(row, "sessionId"); sid != "" {
+				knownSIDs[sid] = jsonStr(row, "type")
+			}
+		}
+		collections["tasks"] = collectionStatus("gateway.tasks.list", taskErr, taskErr == nil)
+	} else {
+		sessionsList = collectSessions(ctx, sessionStores, basePath, loc, now, modelAliases, knownSIDs, sessionLiveModelTTL)
+		collections["sessions"] = collectionStatus("legacy.session.files", nil, true)
+	}
 
-	if cliChannelStatus, ok := channelStatusCollector(ctx, nil, nil); ok {
-		overlayChannelStatus(agentConfig, cliChannelStatus)
+	if !modern {
+		if cliChannelStatus, ok := channelStatusCollector(ctx, nil, nil); ok {
+			overlayChannelStatus(agentConfig, cliChannelStatus)
+		}
 	}
 
 	// Backfill channel connectivity: gateway /readyz failing[] is authoritative
 	// for failures; on probe failure we fall back to the session-activity
 	// heuristic (failing is nil, so no channel is blanked).
-	readyzFailing, _ := readyzProbe(ctx, cfg.AI.GatewayPort)
-	backfillChannelConnectivity(agentConfig, sessionsList, readyzFailing)
+	if !modern {
+		readyzFailing, _ := readyzProbe(ctx, cfg.AI.GatewayPort)
+		backfillChannelConnectivity(agentConfig, sessionsList, readyzFailing)
+	} else {
+		agentConfig["channelStatus"] = map[string]any{}
+	}
 
 	// Token usage from JSONL
 	modelsAll := map[string]*TokenBucket{}
@@ -382,19 +477,30 @@ func collectDashboardData(ctx context.Context, dashboardDir, openclawPath string
 	// buckets (the primary Token Usage panel). Its subagent-run output is now
 	// empty — OpenClaw 2026.6+ moved subagent tracking out of session keys — so
 	// its return is discarded; subagent runs come from the durable tasks store.
-	CollectTokenUsageWithCache(
-		filepath.Join(dashboardDir, ".token-usage-cache.json"),
-		basePath, loc, todayStr, date7d, date30d,
-		knownSIDs, sidToKey, modelAliases,
-		modelsAll, modelsToday, models7d, models30d,
-		subagentAll, subagentToday, subagent7d, subagent30d,
-		dailyCosts, dailyTokens, dailyCalls, dailySubagentCosts, dailySubagentCount,
-	)
+	if !modern {
+		CollectTokenUsageWithCache(
+			filepath.Join(dashboardDir, ".token-usage-cache.json"),
+			basePath, loc, todayStr, date7d, date30d,
+			knownSIDs, sidToKey, modelAliases,
+			modelsAll, modelsToday, models7d, models30d,
+			subagentAll, subagentToday, subagent7d, subagent30d,
+			dailyCosts, dailyTokens, dailyCalls, dailySubagentCosts, dailySubagentCount,
+		)
+	}
 
 	// OpenClaw 2026.6+ tracks subagent runs as durable tasks in shared SQLite,
 	// served via the gateway CLI. Cost/token data is unavailable there, so runs
 	// carry status/duration/agent metadata only.
-	subagentRuns := collectSubagentRuns(ctx, nil, nil, loc)
+	var subagentRuns []map[string]any
+	if modern {
+		for _, task := range tasks {
+			if task["runtime"] == "subagent" {
+				subagentRuns = append(subagentRuns, task)
+			}
+		}
+	} else {
+		subagentRuns = collectSubagentRuns(ctx, nil, nil, loc)
+	}
 
 	slices.SortFunc(subagentRuns, func(a, b map[string]any) int {
 		ta, _ := a["timestamp"].(string)
@@ -414,7 +520,17 @@ func collectDashboardData(ctx context.Context, dashboardDir, openclawPath string
 	totalCostToday := sumBucketCosts(modelsToday)
 	totalCostAll := sumBucketCosts(modelsAll)
 
-	alerts := BuildAlerts(totalCostToday, costThresholdHigh, costThresholdWarn,
+	alertCostToday := totalCostToday
+	if modern {
+		// Modern collectors do not populate legacy token buckets. Alert only on
+		// a complete current total, never an incomplete pricing subtotal.
+		for _, r := range usageRanges {
+			if r.suffix == "Today" && r.err == nil && r.result.CompleteCost() {
+				alertCostToday = *r.result.Totals.TotalCost
+			}
+		}
+	}
+	alerts := BuildAlerts(alertCostToday, costThresholdHigh, costThresholdWarn,
 		crons, sessionsList, contextThreshold, gateway, memoryThresholdKB)
 
 	// Cost breakdown
@@ -424,7 +540,14 @@ func collectDashboardData(ctx context.Context, dashboardDir, openclawPath string
 	// Projected monthly
 	projectedMonthly := totalCostToday * 30
 
-	return map[string]any{
+	data := map[string]any{
+		"schemaVersion": 2,
+		"timezone":      loc.String(),
+		"runtimeTarget": cfg.Openclaw.Effective(),
+		"stateDir":      openclawPath,
+		"collections":   collections,
+		"tasks":         tasks,
+		"sessionTotal":  runtimeSessions.Total,
 		"botName":       botName,
 		"botEmoji":      botEmoji,
 		"lastRefresh":   now.Format("2006-01-02 15:04:05 ") + tzName,
@@ -472,4 +595,32 @@ func collectDashboardData(ctx context.Context, dashboardDir, openclawPath string
 		"gitLog": gitLog,
 		"alerts": alerts,
 	}
+	data["sessionTotal"] = data["sessionCount"]
+	if modern {
+		data["sessions"] = sessionsList
+		data["sessionCount"] = runtimeSessions.Total
+		data["sessionTotal"] = runtimeSessions.Total
+		data["modelReadiness"] = modelReadiness
+		collections["modelReadiness"] = collectionStatus("cli.models.status", modelsErr, modelsErr == nil)
+		for key, value := range runtimeHealth {
+			data[key] = value
+		}
+		for key, value := range runtimeInventories {
+			data[key] = value
+		}
+		for key, value := range healthStatuses {
+			collections[key] = value
+		}
+		for key, value := range inventoryStatuses {
+			collections[key] = value
+		}
+		for _, r := range usageRanges {
+			collections["usage"+r.suffix] = collectionStatus("gateway.sessions.usage", r.err, r.result.CompleteTokens())
+			applyRuntimeUsage(data, r.suffix, r.result, now)
+		}
+		for _, field := range []string{"subagentCostAllTime", "subagentCostToday", "subagentCost7d", "subagentCost30d"} {
+			data[field] = nil
+		}
+	}
+	return data
 }
