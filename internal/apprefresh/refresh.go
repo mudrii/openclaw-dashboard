@@ -455,7 +455,7 @@ func collectDashboardData(ctx context.Context, dashboardDir, openclawPath string
 	// Backfill channel connectivity: gateway /readyz failing[] is authoritative
 	// for failures; on probe failure we fall back to the session-activity
 	// heuristic (failing is nil, so no channel is blanked).
-	if !modern {
+	if !modern && !appopenclaw.TargetFromContext(ctx).IsContainer() {
 		readyzFailing, _ := readyzProbe(ctx, cfg.AI.GatewayPort)
 		backfillChannelConnectivity(agentConfig, sessionsList, readyzFailing)
 	} else {

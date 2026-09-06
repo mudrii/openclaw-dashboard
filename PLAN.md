@@ -1,7 +1,7 @@
 # openclaw-dashboard — Fixes & Integration Plan
 
 Comparison of openclaw-dashboard against the openclaw repo at
-`/Users/mudrii/src/open_claw/openclaw` (latest tag `v2026.6.9-alpha.4`, stable
+`~/src/open_claw/openclaw` (latest tag `v2026.6.9-alpha.4`, stable
 `v2026.6.6`). Investigation-only output: **3 fixes** + **5 new-feature
 integrations**, each validated twice (dashboard feasibility + openclaw contract
 accuracy + assembled-plan revalidation).
