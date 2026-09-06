@@ -8,17 +8,19 @@ Go 1.27.1, and hardening of the chat, log and operations endpoints.
 - **Go 1.27.1** — `go.mod`, the Docker builder image, the Nix flake and CI now
   pin Go 1.27 (toolchain go1.27.1) and golangci-lint v2.13.2. `encoding/json`
   is backed by the v2 implementation in Go 1.27: the once-per-refresh
-  `data.json` write is about 48% faster with 97% fewer allocations, and the
-  dashboard's own `data.json` read uses the strict v2 decoder. The release
+  `data.json` write measured about 48% faster with 97% fewer allocations
+  during the upgrade, and the server's `data.json` read uses the strict v2
+  decoder. The release
   binary grows by roughly 7% (about 0.7 MB) because `encoding/json/v2` is
   linked in. Because the strict decoder is used for the dashboard's own
   `data.json`, a hand-edited file with duplicate keys is now rejected with a
   clear error instead of silently keeping the last value.
 - **Container monitoring never substitutes host data** — in container mode the
   dashboard no longer probes `127.0.0.1` to decide gateway status. Both the
-  refresh payload and `/api/system` report `unknown` with reason
-  `host_probe_not_applicable`, and the UI renders "Unknown (container: host
-  probe not applicable)" instead of "Offline".
+  refresh payload and `/api/system` report `unknown` with a reason
+  (`host_probe_not_applicable`, or the CLI error code when the in-container
+  status call itself failed), and the UI renders "Unknown" with that reason
+  instead of "Offline".
 - **Collections report `partial` instead of `ready` when degraded** — the
   legacy `jobs.json` cron fallback, a failed configuration read (dependent
   memory, skill and model collections), per-agent health failures (with
@@ -43,7 +45,7 @@ Go 1.27.1, and hardening of the chat, log and operations endpoints.
   expansion follows the error signature; log polling honours
   `logRefreshIntervalMs` above 60 s; accessibility and escaping fixes. The
   embedded frontend regression harness now evaluates the real `SystemBar`,
-  `ErrorFeed`, `App.refresh`, health and escaping code (45 checks) and is a
+  `ErrorFeed`, `App.refresh`, health and escaping code (46 checks) and is a
   mandatory gate in `make check`, CI and GoReleaser.
 - **Root facade** — `OpenclawTarget`, `OpenclawClient`, `CollectionStatus`,
   `RuntimeLogs`, `ChatCapability`, `RedactOpenclawOutput`,
