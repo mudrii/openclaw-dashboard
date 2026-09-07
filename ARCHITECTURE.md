@@ -11,6 +11,7 @@ Runtime defaults: checked into `assets/runtime/` and copied or read from the act
 ```text
 cmd/openclaw-dashboard/      CLI entrypoint
 internal/appconfig/          config loading and defaults
+internal/appopenclaw/        selected-runtime CLI adapter, bounded output, read/write allowlists
 internal/appruntime/         runtime-dir and Homebrew seeding
 internal/appchat/            chat prompt + gateway client
 internal/apprefresh/         dashboard data collector
@@ -57,6 +58,7 @@ Browser
 ## Package Boundaries
 
 - `appconfig` owns config parsing and normalization.
+- `appopenclaw` owns native/container/profile selection, bounded CLI execution, error classification, redaction, and narrow operation methods.
 - `appruntime` owns path resolution, version detection, and Homebrew runtime seeding.
 - `apprefresh` owns data collection from OpenClaw sessions, crons (incl. delivery/flapping state), git history, and token logs; the gateway lock + `/readyz` channel-health probe; the Linux journald log fallback; and the live model-name/context-window catalog.
 - `appsystem` owns live host metrics and gateway/runtime probes, including the rich `openclaw status --json` blocks (task queue, event-loop, plugin-compat, heartbeat) gated by `system.deepStatus`.
@@ -64,4 +66,8 @@ Browser
 - `appserver` owns HTTP routing, caching, rate limiting, refresh coordination, and log/error feed endpoints.
 - `appservice` owns service lifecycle management: install, uninstall, start, stop, restart, and status via launchd (macOS) or systemd (Linux).
 
-The root `dashboard` package now exists mainly as a compatibility layer for tests and the exported `Main()` entry used by `cmd/openclaw-dashboard`.
+The root `dashboard` package contains compatibility forwarding wrappers and the CLI composition/lifecycle code in `main.go`, exposed through `Main()` to `cmd/openclaw-dashboard`. Collector, HTTP, and service behavior belongs in the internal packages.
+
+For migrated state and explicit runtime selections, collectors use the selected OpenClaw CLI's allowlisted gateway RPCs. Legacy filesystem collection remains available for unmigrated native installations. Each modern collection reports its source, completeness, timestamps, and failure state; same-target results can be retained as explicitly stale for at most 24 hours. See [runtime compatibility](docs/RUNTIME-COMPATIBILITY.md) for the API and data-source contracts.
+
+Snapshot and token-cache writers use separate, private temporary files per invocation before atomic rename. Refresh coordination is per server instance; separate processes may publish complete snapshots in completion order.

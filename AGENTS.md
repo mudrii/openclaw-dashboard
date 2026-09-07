@@ -96,7 +96,7 @@ Zero-dependency Go HTTP server with embedded SPA frontend:
 - Unnecessary dependency creep
 
 ### Go Version and Modernization
-- Go toolchain follows project `go.mod`/`toolchain` (1.26.x in CI context).
+- Go toolchain follows project `go.mod`/`toolchain` (1.27.x in CI context).
 - Prefer modern Go features when they improve clarity and match the current toolchain.
 - Do not apply `go fix` rewrites blindly; review behavior changes before accepting them.
 

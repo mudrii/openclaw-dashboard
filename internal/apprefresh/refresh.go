@@ -5,7 +5,9 @@ import (
 	"cmp"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -18,7 +20,8 @@ import (
 	"github.com/mudrii/openclaw-dashboard/internal/appopenclaw"
 )
 
-// RunRefreshCollector generates data.json from OpenClaw's filesystem data.
+// RunRefreshCollector generates data.json from the selected OpenClaw runtime
+// or legacy native filesystem data.
 // Callers must supply the active dashboard Config; use appconfig.Load(dir) at
 // the call site if no Config is on hand.
 func RunRefreshCollector(ctx context.Context, dashboardDir, openclawPath string, cfg appconfig.Config) error {
@@ -33,28 +36,22 @@ func RunRefreshCollector(ctx context.Context, dashboardDir, openclawPath string,
 		return fmt.Errorf("marshal data.json: %w", err)
 	}
 
-	tmpPath := filepath.Join(dashboardDir, "data.json.tmp")
 	finalPath := filepath.Join(dashboardDir, "data.json")
-
-	if err := writeFileSync(tmpPath, out, 0o600); err != nil {
-		_ = os.Remove(tmpPath)
-		return fmt.Errorf("write data.json.tmp: %w", err)
-	}
-	if err := os.Rename(tmpPath, finalPath); err != nil {
-		_ = os.Remove(tmpPath)
-		return fmt.Errorf("rename data.json.tmp: %w", err)
+	if err := writeSnapshotAtomic(finalPath, out); err != nil {
+		return fmt.Errorf("write data.json: %w", err)
 	}
 	return nil
 }
 
-// writeFileSync writes data to path and fsyncs it before returning, so a crash
-// or power loss between the write and the subsequent rename cannot leave a
-// zero-length or truncated file once the rename is observed.
-func writeFileSync(path string, data []byte, perm os.FileMode) error {
-	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, perm)
+// writeSnapshotAtomic gives each publisher its own 0600 temporary inode. A
+// separate --refresh process must never keep writing into our published file.
+func writeSnapshotAtomic(path string, data []byte) error {
+	f, err := os.CreateTemp(filepath.Dir(path), filepath.Base(path)+".tmp-*")
 	if err != nil {
 		return err
 	}
+	tmp := f.Name()
+	defer func() { _ = os.Remove(tmp) }()
 	if _, err := f.Write(data); err != nil {
 		_ = f.Close()
 		return err
@@ -63,7 +60,10 @@ func writeFileSync(path string, data []byte, perm os.FileMode) error {
 		_ = f.Close()
 		return err
 	}
-	return f.Close()
+	if err := f.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmp, path)
 }
 
 var reStripTelegramID = regexp.MustCompile(`(?i)\s*\bid\b[\s:=\-]*\d+`)
@@ -110,11 +110,11 @@ func catalogNameIsBareID(model, name string) bool {
 // lower-cased model segment; token is the family as it appears in id (e.g.
 // "glm"); prefix is its canonical upper-case label (e.g. "GLM").
 func upperFamily(id, token, prefix string) string {
-	i := strings.Index(id, token)
-	if i < 0 {
+	_, after, ok := strings.Cut(id, token)
+	if !ok {
 		return prefix
 	}
-	rest := strings.TrimPrefix(id[i+len(token):], "-")
+	rest := strings.TrimPrefix(after, "-")
 	end := 0
 	for end < len(rest) && (rest[end] == '.' || (rest[end] >= '0' && rest[end] <= '9')) {
 		end++
@@ -132,11 +132,11 @@ func upperFamily(id, token, prefix string) string {
 // token is the lower-case family as it appears in the id ("opus"); family is the
 // display label ("Opus").
 func claudeFamilyName(id, token, family string) string {
-	i := strings.Index(id, token)
-	if i < 0 {
+	_, after, ok := strings.Cut(id, token)
+	if !ok {
 		return "Claude " + family
 	}
-	rest := strings.TrimPrefix(id[i+len(token):], "-")
+	rest := strings.TrimPrefix(after, "-")
 	if rest == "" {
 		return "Claude " + family
 	}
@@ -144,7 +144,7 @@ func claudeFamilyName(id, token, family string) string {
 	// Stop at a long numeric segment (a YYYYMMDD date snapshot) or any
 	// non-numeric suffix (e.g. "-thinking").
 	var parts []string
-	for _, seg := range strings.Split(rest, "-") {
+	for seg := range strings.SplitSeq(rest, "-") {
 		if len(seg) == 0 || len(seg) > 3 || !isAllDigits(seg) {
 			break
 		}
@@ -364,10 +364,10 @@ func collectDashboardData(ctx context.Context, dashboardDir, openclawPath string
 	var runtimeSessions sessionSnapshot
 	var tasks []map[string]any
 	var sessionErr, taskErr error
-	var runtimeHealth, runtimeInventories map[string]any
+	var runtimeHealth, runtimeInventories, runtimeProviderStatus map[string]any
 	var modelReadiness []map[string]any
 	var modelsErr error
-	var healthStatuses, inventoryStatuses map[string]CollectionStatus
+	var healthStatuses, inventoryStatuses, providerStatuses map[string]CollectionStatus
 	usageRanges := []struct {
 		suffix, period, start string
 		result                runtimeUsage
@@ -383,7 +383,11 @@ func collectDashboardData(ctx context.Context, dashboardDir, openclawPath string
 		if len(agentIDs) == 0 {
 			agentIDs = []string{"main"}
 		}
-		cwg.Add(3)
+		cwg.Add(4)
+		go func() {
+			defer cwg.Done()
+			runtimeProviderStatus, providerStatuses = collectRuntimeProviderStatus(ctx, client)
+		}()
 		go func() { defer cwg.Done(); modelReadiness, modelsErr = collectRuntimeModels(ctx, client, agentIDs) }()
 		go func() { defer cwg.Done(); runtimeHealth, healthStatuses = collectRuntimeHealth(ctx, client, agentIDs) }()
 		go func() {
@@ -397,12 +401,10 @@ func collectDashboardData(ctx context.Context, dashboardDir, openclawPath string
 		}()
 		go func() { defer cwg.Done(); tasks, taskErr = collectRuntimeTasks(ctx, client, loc) }()
 		for i := range usageRanges {
-			cwg.Add(1)
-			go func() {
-				defer cwg.Done()
+			cwg.Go(func() {
 				r := &usageRanges[i]
 				r.result, r.err = collectRuntimeUsage(ctx, client, r.period, r.start, todayStr, loc.String())
-			}()
+			})
 		}
 	}
 
@@ -417,7 +419,10 @@ func collectDashboardData(ctx context.Context, dashboardDir, openclawPath string
 		collections["crons"] = collectionStatus("gateway.cron.list", cronErr, cronErr == nil)
 	}
 	if cronErr != nil && !modern && crons != nil {
-		collections["crons"] = collectionStatus("legacy.cron.files", nil, true)
+		// The file rows are real, but the authoritative CLI never answered, so
+		// the snapshot may be arbitrarily out of date. Report the fallback and
+		// the failure rather than a healthy collection.
+		collections["crons"] = partialCollectionStatus("legacy.cron.files", appopenclaw.ErrorCode(cronErr))
 	}
 
 	// Sessions
@@ -433,6 +438,11 @@ func collectDashboardData(ctx context.Context, dashboardDir, openclawPath string
 			}
 		}
 		collections["tasks"] = collectionStatus("gateway.tasks.list", taskErr, taskErr == nil)
+		if errors.Is(taskErr, errTaskRowLimit) {
+			// Truncation is not an outage: keep the collected rows visible and
+			// say the page walk stopped short, matching the sessions collector.
+			collections["tasks"] = partialCollectionStatus("gateway.tasks.list", "row_limit")
+		}
 	} else {
 		sessionsList = collectSessions(ctx, sessionStores, basePath, loc, now, modelAliases, knownSIDs, sessionLiveModelTTL)
 		collections["sessions"] = collectionStatus("legacy.session.files", nil, true)
@@ -447,7 +457,7 @@ func collectDashboardData(ctx context.Context, dashboardDir, openclawPath string
 	// Backfill channel connectivity: gateway /readyz failing[] is authoritative
 	// for failures; on probe failure we fall back to the session-activity
 	// heuristic (failing is nil, so no channel is blanked).
-	if !modern {
+	if !modern && !appopenclaw.TargetFromContext(ctx).IsContainer() {
 		readyzFailing, _ := readyzProbe(ctx, cfg.AI.GatewayPort)
 		backfillChannelConnectivity(agentConfig, sessionsList, readyzFailing)
 	} else {
@@ -602,17 +612,21 @@ func collectDashboardData(ctx context.Context, dashboardDir, openclawPath string
 		data["sessionTotal"] = runtimeSessions.Total
 		data["modelReadiness"] = modelReadiness
 		collections["modelReadiness"] = collectionStatus("cli.models.status", modelsErr, modelsErr == nil)
-		for key, value := range runtimeHealth {
-			data[key] = value
-		}
-		for key, value := range runtimeInventories {
-			data[key] = value
-		}
-		for key, value := range healthStatuses {
-			collections[key] = value
-		}
-		for key, value := range inventoryStatuses {
-			collections[key] = value
+		maps.Copy(data, runtimeProviderStatus)
+		maps.Copy(collections, providerStatuses)
+		maps.Copy(data, runtimeHealth)
+		maps.Copy(data, runtimeInventories)
+		maps.Copy(collections, healthStatuses)
+		maps.Copy(collections, inventoryStatuses)
+		if configErr != nil {
+			// Without configuration the agent roster is the guessed ["main"],
+			// so these per-agent collections cover an unknown fraction of the
+			// runtime. Keep the rows, drop the claim that they are complete.
+			for _, name := range []string{"memory", "skillInventory", "modelReadiness"} {
+				if status, ok := collections[name]; ok && status.State == "ready" {
+					collections[name] = partialCollectionStatus(status.Source, "configuration_unavailable")
+				}
+			}
 		}
 		for _, r := range usageRanges {
 			collections["usage"+r.suffix] = collectionStatus("gateway.sessions.usage", r.err, r.result.CompleteTokens())

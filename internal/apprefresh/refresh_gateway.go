@@ -45,6 +45,11 @@ var healthzProbe = func(ctx context.Context, port int) bool {
 
 const gatewayReadyzProbeTimeout = 2 * time.Second
 
+// gatewayReasonHostProbeNotApplicable marks a gateway status that could not be
+// determined because the only available probes measure the host rather than the
+// selected container.
+const gatewayReasonHostProbeNotApplicable = "host_probe_not_applicable"
+
 var gatewayProbeDo = http.DefaultClient.Do
 
 // readyzProbe issues a GET to the gateway's /readyz endpoint and returns the
@@ -113,7 +118,10 @@ func parseReadyzFailingOK(body []byte) ([]string, bool) {
 // fails to find the gateway PID (e.g. pattern drift), the dashboard reports
 // online without metadata rather than masking the real liveness signal.
 //
-// Best-effort: all failures collapse to status=offline.
+// In container mode no probe runs at all: they would all measure the host, so
+// status is reported as unknown with a statusReason.
+//
+// Best-effort in native mode: all failures collapse to status=offline.
 func collectGatewayHealth(ctx context.Context, gatewayPort int) map[string]any {
 	return collectGatewayHealthWithLock(ctx, "", gatewayPort)
 }
@@ -136,6 +144,17 @@ func collectGatewayHealthWithLock(ctx context.Context, openclawPath string, gate
 		ctx = context.Background()
 	}
 
+	// Container mode: every probe below reaches the host — 127.0.0.1/healthz,
+	// pgrep, ps, and the host gateway lock. An unpublished container port would
+	// report a healthy container gateway as offline, so report the gap instead
+	// of a plausible host-derived value. Liveness comes from runtime health.
+	if appopenclaw.TargetFromContext(ctx).IsContainer() {
+		gw["processScope"] = "container"
+		gw["status"] = "unknown"
+		gw["statusReason"] = gatewayReasonHostProbeNotApplicable
+		return gw
+	}
+
 	// Authoritative liveness signal: gateway HTTP /healthz. Only consulted
 	// when a port is configured; port 0 means "skip HTTP, rely on pgrep".
 	httpOnline := false
@@ -143,16 +162,6 @@ func collectGatewayHealthWithLock(ctx context.Context, openclawPath string, gate
 		probeCtx, probeCancel := context.WithTimeout(ctx, 2*time.Second)
 		httpOnline = healthzProbe(probeCtx, gatewayPort)
 		probeCancel()
-	}
-	if appopenclaw.TargetFromContext(ctx).IsContainer() {
-		gw["processScope"] = "container"
-		if httpOnline {
-			gw["status"] = "online"
-		}
-		if gatewayPort <= 0 {
-			gw["status"] = "unknown"
-		}
-		return gw
 	}
 
 	// INT-3: prefer the gateway lock for pid/uptime metadata only when liveness
@@ -259,10 +268,7 @@ func collectGatewayRSS(ctx context.Context, pid string, gw map[string]any) {
 // formatUptimeSince renders elapsed time since the gateway lock's createdAt as a
 // compact d/h/m string, matching the dashboard's coarse uptime display.
 func formatUptimeSince(createdAt time.Time) string {
-	d := time.Since(createdAt)
-	if d < 0 {
-		d = 0
-	}
+	d := max(time.Since(createdAt), 0)
 	switch {
 	case d >= 24*time.Hour:
 		return fmt.Sprintf("%dd %dh", int(d.Hours())/24, int(d.Hours())%24)

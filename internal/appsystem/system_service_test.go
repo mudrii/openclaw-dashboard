@@ -459,9 +459,7 @@ func TestGetJSON_AtomicStaleDecision(t *testing.T) {
 	// Writer: flips the cache between fresh (current time) and stale
 	// (1 hour ago) while bumping gen. Alternating freshness forces GetJSON
 	// down both code branches.
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		var gen int64 = 2
 		for time.Now().Before(deadline) {
 			at := time.Now()
@@ -471,7 +469,7 @@ func TestGetJSON_AtomicStaleDecision(t *testing.T) {
 			setGen(gen, at)
 			gen++
 		}
-	}()
+	})
 
 	// Readers: parse returned body, record (observed_gen, is_stale_label).
 	// Invariant: observed_gen must be <= latestGen.Load() at read time

@@ -3,6 +3,7 @@ package appsystem
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -47,10 +48,5 @@ func TestOpenclawCLIEnv_LeavesCustomHomeWithoutDataMarkerAlone(t *testing.T) {
 }
 
 func containsEnv(env []string, want string) bool {
-	for _, kv := range env {
-		if kv == want {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(env, want)
 }

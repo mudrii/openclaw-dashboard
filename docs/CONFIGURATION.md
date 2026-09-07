@@ -94,7 +94,7 @@ For migrated OpenClaw state, see [runtime compatibility](RUNTIME-COMPATIBILITY.m
 
 `operations.enabled` defaults to `false`. Enabling it also requires `OPENCLAW_DASHBOARD_OPERATOR_TOKEN` (at least 32 characters) in the dashboard **service** environment. It is separate from the gateway token and is never returned to the browser. The operator supplies it manually for each confirmed action; the UI clears it afterward. Keep operations disabled unless the selected gateway identity has the narrowly required write scope.
 
-Supported actions are automation enable/disable, run an enabled automation, and abort one exact active run. The server requires loopback access, a matching browser origin, authorization, a unique operation UUID, and a fresh target/revision check. Requests are rate limited; audit records under `operations/<UUID>.jsonl` prevent replay across restarts. They contain target/action/outcome metadata, not credentials. Preserve these files; deleting an audit reservation removes its replay protection. An uncertain result requires manual runtime verification, never blind retry. These controls do not enable gateway HTTP chat or approve devices.
+Supported actions are automation enable/disable, run an enabled automation, and abort one exact active run. The server requires loopback access, a matching browser origin, authorization, a unique operation UUID, and a fresh target/revision check. Requests are rate limited; audit records under `operations/<UUID>.jsonl` prevent replay across restarts. They contain target/action/outcome metadata, not credentials. The server keeps the newest 500 audit files and prunes older ones; deleting an audit reservation removes replay protection for that operation ID. An uncertain result requires manual runtime verification, never blind retry. These controls do not enable gateway HTTP chat or approve devices.
 
 ### Bot Settings
 
@@ -269,7 +269,10 @@ Generated dashboard services omit `OPENCLAW_HOME` by default. This lets the dash
 | Variable | Description |
 |----------|-------------|
 | `OPENCLAW_HOME` | Optional custom OpenClaw environment passed through only when explicitly set before service install; normally unset |
-| `OPENCLAW_GATEWAY_TOKEN` | Gateway bearer token loaded from `ai.dotenvPath` |
+| `OPENCLAW_GATEWAY_TOKEN` | Gateway bearer token; process environment takes precedence over `ai.dotenvPath`, then supported literal/env SecretRef values in local gateway configuration |
+| `OPENCLAW_STATE_DIR` | Explicit local state directory; overrides the state path derived from `openclaw.profile` |
+| `OPENCLAW_CONTAINER` | Inherited container selection when `openclaw.mode` does not override it |
+| `OPENCLAW_DASHBOARD_OPERATOR_TOKEN` | Separate, manually provisioned operations credential of at least 32 characters; required in the service environment when operations are enabled |
 | `OPENCLAW_SYSTEMD_UNIT` | Overrides the systemd unit name used for the Linux journald log fallback (default `openclaw-gateway`). Takes precedence over `logs.systemdUnit`. |
 | `OPENCLAW_PROFILE` | When set, appends a `-<profile>` suffix to the resolved systemd unit name (matches openclaw's per-profile unit naming). |
 | `OPENCLAW_CONFIG_PATH` | Overrides the OpenClaw config path used to locate the gateway lock file. The lock supplies install-independent gateway PID/uptime/RSS. |
@@ -277,7 +280,6 @@ Generated dashboard services omit `OPENCLAW_HOME` by default. This lets the dash
 | `OPENCLAW_DASHBOARD_ALLOW_NON_LOOPBACK` | Set to the literal value `1` to permit non-loopback bind hosts (e.g., `0.0.0.0`). Required for containerized deployments where the bind has to be reachable from outside the container. Off by default; see Security below. |
 | `DASHBOARD_PORT` | Override the HTTP listen port (takes precedence over `server.port` in config) |
 | `DASHBOARD_BIND` | Override the HTTP bind address (takes precedence over `server.host` in config) |
-| `DASHBOARD_AI_TOKEN_OPTIONAL` | When `ai.enabled=true` but `OPENCLAW_GATEWAY_TOKEN` is missing, set to `1` to downgrade the startup fatal to a warning (useful for dev gateways without auth). Default unset; only the literal value `1` enables the bypass. |
 
 ## Security
 
@@ -301,6 +303,12 @@ A few hard rules are enforced at startup or per-request:
   clickjacking are blocked.
 - **Gateway token redaction.** `appchat.CallGateway` strips the bearer token
   from any 5xx response body before surfacing the error to the browser.
+- **Chat origin checks.** Browser chat requests require an HTTP/HTTPS origin
+  matching the request Host (including port),
+  or an HTTP loopback development origin. Foreign and opaque (`null`) origins
+  receive HTTP 403 before gateway work; CORS response headers alone do not
+  prevent a simple cross-origin POST. Origin-less CLI clients remain supported.
+  A TLS reverse proxy must preserve the public Host for chat.
 
 ## Data Flow
 

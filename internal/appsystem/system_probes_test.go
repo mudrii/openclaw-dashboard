@@ -28,12 +28,12 @@ func portFromTestServerURL(t *testing.T, raw string) int {
 }
 
 // swapSharedSystemHTTPClient replaces the package-level shared client for the
-// duration of the test and restores it via t.Cleanup.
-func swapSharedSystemHTTPClient(t *testing.T, c *http.Client) {
-	t.Helper()
+// duration of the test or benchmark and restores it via Cleanup.
+func swapSharedSystemHTTPClient(tb testing.TB, c *http.Client) {
+	tb.Helper()
 	old := sharedSystemHTTPClient
 	sharedSystemHTTPClient = c
-	t.Cleanup(func() { sharedSystemHTTPClient = old })
+	tb.Cleanup(func() { sharedSystemHTTPClient = old })
 }
 
 // TestResolveOpenclawBin verifies the PATH → asdf-shims → asdf-nodejs-installs →

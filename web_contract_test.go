@@ -103,6 +103,18 @@ func TestIssue26FrontendFixtureContract(t *testing.T) {
 		// Sub-agent panel post-migration: agent/duration/status columns, no cost.
 		"<th>Task</th><th>Agent</th><th class=\"r\">Duration</th><th>Status</th><th>Time</th>",
 		"$('subCostLbl').textContent=runs.length+(runs.length===1?' run':' runs');",
+		// Fetch failures must land in a dedicated always-present banner, not in
+		// #alertsSection, which only re-renders when the alerts payload changes.
+		`<div class="alert-item alert-critical" id="fetchError" role="alert" hidden></div>`,
+		"App.setFetchError('');",
+		// Container-scoped runtimes report an undeterminable gateway status; that
+		// must never be painted "Offline".
+		"Unknown (container: host probe not applicable)",
+		"host_probe_not_applicable",
+		// Panels that render retained fields disclose non-ready collections.
+		"function collectionNotice(id,status,prefix){",
+		`class="collection-notice"`,
+		"failed agents: ",
 	} {
 		if !strings.Contains(html, snippet) {
 			t.Fatalf("web/index.html missing frontend contract snippet %q", snippet)
@@ -112,6 +124,19 @@ func TestIssue26FrontendFixtureContract(t *testing.T) {
 	// must NOT render a cost cell (dropped in the SQLite-migration rework).
 	if strings.Contains(html, "(r.cost||0).toFixed(4)") {
 		t.Fatal("web/index.html: sub-agent runs table still renders a cost cell; cost was dropped post-migration")
+	}
+	// Every panel that keeps rendering retained data must own a notice element.
+	for _, id := range []string{"healthNotice", "costNotice", "chartNotice", "cronNotice", "modelsNotice", "agentConfigNotice"} {
+		if !strings.Contains(html, `id="`+id+`" role="status" hidden`) {
+			t.Fatalf("web/index.html missing collection notice element %q", id)
+		}
+		if !strings.Contains(html, "collectionNotice('"+id+"'") {
+			t.Fatalf("web/index.html never populates collection notice %q", id)
+		}
+	}
+	// The refresh catch must not clobber the alerts list.
+	if strings.Contains(html, "$('alertsSection').innerHTML='<div class=\"alert-item alert-critical\"") {
+		t.Fatal("web/index.html: fetch failures must render into #fetchError, not #alertsSection")
 	}
 
 	runtimeSection := strings.Index(html, `data-section="runtime"`)

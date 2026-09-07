@@ -1,7 +1,6 @@
 package apprefresh
 
 import (
-	"context"
 	"os/exec"
 	"testing"
 )
@@ -21,8 +20,7 @@ func TestBoundedOutput_SmallOutput(t *testing.T) {
 // data) instead of buffering unbounded output — the durable-task-store growth
 // guard. Asserting nil data pins the "degrade, don't return partial" contract.
 func TestBoundedOutput_ExceedsCap(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	// `yes` streams forever; the cap must stop it.
 	out, err := boundedOutput(exec.CommandContext(ctx, "yes"), 64)
 	if err == nil {

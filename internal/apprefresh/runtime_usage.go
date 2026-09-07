@@ -166,7 +166,9 @@ func applyRuntimeUsage(data map[string]any, suffix string, u runtimeUsage, now t
 				models := row["models"].(map[string]any)
 				for _, daily := range u.Aggregates.ModelDaily {
 					if daily.Date == date {
-						models[ModelName(daily.Provider+"/"+daily.Model)] = daily.Cost
+						name := ModelName(daily.Provider + "/" + daily.Model)
+						previous, _ := models[name].(float64)
+						models[name] = previous + daily.Cost
 					}
 				}
 			}

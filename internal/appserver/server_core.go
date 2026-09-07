@@ -190,7 +190,7 @@ func NewServer(dir, version string, cfg appconfig.Config, gatewayToken string, i
 	return s
 }
 
-// PreWarm runs refresh.sh once in the background at startup so data.json
+// PreWarm runs the Go collector in the background at startup so data.json
 // is ready before the first browser request arrives.
 func (s *Server) PreWarm() {
 	slog.Info("[dashboard] pre-warming data.json...")

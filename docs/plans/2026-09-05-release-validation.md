@@ -117,7 +117,7 @@ The user subsequently supplied a successful `GOTOOLCHAIN=go1.27.1 make staticche
 
 ### Prepared isolated UI candidate
 
-- Directory: `/Users/mudrii/src/open_claw/openclaw-dashboard/dist/ui-candidate.fEasVv` (ignored build artifacts).
+- Directory: `<repo>/dist/ui-candidate.fEasVv` (ignored build artifacts).
 - Binary SHA-256: `781399647ddc0753fab75e45195e1173abe91561076ce7cd49067bebbfe6c9f6`; copied candidate matches the user's built repository binary.
 - Title: `OpenClaw Candidate - Go 1.27.1`; UTC; 60-second refresh; selected container `openclaw` through the verified host CLI.
 - Bind: `127.0.0.1:8081`; chat and operator actions disabled; separate generated data and cache; themes copied from repository assets.
@@ -127,7 +127,7 @@ The user subsequently supplied a successful `GOTOOLCHAIN=go1.27.1 make staticche
 Start in Terminal:
 
 ```sh
-cd /Users/mudrii/src/open_claw/openclaw-dashboard/dist/ui-candidate.fEasVv
+cd <repo>/dist/ui-candidate.fEasVv
 OPENCLAW_DASHBOARD_DIR="$PWD" ./openclaw-dashboard --bind 127.0.0.1 --port 8081
 ```
 

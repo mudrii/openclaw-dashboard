@@ -1,6 +1,7 @@
 version: 2
 
 project_name: openclaw-dashboard
+dist: dist/release
 
 before:
   hooks:
@@ -52,9 +53,9 @@ sboms:
   - artifacts: archive
 
 # Keyless cosign signature on the checksums file via the workflow's OIDC
-# token (release.yml grants id-token: write). cosign v4 dropped the split
-# --output-certificate / --output-signature flags in favor of a single
-# --bundle file containing both. Local goreleaser builds skip signing because
+# token (release.yml grants id-token: write). The pinned Cosign v3 supports a
+# single --bundle file containing the signature and certificate.
+# Local goreleaser builds skip signing because
 # there's no OIDC issuer to authenticate against.
 signs:
   - cmd: cosign

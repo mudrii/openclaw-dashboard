@@ -30,8 +30,8 @@ func TestTargetCommand(t *testing.T) {
 			}
 			var container string
 			for _, kv := range cmd.Environ() {
-				if strings.HasPrefix(kv, "OPENCLAW_CONTAINER=") {
-					container = strings.TrimPrefix(kv, "OPENCLAW_CONTAINER=")
+				if after, ok := strings.CutPrefix(kv, "OPENCLAW_CONTAINER="); ok {
+					container = after
 				}
 			}
 			if container != tt.container {

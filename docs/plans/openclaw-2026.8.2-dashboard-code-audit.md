@@ -1,6 +1,6 @@
 # OpenClaw 2026.8.2 dashboard compatibility: source audit
 
-Date: 2026-09-05. Scope: read-only analysis of the dashboard source and selected non-secret configuration fields in `/Users/mudrii/.openclaw/openclaw.json`. This document is the code audit supporting the wider release/runtime investigation. No implementation or configuration was changed and no tests or OpenClaw probes were run for this sub-audit.
+Date: 2026-09-05. Scope: read-only analysis of the dashboard source and selected non-secret configuration fields in `$HOME/.openclaw/openclaw.json`. This document is the code audit supporting the wider release/runtime investigation. No implementation or configuration was changed and no tests or OpenClaw probes were run for this sub-audit.
 
 Version boundary: the coordinating runtime investigation identifies a running OpenClaw 2026.8.2 container and a newer host CLI. Do not attribute host-only features to 2026.8.2. The findings below establish dashboard behavior from its actual source; the wider report must confirm the release-specific commands and payloads against the running version before implementation.
 
@@ -42,7 +42,7 @@ Acceptance coverage: unmanaged/container gateway healthy with no host service; l
 
 The inspected configuration has `memory.search.enabled=true`, provider `ollama`, an `agents.defaults.modelPolicy.allow` list, no explicit `agents.list`, and an object-valued gateway auth token. The dashboard's memory parser reads only `agents.defaults.memorySearch`; model parsing reads `defaults.models` and model fallbacks without examining `modelPolicy`. The fallback agent row is hardcoded as `id=default`, workspace `~/.openclaw/workspace`, even when the effective runtime agent and configured defaults workspace differ.
 
-Evidence: selected-key inspection of `/Users/mudrii/.openclaw/openclaw.json` on the audit date; [refresh_config.go:62](../../internal/apprefresh/refresh_config.go#L62), [refresh_config.go:220](../../internal/apprefresh/refresh_config.go#L220), [refresh_config.go:482](../../internal/apprefresh/refresh_config.go#L482).
+Evidence: selected-key inspection of `$HOME/.openclaw/openclaw.json` on the audit date; [refresh_config.go:62](../../internal/apprefresh/refresh_config.go#L62), [refresh_config.go:220](../../internal/apprefresh/refresh_config.go#L220), [refresh_config.go:482](../../internal/apprefresh/refresh_config.go#L482).
 
 Other projection limits: plugin cards contain only configured entry names and enabled flags, ignoring the plugin allowlist and runtime availability. Each channel's account results are collapsed using boolean OR; one healthy account can make the channel look connected while another has failed. Direct `talk.apiKey` string presence is treated as TTS enablement, which is not a general runtime capability check. Raw JSON configuration reads also cannot resolve effective includes/JSON5/default inheritance.
 

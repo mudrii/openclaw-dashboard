@@ -5,8 +5,14 @@ on:
     tags:
       - "v*"
 
+# Serialize publication and Homebrew updates across release tags.
+concurrency:
+  group: release-publication
+  cancel-in-progress: false
+
 permissions:
   contents: write
+  actions: read
   # id-token is required for cosign keyless signing via the GitHub OIDC issuer.
   id-token: write
   # NOTE: attestations: write is intentionally NOT granted yet. Add it back
@@ -28,6 +34,10 @@ jobs:
           go-version-file: go.mod
           cache: true
 
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: "22"
+
       - name: Verify release commit is on main
         run: |
           git fetch --no-tags origin main
@@ -44,9 +54,27 @@ jobs:
             exit 1
           fi
 
+      - name: Require successful main CI for this exact commit
+        uses: actions/github-script@373c709c69115d41ff229c7e5df9f8788daa9553 # v9
+        with:
+          script: |
+            const {data} = await github.rest.actions.listWorkflowRuns({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: 'tests.yml',
+              branch: 'main',
+              event: 'push',
+              head_sha: context.sha,
+              per_page: 1,
+            });
+            const run = data.workflow_runs[0];
+            if (!run || run.head_sha !== context.sha || run.status !== 'completed' || run.conclusion !== 'success') {
+              core.setFailed('Release requires a successful main Tests run for the tagged commit. Wait for CI or repair it before retrying.');
+            }
+
       - name: Install golangci-lint
         run: |
-          go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.12.2
+          go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.13.2
           golangci-lint version
 
       - name: Validate release source
@@ -60,16 +88,24 @@ jobs:
           shellcheck --severity=warning assets/runtime/refresh.sh
           shellcheck --severity=warning install.sh
           shellcheck --severity=warning uninstall.sh
+          shellcheck --severity=warning scripts/container-smoke.sh
+
+      - name: Verify runtime image
+        run: make container-test
 
       - name: Install syft (SBOM generator)
         # Pin exact: floating @v0 will silently disappear when syft v1 → v2.
         # Dependabot's github-actions ecosystem watches exact versions.
         uses: anchore/sbom-action/download-syft@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
+        with:
+          syft-version: v1.51.1
 
       - name: Install cosign (keyless signing)
         # Pin exact: sigstore/cosign-installer does not publish a floating @v4
         # tag (only @v2 and @v3 exist as moving majors). Bump via dependabot.
         uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        with:
+          cosign-release: v3.0.6
 
       - name: Validate Homebrew tap credentials
         env:

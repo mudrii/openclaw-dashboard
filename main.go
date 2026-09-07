@@ -178,9 +178,9 @@ func Main() int {
 	}
 
 	// Resolve credentials server-side; absence must not disable read-only monitoring.
-	gatewayToken := appconfig.ResolveGatewayToken(cfg.AI.DotenvPath, cfg.Openclaw.StatePath(appruntime.ResolveOpenclawPath()))
+	gatewayToken := ResolveGatewayToken(cfg.AI.DotenvPath, cfg.Openclaw.StatePath(appruntime.ResolveOpenclawPath()))
 	if cfg.AI.Enabled && gatewayToken == "" {
-		slog.Warn("[dashboard] chat credentials unavailable; monitoring remains enabled")
+		slog.Warn("[dashboard] no gateway token resolved; monitoring stays enabled but every chat request will be refused with credentials_missing")
 	}
 
 	// Server lifecycle context — follows the top-level CLI lifecycle.

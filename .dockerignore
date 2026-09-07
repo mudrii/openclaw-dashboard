@@ -1,4 +1,5 @@
 .git/
+dist/
 .gitignore
 .claude/
 .worktrees/

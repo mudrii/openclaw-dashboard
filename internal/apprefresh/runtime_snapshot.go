@@ -2,7 +2,9 @@ package apprefresh
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"maps"
 	"math"
 	"os"
 	"path/filepath"
@@ -15,13 +17,19 @@ import (
 const runtimePageSize = 100
 const runtimeMaxRows = 1000
 
+// errTaskRowLimit reports a page walk stopped by runtimeMaxRows. The rows
+// gathered so far are real, so callers publish a partial collection instead of
+// discarding a truncated-but-valid page walk as unavailable.
+var errTaskRowLimit = errors.New("tasks collection reached row limit")
+
 type CollectionStatus struct {
-	Source      string `json:"source"`
-	State       string `json:"state"`
-	ErrorCode   string `json:"errorCode,omitempty"`
-	CollectedAt string `json:"collectedAt,omitempty"`
-	AttemptedAt string `json:"attemptedAt"`
-	Complete    bool   `json:"complete"`
+	Source       string   `json:"source"`
+	State        string   `json:"state"`
+	ErrorCode    string   `json:"errorCode,omitempty"`
+	CollectedAt  string   `json:"collectedAt,omitempty"`
+	AttemptedAt  string   `json:"attemptedAt"`
+	Complete     bool     `json:"complete"`
+	FailedAgents []string `json:"failedAgents,omitempty"`
 }
 
 func collectionStatus(source string, err error, complete bool) CollectionStatus {
@@ -37,6 +45,14 @@ func collectionStatus(source string, err error, complete bool) CollectionStatus 
 		status.Complete = false
 	}
 	return status
+}
+
+// partialCollectionStatus reports a collection that produced usable rows while
+// something still went wrong. collectionStatus cannot express this: any non-nil
+// error there means unavailable, which drops the rows a caller did collect.
+func partialCollectionStatus(source, code string) CollectionStatus {
+	stamp := time.Now().UTC().Format(time.RFC3339)
+	return CollectionStatus{Source: source, State: "partial", ErrorCode: code, CollectedAt: stamp, AttemptedAt: stamp}
 }
 
 func hasRuntimeState(basePath string, target appopenclaw.Target) bool {
@@ -68,7 +84,7 @@ func collectRuntimeSessions(ctx context.Context, client appopenclaw.Client, loc 
 	snapshot := sessionSnapshot{Rows: make([]map[string]any, 0)}
 	seen := map[string]bool{}
 	offset := 0
-	for page := 0; page < runtimeMaxRows/runtimePageSize; page++ {
+	for range runtimeMaxRows / runtimePageSize {
 		var response struct {
 			Sessions   []map[string]any `json:"sessions"`
 			TotalCount int              `json:"totalCount"`
@@ -176,7 +192,7 @@ func collectRuntimeTasks(ctx context.Context, client appopenclaw.Client, loc *ti
 	seenIDs := map[string]bool{}
 	seenCursors := map[string]bool{}
 	params := map[string]any{"limit": runtimePageSize}
-	for page := 0; page < runtimeMaxRows/runtimePageSize; page++ {
+	for range runtimeMaxRows / runtimePageSize {
 		var response struct {
 			Tasks      []map[string]any `json:"tasks"`
 			NextCursor string           `json:"nextCursor"`
@@ -200,9 +216,7 @@ func collectRuntimeTasks(ctx context.Context, client appopenclaw.Client, loc *ti
 			if ended, _ := task["endedAt"].(float64); ended <= 0 {
 				row["durationSec"] = nil
 			}
-			for k, v := range projectFields(task, "runtime", "kind", "sessionKey", "childSessionKey", "ownerKey", "runId", "createdAt", "startedAt", "endedAt", "progressSummary", "terminalSummary", "deliveryStatus", "terminalOutcome") {
-				row[k] = v
-			}
+			maps.Copy(row, projectFields(task, "runtime", "kind", "sessionKey", "childSessionKey", "ownerKey", "runId", "createdAt", "startedAt", "endedAt", "progressSummary", "terminalSummary", "deliveryStatus", "terminalOutcome"))
 			row["id"] = id
 			row["rawStatus"] = task["status"]
 			for _, field := range []string{"task", "error", "progressSummary", "terminalSummary"} {
@@ -224,5 +238,5 @@ func collectRuntimeTasks(ctx context.Context, client appopenclaw.Client, loc *ti
 		seenCursors[response.NextCursor] = true
 		params["cursor"] = response.NextCursor
 	}
-	return rows, fmt.Errorf("tasks collection reached row limit")
+	return rows, errTaskRowLimit
 }

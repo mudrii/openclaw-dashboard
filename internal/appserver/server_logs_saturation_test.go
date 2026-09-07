@@ -29,7 +29,7 @@ func TestHandleErrors_ReportsDroppedSignaturesWhenSaturated(t *testing.T) {
 	const total = 10
 	now := time.Now().UTC()
 	lines := make([]string, 0, total)
-	for i := 0; i < total; i++ {
+	for i := range total {
 		ts := now.Add(-time.Duration(total-i) * time.Minute).Format("2006-01-02T15:04:05Z")
 		// Use a non-numeric distinct token so NormalizeErrorSignature does
 		// not collapse them into a single signature.

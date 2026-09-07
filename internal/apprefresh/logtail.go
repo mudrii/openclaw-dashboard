@@ -538,16 +538,13 @@ func readTailLines(path string, limit int) ([]string, error) {
 		return nil, fmt.Errorf("read %s: %w", path, err)
 	}
 
-	n := count
-	if n > limit {
-		n = limit
-	}
+	n := min(count, limit)
 	out := make([]string, 0, n)
 	start := 0
 	if count > limit {
 		start = write
 	}
-	for i := 0; i < n; i++ {
+	for i := range n {
 		out = append(out, ring[(start+i)%limit])
 	}
 	return out, nil

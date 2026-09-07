@@ -3,11 +3,11 @@ globs:
   - "**/*.go"
 ---
 
-# Go 1.26 Idioms and Modernizers
+# Go 1.27 Idioms and Modernizers
 
 Write modern Go — never generate pre-1.24 patterns when the project's go.mod allows it.
 
-## Language (1.26)
+## Language (1.27)
 
 ```go
 type yearsSince int
@@ -19,6 +19,9 @@ type Adder[A Adder[A]] interface { // self-referential generic constraints
 ```
 
 `new(expr)` is available in Go 1.26. The return type is `*T` where `T` is the type of the expression. Use it when it improves clarity for optional scalar pointer values. Do not force it where `&T{...}` or a plain local variable is clearer.
+
+- Generic methods: methods may declare their own type parameters (`func (s Set[T]) Map[U any](f func(T) U) Set[U]`) — no more package-level helper workaround.
+- Struct-literal field-selector keys: composite literals may key promoted fields through the embedded type (`Outer{Inner.Field: v}`) instead of nesting a literal per embedded level.
 
 ## Iterators (1.23+)
 
@@ -35,7 +38,7 @@ Use `iter.Seq`/`iter.Seq2` and range-over-func. Prefer stdlib iterator APIs:
 - JSON tag changes are behavior changes — review carefully
 - Generic type aliases are fully supported
 
-## go fix Modernizers (1.26)
+## go fix Modernizers (1.27)
 
 `go fix` applies modernizations in-place. Always review the git diff before committing — some rewrites change observable behavior.
 
@@ -44,11 +47,14 @@ Useful analyzers:
 - `minmax` — if/else clamp → `min`/`max`
 - `slicessort` — `sort.Slice` → `slices.Sort` for basic ordered types
 - `any` — `interface{}` → `any`
-- `fmtappendf` — `[]byte(fmt.Sprintf(...))` → `fmt.Appendf`
 - `testingcontext` — simple cancellable test context setup → `t.Context()`
 - `omitzero` — suggests `omitzero` for struct fields where `omitempty` has no effect
 - `mapsloop` — map update loops → `maps.Copy`/`maps.Insert`/`maps.Clone`/`maps.Collect`
 - `newexpr` — wrappers returning `&x` or call sites → `new(expr)`; result type is `*T` matching the expression's type
 - `stringsseq` / `stditerators` — loops over eager APIs → iterator-based forms
-- `waitgroup` — `wg.Add(1)`/`go`/`wg.Done()` → `wg.Go` (stdlib `sync.WaitGroup`); prefer `errgroup.Group.Go` from `golang.org/x/sync/errgroup` when error propagation is needed
+- `waitgroupgo` — `wg.Add(1)`/`go`/`wg.Done()` → `wg.Go` (stdlib `sync.WaitGroup`); prefer `errgroup.Group.Go` from `golang.org/x/sync/errgroup` when error propagation is needed
+- `atomictypes` — `int32` field plus `atomic.AddInt32` → `atomic.Int32`
+- `embedlit` — nested literals for embedded structs → struct-literal field-selector keys
+- `slicesbackward` — reverse-index `for` loops → `for range slices.Backward(s)`
+- `unsafefuncs` — manual pointer/length conversions → `unsafe.Slice`/`unsafe.String`/`unsafe.SliceData`/`unsafe.StringData`
 - `//go:fix inline` — source-level inliner for API migrations

@@ -42,7 +42,6 @@ func TestShutdownSequence(t *testing.T) {
 
 	t.Run("single SIGINT exits within 6s", func(t *testing.T) {
 		cmd := exec.Command(bin, "--bind", "127.0.0.1", "--port", strconv.Itoa(port))
-		cmd.Env = append(os.Environ(), "DASHBOARD_AI_TOKEN_OPTIONAL=1")
 		cmd.Stdout = os.Stderr
 		cmd.Stderr = os.Stderr
 		cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
@@ -65,7 +64,6 @@ func TestShutdownSequence(t *testing.T) {
 	t.Run("single SIGTERM exits within 6s", func(t *testing.T) {
 		port3 := freePort(t)
 		cmd := exec.Command(bin, "--bind", "127.0.0.1", "--port", strconv.Itoa(port3))
-		cmd.Env = append(os.Environ(), "DASHBOARD_AI_TOKEN_OPTIONAL=1")
 		cmd.Stdout = os.Stderr
 		cmd.Stderr = os.Stderr
 		cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
@@ -87,7 +85,6 @@ func TestShutdownSequence(t *testing.T) {
 	t.Run("second SIGINT accelerates exit", func(t *testing.T) {
 		port2 := freePort(t)
 		cmd := exec.Command(bin, "--bind", "127.0.0.1", "--port", strconv.Itoa(port2))
-		cmd.Env = append(os.Environ(), "DASHBOARD_AI_TOKEN_OPTIONAL=1")
 		cmd.Stdout = os.Stderr
 		cmd.Stderr = os.Stderr
 		cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
@@ -155,8 +152,7 @@ func waitExit(cmd *exec.Cmd, timeout time.Duration) error {
 		if err == nil {
 			return nil // exit code 0 — clean shutdown
 		}
-		var exitErr *exec.ExitError
-		if errors.As(err, &exitErr) {
+		if exitErr, ok := errors.AsType[*exec.ExitError](err); ok {
 			return fmt.Errorf("process exited with code %d", exitErr.ExitCode())
 		}
 		return err

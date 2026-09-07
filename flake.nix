@@ -10,19 +10,18 @@
     flake-utils.lib.eachDefaultSystem (system:
       let
         pkgs = nixpkgs.legacyPackages.${system};
-        # Project requires Go 1.26+ (see go.mod). Pin explicitly so we don't
+        # Project requires Go 1.27+ (see go.mod). Pin explicitly so we don't
         # silently drift to whatever the nixpkgs channel default is.
-        go = pkgs.go_1_26 or pkgs.go;
-        runtimeDeps = [ pkgs.bash pkgs.git ];
+        go = pkgs.go_1_27;
+        runtimeDeps = [ pkgs.bash pkgs.git ] ++ pkgs.lib.optionals pkgs.stdenv.isLinux [ pkgs.procps ];
         version = pkgs.lib.fileContents ./VERSION;
       in {
         packages = {
-          # Go binary (default) — single binary, zero runtime deps
-          default = pkgs.buildGoModule {
+          # Go binary with packaged runtime tools and data
+          default = (pkgs.buildGoModule.override { inherit go; }) {
             pname = "openclaw-dashboard";
             inherit version;
             src = ./.;
-            inherit go;
             vendorHash = null; # no external deps
             subPackages = [ "cmd/openclaw-dashboard" ];
 
@@ -45,7 +44,8 @@
               cp ${./examples/config.full.json} $out/share/openclaw-dashboard/examples/config.full.json
               chmod +x $out/share/openclaw-dashboard/refresh.sh
               wrapProgram $out/bin/openclaw-dashboard \
-                --prefix PATH : ${pkgs.lib.makeBinPath runtimeDeps}
+                --prefix PATH : ${pkgs.lib.makeBinPath runtimeDeps} \
+                --set-default ZONEINFO ${pkgs.tzdata}/share/zoneinfo
             '';
 
             meta = {
@@ -67,6 +67,7 @@
             pkgs.bash pkgs.git
             pkgs.gopls pkgs.gotools pkgs.gofumpt
             pkgs.golangci-lint pkgs.govulncheck
+            pkgs.nodejs # required by `make frontend-test`
           ];
           shellHook = ''
             echo "OpenClaw Dashboard dev shell"
@@ -90,6 +91,26 @@
         # `nix flake check` will build the default package on each system.
         checks = {
           build = self.packages.${system}.default;
+          runtime = pkgs.runCommand "openclaw-dashboard-runtime-check" {
+            nativeBuildInputs = [ self.packages.${system}.default pkgs.jq pkgs.coreutils ];
+          } ''
+            export HOME="$TMPDIR/home"
+            export OPENCLAW_STATE_DIR="$HOME/.openclaw"
+            mkdir -p "$OPENCLAW_STATE_DIR/dashboard"
+            echo '{}' > "$OPENCLAW_STATE_DIR/openclaw.json"
+            cat > "$OPENCLAW_STATE_DIR/dashboard/config.json" <<'EOF'
+            {"timezone":"Asia/Kuala_Lumpur","openclaw":{"mode":"native","binary":"/missing-nix-fixture"},"ai":{"enabled":false},"system":{"enabled":false}}
+            EOF
+            test "$(openclaw-dashboard --version)" = 'openclaw-dashboard ${pkgs.lib.removePrefix "v" version}'
+            openclaw-dashboard --refresh
+            runtime="$OPENCLAW_STATE_DIR/dashboard"
+            jq -e '.timezone == "Asia/Kuala_Lumpur"' "$runtime/data.json"
+            test "$(stat -c %a "$runtime/data.json")" = 600
+            test -s "$runtime/themes.json"
+            test -x "$runtime/refresh.sh"
+            test -s "$runtime/examples/config.minimal.json"
+            touch "$out"
+          '';
         };
       });
 }

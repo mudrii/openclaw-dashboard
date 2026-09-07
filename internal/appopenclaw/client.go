@@ -15,17 +15,27 @@ import (
 	"time"
 )
 
+// MaxOutputBytes caps the stdout a single runtime call may produce before it is
+// abandoned as too_large.
 const MaxOutputBytes = 8 << 20
 
+// Target selects which OpenClaw runtime a call reaches: the CLI binary, native
+// or container mode, the container name, and the CLI profile.
 type Target struct {
-	Binary    string `json:"binary,omitempty"`
-	Mode      string `json:"mode,omitempty"`
+	// Binary overrides the configured CLI executable path.
+	Binary string `json:"binary,omitempty"`
+	// Mode is "native", "container", or empty to inherit from the environment.
+	Mode string `json:"mode,omitempty"`
+	// Container names the container the CLI proxies into.
 	Container string `json:"container,omitempty"`
-	Profile   string `json:"profile,omitempty"`
+	// Profile selects a named CLI profile and its state directory.
+	Profile string `json:"profile,omitempty"`
 }
 
 var targetName = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]*$`)
 
+// Validate reports whether the target is internally consistent and safe to turn
+// into CLI arguments. Names are restricted so they cannot be read as flags.
 func (t Target) Validate() error {
 	if t.Mode != "" && t.Mode != "native" && t.Mode != "container" {
 		return errors.New("openclaw.mode must be native or container")
@@ -47,10 +57,14 @@ func (t Target) Validate() error {
 
 type targetKey struct{}
 
+// WithTarget returns a context carrying the runtime selection used by
+// CommandContext and by the diagnostics logger.
 func WithTarget(ctx context.Context, target Target) context.Context {
 	return context.WithValue(ctx, targetKey{}, target)
 }
 
+// TargetFromContext returns the target carried by ctx, or the zero Target when
+// ctx is nil or carries none.
 func TargetFromContext(ctx context.Context) Target {
 	if ctx == nil {
 		return Target{}
@@ -73,6 +87,8 @@ func (t Target) Effective() Target {
 	return t
 }
 
+// IsContainer reports whether calls for this target run against a container
+// runtime, including the inherited OPENCLAW_CONTAINER case.
 func (t Target) IsContainer() bool {
 	return t.Mode == "container" || t.Container != "" || (t.Mode == "" && os.Getenv("OPENCLAW_CONTAINER") != "")
 }
@@ -94,6 +110,9 @@ func (t Target) StatePath(fallback string) string {
 	return fallback
 }
 
+// CommandContext builds the CLI command for the target carried by ctx, adding
+// the --container and --profile prefix arguments. An invalid target yields a
+// command whose Err is set, so it can never execute.
 func CommandContext(ctx context.Context, binary string, args ...string) *exec.Cmd {
 	target := TargetFromContext(ctx)
 	if target.Binary != "" {
@@ -133,19 +152,23 @@ func withoutEnv(env []string, name string) []string {
 }
 
 type readError struct {
-	code  string
-	cause error
+	code string
+	// detail is the redacted, log-safe tail of the command output. It is only
+	// ever read by logCollectionFailure; Error never exposes it.
+	detail string
+	cause  error
 }
 
 func (e *readError) Error() string { return "OpenClaw collection: " + e.code }
 func (e *readError) Unwrap() error { return e.cause }
 
+// ErrorCode maps err to the stable code the dashboard payloads report: "ok",
+// "timeout", "unavailable", or the classification CommandError assigned.
 func ErrorCode(err error) string {
 	if err == nil {
 		return "ok"
 	}
-	var e *readError
-	if errors.As(err, &e) {
+	if e, ok := errors.AsType[*readError](err); ok {
 		return e.code
 	}
 	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
@@ -157,7 +180,9 @@ func ErrorCode(err error) string {
 	return "unavailable"
 }
 
-// Classify diagnostic text, but never retain it in a browser/log-facing error.
+// CommandError classifies raw command output into an error code. The output is
+// never retained verbatim: only a redacted tail is kept, for the server-side log
+// line, and the returned error's message stays code-only.
 func CommandError(output []byte, cause error) error {
 	text := strings.ToLower(string(output))
 	code := ErrorCode(cause)
@@ -169,7 +194,7 @@ func CommandError(output []byte, cause error) error {
 	case strings.Contains(text, "database is locked"), strings.Contains(text, "did not stabilize"):
 		code = "storage_busy"
 	}
-	return &readError{code: code, cause: cause}
+	return &readError{code: code, detail: redactedTail(output), cause: cause}
 }
 
 type cappedBuffer struct {
@@ -217,6 +242,9 @@ func Output(cmd *exec.Cmd, maxBytes int) ([]byte, error) {
 	return stdout.Bytes(), nil
 }
 
+// DecodeJSON unmarshals data into value, skipping any leading CLI chatter by
+// retrying from each following "{" or "[". It reports invalid_response when no
+// prefix decodes.
 func DecodeJSON(data []byte, value any) error {
 	data = bytes.TrimSpace(data)
 	for attempts := 0; len(data) > 0 && attempts < 16; attempts++ {
@@ -232,13 +260,18 @@ func DecodeJSON(data []byte, value any) error {
 	return &readError{code: "invalid_response"}
 }
 
+// Client runs the allowlisted OpenClaw CLI operations the dashboard collects.
+// The zero value is usable and falls back to the "openclaw" binary.
 type Client struct {
+	// Binary is the CLI executable; empty means "openclaw".
 	Binary string
+	// Runner builds the command to execute; empty means CommandContext. Tests
+	// substitute it to keep the runtime out of the loop.
 	Runner func(context.Context, string, ...string) *exec.Cmd
 }
 
 var readMethods = map[string]bool{
-	"sessions.list": true, "sessions.usage": true, "usage.cost": true,
+	"sessions.list": true, "sessions.usage": true, "usage.cost": true, "usage.status": true, "health": true,
 	"tasks.list": true, "tasks.get": true, "cron.list": true, "cron.get": true, "cron.runs": true,
 	"channels.status": true, "logs.tail": true, "status": true, "config.get": true,
 	"doctor.memory.status": true, "skills.status": true, "system.info": true,
@@ -258,17 +291,31 @@ func (c Client) ReadCommand(ctx context.Context, operation string, value any) er
 	if !ok {
 		return &readError{code: "unsupported"}
 	}
-	return c.runJSON(ctx, args, value)
+	return c.runJSON(ctx, operation, args, value)
 }
 
+// ReadAgentModels decodes the model status of a single agent. The agent id must
+// be a bare name of at most 128 characters, so it can never be read as a flag or
+// a path.
 func (c Client) ReadAgentModels(ctx context.Context, agent string, value any) error {
 	if len(agent) > 128 || !targetName.MatchString(agent) {
 		return &readError{code: "invalid_request"}
 	}
-	return c.runJSON(ctx, []string{"models", "status", "--agent", agent, "--json"}, value)
+	return c.runJSON(ctx, "models.status", []string{"models", "status", "--agent", agent, "--json"}, value)
 }
 
-func (c Client) runJSON(ctx context.Context, args []string, value any) error {
+// runJSON executes one bounded CLI call and decodes its JSON into value. method
+// is the operator-facing label used for diagnostics only; every failure is
+// logged once, here, with a redacted output tail.
+func (c Client) runJSON(ctx context.Context, method string, args []string, value any) (err error) {
+	// The diagnostic runs after cancel() (deferred LIFO), so it reads the
+	// caller's context rather than this call's already-cancelled bound one.
+	logCtx := ctx
+	defer func() {
+		if err != nil {
+			logCollectionFailure(logCtx, method, err)
+		}
+	}()
 	ctx, cancel := context.WithTimeout(ctx, 12*time.Second)
 	defer cancel()
 	runner := c.Runner
@@ -283,14 +330,19 @@ func (c Client) runJSON(ctx context.Context, args []string, value any) error {
 		return err
 	}
 	var envelope struct {
-		OK *bool `json:"ok"`
+		OK    *bool `json:"ok"`
+		Error any   `json:"error"`
 	}
-	if DecodeJSON(out, &envelope) == nil && envelope.OK != nil && !*envelope.OK {
+	// A successful health RPC uses ok=false as its unhealthy verdict.
+	// An RPC error envelope must still be rejected.
+	if DecodeJSON(out, &envelope) == nil && envelope.OK != nil && !*envelope.OK && (method != "health" || envelope.Error != nil) {
 		return CommandError(out, errors.New("command failed"))
 	}
 	return DecodeJSON(out, value)
 }
 
+// Read calls an allowlisted gateway read method and decodes the response into
+// value. Unknown methods are refused without executing anything.
 func (c Client) Read(ctx context.Context, method string, params any, value any) error {
 	if !readMethods[method] {
 		return &readError{code: "unsupported"}
@@ -299,24 +351,5 @@ func (c Client) Read(ctx context.Context, method string, params any, value any) 
 	if err != nil {
 		return fmt.Errorf("encode OpenClaw parameters: %w", err)
 	}
-	ctx, cancel := context.WithTimeout(ctx, 12*time.Second)
-	defer cancel()
-	runner := c.Runner
-	if runner == nil {
-		runner = CommandContext
-	}
-	out, err := Output(runner(ctx, c.Binary, "gateway", "call", method, "--json", "--timeout", "10000", "--params", string(data)), MaxOutputBytes)
-	if ctx.Err() != nil {
-		return &readError{code: "timeout", cause: ctx.Err()}
-	}
-	if err != nil {
-		return err
-	}
-	var envelope struct {
-		OK *bool `json:"ok"`
-	}
-	if DecodeJSON(out, &envelope) == nil && envelope.OK != nil && !*envelope.OK {
-		return CommandError(out, errors.New("command failed"))
-	}
-	return DecodeJSON(out, value)
+	return c.runJSON(ctx, method, []string{"gateway", "call", method, "--json", "--timeout", "10000", "--params", string(data)}, value)
 }

@@ -45,7 +45,7 @@ func TestReadTailLines_RespectsLimit(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "many.log")
 	var b strings.Builder
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		// Unique per-line content exercises the ring-buffer wrap-around: with a
 		// limit of 5 and 100 lines, write wraps the ring 20 times, so a correct
 		// implementation must return exactly the last 5 distinct lines in order.
@@ -149,7 +149,7 @@ func TestMergeLatestRecords_MultipleSourcesInterleaved(t *testing.T) {
 func TestMergeLatestRecords_CapsAtLimit(t *testing.T) {
 	base := time.Date(2026, 5, 1, 10, 0, 0, 0, time.UTC)
 	src := make([]LogRecord, 0, 20)
-	for i := 0; i < 20; i++ {
+	for i := range 20 {
 		ts := base.Add(time.Duration(i) * time.Minute)
 		src = append(src, LogRecord{Source: "x", Timestamp: ts, TimestampMs: ts.UnixMilli(), Message: "msg"})
 	}
@@ -537,7 +537,7 @@ func TestLogFallbackRoots_ConcurrentAccess(t *testing.T) {
 	t.Cleanup(func() { SetLogFallbackRoots(nil) })
 
 	var wg sync.WaitGroup
-	for i := 0; i < 20; i++ {
+	for range 20 {
 		wg.Add(2)
 		go func() {
 			defer wg.Done()

@@ -35,12 +35,15 @@ func TestRuntimeFrontendUnknownAndEscapedStates(t *testing.T) {
 			t.Fatalf("embedded script syntax: %v\n%s", err, output)
 		}
 	}
-	start := strings.Index(text, "// === Runtime data presentation ===")
+	// The slice starts at relTime because collectionLabel renders a stale
+	// collectedAt through formatAbsTime, which lives in the same helper block.
+	start := strings.Index(text, "function relTime(")
 	end := strings.Index(text, "// === Theme ===")
 	if start < 0 || end < start {
 		t.Fatal("runtime presentation helpers missing")
 	}
-	js := `const assert=require('node:assert/strict'); const esc=s=>String(s??'').replaceAll('<','&lt;').replaceAll('>','&gt;');` + text[start:end] + `
+	js := `const assert=require('node:assert/strict'); const esc=s=>String(s??'').replaceAll('<','&lt;').replaceAll('>','&gt;');
+const State={data:{timezone:'UTC'}};` + text[start:end] + `
 assert.equal(runtimeMoney(null),'Unknown');
 assert.equal(runtimeMoney(0),'$0.00');
 assert.equal(runtimeMoney(undefined),'Unknown');
@@ -48,7 +51,18 @@ assert.equal(nativeSessionPath('agent:main:main'),'/chat/main');
 assert.equal(nativeSessionPath('agent:main:cron:job'),'/chat/main/cron/job');
 assert.equal(nativeSessionPath('agent:main:../private'),'/chat/main/~key/%2E%2E%2Fprivate');
 assert.equal(nativeSessionPath('https://bad.example'),'/');
-assert.match(collectionLabel({state:'stale',errorCode:'permission_denied',collectedAt:'old'}),/stale.*permission_denied/);
+assert.match(collectionLabel({state:'stale',errorCode:'permission_denied',collectedAt:'2026-09-05T09:07:00Z'}),/stale.*permission_denied/);
+assert.match(collectionLabel({state:'stale',collectedAt:'2026-09-05T09:07:00Z'}),/09:07.*UTC/);
+assert.match(collectionLabel({state:'partial',errorCode:'configuration_unavailable',failedAgents:['main']}),/failed agents: main/);
+assert.equal(gatewayUnknownHtml({status:'unknown',statusReason:'host_probe_not_applicable'}).includes('Unknown (container: host probe not applicable)'),true);
+assert.equal(gatewayUnknownHtml({status:'unknown',error:'host_probe_not_applicable'}).includes('Unknown (container: host probe not applicable)'),true);
+assert.equal(gatewayUnknownHtml({status:'offline'}),'');
+// An unknown status is never repainted as Offline; only the parenthetical
+// explanation depends on the backend's reason code.
+assert.match(gatewayUnknownHtml({status:'unknown',statusReason:'permission_denied'}),/Unknown/);
+assert.doesNotMatch(gatewayUnknownHtml({status:'unknown',statusReason:'permission_denied'}),/container/);
+assert.match(gatewayUnknownHtml({status:'unknown'}),/Unknown/);
+assert.doesNotMatch(gatewayUnknownHtml({status:'unknown'}),/container/);
 assert.equal(runtimeActivity({active:null}),'Activity not reported');
 assert.equal(runtimeActivity({active:false,activeRunIds:[]}), 'Idle');
 assert.equal(runtimeActivity({active:true,activeRunIds:['run']}),'Running (1)');

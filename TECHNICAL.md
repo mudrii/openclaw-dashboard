@@ -1,6 +1,6 @@
 # TECHNICAL.md — OpenClaw Dashboard Internals
 
-> **Version:** 2026.6.15 · **Repo:** [github.com/mudrii/openclaw-dashboard](https://github.com/mudrii/openclaw-dashboard)
+> **Source audit:** 2026-09-07, based on v2026.9.6 plus the documented audit fixes. **Repo:** [github.com/mudrii/openclaw-dashboard](https://github.com/mudrii/openclaw-dashboard)
 >
 > This document covers architecture, data flow, and implementation details for developers and contributors. For features and quick start, see [README.md](README.md).
 
@@ -30,6 +30,7 @@
 |------|---------|
 | `cmd/openclaw-dashboard/` | CLI entrypoint |
 | `internal/appconfig/` | Config loading and normalization |
+| `internal/appopenclaw/` | Selected-runtime CLI access, bounded output, redaction, operation allowlists |
 | `internal/appruntime/` | Runtime dir resolution, version detection, Homebrew seeding |
 | `internal/appchat/` | Prompt builder and gateway client |
 | `internal/apprefresh/` | Dashboard data collector and aggregators |
@@ -51,12 +52,12 @@ Browser                                              Browser
   │                                                    ▲
   │ GET /api/refresh?t=<cache-bust>                    │ JSON response
   ▼                                                    │
-openclaw-dashboard ─── debounce check ──► RunRefreshCollector() ──► data.json.tmp
+openclaw-dashboard ─── debounce check ──► RunRefreshCollector() ──► private temp file
   │           (internal/appserver)          (internal/apprefresh)  │
   │           (30s default)                    │                    │ rename (atomic)
   │           if < 30s:                        │ reads OpenClaw     │
   │           still return cached              │ filesystem         ▼
-  │                                            ▼                data.json
+  │                  (CLI RPCs or legacy files) ▼                data.json
   └──────── read data.json ◄──────────────────────────────────────┘
        (mtime-cached in memory)
 
@@ -75,17 +76,30 @@ openclaw-dashboard handleChat()                           │ Bearer token from 
 
 ### Atomic Write
 
-`internal/apprefresh` marshals JSON, writes `data.json.tmp`, then `os.Rename`s it to `data.json`. Rename within the same directory is atomic on Unix; a failed write or marshal does not replace the previous file.
+`internal/apprefresh` marshals JSON, creates a unique `data.json.tmp-*` file with mode 0600, writes and syncs it, then renames it to `data.json`. The token-usage cache uses the same publication helper. Unique temporary inodes prevent a concurrent one-shot refresh from modifying a file another writer has already published. Rename within the same directory is atomic on Unix; failed writes preserve the previous destination. This does not claim directory-entry durability across power loss.
 
 ### Concurrency
 
-`Server.mu` (`sync.Mutex`) in `internal/appserver` coordinates `lastRefresh`, `refreshRunning`, and overlapping work. Debounce and “only one collector at a time” are enforced via `sync.Mutex`.
+`Server.mu` (`sync.Mutex`) in `internal/appserver` coordinates `lastRefresh`, `refreshRunning`, and overlapping work within one server. Separate processes can collect concurrently and publish complete snapshots in completion order. CLI calls have time/output bounds; background refresh and metrics workers use the server lifecycle context.
 
 ---
 
 ## 3. Data Sources
 
-The refresh collector (`internal/apprefresh`, invoked by `openclaw-dashboard --refresh` or from the runtime `refresh.sh`) reads these files from the OpenClaw directory (default `~/.openclaw`):
+The refresh collector chooses runtime RPCs when a target is explicitly selected or migrated SQLite state is detected. It never opens private SQLite tables. See [runtime compatibility](docs/RUNTIME-COMPATIBILITY.md) for the complete source/capability map. Core modern sources are:
+
+| Source | Projection |
+|--------|------------|
+| `sessions.list` | Paginated session rows, active-run identities, reported stored total |
+| `sessions.usage` | All-agent totals, per-model usage, daily aggregates, cache/pricing completeness |
+| `tasks.list`, `cron.list`, `cron.runs` | Durable tasks, automation definitions and run history |
+| `status`, `system.info`, `channels.status` | Selected gateway health, runtime information and accounts |
+| `config.get` (container), local `openclaw.json` (native) | Agent/model/channel configuration |
+| `skills.status`, `doctor.memory.status`, inventory CLI calls | Runtime inventories and readiness |
+
+Runtime selection is carried through context into `appopenclaw.CommandContext`; explicit native mode suppresses inherited container routing. Container collection never substitutes host state on failure. Each collection records `source`, `state`, `complete`, `collectedAt`, `attemptedAt`, and an optional `errorCode`. Same-target data can be retained as `stale` for at most 24 hours; consumers must display that state.
+
+For unmigrated native state, legacy collection uses the following files/commands under the OpenClaw directory (default `~/.openclaw`):
 
 | Source Path | What It Provides |
 |-------------|-----------------|
@@ -101,7 +115,7 @@ The refresh collector (`internal/apprefresh`, invoked by `openclaw-dashboard --r
 
 ### Gateway Detection
 
-Process metadata (PID/uptime/RSS) is read first from openclaw's install-independent
+For native targets, process metadata (PID/uptime/RSS) is read first from openclaw's install-independent
 lock file (`<tmpdir>/openclaw-<uid>/gateway.<sha256(configPath)[:8]>.lock`, payload
 `{pid, createdAt, …}`), which is correct on every install layout. When no usable lock
 exists, the dashboard falls back to:
@@ -113,6 +127,7 @@ pgrep -f "openclaw/dist/index.js gateway"   # npm layout
 If a PID is found (lock or pgrep), a follow-up `ps -p <pid> -o rss=` (or `etime=,rss=`
 on the pgrep path) extracts RSS memory; the lock path derives uptime from `createdAt`.
 The HTTP `/healthz` probe remains the authoritative liveness signal.
+Container selection suppresses host PID and loopback health probes; selected-runtime RPCs supply runtime facts and unavailable probes retain an explicit reason.
 
 ### Linux journald Log Fallback
 
@@ -126,7 +141,7 @@ configured log source has no file on disk, the collector synthesizes log records
 
 ### Runtime Observability (`/api/system` — `openclaw` block)
 
-In addition to the `data.json` pipeline, the `/api/system` endpoint includes a live `openclaw` block collected from three sources in parallel:
+In addition to the `data.json` pipeline, `/api/system` includes an `openclaw` block. Native collection uses these sources; container mode skips the host HTTP probes and executes status against the selected container:
 
 | Source | Data Collected |
 |--------|---------------|
@@ -172,27 +187,27 @@ The `ModelName()` function maps raw provider/model IDs (e.g., `anthropic/claude-
 | Pattern | Display Name |
 |---------|-------------|
 | `opus-4-6` | Claude Opus 4.6 |
-| `opus` | Claude Opus 4.5 |
+| `opus` | Claude Opus (version retained when present) |
 | `sonnet` | Claude Sonnet |
 | `haiku` | Claude Haiku |
 | `grok-4-fast` | Grok 4 Fast |
 | `gemini-2.5-pro` | Gemini 2.5 Pro |
 | `minimax-m2.5` | MiniMax M2.5 |
-| `k2p5`, `kimi` | Kimi K2.5 |
+| `k2p5` | Kimi K2.5 |
+| other `kimi` IDs | Kimi |
 | `gpt-5.3-codex` | GPT-5.3 Codex |
 | *(unknown id)* | Live catalog name, else raw model string |
 
 **Live model catalog.** A TTL-cached snapshot of `openclaw models list --json`
 (`model_catalog_cache.go`, mirroring the session-model cache) supplies display names
-and context windows for current/future models. The curated switch above wins; the
-catalog is consulted only in the fallback (unknown-id) branch — openclaw's `name` is
-often the bare id, so curated-first avoids regressing nice names. `lookupModelLimits`
+and context windows for current/future models. A meaningful catalog name wins;
+a name equal to the bare model ID falls through to the curated rules. `lookupModelLimits`
 also consults the catalog's context window when the `openclaw.json` model registry has
 no entry for a model.
 
 ### Session Type Detection
 
-Session keys are classified by substring matching:
+Legacy session keys are classified by substring matching. Modern rows preserve the runtime's `kind` and `hasActiveRun` fields:
 
 | Key Pattern | Type |
 |-------------|------|
@@ -203,11 +218,13 @@ Session keys are classified by substring matching:
 | ends with `:main` | `main` |
 | *(other)* | `other` |
 
-Sessions with `:run:` in the key are skipped (duplicate cron run sessions).
+The legacy collector skips keys containing `:run:`. Modern pagination preserves the runtime listing, including its total count and completeness state.
 
 ### Token Aggregation
 
-For each `.jsonl` file, the collector reads assistant usage records and aggregates into eight `map[string]*tokenBucket` buckets. Parsed per-file summaries are persisted in `.token-usage-cache.json` in the dashboard runtime directory and reused when a transcript file's size and mtime have not changed, so refresh does not rescan the full transcript history every run:
+Modern usage comes from four `sessions.usage` queries: all-time, today, seven calendar days, and thirty calendar days, using the configured timezone and all-agent scope. A fresh upstream cache with no pending/stale files establishes token completeness. Complete costs additionally require a reported total and no missing price entries. Unknown totals remain null while known token/subtotal data remains available. Models sharing a chart display name have their costs summed.
+
+For legacy `.jsonl` files, the collector reads assistant usage records and aggregates into eight `map[string]*TokenBucket` buckets. Parsed per-file summaries are persisted in `.token-usage-cache.json` and reused when size and mtime match:
 
 - **`models_all`** — all-time per-model totals
 - **`models_today`** — today-only per-model totals (compared against `todayStr` in the configured timezone)
@@ -224,7 +241,7 @@ Messages from `delivery-mirror` models are excluded.
 
 ### Cost Calculation
 
-Cost is extracted from `message.usage.cost.total` in JSONL assistant messages. Only JSON object-shaped cost values are parsed.
+Legacy cost comes from `message.usage.cost.total` in JSONL assistant messages. Modern cost comes from runtime aggregates; it is never reconstructed from the limited session page or the frozen legacy chart backstop.
 
 ### Alert Generation
 
@@ -244,6 +261,8 @@ Alerts are generated based on configurable thresholds:
 ```go
 projectedMonthly := totalCostToday * 30
 ```
+
+Modern projection is null when the daily cost is incomplete or unreported.
 
 ---
 
@@ -296,7 +315,7 @@ DataLayer.fetch()
   → fetch('/api/refresh?t=' + Date.now())
   → parse JSON → store in State.data (frozen snapshot)
   → DirtyChecker.diff(current, prev)
-      → computes 13 boolean dirty flags via stableSnapshot()
+      → compares section data and collection state, ignoring volatile attempt timestamps
   → Renderer.render(snapshot, dirtyFlags)
       → renderHeader (bot name, emoji, gateway status)
       → renderAlerts
@@ -368,11 +387,11 @@ The `openclaw-dashboard` binary embeds `web/index.html` via `//go:embed` and imp
 
 - Single binary with static assets embedded from `web/` and runtime defaults loaded from the resolved dashboard directory with fallback to `assets/runtime/`
 - Concurrent request handling (Go's `net/http` goroutine-per-request model)
-- Routes: `GET|HEAD /`, `GET|HEAD /api/refresh`, `GET|HEAD /api/system`, `GET|HEAD /api/logs`, `GET|HEAD /api/errors`, `POST /api/chat`, allowlisted static files (`/themes.json`, `/favicon.ico`, `/favicon.png`)
+- Read routes (`GET|HEAD`): `/`, `/index.html`, `/api/refresh`, `/api/system`, `/api/logs`, `/api/errors`, `/api/automation/runs`, `/api/session/context`, `/api/workboard`, `/api/chat/status`, `/api/operations/status`, and allowlisted static assets (`/themes.json`, `/favicon.ico`, `/favicon.png`). Write routes (`POST`): `/api/chat`, `/api/operations`.
 - All other paths return 404; non-GET/HEAD/POST (except `OPTIONS`) returns 405
 - **Graceful shutdown**: handles SIGINT/SIGTERM, drains in-flight requests (5s timeout)
 - **Pre-warm**: runs `runRefresh()` once in the background at startup so the first browser hit is fast
-- **Dual mtime cache**: `cachedDataRaw` ([]byte for `/api/refresh`) and `cachedData` (parsed map for `/api/chat`) share a `sync.RWMutex` with coherence — updating either cache invalidates the other
+- **Coherent mtime cache**: `cachedDataRaw` and `cachedData` are populated together under a `sync.RWMutex`; readers receive an immutable raw slice or a shallow top-level map copy. Strict JSON v2 decoding rejects corrupt snapshots.
 - **Allowlisted static files**: only configured paths are served from disk; arbitrary path traversal is rejected
 - **Gateway response limit**: caps upstream response at 1MB
 
@@ -391,6 +410,8 @@ The `openclaw-dashboard` binary embeds `web/index.html` via `//go:embed` and imp
 ### `/api/chat` Endpoint
 
 1. Checks `ai.enabled` from `config.json`
+   - Rejects foreign/opaque browser origins before gateway work (HTTP 403). HTTP/HTTPS origins matching the request Host, HTTP loopback development origins, and origin-less CLI clients are allowed. TLS proxies must preserve the public Host.
+   - Enforces 10 requests/minute per client IP and checks selected-runtime chat endpoint configuration and credential availability. This check does not perform inference or verify authentication.
 2. Validates JSON body (64KB limit) and non-empty `question` (2000 char limit)
 3. Sanitises `history`: only `user`/`assistant` roles, truncates content to 4000 chars, caps at `ai.maxHistory` entries
 4. Loads `data.json` (mtime-cached) and builds a compact system prompt
@@ -400,7 +421,9 @@ The `openclaw-dashboard` binary embeds `web/index.html` via `//go:embed` and imp
    - Response capped at 1MB
 6. Returns:
    - HTTP 200 `{"answer":"..."}` on success
-   - HTTP 400 for bad input, 413 for oversized body, 429 when rate-limited, 502 for gateway errors, 503 if AI disabled
+   - HTTP 400 for bad input, 403 for rejected origins, 413 for oversized body, 429 when rate-limited, 502/504 for gateway failure/timeout, 503 for disabled or unconfigured chat, and 500 for invalid dashboard data
+
+`POST /api/operations` is separately opt-in, loopback-only and bearer-authorized. It accepts only automation enable/disable/run and abort of an exact active run. Fresh identity/revision checks, unique request IDs, durable audit reservations and outcome reporting constrain mutations. See [configuration](docs/CONFIGURATION.md#runtime-compatibility-and-optional-operations) for credentials, replay-retention limits and uncertain outcomes.
 
 ### Quiet Logging
 
@@ -410,7 +433,7 @@ The server also exposes log and error feed endpoints. `/api/logs` returns merged
 
 ### LAN Mode
 
-When bound to `0.0.0.0`, the server auto-detects the local IP and prints it for convenience.
+Non-loopback binds require `OPENCLAW_DASHBOARD_ALLOW_NON_LOOPBACK=1`. When bound to `0.0.0.0`, the server prints the detected local IP. Read endpoints have no application-level authentication; use trusted network access controls.
 
 ---
 
@@ -436,11 +459,13 @@ Each setting resolves through a priority chain (highest wins):
 | Context % threshold | — | — | `alerts.contextPct` | `80` |
 | Memory threshold | — | — | `alerts.memoryMb` | `640` |
 
-**Implementation detail:** The Go binary applies `config.json` defaults, then environment variables, then CLI flags for bind/port. AI settings come from `config.json`; `OPENCLAW_GATEWAY_TOKEN` is read from `ai.dotenvPath`. The refresh collector uses `OPENCLAW_HOME` (or `~/.openclaw`) and does not read `config.openclawPath`.
+**Implementation detail:** Bind/port use CLI > environment > config > defaults. Runtime selection comes from `openclaw` configuration plus inherited container selection; `OPENCLAW_STATE_DIR` overrides profile-derived local paths. Gateway credentials resolve from the process environment, dotenv, then supported literal/env SecretRef config values. The collector does not read `config.openclawPath`. See [configuration](docs/CONFIGURATION.md) for the full environment and selection contract.
 
 ---
 
 ## 8. data.json Schema
+
+The payload has `schemaVersion: 2`. The tables below describe shared fields and mark legacy-only behavior. Modern additions include `timezone`, `runtimeTarget`, `stateDir`, `collections`, `tasks`, `usageAll/Today/7d/30d`, `runtimeHealth`, `runtimeInfo`, `diagnostics`, `channels`, `memory`, `memoryIndex`, `skillInventory`, `pluginInventory`, and `modelReadiness`. Collection state and nullability are part of the wire contract; an unavailable measurement must not become zero. See the [runtime source map](docs/RUNTIME-COMPATIBILITY.md#data-sources-and-limits) and `internal/apprefresh/refresh.go` for assembly.
 
 ### Top-Level Fields
 
@@ -455,7 +480,7 @@ Each setting resolves through a priority chain (highest wins):
 
 | Key | Type | Description |
 |-----|------|-------------|
-| `gateway.status` | `"online" \| "offline"` | Process detection result |
+| `gateway.status` | `"online" \| "offline" \| "unknown"` | Native health probe result; unknown when a host probe is inapplicable |
 | `gateway.pid` | `number \| null` | Process ID |
 | `gateway.uptime` | `string` | Elapsed time from `ps` (e.g., `"3-02:15:30"`) |
 | `gateway.memory` | `string` | Formatted RSS (e.g., `"245 MB"`) |
@@ -468,27 +493,27 @@ Each setting resolves through a priority chain (highest wins):
 | Key | Type | Description |
 |-----|------|-------------|
 | `compactionMode` | `string` | From openclaw.json (`"auto"`, `"manual"`, etc.) |
-| `totalCostToday` | `number` | Sum of all model costs today |
-| `totalCostAllTime` | `number` | Sum of all model costs ever |
-| `projectedMonthly` | `number` | `totalCostToday × 30` |
-| `costBreakdown` | `array` | All-time cost per model: `[{model, cost}]` |
-| `costBreakdownToday` | `array` | Today's cost per model: `[{model, cost}]` |
+| `totalCostToday` | `number \| null` | Complete daily total, or null when incomplete/unreported |
+| `totalCostAllTime` | `number \| null` | Complete all-time total, or null |
+| `projectedMonthly` | `number \| null` | Complete `totalCostToday × 30`, or null |
+| `costBreakdown` | `array \| null` | Complete all-time cost per model: `[{model, cost}]`, or null |
+| `costBreakdownToday` | `array \| null` | Complete daily cost per model, or null |
 
 ### Sessions
 
 | Key | Type | Description |
 |-----|------|-------------|
-| `sessions` | `array` | Top 20 most recent sessions (last 24h) |
-| `sessions[].name` | `string` | Session label (truncated to 50 chars) |
+| `sessions` | `array` | Modern paginated rows (up to 1,000); legacy top 20 recent sessions |
+| `sessions[].name` | `string` | Display name; modern rows truncate to 100 Unicode code points |
 | `sessions[].key` | `string` | Session key (e.g., `"telegram:group:-123:main"`) |
 | `sessions[].agent` | `string` | Agent name (directory name) |
-| `sessions[].model` | `string` | Raw model ID |
-| `sessions[].contextPct` | `number` | Context window usage percentage (0-100) |
+| `sessions[].model` | `string` | Friendly display name; modern `modelId` preserves the identifier |
+| `sessions[].contextPct` | `number \| null` | Context usage (0-100) when fresh tokens and a limit are reported |
 | `sessions[].lastActivity` | `string` | Time string (`"HH:MM:SS"`) |
 | `sessions[].updatedAt` | `number` | Unix epoch milliseconds |
-| `sessions[].totalTokens` | `number` | Total tokens in session |
+| `sessions[].totalTokens` | `number \| null` | Fresh valid token count; `tokenState` and `contextState` explain gaps |
 | `sessions[].type` | `string` | `"cron"`, `"subagent"`, `"group"`, `"telegram"`, `"main"`, `"other"` |
-| `sessionCount` | `number` | Total known session IDs (not just displayed) |
+| `sessionCount` / `sessionTotal` | `number` | Runtime-reported stored total (at least loaded rows); legacy known session IDs |
 
 ### Cron Jobs
 
@@ -502,7 +527,7 @@ Each setting resolves through a priority chain (highest wins):
 | `crons[].enabled` | `boolean` | Whether the job is active |
 | `crons[].lastRun` | `string` | Formatted timestamp or `""` |
 | `crons[].lastStatus` | `string` | `"ok"`, `"error"`, `"none"` |
-| `crons[].lastDurationMs` | `number` | Last run duration in ms |
+| `crons[].lastDurationMs` | `number \| null` | Last duration in ms; absent differs from an explicit zero |
 | `crons[].nextRun` | `string` | Formatted next run timestamp or `""` |
 | `crons[].model` | `string` | Model from job payload |
 | `crons[].lastDeliveryStatus` | `string` | Last delivery outcome from sidecar state |
@@ -521,12 +546,12 @@ Each setting resolves through a priority chain (highest wins):
 | `subagentRuns30d` | `array` | Last 100 sub-agent runs (30 days) |
 | `subagentRuns[].task` | `string` | Task description (whitespace-collapsed, truncated to 80 chars) |
 | `subagentRuns[].agent` | `string` | Owning agent id (e.g. `main`) |
-| `subagentRuns[].durationSec` | `number` | Run duration in seconds (ended − started, falling back to ended − created) |
+| `subagentRuns[].durationSec` | `number \| null` | Ended − started/created; null for modern unfinished tasks |
 | `subagentRuns[].status` | `string` | Task status: `succeeded`, `failed`, `running`, `queued`, `cancelled`, `timed_out`, `lost` |
 | `subagentRuns[].error` | `string` | Failure reason when the run did not succeed (empty otherwise) |
 | `subagentRuns[].timestamp` | `string` | `"YYYY-MM-DD HH:MM"` (from createdAt) |
 | `subagentRuns[].date` | `string` | `"YYYY-MM-DD"` (windowing key) |
-| `subagentCostAllTime` / `subagentCostToday` / `subagentCost7d` / `subagentCost30d` | `number` | Retained for compatibility; `0` since the OpenClaw 2026.6 migration (the tasks store does not expose per-run cost, and the zero-dep build cannot read the gateway SQLite) |
+| `subagentCostAllTime` / `subagentCostToday` / `subagentCost7d` / `subagentCost30d` | `number \| null` | Null in modern mode because tasks do not report cost; legacy compatibility values remain |
 
 ### Token Usage
 
@@ -540,13 +565,13 @@ Applies to `tokenUsage`, `tokenUsageToday`, `tokenUsage7d`, `tokenUsage30d`, `su
 | `[].output` | `string` | Formatted output tokens |
 | `[].cacheRead` | `string` | Formatted cache read tokens |
 | `[].totalTokens` | `string` | Formatted total tokens |
-| `[].cost` | `number` | Total cost (2 decimal places) |
+| `[].cost` | `number \| null` | Complete cost (2 decimal places), or null; modern rows also expose `knownCost`, `costComplete`, `tokensComplete` and `missingCostEntries` |
 | `[].inputRaw` | `number` | Raw input token count |
 | `[].outputRaw` | `number` | Raw output token count |
 | `[].cacheReadRaw` | `number` | Raw cache read token count |
 | `[].totalTokensRaw` | `number` | Raw total token count |
 
-Sorted by cost descending.
+Legacy rows are sorted by cost; modern rows preserve the upstream model aggregate order. Modern rows also preserve `modelId`, `cacheWrite` and `cacheWriteRaw`.
 
 ### Models & Skills
 
@@ -575,12 +600,14 @@ Sorted by cost descending.
 | `dailyChart` | `array` | Last 30 days of daily aggregated data |
 | `dailyChart[].date` | `string` | `"YYYY-MM-DD"` |
 | `dailyChart[].label` | `string` | `"MM-DD"` (for chart X-axis labels) |
-| `dailyChart[].total` | `number` | Total cost for the day |
-| `dailyChart[].tokens` | `number` | Total tokens for the day |
-| `dailyChart[].calls` | `number` | Total API calls for the day |
+| `dailyChart[].total` | `number \| null` | Complete cost for the day, or null |
+| `dailyChart[].tokens` | `number \| null` | Reported tokens; null for unreported days during incomplete collection |
+| `dailyChart[].calls` | `number \| null` | Reported messages/calls; null when unreported |
 | `dailyChart[].subagentCost` | `number` | Sub-agent cost for the day |
 | `dailyChart[].subagentRuns` | `number` | Sub-agent run count for the day |
-| `dailyChart[].models` | `object` | Per-model cost breakdown: `{modelName: cost}` (top 6 + "Other") |
+| `dailyChart[].models` | `object` | Cost by display name; shared names are summed. Legacy charts use top 6 + "Other". Modern incomplete pricing leaves this empty. |
+
+Modern charts omit the legacy daily `subagentCost` and `subagentRuns` fields. Modern `skillInventory` takes precedence over the explicit legacy `skills` overrides in the UI.
 
 ### Alerts
 
@@ -689,13 +716,15 @@ systemctl --user status openclaw-dashboard
 | Dependency | Required For | Notes |
 |------------|-------------|-------|
 | **Go** | Building from source | Optional if using pre-built `openclaw-dashboard` binaries from releases |
-| **Bash** | `refresh.sh`, `install.sh`, `uninstall.sh` | POSIX-compatible |
+| **Bash** | `refresh.sh`, `install.sh`, `uninstall.sh` | These wrappers require Bash; the container smoke script uses POSIX sh |
 | **Git** | Git log panel, installer | Optional (panel shows empty without it) |
-| **OpenClaw** | Data source | Standard `~/.openclaw` directory structure |
+| **OpenClaw CLI** | Migrated runtime collection | Must reach the selected native/container runtime; not included in the dashboard image |
+| **Process tools** | Native PID, uptime and RSS | procps-compatible ps/pgrep on Linux; macOS supplies its own tools |
+| **Timezone database** | Configured IANA timezones | Supplied by the OS or Go installation; the Alpine runtime image installs tzdata explicitly |
 
 **Zero external packages (runtime):** No npm, no pip, no CDN, no third-party Go modules — stdlib only. Pre-built binaries do not require a local Go toolchain.
 
-**Browser requirements:** CSS Grid, CSS custom properties, `fetch` API, `conic-gradient` — any modern browser (Chrome 69+, Firefox 65+, Safari 12.1+).
+**Browser requirements:** A current browser supporting the embedded JavaScript and CSS APIs, including `fetch`, `AbortController`, optional chaining, CSS Grid and CSS custom properties. Historical minimum-version claims are not maintained; verify the rebuilt UI in the browsers you support.
 
 ---
 
@@ -703,14 +732,14 @@ systemctl --user status openclaw-dashboard
 
 | Concern | Details |
 |---------|---------|
-| **Default bind** | `127.0.0.1` — localhost only, safe |
+| **Default bind** | `127.0.0.1` — local access; this is not user authentication |
 | **LAN mode** | `OPENCLAW_DASHBOARD_ALLOW_NON_LOOPBACK=1 --bind 0.0.0.0` exposes the dashboard to the local network with **no authentication** |
-| **CORS** | Allows localhost/127.0.0.1 origins; fallback header is `http://localhost:8080` |
+| **CORS** | Reflects valid HTTP localhost/127.0.0.1/IPv6 loopback origins; otherwise returns the configured localhost origin. Chat independently rejects foreign browser origins before execution. |
 | **No HTTPS** | Plain HTTP only; use a reverse proxy for TLS |
 | **Sensitive data in data.json** | Session keys, model usage, costs, cron config, gateway PID |
 | **Gateway token handling** | `/api/chat` uses `OPENCLAW_GATEWAY_TOKEN` loaded from dotenv (`ai.dotenvPath`) |
 | **Prompt safety** | `/api/chat` includes client-supplied `history` in gateway payload; treat this as untrusted input |
-| **No auth/authz** | Anyone who can reach the port can see all data |
+| **Read access / operations** | Anyone who can reach the port can read dashboard data. Optional operations have separate bearer authorization and loopback/origin checks. |
 | **Subprocess execution** | `refresh.sh` locates and runs the `openclaw-dashboard` binary with `--refresh`; keep install paths and scripts writable only by trusted users |
 
 ---
@@ -725,9 +754,9 @@ systemctl --user status openclaw-dashboard
 - **Chat history cap is split client/server** — frontend keeps a local 6-message history window; backend also enforces `ai.maxHistory`
 - **Simplistic cost projection** — `today × 30`, not based on historical average
 - **Context % calculation** — `totalTokens / contextTokens × 100` (may exceed 100% in edge cases, capped in display)
-- **Session limit** — only top 20 most recent sessions shown (last 24h)
-- **Sub-agent detection** — sessions not found in `sessions.json` are assumed to be sub-agents
-- **Deleted session logs are included** — `.jsonl.deleted.*` files are intentionally scanned and counted
+- **Session limit** — modern collection walks up to 1,000 rows and reports truncation; the UI pages by 50. Legacy collection retains its 20-row recent-session view
+- **Legacy transcript recovery** — active transcripts take precedence over dated deleted copies; when only deleted copies survive, the latest copy per lineage is used
+- **Platform coverage** — macOS and Linux have different metrics/service implementations. A host test run does not execute the other platform's build-tagged tests
 
 ---
 
@@ -751,12 +780,12 @@ cat data.json | jq . | head -50
 # → http://127.0.0.1:8080
 
 # LAN access
-./openclaw-dashboard --bind 0.0.0.0 --port 9090
+OPENCLAW_DASHBOARD_ALLOW_NON_LOOPBACK=1 ./openclaw-dashboard --bind 0.0.0.0 --port 9090
 ```
 
 ### Editing
 
-- **Frontend:** Edit `web/index.html` directly. No build step. Refresh browser.
+- **Frontend:** Edit `web/index.html`, run `make build`, restart the candidate binary, then reload the browser. There is no separate frontend bundler, but Go embeds the HTML at build time.
 - **Data processing:** Edit `internal/apprefresh/` or the thin root wrappers. Rebuild the binary (or `go run ./cmd/openclaw-dashboard`) to apply.
 - **Server:** Edit `internal/appserver/`, `internal/appchat/`, or the thin root wrappers. Rebuild to apply.
 
@@ -782,13 +811,7 @@ make check
 
 #### Go Test Coverage
 
-| File | Tests | Coverage |
-|------|------:|----------|
-| `server_test.go` | 22 | Cache coherence, HEAD/GET, static allowlist, path traversal, CORS, routing, index rendering, data missing |
-| `chat_test.go` | 11 | Gateway calls (success, HTTP/timeout/unreachable errors mapped to 502/504, empty choices array → 502, empty content string passes through, oversized response, history forwarding), system prompt building |
-| `config_test.go` | 11 | Config defaults/overrides/clamping, dotenv parsing (quotes, comments, equals), expandHome |
-| `version_test.go` | 12 | VERSION file, fallback, empty file |
-| `system_test.go` | 43 | Openclaw runtime collection, gateway probes, `fetchJSONMapAllowStatus`, `parseGatewayStatusJSON`, CPU/RAM/swap/disk collectors, versions caching, thundering herd prevention |
+Tests live in the root facade, CLI entrypoint and all eight internal packages. `make test` runs the race detector; `make cover` writes statement coverage for the current platform. Inspect `go tool cover -func=coverage.out` and `coverage.html` rather than relying on stale test counts. Cross-package callers may exercise functions not counted by their package-local coverage profile. The dated [code audit](docs/plans/2026-09-07-code-audit.md) records measured coverage and remaining validation gaps.
 
 ### PR Guidelines
 

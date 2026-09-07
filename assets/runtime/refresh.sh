@@ -6,18 +6,9 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 DIR="$SCRIPT_DIR"
-if [ -f "$SCRIPT_DIR/../../go.mod" ] && [ -f "$SCRIPT_DIR/../../cmd/openclaw-dashboard/main.go" ]; then
+if { [ -f "$SCRIPT_DIR/../../go.mod" ] && [ -f "$SCRIPT_DIR/../../cmd/openclaw-dashboard/main.go" ]; } ||
+   [ -x "$SCRIPT_DIR/../../openclaw-dashboard" ]; then
   DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
-fi
-OPENCLAW_PATH="${OPENCLAW_HOME:-$HOME/.openclaw}"
-OPENCLAW_PATH="${OPENCLAW_PATH/#\~/$HOME}"
-
-echo "Dashboard dir: $DIR"
-echo "OpenClaw path: $OPENCLAW_PATH"
-
-if [ ! -d "$OPENCLAW_PATH" ]; then
-  echo "❌ OpenClaw not found at $OPENCLAW_PATH"
-  exit 1
 fi
 
 # Find the Go binary — check common locations
@@ -45,5 +36,6 @@ if [ -z "$BINARY" ]; then
   fi
 fi
 
-export OPENCLAW_HOME="$OPENCLAW_PATH"
-"$BINARY" --refresh
+# Let the binary resolve and validate native/profile/container state. In
+# particular, do not export a default OPENCLAW_HOME into OpenClaw CLI children.
+exec "$BINARY" --refresh

@@ -2,6 +2,7 @@ package appserver
 
 import (
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -122,13 +123,8 @@ func (s *Server) notFound(w http.ResponseWriter, r *http.Request) {
 }
 
 // setCORSHeaders reflects any loopback origin (any port) and defaults to the
-// configured server origin otherwise. This is safe because:
-//   - The dashboard binds to 127.0.0.1 by default (Server.Host), so non-loopback
-//     origins cannot reach it over the network in the typical deployment.
-//   - No Access-Control-Allow-Credentials header is set, so a cross-origin
-//     request cannot carry cookies or HTTP auth.
-//   - The /api/chat gateway token is server-side (s.gatewayToken from .env),
-//     never client-supplied, and that endpoint is rate-limited to 10/min per IP.
+// configured server origin otherwise. CORS controls response access, not request
+// execution; chat and operations separately validate browser origins before work.
 //
 // Loopback reflection exists so a developer running the SPA on a separate
 // localhost port (e.g. Vite on :5173) can talk to the dashboard during
@@ -142,13 +138,32 @@ func (s *Server) setCORSHeaders(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Vary", vary+", Origin")
 	}
 	origin := r.Header.Get("Origin")
-	if strings.HasPrefix(origin, "http://localhost:") ||
-		strings.HasPrefix(origin, "http://127.0.0.1:") ||
-		strings.HasPrefix(origin, "http://[::1]:") {
+	if isLoopbackOrigin(origin) {
 		w.Header().Set("Access-Control-Allow-Origin", origin)
 	} else {
 		w.Header().Set("Access-Control-Allow-Origin", s.corsDefault)
 	}
+}
+
+func isLoopbackOrigin(origin string) bool {
+	u, ok := parseBrowserOrigin(origin)
+	if !ok || u.Scheme != "http" {
+		return false
+	}
+	switch u.Hostname() {
+	case "localhost", "127.0.0.1", "::1":
+		return true
+	default:
+		return false
+	}
+}
+
+func parseBrowserOrigin(origin string) (*url.URL, bool) {
+	u, err := url.Parse(origin)
+	if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") || origin != u.Scheme+"://"+u.Host {
+		return nil, false
+	}
+	return u, true
 }
 
 func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {

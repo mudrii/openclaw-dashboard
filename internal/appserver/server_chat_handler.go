@@ -12,7 +12,6 @@ import (
 	"unicode/utf8"
 
 	appchat "github.com/mudrii/openclaw-dashboard/internal/appchat"
-	"github.com/mudrii/openclaw-dashboard/internal/appopenclaw"
 )
 
 // handleChat handles the AI chat endpoint.
@@ -20,6 +19,17 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 	if !s.cfg.AI.Enabled {
 		s.sendJSONRaw(w, r, http.StatusServiceUnavailable, errChatDisabled)
 		return
+	}
+	// Simple browser POSTs can reach this endpoint without a CORS preflight.
+	// Refuse foreign origins before using the server-side gateway credential.
+	if origin := r.Header.Get("Origin"); origin != "" {
+		u, valid := parseBrowserOrigin(origin)
+		// Match the authority across HTTP/HTTPS so TLS-terminating proxies can
+		// preserve Host without trusting client-supplied forwarding headers.
+		if (!valid || u.Host != r.Host) && !isLoopbackOrigin(origin) {
+			s.sendJSON(w, r, http.StatusForbidden, map[string]string{"error": "origin not allowed"})
+			return
+		}
 	}
 
 	// Rate limit: 10 req/min per IP (handles both IPv4 and IPv6)
@@ -61,12 +71,15 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		s.sendJSONRaw(w, r, http.StatusBadRequest, errQTooLong)
 		return
 	}
-	if s.cfg.Openclaw != (appopenclaw.Target{}) || s.cfg.Openclaw.IsContainer() {
-		capability := s.chatCapability(r.Context())
-		if !capability.Available {
-			s.sendJSON(w, r, http.StatusServiceUnavailable, map[string]string{"error": "Chat unavailable: " + capability.State + ". Use the native OpenClaw control UI.", "errorCode": capability.State})
-			return
-		}
+
+	// Every install is gated, native included: an unusable chat endpoint or a
+	// missing gateway credential must be named here rather than discovered as
+	// an opaque transport failure after the request reaches the gateway. The
+	// gate runs before any work on the payload so credentials_missing wins over
+	// a broken data.json.
+	if capability := s.chatCapability(r.Context()); !capability.Available {
+		s.sendJSON(w, r, http.StatusServiceUnavailable, map[string]string{"error": "Chat unavailable: " + capability.State + ". Use the native OpenClaw control UI.", "errorCode": capability.State})
+		return
 	}
 
 	// Validate + sanitise history — inline switch avoids per-request map alloc
@@ -119,8 +132,7 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		// Default user-facing message — never leak upstream gateway bodies which
 		// may contain stack traces, model identifiers, or raw HTML 5xx pages.
 		userMsg := "gateway unavailable"
-		var ge *appchat.GatewayError
-		if errors.As(err, &ge) {
+		if ge, ok := errors.AsType[*appchat.GatewayError](err); ok {
 			status = ge.Status
 			if status == http.StatusGatewayTimeout {
 				userMsg = "gateway timed out"

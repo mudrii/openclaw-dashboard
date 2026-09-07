@@ -6,12 +6,14 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	appconfig "github.com/mudrii/openclaw-dashboard/internal/appconfig"
+	"github.com/mudrii/openclaw-dashboard/internal/appopenclaw"
 )
 
 func TestResolveSources_AliasAndExactMatch(t *testing.T) {
@@ -468,4 +470,39 @@ func equalStringSlices(a, b []string) bool {
 		}
 	}
 	return true
+}
+
+// TestErrorsRuntimeFailureUsesRuntimeErrorCodes pins that /api/errors reports a
+// runtime read failure the same way /api/logs does — an explicit errorCode and
+// a status that distinguishes permission, support, and transport problems —
+// instead of a blanket 500 that hides why the feed is empty.
+func TestErrorsRuntimeFailureUsesRuntimeErrorCodes(t *testing.T) {
+	for _, tc := range []struct {
+		name, stderr, code string
+		status             int
+	}{
+		{"permission denied", "missing scope", "permission_denied", http.StatusForbidden},
+		{"unsupported method", "unknown method", "unsupported", http.StatusNotImplemented},
+		{"transport failure", "socket hangup", "unavailable", http.StatusBadGateway},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := appconfig.Default()
+			cfg.Logs.Enabled = true
+			cfg.Openclaw = appopenclaw.Target{Mode: "container", Container: "test"}
+			s := NewServer(t.TempDir(), "test", cfg, "", nil, t.Context(), nil)
+			s.runtimeClient = appopenclaw.Client{Runner: func(ctx context.Context, _ string, _ ...string) *exec.Cmd {
+				return exec.CommandContext(ctx, "sh", "-c", "printf '%s' '"+tc.stderr+"' >&2; exit 1")
+			}}
+
+			w := httptest.NewRecorder()
+			s.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/errors", nil))
+
+			if w.Code != tc.status || !strings.Contains(w.Body.String(), `"errorCode":"`+tc.code+`"`) {
+				t.Fatalf("code=%d body=%s", w.Code, w.Body.String())
+			}
+			if strings.Contains(w.Body.String(), tc.stderr) {
+				t.Fatalf("leaked runtime diagnostics: %s", w.Body.String())
+			}
+		})
+	}
 }

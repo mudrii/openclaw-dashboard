@@ -5,9 +5,15 @@ import (
 	"io"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/mudrii/openclaw-dashboard/internal/appopenclaw"
 )
+
+// maxStaleAge caps how long a retained snapshot may keep standing in for a
+// failing collection. Past it the payload reports the outage instead of a value
+// nobody should still act on.
+const maxStaleAge = 24 * time.Hour
 
 var collectionFields = map[string][]string{
 	"configuration":   {"agentConfig", "subagentConfig", "skills", "availableModels", "compactionMode"},
@@ -24,6 +30,8 @@ var collectionFields = map[string][]string{
 	"pluginInventory": {"pluginInventory"},
 	"channels":        {"channels"},
 	"runtimeHealth":   {"runtimeHealth"},
+	"gatewayHealth":   {"gatewayHealth"},
+	"providerUsage":   {"providerUsage"},
 	"runtimeInfo":     {"runtimeInfo"},
 	"diagnostics":     {"diagnostics"},
 	"modelReadiness":  {"modelReadiness"},
@@ -67,7 +75,13 @@ func retainLastGoodCollections(current, previous map[string]any) {
 		if warming && old["complete"] != true && (old["state"] != "stale" || asObj(previous[name])["tokensComplete"] != true) {
 			continue
 		}
-		if jsonStr(old, "source") != status.Source || jsonStr(old, "collectedAt") == "" {
+		collectedAt := jsonStr(old, "collectedAt")
+		if jsonStr(old, "source") != status.Source || collectedAt == "" {
+			continue
+		}
+		// An unreadable or expired timestamp cannot vouch for the payload, so
+		// the outage stands rather than chaining a stale value forever.
+		if stamp, err := time.Parse(time.RFC3339, collectedAt); err != nil || time.Since(stamp) > maxStaleAge {
 			continue
 		}
 		for _, field := range fields {
@@ -79,7 +93,7 @@ func retainLastGoodCollections(current, previous map[string]any) {
 		if warming {
 			status.ErrorCode = "refreshing"
 		}
-		status.CollectedAt = jsonStr(old, "collectedAt")
+		status.CollectedAt = collectedAt
 		statuses[name] = status
 	}
 }

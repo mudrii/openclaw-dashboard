@@ -6,6 +6,9 @@
 <title>OpenClaw Dashboard</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
+/* Component classes such as .alert-item set display, which overrides the UA
+   [hidden] rule; without this every hidden element would stay visible. */
+[hidden]{display:none!important}
 :root{--bg:#0a0a0f;--surface:rgba(255,255,255,0.03);--surfaceHover:rgba(255,255,255,0.045);--glass:rgba(255,255,255,0.02);--border:rgba(255,255,255,0.06);--accent:#6366f1;--accent2:#9333ea;--green:#4ade80;--yellow:#facc15;--red:#f87171;--orange:#fb923c;--purple:#a78bfa;--text:#e5e5e5;--textStrong:#ffffff;--muted:#737373;--dim:#525252;--darker:#404040;--tableBg:rgba(255,255,255,0.025);--tableHover:rgba(255,255,255,0.05);--scrollThumb:rgba(255,255,255,0.1)}
 body{font-family:-apple-system,BlinkMacSystemFont,'SF Pro','Helvetica Neue',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;padding:20px}
 .container{max-width:1440px;margin:0 auto}
@@ -22,7 +25,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'SF Pro','Helvetica Neue',sans
 .dot-warn{background:var(--yellow);box-shadow:0 0 8px rgba(250,204,21,0.5)}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
 .pulse{animation:pulse 2s ease-in-out infinite}
-.header-right{display:flex;align-items:center;gap:12px}
+.header-right{display:flex;flex-wrap:wrap;align-items:center;gap:12px}
 .countdown{font-size:11px;color:var(--dim);font-variant-numeric:tabular-nums;min-width:24px}
 .refresh-btn{background:var(--surface);border:1px solid var(--border);padding:6px 14px;border-radius:8px;color:var(--muted);font-size:12px;cursor:pointer;transition:all .15s}
 .refresh-btn:hover{background:var(--surfaceHover);color:var(--textStrong)}
@@ -61,6 +64,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'SF Pro','Helvetica Neue',sans
 .alert-medium{background:rgba(250,204,21,.06);border:1px solid rgba(250,204,21,.1)}
 .alert-low{background:rgba(99,102,241,.06);border:1px solid rgba(99,102,241,.1)}
 .alert-icon{font-size:16px}
+.collection-notice{color:var(--yellow);font-size:11px;margin:0 0 8px;padding:0 4px}
 .alert-msg{font-size:12px;color:var(--text);flex:1}
 
 /* System health row */
@@ -324,6 +328,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'SF Pro','Helvetica Neue',sans
     </button>
   </div>
   <div class="oc-section-body" id="oc-body-alerts">
+    <div class="alert-item alert-critical" id="fetchError" role="alert" hidden></div>
     <div class="alerts-section" id="alertsSection" aria-live="polite"></div>
   </div>
 </section>
@@ -337,6 +342,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'SF Pro','Helvetica Neue',sans
     </button>
   </div>
   <div class="oc-section-body" id="oc-body-health">
+    <div class="collection-notice" id="healthNotice" role="status" hidden></div>
     <div class="health-row" id="healthRow">
       <div class="glass health-item"><div class="health-label">Gateway</div><div class="health-value" id="hGw">—</div></div>
       <div class="glass health-item"><div class="health-label">PID</div><div class="health-value" id="hPid">—</div></div>
@@ -357,14 +363,15 @@ body{font-family:-apple-system,BlinkMacSystemFont,'SF Pro','Helvetica Neue',sans
     </button>
   </div>
   <div class="oc-section-body" id="oc-body-cost">
+<div class="collection-notice" id="costNotice" role="status" hidden></div>
 <div class="cost-row">
   <div class="glass cost-card">
-    <div class="cost-label">Today's Cost</div>
+    <div class="cost-label" id="cTodayLabel">Today's Cost</div>
     <div class="cost-value" id="cToday">—</div>
     <div class="cost-sub" id="cTodaySub" style="display:none"></div>
   </div>
   <div class="glass cost-card">
-    <div class="cost-label">All-Time Cost</div>
+    <div class="cost-label" id="cAllLabel">All-Time Cost</div>
     <div class="cost-value" id="cAll">—</div>
     <div class="cost-sub" id="cAllSub" style="display:none"></div>
   </div>
@@ -374,7 +381,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'SF Pro','Helvetica Neue',sans
     <div class="cost-sub" id="cProjSub">Based on today's rate</div>
   </div>
   <div class="glass cost-card" style="padding:12px 16px">
-    <div class="cost-label" style="margin-bottom:8px">Cost Breakdown</div>
+    <div class="cost-label" id="donutLabel" style="margin-bottom:8px">Cost Breakdown</div>
     <div class="donut-container">
       <div class="donut" id="donut"><div class="donut-hole" id="donutCenter">$0</div></div>
       <div class="donut-legend" id="donutLegend"></div>
@@ -399,6 +406,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'SF Pro','Helvetica Neue',sans
     </div>
   </div>
   <div class="oc-section-body" id="oc-body-charts">
+  <div class="collection-notice" id="chartNotice" role="status" hidden></div>
     <div id="chartsContainer">
       <div class="grid-2">
         <div class="glass chart-container"><div id="costChartTitle" class="chart-title">Daily Cost Trend</div><div id="costChart"></div></div>
@@ -419,6 +427,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'SF Pro','Helvetica Neue',sans
     <span class="section-count" id="cronCount"></span>
   </div>
   <div class="oc-section-body" id="oc-body-crons">
+    <div class="collection-notice" id="cronNotice" role="status" hidden></div>
     <div class="glass panel" style="overflow-x:auto">
       <table class="dtable" id="cronTable">
         <thead><tr><th>Status</th><th>Name</th><th>Schedule</th><th>Last Run</th><th>Next Run</th><th class="r">Duration</th><th>Model</th></tr></thead>
@@ -632,7 +641,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'SF Pro','Helvetica Neue',sans
 		</div>
 		<div id="taskSource" role="status"></div><div id="taskLedger"></div>
 	</div>
-	<div class="glass panel" style="overflow:auto;margin-bottom:12px"><h3 style="font-size:13px">Goals and session placement</h3><label>Session <select id="workSessionSelect"></select></label> <button class="tab-btn" data-open-work>Inspect progress and widgets</button> <a id="nativeSession" target="_blank" rel="noopener noreferrer">Open selected native session</a><div id="sessionWork"></div><p id="workboardState"></p><button id="workboardSummary" class="tab-btn" hidden>Inspect Workboard summary</button></div>
+	<div class="glass panel" style="overflow:auto;margin-bottom:12px"><h3 style="font-size:13px">Goals and session placement</h3><label>Session <select id="workSessionSelect"></select></label> <button id="workSessionInspect" class="tab-btn" data-open-work>Inspect progress and widgets</button> <a id="nativeSession" target="_blank" rel="noopener noreferrer">Open selected native session</a><div id="sessionWork"></div><p id="workboardState"></p><button id="workboardSummary" class="tab-btn" hidden>Inspect Workboard summary</button></div>
 	<div class="glass panel" style="overflow:auto;margin-bottom:12px"><h3 style="font-size:13px">Memory and dreaming</h3><div id="memoryHealth"></div><div id="memoryIndexHealth"></div></div>
 	<div class="glass panel" style="overflow:auto;margin-bottom:12px"><h3 style="font-size:13px">Channel accounts</h3><div id="channelAccounts"></div></div>
 	<details class="glass panel" style="overflow:auto;margin-bottom:12px"><summary>Plugin inventory and readiness</summary><div id="pluginInventory"></div></details>
@@ -653,10 +662,12 @@ body{font-family:-apple-system,BlinkMacSystemFont,'SF Pro','Helvetica Neue',sans
     <span class="section-count" id="agentCount"></span>
   </div>
   <div class="oc-section-body" id="oc-body-agent-config">
+  <div class="collection-notice" id="agentConfigNotice" role="status" hidden></div>
   <!-- Models / Skills / Git Log row -->
   <div class="grid-3" style="margin-bottom:16px">
     <div class="glass panel">
       <div class="section-header"><span class="section-title">🧠 Available Models</span></div>
+      <div class="collection-notice" id="modelsNotice" role="status" hidden></div>
       <div class="models-grid" id="modelsGrid"></div>
     </div>
     <div class="glass panel">
@@ -762,7 +773,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'SF Pro','Helvetica Neue',sans
 <div style="text-align:center;padding:12px;font-size:10px;color:var(--darker)">OpenClaw Dashboard · Auto-refresh 60s</div>
 </div>
 
-<dialog id="runtimeDetail" style="background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:12px;max-width:90vw;max-height:85vh">
+<dialog id="runtimeDetail" aria-labelledby="runtimeDetailTitle" style="background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:12px;max-width:90vw;max-height:85vh">
   <button class="refresh-btn" data-close-runtime style="float:right">Close</button><h3 id="runtimeDetailTitle">Runtime details</h3><div id="runtimeDetailBody" style="overflow:auto"></div>
 </dialog>
 <script>
@@ -850,7 +861,66 @@ function usageExplanation(u){
   if(u.missingCostEntries)parts.push(u.missingCostEntries+' unpriced entries: '+Object.entries(u.missingCostByModel||{}).map(([m,n])=>m+' ('+n+')').join(', '));
   return parts.join(' · ');
 }
-function collectionLabel(s){return s?[s.state,s.errorCode,s.collectedAt?'collected '+s.collectedAt:'no successful collection'].filter(Boolean).join(' · '):'Legacy source';}
+// collectionLabel summarises one collection status object. A stale collection is
+// only interpretable against the moment it was collected, so that timestamp is
+// rendered in the dashboard timezone rather than as a raw ISO string. failedAgents
+// names the agents whose per-agent probe failed inside an otherwise partial result.
+function collectionLabel(s){
+  if(!s)return 'Legacy source';
+  const collected=s.collectedAt?'collected '+(s.state==='stale'?formatAbsTime(s.collectedAt):s.collectedAt):'no successful collection';
+  const failed=Array.isArray(s.failedAgents)&&s.failedAgents.length?'failed agents: '+s.failedAgents.join(', '):'';
+  return [s.state,s.errorCode,collected,failed].filter(Boolean).join(' · ');
+}
+// setStatusText writes into an aria-live status region only when the text
+// actually changed. These regions are rewritten on every render, and assigning
+// identical text re-announces them on some screen readers.
+function setStatusText(id,text){
+  const el=$(id);
+  if(!el)return;
+  const next=String(text==null?'':text);
+  if(el.textContent===next)return;
+  el.textContent=next;
+}
+// weakestCollection returns the least trustworthy of several collection status
+// objects, or undefined when they are all ready. Panels fed by more than one
+// collection must disclose the worst of them rather than whichever came first.
+const COLLECTION_SEVERITY={unavailable:3,stale:2,partial:1};
+function weakestCollection(statuses){
+  let worst;
+  for(const s of statuses){
+    const rank=COLLECTION_SEVERITY[s&&s.state]||0;
+    if(rank&&rank>(COLLECTION_SEVERITY[worst&&worst.state]||0))worst=s;
+  }
+  return worst;
+}
+// collectionNotice writes an inline collection-status line into the panel that
+// renders retained fields, and hides it while the collection is ready. Panels
+// that keep showing the last good value must say so when the data behind them
+// is stale, partial or unavailable.
+function collectionNotice(id,status,prefix){
+  const el=$(id);
+  if(!el)return;
+  const state=status&&status.state;
+  if(!state||state==='ready'){el.textContent='';el.hidden=true;return;}
+  el.textContent=(prefix?prefix+': ':'')+collectionLabel(status);
+  el.hidden=false;
+}
+// gatewayUnknownText labels a gateway status the backend refused to assert.
+// host_probe_not_applicable means the only available probe measures the host
+// rather than the selected container; any other (or absent) reason still yields
+// a plain "Unknown".
+function gatewayUnknownText(reason){
+  return reason==='host_probe_not_applicable'?'Unknown (container: host probe not applicable)':'Unknown';
+}
+// gatewayUnknownHtml returns the health-cell markup for a gateway whose status
+// could not be determined, and '' otherwise. The refresh payload carries the
+// code in gateway.statusReason; /api/system carries it in gateway.error or, for
+// a skipped container probe, in openclaw.gateway.reason. Painting this case
+// "Offline" would assert a fact the backend explicitly refused to assert.
+function gatewayUnknownHtml(gw){
+  if(String(gw&&gw.status||'').toLowerCase()!=='unknown')return '';
+  return '<span style="color:var(--yellow)">●</span> '+gatewayUnknownText(gw.statusReason||gw.error);
+}
 function runtimeActivity(s){return s.active===true?'Running'+(Array.isArray(s.activeRunIds)?' ('+s.activeRunIds.length+')':''):s.active===false?'Idle':'Activity not reported';}
 function runtimeValue(v){return v===true?'Yes':v===false?'No':v==null||String(v).trim()===''?'Not reported':String(v);}
 function runtimeTable(headers,rows){return '<table class="dtable"><thead><tr>'+headers.map(h=>'<th>'+esc(h)+'</th>').join('')+'</tr></thead><tbody>'+rows.map(row=>'<tr class="dr">'+row.map(v=>'<td>'+esc(runtimeValue(v))+'</td>').join('')+'</tr>').join('')+'</tbody></table>'+(rows.length?'':'<p>No rows returned. Check collection status above.</p>');}
@@ -989,6 +1059,7 @@ const LogTail = {
   normalMs: 15000,
   _reqId: 0,
   _timer: null,
+  _timerMs: null,
   _source: 'all',
   _severity: 'all',
   _regex: '',
@@ -1029,12 +1100,17 @@ const LogTail = {
     this._renderControls();
   },
 
+  // _startPoll is idempotent: a running timer with the same effective interval is
+  // left alone. applyRuntimeConfig runs on every 60s refresh, and restarting the
+  // timer each time would reset the countdown and starve any interval above 60s.
   _startPoll() {
     const next = this._fast ? this.fastMs : this.normalMs;
+    if (this._timer && this._timerMs === next) return;
     if (this._timer) {
       clearInterval(this._timer);
       this._timer = null;
     }
+    this._timerMs = next;
     this._timer = setInterval(() => this.fetch(), next);
   },
 
@@ -1243,6 +1319,7 @@ const ErrorFeed = {
   _sort: 'count',
   _items: [],
   _expanded: {},
+  _rowKeys: [],
   _windowHours: 24,
 
   init() {
@@ -1252,6 +1329,7 @@ const ErrorFeed = {
 
   jumpToSection() {
     const section = document.querySelector('[data-section="errors"]');
+    if (section && Sections._state.errors) Sections.toggle('errors');
     if (section) section.scrollIntoView({ behavior: 'smooth', block: 'start' });
   },
 
@@ -1366,14 +1444,17 @@ const ErrorFeed = {
     if (empty) empty.style.display = 'none';
     let html = '';
     let totalErrors = 0;
+    this._rowKeys = [];
     this._items.forEach((item, i) => {
       if ((item.severity || '').toLowerCase() === 'error') totalErrors += Number(item.count || 0);
       const rowId = 'errRow' + i;
+      const key = this._expandKey(item);
+      this._rowKeys[i] = key;
       const sev = (item.severity || 'warn').toLowerCase();
       const samples = Array.isArray(item.lastOccurrences) ? item.lastOccurrences : [];
       const sample = item.sampleMessage || '';
       const sampleRows = samples.map((s) => `<div style="margin-bottom:4px;color:var(--dim)">${formatAbsTime(s.timestamp)} — ${esc(s.message || s.line || '—')}</div>`).join('');
-      html += `<tr class="dr"><td><span class="badge ${sev === 'error' ? 'badge-err' : 'badge-none'}">${esc(sev)}</span></td><td>${esc(item.source || '—')}</td><td class="r">${item.count || 0}</td><td title="${esc(sample)}">${esc(sample).slice(0, 120)}</td><td>${formatAbsTime(item.lastSeen)}</td><td style="white-space:nowrap"><button class="tab-btn" style="padding:2px 8px;font-size:10px" onclick="ErrorFeed.toggle('${i}')">${this._expanded[rowId] ? 'Hide' : 'View'}</button></td></tr><tr id="${rowId}" style="display:${this._expanded[rowId] ? 'table-row' : 'none'}"><td colspan="6"><div style="padding:8px 0 10px;color:var(--dim)">${'Signature: ' + esc(item.signature || '—')}</div><div style="padding-bottom:6px;color:var(--muted)">${'First seen: ' + formatAbsTime(item.firstSeen)} · ${'Last seen: ' + formatAbsTime(item.lastSeen)}</div><div style="padding-bottom:4px;color:var(--text)">${esc(item.sampleMessage || '—')}</div>${sampleRows ? `<div style="margin-top:8px"><div style="margin-bottom:4px;color:var(--muted)">Recent occurrences</div>${sampleRows}</div>` : ''}</td></tr>`;
+      html += `<tr class="dr"><td><span class="badge ${sev === 'error' ? 'badge-err' : 'badge-none'}">${esc(sev)}</span></td><td>${esc(item.source || '—')}</td><td class="r">${item.count || 0}</td><td title="${esc(sample)}">${esc(sample.slice(0, 120))}</td><td>${formatAbsTime(item.lastSeen)}</td><td style="white-space:nowrap"><button class="tab-btn" style="padding:2px 8px;font-size:10px" onclick="ErrorFeed.toggle('${i}')">${this._expanded[key] ? 'Hide' : 'View'}</button></td></tr><tr id="${rowId}" style="display:${this._expanded[key] ? 'table-row' : 'none'}"><td colspan="6"><div style="padding:8px 0 10px;color:var(--dim)">${'Signature: ' + esc(item.signature || '—')}</div><div style="padding-bottom:6px;color:var(--muted)">${'First seen: ' + formatAbsTime(item.firstSeen)} · ${'Last seen: ' + formatAbsTime(item.lastSeen)}</div><div style="padding-bottom:4px;color:var(--text)">${esc(item.sampleMessage || '—')}</div>${sampleRows ? `<div style="margin-top:8px"><div style="margin-bottom:4px;color:var(--muted)">Recent occurrences</div>${sampleRows}</div>` : ''}</td></tr>`;
     });
     body.innerHTML = html;
     const count = $('errorCount');
@@ -1390,24 +1471,41 @@ const ErrorFeed = {
     this._renderControls();
   },
 
+  // _expandKey identifies a row by its content, not its position, so the expanded
+  // set survives re-sorting and re-fetching. Signature is the backend's stable
+  // grouping key; the sample message is the fallback when it is absent.
+  _expandKey(item) {
+    return (item && item.signature) || (item && item.sampleMessage) || '';
+  },
+
   toggle(index) {
-    const id = 'errRow' + index;
-    const row = $(id);
+    const row = $('errRow' + index);
     if (!row) return;
-    this._expanded[id] = !this._expanded[id];
-    row.style.display = this._expanded[id] ? 'table-row' : 'none';
+    const key = this._rowKeys[index];
+    if (key == null) return;
+    this._expanded[key] = !this._expanded[key];
+    row.style.display = this._expanded[key] ? 'table-row' : 'none';
     const btn = row.previousElementSibling
       ? row.previousElementSibling.querySelector('button')
       : null;
-    if (btn) btn.textContent = this._expanded[id] ? 'Hide' : 'View';
+    if (btn) btn.textContent = this._expanded[key] ? 'Hide' : 'View';
   }
 };
 
 // === DirtyChecker ===
 const DirtyChecker = {
-  sectionChanged(keys) {
+  sectionChanged(keys, collectionNames) {
     if (!State.prev) return true;
-    return keys.some(k => JSON.stringify(State.data[k]) !== JSON.stringify(State.prev[k]));
+    if (keys.some(k => JSON.stringify(State.data[k]) !== JSON.stringify(State.prev[k]))) return true;
+    return (collectionNames || []).some(name => this.collectionSnapshot(State.data, name) !== this.collectionSnapshot(State.prev, name));
+  },
+  // collectionSnapshot projects only the status fields a panel renders. The raw
+  // status also carries attemptedAt, which moves on every poll even when the
+  // collection produced nothing new, so comparing whole statuses would re-render
+  // every section watching a collection on every refresh.
+  collectionSnapshot(data, name) {
+    const s = (data && data.collections && data.collections[name]) || {};
+    return JSON.stringify([s.state, s.errorCode, s.collectedAt, s.complete, s.failedAgents]);
   },
   stableSnapshot(arr, fields) {
     if (!arr) return '';
@@ -1423,38 +1521,59 @@ const DirtyChecker = {
     return {
       alerts: this.sectionChanged(['alerts']),
       health: true,
-      cost: this.sectionChanged(['totalCostToday','totalCostAllTime','projectedMonthly','costBreakdown','usageToday','usageAll']),
-      crons: this.sectionChanged(['crons']),
+      cost: this.sectionChanged(['totalCostToday','totalCostAllTime','projectedMonthly','costBreakdown','tokenUsage','usageToday','usageAll'], ['usageToday','usageAll']),
+      crons: this.sectionChanged(['crons'], ['crons']),
       sessions: !prevD || this.stableSnapshot(D.sessions, ['key','name','model','type','contextPct','totalTokens','active','spawnedBy','label','subject']) !== this.stableSnapshot(prevD.sessions, ['key','name','model','type','contextPct','totalTokens','active','spawnedBy','label','subject']),
       usage: this.sectionChanged(['tokenUsage','tokenUsageToday','tokenUsage7d','tokenUsage30d','subagentUsage','subagentUsageToday','subagentUsage7d','subagentUsage30d']) || snap.tabs.usage !== State.prevTabs.usage,
       subRuns: (!prevD || ['subagentRuns','subagentRuns7d','subagentRuns30d','subagentRunsToday'].some(k => this.stableSnapshot(D[k], ['task','agent','status','durationSec','timestamp']) !== this.stableSnapshot((prevD||{})[k], ['task','agent','status','durationSec','timestamp']))) || snap.tabs.subRuns !== State.prevTabs.subRuns,
       subTokens: this.sectionChanged(['tokenUsage','tokenUsageToday','tokenUsage7d','tokenUsage30d','subagentUsage','subagentUsageToday','subagentUsage7d','subagentUsage30d']) || snap.tabs.subTokens !== State.prevTabs.subTokens,
-      charts: this.sectionChanged(['dailyChart']) || snap.chartDays !== State.prevChartDays,
-      models: this.sectionChanged(['availableModels']),
-      skills: this.sectionChanged(['skills','skillInventory','collections']),
+      charts: this.sectionChanged(['dailyChart','tokenUsage7d','tokenUsage30d'], ['usage7d','usage30d']) || snap.chartDays !== State.prevChartDays,
+      models: this.sectionChanged(['availableModels'], ['configuration']),
+      skills: this.sectionChanged(['skills','skillInventory'], ['skillInventory']),
       git: this.sectionChanged(['gitLog']),
-      agentConfig: this.sectionChanged(['agentConfig','subagentConfig','channels','collections']),
+      agentConfig: this.sectionChanged(['agentConfig','subagentConfig','channels'], ['configuration']),
     };
   }
 };
 
 const RuntimePanels = {
   sessionPage:0,taskPage:0,pageSize:50,
+  renderGateway(D){
+    if(D.runtimeTarget?.mode!=='container')return;
+    const metrics=runtimeGatewayMetrics(D),gateway=D.gateway||{},status=D.collections?.gatewayHealth;
+    const verified=status?.state==='ready'&&status.complete===true&&typeof D.gatewayHealth?.ok==='boolean';
+    const state=verified?(D.gatewayHealth.ok?'Online':'Unhealthy'):status?'Status '+status.state:gateway.status==='online'?'Online':gateway.status==='offline'?'Offline':gatewayUnknownText(gateway.statusReason);
+    const color=verified?(D.gatewayHealth.ok?'var(--green)':'var(--red)'):'var(--yellow)';
+    $('hGw').innerHTML='<span style="color:'+color+'">●</span> '+esc(state);
+    $('hGw').title='Selected container health RPC · '+collectionLabel(status);
+    window._gwOnlineConfirmed=verified&&D.gatewayHealth.ok;
+    $('gatewayRuntimePanelInner').innerHTML=runtimeTable(['Gateway runtime','Value'],[
+      ['State',state],['Version',D.runtimeHealth?.runtimeVersion],['PID',metrics.pid],['Uptime',metrics.uptime],['Memory',metrics.memory],
+      ['Health source',status?'Selected container health RPC · '+collectionLabel(status):'Health probe not collected'],
+      ['Process source','Selected container gateway · '+collectionLabel(D.collections?.runtimeInfo)],
+    ]);
+  },
   render(D){
     const statuses=D.collections||{};
+    this.renderGateway(D);
 	const runtimeLogs=statuses.sessions?.source==='gateway.sessions.list';
 	['logSourceCron','logSourceSession','logSourceSubagent'].forEach(id=>{$(id).disabled=runtimeLogs;$(id).title=runtimeLogs?'Separate legacy files are unavailable; use gateway logs':'';});
 	if(runtimeLogs&&!['all','gateway'].includes(LogTail._source))LogTail.setSource('all');
     const target=D.runtimeTarget||{};
-    $('runtimeSource').textContent=['Runtime: '+(D.runtimeHealth?.runtimeVersion||'version unavailable'),target.mode,target.container,target.profile?'profile '+target.profile:'',D.stateDir].filter(Boolean).join(' · ');
+    setStatusText('runtimeSource',['Runtime: '+(D.runtimeHealth?.runtimeVersion||'version unavailable'),target.mode,target.container,target.profile?'profile '+target.profile:'',D.stateDir].filter(Boolean).join(' · '));
     const port=Number(D.gateway?.port);
     $('nativeControl').href='http://127.0.0.1:'+(Number.isInteger(port)&&port>0&&port<65536?port:18789)+'/';
 	$('nativeChat').href=$('nativeControl').href;
     $('collectionStatus').innerHTML=runtimeTable(['Collection','Source','State','Last good'],Object.entries(statuses).map(([name,s])=>[name,s.source,[s.state,s.errorCode].filter(Boolean).join(' · '),s.collectedAt]));
-    $('sessionSource').textContent=collectionLabel(statuses.sessions);
+    setStatusText('sessionSource',collectionLabel(statuses.sessions));
     const selected=$('workSessionSelect').value;
     $('workSessionSelect').innerHTML=(D.sessions||[]).map(s=>'<option value="'+esc(s.key)+'">'+esc(s.name||s.key)+'</option>').join('');
     if((D.sessions||[]).some(s=>s.key===selected))$('workSessionSelect').value=selected;
+    const noSessions=!(D.sessions||[]).length;
+    $('workSessionSelect').disabled=noSessions;
+    if(noSessions)$('workSessionSelect').innerHTML='<option value="">No sessions reported</option>';
+    $('workSessionInspect').disabled=noSessions;
+    $('nativeSession').hidden=noSessions;
 	this.linkSession();
     const workboard=(D.pluginInventory||[]).find(p=>p.id==='workboard');
 	$('workboardSummary').hidden=workboard?.status!=='loaded';
@@ -1483,7 +1602,7 @@ const RuntimePanels = {
     $('taskPage').textContent='Page '+(this.taskPage+1)+' · '+rows.length+' matching';
     $('taskPrev').disabled=this.taskPage===0;
     $('taskNext').disabled=(this.taskPage+1)*this.pageSize>=rows.length;
-    $('taskSource').textContent=collectionLabel(D.collections?.tasks);
+    setStatusText('taskSource',collectionLabel(D.collections?.tasks));
     $('taskLedger').innerHTML=runtimeTable(['Task / stable ID','Agent','Runtime','Status','Owner / session','Run ID','Progress','Delivery','Duration'],page.map(t=>[(t.task||'')+' · '+t.id,taskAgentLabel(t),t.runtime,t.status,taskOwnerLabel(t),t.runId,t.progressSummary||t.terminalSummary,t.deliveryStatus,t.durationSec==null?null:t.durationSec+'s']));
   },
   renderHealth(D){
@@ -1520,7 +1639,27 @@ const RuntimePanels = {
 };
 document.addEventListener('change',e=>{if(['taskStatus','taskRuntime'].includes(e.target.id)){RuntimePanels.taskPage=0;RuntimePanels.renderTasks(State.data);}if(e.target.id==='workSessionSelect')RuntimePanels.linkSession();});
 document.addEventListener('input',e=>{if(e.target.id==='taskSearch'){RuntimePanels.taskPage=0;RuntimePanels.renderTasks(State.data);}});
-fetch('/api/operations/status').then(r=>r.json()).then(s=>{$('operationPanel').hidden=!s.enabled;}).catch(()=>{});
+// OperationsPanel gates the operator controls on the backend feature flag. A
+// failed probe leaves the panel hidden: an unreachable endpoint is not evidence
+// that operations are enabled. The warning is emitted once so a polling caller
+// cannot flood the console.
+const OperationsPanel = {
+  _warned: false,
+  async probe(){
+    try{
+      const r=await fetch('/api/operations/status');
+      if(!r.ok)throw new Error('http '+r.status);
+      const s=await r.json();
+      $('operationPanel').hidden=!s.enabled;
+    }catch(e){
+      $('operationPanel').hidden=true;
+      if(this._warned)return;
+      this._warned=true;
+      console.warn('operations status probe failed; operator controls stay hidden:',e&&e.message?e.message:e);
+    }
+  }
+};
+OperationsPanel.probe();
 $('operationSubmit').addEventListener('click',async()=>{
   const button=$('operationSubmit'),result=$('operationResult');
   if(button.disabled)return;
@@ -1564,7 +1703,9 @@ const Renderer = {
   reconcileRows(tbodyId, rows, _keyFn, rowHtmlFn) {
     // DirtyChecker gates calls, so innerHTML replacement is safe for all sizes.
     // _keyFn retained for caller compatibility but unused after simplification.
-    $(tbodyId).innerHTML = rows.map(rowHtmlFn).join('');
+    const emptyRows = {cronBody:[7,'No automations reported'],sessBody:[6,'No sessions reported'],srBody:[5,'No sub-agent runs reported']};
+    const empty = emptyRows[tbodyId];
+    $(tbodyId).innerHTML = rows.map(rowHtmlFn).join('') || (empty ? '<tr><td colspan="'+empty[0]+'">'+empty[1]+'</td></tr>' : '');
   },
 
   patchSvg(id, html) {
@@ -1599,8 +1740,9 @@ const Renderer = {
 
   // Health — skip gateway-specific fields if SystemBar has already populated them (prevents flicker)
   if(!window._sysBarActive) {
-    $('hGw').innerHTML=on?'<span style="color:var(--green)">●</span> Online':'<span style="color:var(--red)">●</span> Offline';
+    $('hGw').innerHTML=gatewayUnknownHtml(gw)||(on?'<span style="color:var(--green)">●</span> Online':'<span style="color:var(--red)">●</span> Offline');
     $('hGw').style.color='var(--textStrong)';
+    $('hGw').title='';
     $('hPid').textContent=gw.pid||'—';
     $('hUp').textContent=gw.uptime||'—';
     $('hMem').textContent=gw.memory||'—';
@@ -1612,21 +1754,31 @@ const Renderer = {
     $('hUp').textContent=metrics.uptime;
     $('hMem').textContent=metrics.memory;
   }
+  RuntimePanels.renderGateway(D);
   $('hSess').textContent=activeSessionSummary(D);
+  collectionNotice('healthNotice',D.collections?.sessions,'Sessions');
 
   // Cost
   if (flags.cost) {
-    $('cToday').textContent=usageMoney(D.totalCostToday,D.usageToday);
-    $('cAll').textContent=usageMoney(D.totalCostAllTime,D.usageAll);
-    $('cProj').textContent=usageMoney(D.projectedMonthly,D.usageToday,0);
-    $('cProjSub').textContent=Number.isFinite(D.projectedMonthly)?"Based on today's rate":'Requires complete pricing and collection for today';
+    // The cards and donut render retained totals; disclose the weaker of the two
+    // usage collections behind them rather than implying both are current.
+    const usageStatus=weakestCollection([D.collections?.usageToday,D.collections?.usageAll]);
+    collectionNotice('costNotice',usageStatus,'Usage');
+    for(const [id,label,total,usage] of [['cToday',"Today's",D.totalCostToday,D.usageToday],['cAll','All-Time',D.totalCostAllTime,D.usageAll]]){
+      const subtotal=!Number.isFinite(total)&&Number.isFinite(usage?.knownCost);
+      $(id+'Label').textContent=label+(subtotal?' known subtotal':' Cost');
+      $(id).textContent=subtotal?runtimeMoney(usage.knownCost,4):usageMoney(total,usage);
+    }
+    const partialProjection=!Number.isFinite(D.projectedMonthly)&&D.usageToday?.tokensComplete===true&&Number.isFinite(D.usageToday?.knownCost);
+    $('cProj').textContent=partialProjection?runtimeMoney(D.usageToday.knownCost*30,2):usageMoney(D.projectedMonthly,D.usageToday,0);
+    $('cProjSub').textContent=partialProjection?'Known costs only · today × 30; excludes unpriced usage':Number.isFinite(D.projectedMonthly)?"Based on today's rate":'Requires complete collection for today';
     for(const [id,usage] of [['cTodaySub',D.usageToday],['cAllSub',D.usageAll]]){
       $(id).textContent=usageExplanation(usage);
       $(id).style.display=$(id).textContent?'block':'none';
     }
 
     // Donut (CSS conic-gradient)
-    const bd=D.costBreakdown||[];
+    const bd=D.costBreakdown??(D.tokenUsage||[]).filter(m=>Number.isFinite(m.knownCost)&&m.knownCost>0).map(m=>({model:m.modelId||m.model,cost:m.knownCost}));
     const total=bd.reduce((a,d)=>a+(d.cost||0),0)||1;
     let grad='',cum=0,legend='';
     bd.forEach((d,i)=>{
@@ -1634,16 +1786,19 @@ const Renderer = {
       const c=COLORS[i%COLORS.length];
       grad+=`${c} ${cum}% ${cum+pct}%,`;
       cum+=pct;
-      legend+=`<div class="donut-legend-item"><span class="donut-legend-dot" style="background:${c}"></span>${esc(d.model)} $${(d.cost||0).toFixed(0)} (${Math.round(pct)}%)</div>`;
+      legend+=`<div class="donut-legend-item"><span class="donut-legend-dot" style="background:${c}"></span>${esc(d.model)} $${(d.cost||0).toFixed(2)} (${Math.round(pct)}%)</div>`;
     });
     $('donut').style.background=grad?`conic-gradient(${grad.slice(0,-1)})`:'var(--surface)';
-    $('donutCenter').textContent=usageMoney(D.totalCostAllTime,D.usageAll,0);
+    const knownSubtotal=!Number.isFinite(D.totalCostAllTime)&&Number.isFinite(D.usageAll?.knownCost);
+    $('donutLabel').textContent=knownSubtotal?'Known costs by model (partial)':'Cost Breakdown';
+    $('donutCenter').textContent=knownSubtotal?runtimeMoney(D.usageAll.knownCost,4):usageMoney(D.totalCostAllTime,D.usageAll,2);
     $('donutLegend').innerHTML=legend||'<span>'+esc(Number.isFinite(D.totalCostAllTime)?'No model breakdown reported':usageExplanation(D.usageAll)||'Cost not reported by source')+'</span>';
   }
 
   // Crons
   if (flags.crons) {
     const crons=D.crons||[];
+    collectionNotice('cronNotice',D.collections?.crons,'Automations');
     $('cronCount').textContent=crons.length+' jobs';
     const cronContainer = $('cronBody').closest('[style*="overflow"]') || $('cronBody').parentElement;
     const cronScrollTop = cronContainer ? cronContainer.scrollTop : 0;
@@ -1660,7 +1815,7 @@ const Renderer = {
       const dsBadge=(ds&&ds!=='not-requested')?` <span style="font-size:9px;color:${dsColor}" data-tip="delivery: ${esc(ds)}">●</span>`:'';
       const flapTip=diagnostics||(`${String(c.consecutiveErrors||0)} consecutive errors`);
       const flap=c.flapping?` <span style="font-size:8px;font-weight:700;color:var(--red)" data-tip="${esc(flapTip)}">⚡FLAPPING</span>`:'';
-      return `<tr class="dr"><td><span class="sd ${dotCls}"${tip}></span>${esc(st)||'—'}${dsBadge}${flap}</td><td class="w"><button class="tab-btn" data-automation-id="${esc(c.id)}">${esc(c.name)}</button><div style="font-size:10px;color:var(--muted)">${esc(c.payloadKind||'')} · ${esc(c.sessionTarget||'')}</div></td><td>${esc(c.schedule)} ${esc(c.timezone||'')}</td><td>${esc(c.lastRun||'No run reported')}</td><td>${esc(c.nextRun||(c.enabled===false?'Disabled':'Not scheduled / reported'))}</td><td class="r">${dur}</td><td>${esc(model)}</td></tr>`;
+      return `<tr class="dr"><td><span class="sd ${dotCls}"${tip}></span>${esc(st)||'—'}${dsBadge}${flap}</td><td class="w"><button class="tab-btn" data-automation-id="${esc(c.id)}">${esc(c.name)}</button><div style="font-size:10px;color:var(--muted)">${esc(c.payloadKind||'')} · ${esc(c.sessionTarget||'')}</div></td><td>${esc(c.schedule)} ${esc(c.timezone||'')}</td><td>${esc(c.lastRun||'No run reported')}</td><td>${esc(c.nextRun||(c.enabled===false?'Disabled':'Not scheduled / reported'))}</td><td class="r">${esc(String(dur))}</td><td>${esc(model)}</td></tr>`;
     });
     if (cronContainer) cronContainer.scrollTop = cronScrollTop;
   }
@@ -1691,7 +1846,7 @@ const Renderer = {
   Renderer.setTabCls4('uTab',snap.tabs.usage,'active');
   const usageSuffix=snap.tabs.usage==='all'?'All':snap.tabs.usage==='today'?'Today':snap.tabs.usage;
   const usageMeta=D['usage'+usageSuffix];
-  $('usageSource').textContent=collectionLabel(D.collections?.['usage'+usageSuffix])+(usageMeta?' · '+usageMeta.timezone+' · all agents · '+(usageMeta.costComplete?'pricing complete':(usageMeta.missingCostEntries||0)+' entries missing prices; cost incomplete'):'');
+  setStatusText('usageSource',collectionLabel(D.collections?.['usage'+usageSuffix])+(usageMeta?' · '+usageMeta.timezone+' · all agents · '+(usageMeta.costComplete?'pricing complete':(usageMeta.missingCostEntries||0)+' entries missing prices; cost incomplete'):''));
   if (flags.usage) {
     const uData=snap.tabs.usage==='today'?D.tokenUsageToday:snap.tabs.usage==='7d'?D.tokenUsage7d:snap.tabs.usage==='30d'?D.tokenUsage30d:D.tokenUsage;
     Renderer.renderTokenTbl('uBody',uData,'var(--accent)');
@@ -1708,7 +1863,7 @@ const Renderer = {
       const ds=r.durationSec||0;
       const dur=r.durationSec==null?'Duration not reported':ds>=3600?(ds/3600).toFixed(1)+'h':ds>=60?Math.round(ds/60)+'m':ds+'s';
       const sc=r.status==='succeeded'?'badge-ok':(['failed','timed_out','cancelled','lost','error'].includes(r.status)?'badge-err':'');
-      return `<tr class="dr"><td class="w" style="max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(r.task)}</td><td>${esc(r.agent)}</td><td class="r">${dur}</td><td><span class="badge ${sc}">${esc(r.status)}</span></td><td>${esc(r.timestamp)}</td></tr>`;
+      return `<tr class="dr"><td class="w" style="max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(r.task)}</td><td>${esc(r.agent)}</td><td class="r">${esc(String(dur))}</td><td><span class="badge ${sc}">${esc(r.status)}</span></td><td>${esc(r.timestamp)}</td></tr>`;
     });
   }
 
@@ -1721,11 +1876,13 @@ const Renderer = {
 
   // Charts
   if (flags.charts) {
+    collectionNotice('chartNotice',D.collections?.usage30d,'Daily usage');
     Renderer.renderCharts(D,snap.chartDays);
   }
 
   // Models
   if (flags.models) {
+    collectionNotice('modelsNotice',D.collections?.configuration,'Configuration');
     const availableModels=D.availableModels||[];
     $('modelsGrid').innerHTML=availableModels.length
       ? availableModels.map(m=>`<div class="glass model-card"><span class="badge badge-${esc(m.status)}">${esc(m.status)}</span><div class="model-name">${esc(m.name)}</div><div class="model-id">${esc(m.provider)}</div></div>`).join('')
@@ -1734,6 +1891,9 @@ const Renderer = {
 
   // Agent Configuration
   if (flags.agentConfig) {
+    // Agent cards, routing, bindings and the agent table all read the same
+    // configuration snapshot; one notice covers the whole section.
+    collectionNotice('agentConfigNotice',D.collections?.configuration,'Configuration');
     const AC = D.agentConfig||{};
     const arr = v => Array.isArray(v) ? v : [];
     const PALETTE = ['var(--green)','var(--blue,#3b82f6)','var(--purple)','var(--yellow)','var(--cyan,#22d3ee)','var(--orange,#fb923c)'];
@@ -1747,7 +1907,7 @@ const Renderer = {
     $('agentCards').innerHTML = agentList.length ? agentList.map((a,i)=>{
       const col = PALETTE[i % PALETTE.length];
       const em  = EMOJIS[i % EMOJIS.length];
-      const provider = (a.modelId||'').split('/')[0]||'—';
+      const provider = (a.modelId||'').split('/')[0]||'Not reported';
       return `<div style="background:var(--glass);border:1px solid var(--border);border-left:3px solid ${col};border-radius:8px;padding:12px 14px;min-width:180px;flex:1">
         <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px">
           <span style="font-size:16px">${em}</span>
@@ -1810,13 +1970,13 @@ const Renderer = {
     const comp = AC.compaction||{};
     const compCards = [
       comp.mode                      ? {k:'Compaction Mode',  v:comp.mode,                                         c:'var(--yellow)'} : null,
-      comp.reserveTokensFloor        ? {k:'Reserve Tokens',   v:comp.reserveTokensFloor.toLocaleString(),           c:'var(--text)'}   : null,
+      comp.reserveTokensFloor!=null  ? {k:'Reserve Tokens',   v:comp.reserveTokensFloor.toLocaleString(),           c:'var(--text)'}   : null,
       comp.memoryFlush!=null         ? {k:'Memory Flush',     v:comp.memoryFlush?.enabled?'Enabled':'Disabled',     c:comp.memoryFlush?.enabled?'var(--green)':'var(--dim)'} : null,
-      comp.softThresholdTokens       ? {k:'Soft Threshold',   v:comp.softThresholdTokens.toLocaleString()+' tok',   c:'var(--text)'}   : null,
+      comp.softThresholdTokens!=null ? {k:'Soft Threshold',   v:comp.softThresholdTokens.toLocaleString()+' tok',   c:'var(--text)'}   : null,
     ].filter(Boolean);
     const runtimeRows = [
       AC.telegramDmPolicy            ? {k:'Telegram DM Policy', v:AC.telegramDmPolicy}                             : null,
-      AC.telegramGroups              ? {k:'Telegram Groups',    v:AC.telegramGroups+' configured'}                 : null,
+      AC.telegramGroups!=null        ? {k:'Telegram Groups',    v:AC.telegramGroups+' configured'}                 : null,
     ].filter(Boolean);
     $('runtimeConfigPanel').innerHTML = [
       compCards.length ? `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:6px;margin-bottom:${runtimeRows.length?8:0}px">
@@ -1835,7 +1995,7 @@ const Renderer = {
     ].join('');
 
     // Helper: key-value row
-    const kv = (k,v,c='var(--text)') => `<div style="display:flex;justify-content:space-between;margin-bottom:4px"><span style="font-size:12px;color:var(--muted)">${esc(k)}</span><span style="font-size:12px;color:${c};font-weight:600">${esc(String(v))}</span></div>`;
+    const kv = (k,v,c='var(--text)') => `<div style="display:flex;justify-content:space-between;margin-bottom:4px"><span style="font-size:12px;color:var(--muted)">${esc(k)}</span><span style="font-size:12px;color:${c};font-weight:600">${esc(runtimeValue(v))}</span></div>`;
     const badge = (label,on) => `<span style="display:inline-block;margin:2px 2px;padding:2px 7px;border-radius:4px;font-size:10px;font-weight:600;background:${on?'rgba(74,222,128,.12)':'rgba(255,255,255,.05)'};color:${on?'var(--green)':'var(--dim)'};border:1px solid ${on?'rgba(74,222,128,.3)':'var(--border)'}">${esc(label)}</span>`;
 
     // Channels Panel — dynamic rendering for all configured/runtime channels
@@ -1890,8 +2050,8 @@ const Renderer = {
     const SR = AC.search||{};
     $('searchPanelInner').innerHTML = SR.provider && SR.provider !== '—' ? [
       kv('Provider', SR.provider, 'var(--blue,#3b82f6)'),
-      kv('Max Results', SR.maxResults||'—'),
-      kv('Cache TTL', (SR.cacheTtlMinutes||'—')+' min'),
+      kv('Max Results', SR.maxResults),
+      kv('Cache TTL', (SR.cacheTtlMinutes??'Not reported')+' min'),
     ].join('') : '<span style="color:var(--dim);font-size:12px">Not configured</span>';
 
     // Gateway Config Panel (config snapshot from data.json / agentConfig.gateway)
@@ -1970,15 +2130,15 @@ const Renderer = {
     // Per-agent fallbacks in table — use agent-specific fallbacks
     $('agentTableBody').innerHTML = agentList.map((a,i)=>{
       const col = PALETTE[i % PALETTE.length];
-      const provider = (a.modelId||'').split('/')[0]||'—';
-      const ctx1m = a.context1m===true?'✅':a.context1m===false?'❌':'—';
-      const agentFallbacks = (Array.isArray(a.fallbacks)?a.fallbacks:fallbacks).join(' → ');
+      const provider = (a.modelId||'').split('/')[0]||'Not reported';
+      const ctx1m = a.context1m===true?'✅':a.context1m===false?'❌':'Not reported';
+      const agentFallbacks = (Array.isArray(a.fallbacks)?a.fallbacks:fallbacks).join(' → ')||'None configured';
       return `<tr class="dr">
         <td style="padding:6px 8px;font-weight:700;color:${col}">${esc(a.id)}${a.isDefault?' <span style="font-size:9px;color:var(--green);font-weight:400">(default)</span>':''}</td>
         <td style="padding:6px 8px;color:var(--text)">${esc(a.role||a.id)}</td>
-        <td style="padding:6px 8px;color:var(--textStrong);font-weight:600">${esc(a.model)}</td>
+        <td style="padding:6px 8px;color:var(--textStrong);font-weight:600">${esc(runtimeValue(a.model))}</td>
         <td style="padding:6px 8px;color:var(--dim);font-size:12px">${esc(provider)}</td>
-        <td style="padding:6px 8px;color:var(--dim);font-size:12px;font-family:monospace">${esc(a.workspace)}</td>
+        <td style="padding:6px 8px;color:var(--dim);font-size:12px;font-family:monospace">${esc(runtimeValue(a.workspace))}</td>
         <td style="padding:6px 8px;color:var(--dim);font-size:12px">${esc(agentFallbacks)}</td>
         <td style="padding:6px 8px;text-align:center">${ctx1m}</td>
       </tr>`;
@@ -2088,9 +2248,10 @@ const Renderer = {
   renderTokenTbl(bodyId,data,accentColor){
   data=data||[];
   const max=Math.max(...data.map(u=>Number.isFinite(u.totalTokensRaw)?u.totalTokensRaw:0))||1;
+  if(!data.length){$(bodyId).innerHTML='<tr><td colspan="8">No usage reported</td></tr>';return;}
   $(bodyId).innerHTML=data.map(u=>{
     const pct=Number.isFinite(u.totalTokensRaw)?Math.round(u.totalTokensRaw/max*100):0;
-    return `<tr class="dr"><td class="w">${esc(u.model)}</td><td class="r">${(u.calls||0).toLocaleString()}</td><td class="r">${esc(u.input||'')}</td><td class="r">${esc(u.output||'')}</td><td class="r">${esc(u.cacheRead||'')}</td><td class="r" style="color:var(--textStrong);font-weight:500">${esc(u.totalTokens||'')}</td><td class="r cost">${usageMoney(u.cost,u)}</td><td><div class="usage-bar"><div class="usage-fill" style="width:${pct}%;background:${accentColor}"></div></div></td></tr>`;
+    return `<tr class="dr"><td class="w">${esc(u.model)}</td><td class="r">${(u.calls||0).toLocaleString()}</td><td class="r">${esc(runtimeValue(u.input))}</td><td class="r">${esc(runtimeValue(u.output))}</td><td class="r">${esc(runtimeValue(u.cacheRead))}</td><td class="r" style="color:var(--textStrong);font-weight:500">${esc(runtimeValue(u.totalTokens))}</td><td class="r cost">${usageMoney(u.cost,u)}</td><td><div class="usage-bar" role="img" aria-label="${pct}% of largest model token volume"><div class="usage-fill" style="width:${pct}%;background:${accentColor}"></div></div></td></tr>`;
   }).join('')+(data.length?`<tr class="total-row"><td class="w">TOTAL</td><td class="r">${data.reduce((a,u)=>a+(u.calls||0),0).toLocaleString()}</td>${['inputRaw','outputRaw','cacheReadRaw','totalTokensRaw'].map(key=>'<td class="r">'+(data.every(u=>Number.isFinite(u[key]))?data.reduce((a,u)=>a+u[key],0).toLocaleString():'Not reported')+'</td>').join('')}<td class="r cost">${data.every(u=>Number.isFinite(u.cost))?runtimeMoney(data.reduce((a,u)=>a+u.cost,0)):usageMoney(null,{tokensComplete:!data.some(u=>u.tokensComplete===false),missingCostEntries:data.reduce((a,u)=>a+(u.missingCostEntries||0),0)})}</td><td>Token volume</td></tr>`:'');
   },
 
@@ -2119,7 +2280,8 @@ const Renderer = {
     }
     if(tokenTrend)Renderer.renderTokenChart('costChart',data);
     else Renderer.renderCostChart('costChart',data);
-    Renderer.renderModelChart('modelChart',data);
+    if(data.some(d=>!Number.isFinite(d.total)))this.renderKnownModelChart('modelChart',D,chartDays);
+    else Renderer.renderModelChart('modelChart',data);
     Renderer.renderSubagentChart('subagentChart',data);
   },
 
@@ -2150,20 +2312,32 @@ const Renderer = {
     const d=data[i];
     // Larger dots for small values, with white border
     const isSmall=d.total<maxY*0.1;
-    const r=isSmall?7:4;
+    const r=Math.min(isSmall?7:4,stepX*0.35);
     const stroke=isSmall?' stroke="white" stroke-width="2"':'';
-    // Always show value label
+    // Dense ranges keep exact values in tooltips without overlapping labels.
     const labelY=p[1]-(isSmall?12:8);
     const labelColor=isSmall?'var(--textStrong)':'var(--dim)';
     const labelSize=isSmall?10:8;
     const total=d.total||0;
-    const label=`<text x="${p[0]}" y="${labelY}" text-anchor="middle" fill="${labelColor}" font-size="${labelSize}" font-weight="${isSmall?600:400}">$${total.toFixed(total<1?2:0)}</text>`;
+    const label=data.length<=7?`<text x="${p[0]}" y="${labelY}" text-anchor="middle" fill="${labelColor}" font-size="${labelSize}" font-weight="${isSmall?600:400}">$${total.toFixed(total<1?2:0)}</text>`:'';
     return `<circle cx="${p[0]}" cy="${p[1]}" r="${r}" fill="var(--accent)"${stroke}><title>${esc(d.label)}: $${total.toFixed(2)}</title></circle>${label}`;
   }).join('');
   const yLabels=Array.from({length:5},(_, i)=>{const v=maxY*i/4;const y=P.t+ch-ch*i/4;return `<text x="${P.l-6}" y="${y+3}" text-anchor="end" fill="var(--dim)" font-size="9">$${v.toFixed(0)}</text><line x1="${P.l}" y1="${y}" x2="${W-P.r}" y2="${y}" stroke="var(--border)" stroke-dasharray="2"/>`}).join('');
   const nth=Math.ceil(data.length/7);
   const xLabels=data.map((d,i)=>i%nth===0?`<text x="${P.l+i*stepX}" y="${H-P.b+16}" text-anchor="middle" fill="var(--dim)" font-size="9">${esc(d.label)}</text>`:'').join('');
   Renderer.patchSvg(id,`<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:350px">${yLabels}${xLabels}<path d="${area}" fill="var(--accent)" opacity="0.15"/><path d="${line}" fill="none" stroke="var(--accent)" stroke-width="2"/>${dots}</svg>`);
+  },
+
+  renderKnownModelChart(id,D,days){
+    const rows=(D['tokenUsage'+days+'d']||[]).filter(m=>Number.isFinite(m.knownCost)&&m.knownCost>0).slice().sort((a,b)=>b.knownCost-a.knownCost);
+    const status=collectionLabel(D.collections?.['usage'+days+'d']);
+    if(!rows.length){this.patchSvg(id,'<p class="chart-empty">No positive known model costs reported for '+days+' days.</p><p>'+esc(status)+'</p>');return;}
+    const max=rows[0].knownCost,height=rows.length*48+10;
+    const bars=rows.map((m,i)=>{
+      const name=m.modelId||m.model||'Unnamed model',y=i*48+8;
+      return '<g><title>'+esc(name)+': $'+m.knownCost.toFixed(4)+'</title><text x="0" y="'+(y+12)+'" fill="currentColor" font-size="11">'+esc(name.length>48?name.slice(0,45)+'…':name)+'</text><rect x="0" y="'+(y+20)+'" width="'+(m.knownCost/max*320)+'" height="12" rx="3" fill="'+COLORS[i%COLORS.length]+'"/><text x="330" y="'+(y+31)+'" fill="currentColor" font-size="11">$'+m.knownCost.toFixed(2)+'</text></g>';
+    }).join('');
+    this.patchSvg(id,'<p>Known costs · '+days+' days · excludes unpriced usage</p><svg viewBox="0 0 400 '+height+'" role="img" aria-label="Known cost by model" style="width:100%">'+bars+'</svg><p style="font-size:11px;color:var(--muted)">'+esc(status)+'</p>');
   },
 
   renderModelChart(id,data){
@@ -2310,7 +2484,7 @@ const SystemBar = {
     if(im<lm)return(lm-im)>=2?2:1;if(im>lm)return 0;
     return(ld-id)>=2?2:1;
   },
-  _kv(k,v,c='var(--text)'){return `<div style="display:flex;justify-content:space-between;margin-bottom:4px"><span style="font-size:12px;color:var(--muted)">${esc(k)}</span><span style="font-size:12px;color:${c};font-weight:600">${esc(String(v))}</span></div>`;},
+  _kv(k,v,c='var(--text)'){return `<div style="display:flex;justify-content:space-between;margin-bottom:4px"><span style="font-size:12px;color:var(--muted)">${esc(k)}</span><span style="font-size:12px;color:${c};font-weight:600">${esc(runtimeValue(v))}</span></div>`;},
   renderGatewayDegraded(reason){
     const gw=State.data?.gateway||{};
     const hasCached=!!(gw.status||gw.version||gw.pid||gw.uptime||gw.memory);
@@ -2338,14 +2512,29 @@ const SystemBar = {
         this._kv('Reason',reason,'var(--muted)'),
       ].join('');
     }
+    // The health cell keeps whatever the last successful poll painted, which
+    // would leave a stale "Online" standing after the probe itself failed.
+    const hGw=$('hGw');
+    if(hGw){
+      hGw.innerHTML='<span style="color:var(--yellow)">●</span> Unknown';
+      hGw.style.color='var(--textStrong)';
+      hGw.title='Gateway status unavailable: '+reason;
+    }
     const gwReadyAlert=$('gw-readiness-alert');
     if(gwReadyAlert)gwReadyAlert.remove();
     window._sysBarActive=false;
     window._gwOnlineConfirmed=false;
+    if(State.data?.runtimeTarget?.mode==='container'&&State.data.collections?.gatewayHealth){
+      RuntimePanels.renderGateway(State.data);
+      if(State.data.collections?.runtimeHealth?.source==='gateway.status')RuntimePanels.renderHealth(State.data);
+    }
   },
   _gatewayState(d) {
     const gwRuntime=d.openclaw?.gateway||{};
     const gwVersion=d.versions?.gateway||{};
+    // The backend skipped the host probe (container target), so live/ready are
+    // absent rather than false and must not be painted as Offline.
+    if(gwRuntime.reason)return {source:'runtime',ok:false,live:false,ready:false,reason:gwRuntime.reason};
     const runtimeTrusted=!!(gwRuntime.healthEndpointOk||gwRuntime.readyEndpointOk||(gwRuntime.uptimeMs||0)>0||((gwRuntime.failing||[]).length>0));
     if(runtimeTrusted){
       const live=!!gwRuntime.live,ready=!!gwRuntime.ready;
@@ -2400,7 +2589,12 @@ const SystemBar = {
     $('sysStale').style.display=d.stale?'inline':'none';
 
     // Also update health panel gateway from /api/system (runtime-first when trustworthy, versions fallback otherwise)
-    if(gwState.source==='runtime'){
+    const gwUnknown=gwState.reason
+      ?'<span style="color:var(--yellow)">●</span> '+gatewayUnknownText(gwState.reason)
+      :gatewayUnknownHtml(gwVersion);
+    if(gwUnknown&&(gwState.reason||gwState.source!=='runtime')){
+      $('hGw').innerHTML=gwUnknown;
+    }else if(gwState.source==='runtime'){
       if(gwLive&&gwReady){
         $('hGw').innerHTML='<span style="color:var(--green)">●</span> Online';
       }else if(gwLive&&!gwReady){
@@ -2412,6 +2606,9 @@ const SystemBar = {
       $('hGw').innerHTML=gwok?'<span style="color:var(--green)">●</span> Online':'<span style="color:var(--red)">●</span> Offline';
     }
     $('hGw').style.color='var(--textStrong)';
+    // renderGatewayDegraded parks the failure reason here; a successful poll owns
+    // the cell again and must not leave the stale tooltip behind.
+    $('hGw').title='';
     if(gwVersion.pid)$('hPid').textContent=gwVersion.pid;
     if(gwState.source==='runtime'){
       const upTxt=this.fmtDurationMs(gwRuntime.uptimeMs);
@@ -2466,12 +2663,16 @@ const SystemBar = {
     // Gateway Runtime card — populated from live /api/system data
     const gwRtEl=$('gatewayRuntimePanelInner');
     if(gwRtEl){
-      const stateLabel=gwState.source==='runtime'
+      // Same verdict as the health row: an undeterminable status is Unknown.
+      const gwUnknownLabel=gwState.reason
+        ?gatewayUnknownText(gwState.reason)
+        :(gwUnknown?gatewayUnknownText(gwVersion.statusReason||gwVersion.error):'');
+      const stateLabel=gwUnknownLabel||(gwState.source==='runtime'
         ?(gwLive?'Online':'Offline')
-        :(gwok?'Online':'Offline');
-      const stateColor=gwState.source==='runtime'
+        :(gwok?'Online':'Offline'));
+      const stateColor=gwUnknownLabel?'var(--yellow)':(gwState.source==='runtime'
         ?(gwLive?'var(--green)':'var(--red)')
-        :(gwok?'var(--green)':'var(--red)');
+        :(gwok?'var(--green)':'var(--red)'));
       const upTxt=gwState.source==='runtime'?this.fmtDurationMs(gwRuntime.uptimeMs)||gwVersion.uptime||'—':gwVersion.uptime||'—';
       const probeSource=gwState.source==='runtime'?'live probes':'status fallback';
       gwRtEl.innerHTML=[
@@ -2544,6 +2745,7 @@ const SystemBar = {
       }
     }
 
+    RuntimePanels.renderGateway(State.data);
     RuntimePanels.renderHealth(State.data);
     if(d.pollSeconds&&d.pollSeconds>0&&d.pollSeconds*1000!==this._lastMs)this.start(d.pollSeconds*1000);
   },
@@ -2658,9 +2860,24 @@ const App = {
       ErrorFeed.fetch().catch(()=>{});
       $('lastUpdate').textContent='Updated: '+new Date().toLocaleTimeString();
       State.resetCountdown();
+      App.setFetchError('');
     }catch(e){
-      $('alertsSection').innerHTML='<div class="alert-item alert-critical"><span class="alert-icon">⚠️</span><span class="alert-msg">Failed to load data.json</span></div>';
+      App.setFetchError('Failed to load data.json: '+(e&&e.message?e.message:'unknown error'));
     }
+  },
+  // setFetchError drives the dedicated #fetchError banner. It is independent of
+  // #alertsSection, which only re-renders when the alerts payload changes and so
+  // cannot carry a failure that prevented the payload from arriving at all.
+  setFetchError(message) {
+    const el=$('fetchError');
+    if(!el)return;
+    if(message){
+      el.textContent='⚠️ '+message;
+      el.hidden=false;
+      return;
+    }
+    el.textContent='';
+    el.hidden=true;
   },
   renderNow() {
     const snap=State.snapshot();

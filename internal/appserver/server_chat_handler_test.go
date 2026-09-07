@@ -32,7 +32,23 @@ func chatTestServer(t *testing.T, dir string, gatewayPort int) *Server {
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 	refreshFn := func(ctx context.Context, d, o string, cfg appconfig.Config) error { return nil }
-	return NewServer(dir, "1.0.0-test", cfg, "tok", indexHTML, ctx, refreshFn)
+	s := NewServer(dir, "1.0.0-test", cfg, "tok", indexHTML, ctx, refreshFn)
+	// Chat is gated on the selected runtime's configuration, so the fixture
+	// owns an openclaw.json with the endpoint enabled instead of inheriting
+	// the developer's real ~/.openclaw state.
+	s.openclawPath = dir
+	writeChatEnabledRuntimeConfig(t, dir)
+	return s
+}
+
+// writeChatEnabledRuntimeConfig writes the minimal openclaw.json that reports a
+// usable chat-completions endpoint.
+func writeChatEnabledRuntimeConfig(t *testing.T, dir string) {
+	t.Helper()
+	config := []byte(`{"gateway":{"http":{"endpoints":{"chatCompletions":{"enabled":true}}}}}`)
+	if err := os.WriteFile(filepath.Join(dir, "openclaw.json"), config, 0o600); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func writeMinimalDataJSON(t *testing.T, dir string) {
@@ -146,7 +162,7 @@ func TestHandleChat_RateLimited(t *testing.T) {
 	s := chatTestServer(t, dir, 1)
 
 	// Burn the bucket
-	for i := 0; i < chatRateLimit; i++ {
+	for range chatRateLimit {
 		s.chatLimiter.allow("10.0.0.5")
 	}
 	req := httptest.NewRequest(http.MethodPost, "/api/chat", strings.NewReader(`{"question":"hi"}`))

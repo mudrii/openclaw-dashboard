@@ -35,8 +35,7 @@ func captureStdout(t *testing.T, fn func()) (out string) {
 		out = buf.String()
 	}()
 
-	wg.Add(1)
-	go func() { defer wg.Done(); _, _ = io.Copy(&buf, r) }()
+	wg.Go(func() { _, _ = io.Copy(&buf, r) })
 
 	fn()
 	return out
@@ -72,8 +71,7 @@ func captureStderr(t *testing.T, fn func()) (out string) {
 		out = buf.String()
 	}()
 
-	wg.Add(1)
-	go func() { defer wg.Done(); _, _ = io.Copy(&buf, r) }()
+	wg.Go(func() { _, _ = io.Copy(&buf, r) })
 
 	fn()
 	return out

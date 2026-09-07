@@ -37,7 +37,7 @@ Before writing a line of code, understand these non-negotiable constraints:
 - **Zero Go external dependencies** — `go.mod` has no third-party modules; only the Go standard library is allowed.
 - **Backend standard library only** — the Go server, refresh collector, and tests use `net/http`, `encoding/json`, `os/exec` (with `argv` slices, not shells), and other stdlib packages only.
 - **Single file frontend** — all JS lives inside one `<script>` tag in `web/index.html`. No splitting into modules, no bundler.
-- **7-module JS structure** — new JS must fit into the existing `State / DataLayer / DirtyChecker / Renderer / Theme / Chat / App` object hierarchy. Do not add globals outside these objects (except the four allowed utilities: `$`, `esc`, `safeColor`, `relTime`).
+- **Plain-object JS modules** — keep behavior in the existing state, fetch, rendering, runtime-panel, operations, logging, theme, chat, and application objects. Follow the [frontend module map](README.md#frontend-module-structure); avoid new globals when an existing owner fits.
 - **XSS safety** — every value inserted into the DOM via template literals must be wrapped in `esc()`. Never concatenate raw user data into HTML strings.
 
 ---
@@ -58,20 +58,30 @@ and `make build`.
 
 | Target | What it does |
 |--------|--------------|
-| `make build` | Build a static binary with `CGO_ENABLED=0`, `-trimpath`, `-s -w` strip, and the VERSION embedded via `-X main.BuildVersion=…`. Matches the binary produced by `Dockerfile`, `.goreleaser.yml`, and `flake.nix`. |
+| `make build` | Build a static binary with `CGO_ENABLED=0`, `-trimpath`, `-s -w` strip, and VERSION embedded via `-X github.com/mudrii/openclaw-dashboard.BuildVersion=…`. Matches the binary produced by `Dockerfile`, `.goreleaser.yml`, and `flake.nix`. |
 | `make test` | `go test -race -count=1 ./...`. The race detector is non-negotiable for local runs. |
 | `make frontend-test` | Runs the actual embedded JavaScript regression harness with Node. Fails if Node is absent; requires no npm packages. |
+| `make container-test` | Builds the runtime image and executes its isolated smoke test. Requires Docker; use `CONTAINER_ENGINE=podman` for Podman. Separate from `make check`; required by CI and release workflows. |
+| `make release-check` | GoReleaser v2.4.5 snapshot rehearsal: validates config, runs frontend/race hooks, builds all four archives, checks checksums/assets, and refreshes using the extracted native archive. Generates SBOMs; skips publishing and signing; output is confined to `dist/release`. |
+| `make brew-test` | Tests the generated Homebrew formula using local snapshot archives and an isolated keg-only fixture. Requires Homebrew and completed `make release-check`; the existing installation is preserved. |
+| `make workflow-test` | Executes the actual release CI gate against success, missing, pending, failure, cancelled, skipped and mismatched-commit responses. Included in `make check`. |
+| `make workflow-lint` | Pinned actionlint v1.7.12 validates workflow syntax, expressions, inputs and embedded shell (when ShellCheck is available). CI requires this in Release rehearsal. |
 | `make lint` | `golangci-lint run ./...`. Linters enabled in `.golangci.yml`: `errcheck`, `govet`, `staticcheck`, `ineffassign`, `unused`, `gocritic`, `gosec`, `errorlint`. |
 | `make vet` | `go vet ./...` only. Fast first pass before lint. |
+| `make cover` | Writes `coverage.out` and `coverage.html` for statement coverage on the current platform. This is separate from race testing and is not a branch-coverage or live-runtime guarantee. |
 | `make staticcheck` | `go run honnef.co/go/tools/cmd/staticcheck@v0.8.1 ./...`. Runs standalone Staticcheck without requiring a preinstalled binary. |
 | `make govulncheck` | `go run golang.org/x/vuln/cmd/govulncheck@v1.3.0 ./...`. Scans stdlib + module for known CVEs without requiring a preinstalled binary. |
-| `make check` | Runs `make frontend-test`, then `go vet ./...`, `golangci-lint run ./...`, `go test -race -count=1 ./...`, pinned `govulncheck`, pinned `staticcheck`, and `make build`. |
+| `make check` | Runs `make frontend-test`, `make workflow-test`, then `go vet ./...`, `golangci-lint run ./...`, `go test -race -count=1 ./...`, pinned `govulncheck`, pinned `staticcheck`, and `make build`. |
 
-`golangci-lint` v2.x must be on `PATH`; CI currently uses v2.12.2. The Nix
-`devShell` installs it; for non-Nix dev machines, `go install` works. If you
+`golangci-lint` v2.x must be on `PATH`; CI currently uses v2.13.2. The Nix
+`devShell` installs it; for non-Nix dev machines, `go install` works. Node is
+required by `make frontend-test`; CI installs it via `actions/setup-node`, and
+the Nix `devShell` provides `nodejs`. If you
 touch `assets/runtime/refresh.sh`, `install.sh`, or `uninstall.sh`, also run
 `shellcheck --severity=warning` on the changed script(s); CI and release tags
 enforce those shell checks separately.
+
+CI also builds the Dockerfile and runs `scripts/container-smoke.sh` in the final image with networking disabled. It verifies process-tool compatibility, IANA timezone preservation, one-shot refresh, and private snapshot permissions without a live gateway. Run `make container-test` locally, or `make container-test CONTAINER_ENGINE=podman`. This packaging check does not certify live native/Docker/Podman gateway integration.
 
 ### What the Go tests cover
 
@@ -91,8 +101,8 @@ Tests use `net/http/httptest`, temporary directories, and real handler wiring wh
 # Single test by regex
 go test -race ./... -run TestHandleSystem_CORS -v
 
-# One package file’s tests (same module, all in `.`)
-go test -race -v -count=1 ./... -run '^TestYourName$'
+# One internal package's tests
+go test -race -v -count=1 ./internal/appserver -run '^TestYourName$'
 ```
 
 ### Refresh and `data.json`
@@ -110,7 +120,7 @@ When you change the shape of `data.json`, add or extend Go tests that assert the
 Run `make frontend-test` for dependency-free tests of the actual embedded functions and CSS contracts. This is required by `make check`, the Linux/macOS CI test jobs, and GoReleaser hooks. It fails if Node is absent. Go tests in `web_runtime_test.go` also check embedded JavaScript syntax, missing values and escaping; those individual Go tests skip when Node is unavailable, but the release gate does not. These checks do not replace:
 
 - **Manual exercise** of the UI after your change
-- **Code review discipline** for the 7-module structure and dirty-flag wiring
+- **Code review discipline** for module ownership and dirty-flag wiring
 - **XSS audit** — search for template literals that insert dynamic data without `esc()` (see [Security Testing](#security-testing))
 
 For behavior that is easy to get wrong (tab switching, chart toggles, scroll preservation), describe the manual scenario in the PR and run through it locally.
@@ -119,7 +129,7 @@ Use an isolated rebuilt candidate with chat and operations disabled for live UI 
 
 ### Changing the Go HTTP server (`internal/appserver`, `internal/appchat`, etc.)
 
-Add or extend tests in **`server_test.go`** or **`chat_test.go`**. Prefer `httptest.NewRecorder` and a real `ServeHTTP` call on the same handler stack the binary uses.
+Add or extend tests in the owning internal package; keep root tests for exported compatibility and CLI behavior. Prefer `httptest.NewRecorder` and a real `ServeHTTP` call on the same handler stack the binary uses.
 
 **Example pattern:**
 
@@ -152,7 +162,7 @@ Always cover where it matters:
 
 ### Changing `refresh.sh` and refresh collection logic
 
-- **`assets/runtime/refresh.sh`** only resolves `OPENCLAW_HOME`, finds the binary, and runs **`openclaw-dashboard --refresh`**. Keep it small, `set -euo pipefail`, and avoid `eval` or string-built shell commands.
+- **`assets/runtime/refresh.sh`** finds or builds the binary and runs **`openclaw-dashboard --refresh`**. The binary owns runtime/state selection and validation; the wrapper preserves `OPENCLAW_HOME`, `OPENCLAW_STATE_DIR`, and `OPENCLAW_CONTAINER` without synthesizing defaults. Cover changes with the executable wrapper fixtures in `refresh_script_test.go`.
 - **Data collection and `data.json` layout** belong in **`internal/apprefresh`**. When you add fields or change types, update Go tests (new test functions or table-driven cases) so CI catches schema drift.
 
 ### Changing CSS or themes
@@ -173,7 +183,7 @@ There is no automated visual regression suite. Required manual checks:
 ### Adding a new dashboard panel
 
 1. **Data:** extend **`collectDashboardData`** in **`internal/apprefresh`** — add the new slice or object to the `map[string]any` returned to `data.json`.
-2. **UI:** add Renderer (and optional `State` / `DirtyChecker`) wiring in **`web/index.html`**, following the 7-module pattern.
+2. **UI:** add Renderer (and optional `State` / `DirtyChecker`) wiring in **`web/index.html`**, following the existing module ownership and collection-state handling.
 3. **Tests:** add a Go test that proves the new field is present and correctly typed under controlled fixtures, or add a handler/integration test if the panel is also driven by an API.
 
 ### Adding a new alert type
@@ -208,7 +218,7 @@ When changing `renderCostChart`, `renderModelChart`, or `renderSubagentChart`:
 
 When changing `renderAgentTree` or the sessions section:
 
-1. Test with 0 sessions, 1 session, and 20+ sessions (the table caps at 20 shown).
+1. Test with 0, 1, 50, and 51+ sessions, including page boundaries and shrinking results. Modern collection has a 1,000-row cap and the UI pages by 50; the legacy collector limits its published session list to 20.
 2. Test with nested sub-agents (3 levels deep).
 3. Verify scroll position is preserved after re-render (the `scrollTop` save/restore pattern).
 
@@ -274,7 +284,7 @@ Before opening a PR, verify:
 - [ ] All repo checks pass: `make check`
 - [ ] New behaviour has a Go test in the appropriate `*_test.go` file (or a justified reason in the PR if not feasible)
 - [ ] Any new HTML template literals use `esc()` on every dynamic value
-- [ ] No new globals added outside the 7 module objects + 4 utilities
+- [ ] New behavior has a clear owner in the existing frontend modules
 - [ ] Tested all 6 themes manually if any CSS was touched
 - [ ] Tested 7d and 30d chart views if any chart code was touched
 - [ ] `CHANGELOG.md` updated with the change under the correct version heading

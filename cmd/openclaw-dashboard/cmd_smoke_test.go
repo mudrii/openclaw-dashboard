@@ -74,14 +74,12 @@ func buildBinary(t *testing.T) string {
 }
 
 // runBin executes the dashboard binary with args and a timeout, returning the
-// combined output and exit code. Inherits a clean environment with
-// DASHBOARD_AI_TOKEN_OPTIONAL=1 so AI-config gating cannot cause spurious
-// non-zero exits in serve-mode tests.
+// combined output and exit code.
 func runBin(t *testing.T, args []string, timeout time.Duration) (string, int) {
 	t.Helper()
 	bin := buildBinary(t)
 	cmd := exec.Command(bin, args...)
-	cmd.Env = append(os.Environ(), "DASHBOARD_AI_TOKEN_OPTIONAL=1")
+	cmd.Env = os.Environ()
 	var buf bytes.Buffer
 	cmd.Stdout = &buf
 	cmd.Stderr = &buf
@@ -96,8 +94,7 @@ func runBin(t *testing.T, args []string, timeout time.Duration) (string, int) {
 	select {
 	case err := <-done:
 		code := 0
-		var exitErr *exec.ExitError
-		if errors.As(err, &exitErr) {
+		if exitErr, ok := errors.AsType[*exec.ExitError](err); ok {
 			code = exitErr.ExitCode()
 		} else if err != nil {
 			t.Fatalf("wait: %v", err)

@@ -58,7 +58,7 @@ func writeFileAtomic(path string, data []byte, perm fs.FileMode) error {
 // from a probe loop. Avoids importing os.CreateTemp's defaults so the caller
 // controls the permission bits explicitly.
 func uniqueTempPath(dir, base string) (string, error) {
-	for i := 0; i < 1000; i++ {
+	for i := range 1000 {
 		candidate := filepath.Join(dir, fmt.Sprintf(".%s.tmp-%d-%d", base, os.Getpid(), i))
 		_, err := os.Lstat(candidate)
 		if errors.Is(err, os.ErrNotExist) {

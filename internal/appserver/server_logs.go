@@ -192,6 +192,13 @@ func (s *Server) handleErrors(w http.ResponseWriter, r *http.Request) {
 
 	entries, err := s.readMergedLogsWithContext(r.Context(), sources, errorLimitDefault)
 	if err != nil {
+		// A runtime read failure is reported with its own code, exactly as
+		// /api/logs does: a blanket 500 hides whether the feed is empty
+		// because access was refused, unsupported, or merely unreachable.
+		if modern {
+			s.runtimeReadError(w, r, err)
+			return
+		}
 		s.sendJSONRaw(w, r, http.StatusInternalServerError, []byte(`{"error":"failed to read logs"}`))
 		return
 	}

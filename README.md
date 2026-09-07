@@ -32,10 +32,10 @@ It's not trying to replace the OpenClaw CLI or Telegram interface. It's the at-a
 2. **🔔 Header Bar** — Bot name, online/offline status, auto-refresh countdown, theme picker
 3. **⚠️ Alerts Banner** — Smart alerts for high costs, failed crons, high context usage, gateway offline
 4. **💚 System Health** — Gateway status, available process metadata, compaction mode, session inventory count
-5. **💰 Cost Cards** — Today's cost, all-time cost, projected monthly, cost breakdown donut chart
+5. **💰 Cost Cards** — Today's cost, all-time cost, clearly labelled known subtotals when pricing is incomplete, projected monthly, and cost breakdown
 6. **⏰ Cron Jobs** — All scheduled jobs with status, schedule, last/next run, duration, model, plus a delivery-outcome dot and a `⚡FLAPPING` badge for unstable jobs
 7. **📡 Active Sessions** — Recent sessions with model, type badges (DM/group/cron/subagent), context %, tokens
-8. **📊 Token Usage & Cost** — Per-model breakdown with Today/7d/30d/all-time tabs, usage bars and totals; incomplete pricing remains Unknown
+8. **📊 Token Usage & Cost** — Per-model breakdown with Today/7d/30d/all-time tabs, usage bars and totals; unpriced records stay explicit
 9. **🤖 Sub-Agent Activity** — Sub-agent runs with agent, task, status, and duration (Today/7d/30d/all-time tabs), sourced from the gateway's durable task store
 10. **📈 Charts & Trends** — Cost trend and model-cost charts, pure SVG with a 7d/30d toggle; unavailable pricing is explicit
 11. **📋 Live Logs and Error Feed** — Bounded runtime logs, severity/regex filters, grouped warnings and errors
@@ -58,7 +58,7 @@ It's not trying to replace the OpenClaw CLI or Telegram interface. It's the at-a
 - 📊 **Top Metrics Bar** — Always-on CPU/RAM/swap/disk + gateway status, per-metric thresholds, macOS + Linux
 - 💬 **AI Chat** — Natural language queries about costs, sessions, crons, and config via OpenClaw gateway
 - 🎯 **Accurate Model Display** — 5-level resolution chain ensures every session/sub-agent shows its real model, not the default
-- 🔍 **Runtime Observability** — `/api/system` includes live gateway runtime state (liveness, readiness, failing deps, uptime, PID, memory) sourced from `/healthz`, `/readyz`, and `openclaw status --json`
+- 🔍 **Runtime Observability** — `/api/system` includes live gateway runtime state (liveness, readiness, failing deps, uptime, PID, memory) sourced from `/healthz`, `/readyz`, and `openclaw status --json` for native probes; container status uses the selected gateway's `health` RPC and never a host-loopback guess
 - 🟡 **Gateway Readiness Alerts** — Alert banner shows `🟡 Gateway not ready: discord` (or any failing dep) and auto-clears on recovery
 - ⚡ **Gateway Runtime + Config Cards** — System Settings split into two panels: Gateway Runtime (live probes) and Gateway Config (static config snapshot)
 - 📶 **Live Channel Health** — Migrated runtimes report gateway account-level configuration, connection and probe state separately; unknown fields stay unknown. Legacy collection retains readiness/session-activity fallbacks
@@ -200,6 +200,8 @@ The host CLI must be able to access the selected engine/container. No host mount
 
 **Running the dashboard itself in Docker is a separate deployment mode.** The current image ships the dashboard, not the OpenClaw CLI or container-engine tooling. Mounting state alone does not provide migrated-runtime collection. Supply an appropriate CLI/runtime environment before expecting live data; the stock image is not end-to-end certified for that setup.
 
+The image includes Bash for the refresh wrapper, Git for workspace history, procps for process metrics, timezone data, and wget for its health check. CI's network-isolated container smoke test verifies these packaging basics without a live OpenClaw runtime.
+
 The dashboard binds to `127.0.0.1` by default. Container deployments must
 either opt into a non-loopback bind explicitly or share the host network
 namespace — port-publishing alone won't work, because the container's own
@@ -232,6 +234,14 @@ nix develop github:mudrii/openclaw-dashboard
 
 The Nix package installs immutable defaults under its package share directory
 and seeds the writable runtime directory at `~/.openclaw/dashboard` on first run.
+Flake inputs are locked, the builder uses Go 1.27, and the package includes
+runtime tools and timezone data. Run `nix flake check --no-update-lock-file` in
+the checkout to verify the build and installed runtime. CI checks Linux and macOS.
+
+Maintainer installation checks: `make release-check` builds and validates all
+four release archives; `make brew-test` tests the generated formula in an isolated
+fixture; `make container-test` verifies the image's refresh and HTTP UI/API.
+These use fixture state and do not require or certify a live OpenClaw gateway.
 
 ## Themes
 
@@ -367,15 +377,17 @@ The entire frontend lives in a single `<script>` tag inside `web/index.html` —
 | **DataLayer** | Stateless fetch with `_reqId` counter for out-of-order protection. Returns parsed JSON or `null`. |
 | **LogTail** | Incremental log polling, filtering, pause/fast modes, and merged log rendering. |
 | **ErrorFeed** | Error-signature feed derived from `/api/errors`, including sort/window controls. |
-| **DirtyChecker** | Computes 13 boolean dirty flags by comparing current snapshot against `State.prev`. Uses `stableSnapshot()` to strip volatile timestamps from crons/sessions. |
-| **Renderer** | Pure DOM side-effects. Receives frozen snapshot + pre-computed flags, dispatches to 14 section renderers. Owns the agent hierarchy tree, recent-finished buffer, and all chart SVG rendering. |
+| **DirtyChecker** | Compares each section's data and collection state against its previous snapshot. Ignores attempt timestamps that do not change visible content. |
+| **Renderer** | Receives frozen snapshots and dirty flags, updates sections, and owns the agent hierarchy tree, recent-finished buffer, and chart SVG rendering. |
+| **RuntimePanels** | Runtime provenance, collection notices, paginated sessions/tasks, inventories, and detail dialogs. |
+| **OperationsPanel** | Probes operation availability and handles individually confirmed actions with a manually supplied operator token. |
 | **SystemBar** | Polls `/api/system`, renders host/runtime health, and feeds gateway readiness state back into the main health and alert panels. |
 | **Theme** | Self-contained theme engine — loads `themes.json`, applies CSS variables, persists choice to `localStorage`. |
 | **Sections** | Collapsible-section state and persistence. |
 | **Chat** | AI chat panel — manages history, sends stateless requests to `/api/chat`. |
 | **OCUI / App** | UI command handlers plus wiring layer — theme, timers, data refresh, render scheduling, and event handlers. |
 
-All inline `onclick` handlers route through `window.OCUI` — a thin namespace that calls `State.setTab()` / `App.renderNow()`. No bare globals remain outside the module objects and top-level utilities (`$`, `esc`, `safeColor`, `relTime`).
+Inline UI commands use `window.OCUI`; runtime details and operations also use delegated event handlers. Shared utilities include escaping, color validation, and timezone-aware time formatting. Keep new behavior with its owning module.
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for the full specification.
 

@@ -2,7 +2,7 @@ package appserver
 
 import (
 	"context"
-	"encoding/json"
+	jsonv2 "encoding/json/v2"
 	"log/slog"
 	"maps"
 	"net/http"
@@ -93,7 +93,13 @@ func (s *Server) loadData() ([]byte, map[string]any, error) {
 		return nil, nil, err
 	}
 	var parsed map[string]any
-	if err := json.Unmarshal(raw, &parsed); err != nil {
+	// data.json is written by this program (apprefresh marshals it with
+	// encoding/json v1 MarshalIndent), so it can contain neither duplicate
+	// object members nor invalid UTF-8 by construction. Decoding with strict
+	// encoding/json/v2 therefore yields the same map as v1 while skipping v1's
+	// duplicate-name bookkeeping; a rejection here means the file is corrupt.
+	if err := jsonv2.Unmarshal(raw, &parsed); err != nil {
+		slog.Warn("[dashboard] data.json failed strict decode; regenerate it with --refresh", "path", dataPath, "error", err.Error())
 		return raw, nil, err
 	}
 	if parsed == nil {

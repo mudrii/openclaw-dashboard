@@ -14,7 +14,7 @@ func collectRuntimeCrons(ctx context.Context, client appopenclaw.Client, loc *ti
 	rows := []map[string]any{}
 	seen := map[string]bool{}
 	offset := 0
-	for page := 0; page < runtimeMaxRows/runtimePageSize; page++ {
+	for range runtimeMaxRows / runtimePageSize {
 		var response struct {
 			Jobs       []map[string]any `json:"jobs"`
 			HasMore    bool             `json:"hasMore"`

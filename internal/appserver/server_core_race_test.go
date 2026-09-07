@@ -38,9 +38,7 @@ func TestGetDataCached_ConcurrentReadWriteRace(t *testing.T) {
 	// models loadData() handing out the same map reference that subsequent
 	// refreshes / re-reads then update — readers iterating the prior return
 	// value race with the writer's map writes.
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		i := 0
 		for {
 			select {
@@ -56,7 +54,7 @@ func TestGetDataCached_ConcurrentReadWriteRace(t *testing.T) {
 			s.dataMu.Unlock()
 			i++
 		}
-	}()
+	})
 
 	// Readers: each performs a fixed number of read+iterate cycles, then exits.
 	// Bounding by iteration count (not a timed sleep) keeps the race window wide
@@ -68,9 +66,7 @@ func TestGetDataCached_ConcurrentReadWriteRace(t *testing.T) {
 	var readersWG sync.WaitGroup
 	for range readers {
 		readersWG.Add(1)
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			defer readersWG.Done()
 			for range readsPerGo {
 				m, err := s.GetDataCached()
@@ -84,7 +80,7 @@ func TestGetDataCached_ConcurrentReadWriteRace(t *testing.T) {
 					_ = v
 				}
 			}
-		}()
+		})
 	}
 
 	// Stop the writer once every reader has finished its bounded run.
@@ -103,13 +99,11 @@ func TestChatRateLimiter_ConcurrentSameIP(t *testing.T) {
 	var allowed atomic.Int64
 	var wg sync.WaitGroup
 	for range goroutines {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			if rl.allow("10.0.0.1") {
 				allowed.Add(1)
 			}
-		}()
+		})
 	}
 	wg.Wait()
 	if got := allowed.Load(); got != chatRateLimit {
@@ -126,14 +120,12 @@ func TestChatRateLimiter_ConcurrentManyIPs(t *testing.T) {
 	var allowed atomic.Int64
 	var wg sync.WaitGroup
 	for i := range goroutines {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			ip := "10.0." + strconv.Itoa(i/256) + "." + strconv.Itoa(i%256)
 			if rl.allow(ip) {
 				allowed.Add(1)
 			}
-		}()
+		})
 	}
 	wg.Wait()
 

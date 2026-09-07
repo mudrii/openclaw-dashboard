@@ -10,6 +10,25 @@ import (
 	"github.com/mudrii/openclaw-dashboard/internal/appopenclaw"
 )
 
+// perAgentStatus reports a collection assembled one agent at a time. Rows from
+// the agents that answered are real, so a mixed run is partial and names the
+// agents it is missing; only a total failure is unavailable. firstErr fixes the
+// reported code so a later agent cannot mask the original cause.
+func perAgentStatus(source string, firstErr error, failed []string, agents int) CollectionStatus {
+	if firstErr == nil {
+		return collectionStatus(source, nil, true)
+	}
+	if len(failed) >= agents {
+		// Uniform field: a total outage names its agents like a partial one.
+		status := collectionStatus(source, firstErr, false)
+		status.FailedAgents = failed
+		return status
+	}
+	status := partialCollectionStatus(source, appopenclaw.ErrorCode(firstErr))
+	status.FailedAgents = failed
+	return status
+}
+
 func collectRuntimeHealth(ctx context.Context, client appopenclaw.Client, agents []string) (map[string]any, map[string]CollectionStatus) {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
@@ -18,6 +37,7 @@ func collectRuntimeHealth(ctx context.Context, client appopenclaw.Client, agents
 	memory := []map[string]any{}
 	skills := []map[string]any{}
 	var memoryErr, skillErr error
+	var memoryFailed, skillFailed []string
 	for _, agent := range agents {
 		var m map[string]any
 		err := client.Read(ctx, "doctor.memory.status", map[string]any{"agentId": agent}, &m)
@@ -25,7 +45,10 @@ func collectRuntimeHealth(ctx context.Context, client appopenclaw.Client, agents
 			err = fmt.Errorf("missing memory status")
 		}
 		if err != nil {
-			memoryErr = err
+			if memoryErr == nil {
+				memoryErr = err
+			}
+			memoryFailed = append(memoryFailed, agent)
 		} else {
 			row := projectFields(m, "agentId", "provider")
 			row["embedding"] = projectFields(asObj(m["embedding"]), "ok", "checked")
@@ -46,7 +69,10 @@ func collectRuntimeHealth(ctx context.Context, client appopenclaw.Client, agents
 			err = fmt.Errorf("missing skills inventory")
 		}
 		if err != nil {
-			skillErr = err
+			if skillErr == nil {
+				skillErr = err
+			}
+			skillFailed = append(skillFailed, agent)
 		} else {
 			for _, skill := range s.Skills {
 				row := projectFields(skill, "name", "skillKey", "source", "eligible", "disabled", "modelVisible", "commandVisible", "platformIncompatible", "blockedByAllowlist", "blockedByAgentFilter")
@@ -57,8 +83,8 @@ func collectRuntimeHealth(ctx context.Context, client appopenclaw.Client, agents
 		}
 	}
 	data["memory"], data["skillInventory"] = memory, skills
-	statuses["memory"] = collectionStatus("gateway.doctor.memory.status", memoryErr, memoryErr == nil)
-	statuses["skillInventory"] = collectionStatus("gateway.skills.status", skillErr, skillErr == nil)
+	statuses["memory"] = perAgentStatus("gateway.doctor.memory.status", memoryErr, memoryFailed, len(agents))
+	statuses["skillInventory"] = perAgentStatus("gateway.skills.status", skillErr, skillFailed, len(agents))
 	var channels struct {
 		Accounts map[string][]map[string]any `json:"channelAccounts"`
 	}

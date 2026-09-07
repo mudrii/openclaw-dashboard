@@ -6,6 +6,21 @@ import (
 	"time"
 )
 
+func TestRuntimeUsageChartCombinesSharedDisplayNames(t *testing.T) {
+	var usage runtimeUsage
+	if err := json.Unmarshal([]byte(`{"totals":{"totalCost":5},"cacheStatus":{"status":"fresh"},"aggregates":{"daily":[{"date":"2026-09-07","cost":5}],"modelDaily":[{"date":"2026-09-07","provider":"first","model":"gpt-5.5","cost":2},{"date":"2026-09-07","provider":"second","model":"gpt-5.5","cost":3}]}}`), &usage); err != nil {
+		t.Fatal(err)
+	}
+	data := map[string]any{}
+	applyRuntimeUsage(data, "30d", usage, time.Date(2026, 9, 7, 12, 0, 0, 0, time.UTC))
+	chart := data["dailyChart"].([]map[string]any)
+	day := chart[len(chart)-1]
+	models := day["models"].(map[string]any)
+	if models["GPT-5.5"] != float64(5) || day["total"] != float64(5) {
+		t.Fatalf("model breakdown lost costs: %v", day)
+	}
+}
+
 func TestRuntimeUsageCostBreakdown(t *testing.T) {
 	for _, tc := range []struct {
 		name, body string
