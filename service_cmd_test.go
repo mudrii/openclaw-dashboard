@@ -483,3 +483,85 @@ func TestRunServiceCmdInstallNonLoopbackAllowedWithEnv(t *testing.T) {
 		t.Errorf("Host = %q, want 0.0.0.0", fb.installedWith.Host)
 	}
 }
+
+// TestRunServiceCmdInstallEmptyBindUsesLoopback guards against an empty
+// --bind reaching the backend: net.JoinHostPort("", port) is ":port", which
+// listens on every interface. The install path must substitute 127.0.0.1,
+// even with the non-loopback override set.
+func TestRunServiceCmdInstallEmptyBindUsesLoopback(t *testing.T) {
+	for _, allow := range []string{"", "1"} {
+		t.Run("override="+allow, func(t *testing.T) {
+			t.Setenv("OPENCLAW_DASHBOARD_ALLOW_NON_LOOPBACK", allow)
+			for _, bind := range []string{"", "   "} {
+				fb := &fakeBackend{}
+				var code int
+				_ = captureStdout(t, func() {
+					code = runServiceCmd("install", baseOpts(fb, []string{"--bind", bind}))
+				})
+				if code != 0 {
+					t.Fatalf("install --bind %q exit = %d, want 0", bind, code)
+				}
+				if fb.installedWith == nil || fb.installedWith.Host != defaultBindHost {
+					t.Fatalf("install --bind %q forwarded %+v, want Host %q", bind, fb.installedWith, defaultBindHost)
+				}
+			}
+		})
+	}
+}
+
+func TestNormalizeBind(t *testing.T) {
+	for _, tc := range []struct{ in, want string }{
+		{"", "127.0.0.1"},
+		{"  ", "127.0.0.1"},
+		{" localhost ", "localhost"},
+		{"::1", "::1"},
+		{"0.0.0.0", "0.0.0.0"},
+	} {
+		if got := normalizeBind(tc.in); got != tc.want {
+			t.Errorf("normalizeBind(%q) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
+}
+
+func TestParsePortOverride(t *testing.T) {
+	for _, tc := range []struct {
+		name, value string
+		want        int
+	}{
+		{"not a number", "abc", 8080},
+		{"zero", "0", 8080},
+		{"above range", "70000", 8080},
+		{"negative", "-1", 8080},
+		{"valid", "9090", 9090},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := parsePortOverride(tc.value, 8080, "DASHBOARD_PORT"); got != tc.want {
+				t.Fatalf("parsePortOverride(%q) = %d, want %d", tc.value, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestBindPortDefaults(t *testing.T) {
+	cfg := Config{}
+	cfg.Server.Host = "localhost"
+	cfg.Server.Port = 8080
+	for _, tc := range []struct {
+		name, envBind, envPort string
+		wantBind               string
+		wantPort               int
+	}{
+		{"config values", "", "", "localhost", 8080},
+		{"env overrides", "::1", "9090", "::1", 9090},
+		{"invalid env port keeps config", "", "abc", "localhost", 8080},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("DASHBOARD_BIND", tc.envBind)
+			t.Setenv("DASHBOARD_PORT", tc.envPort)
+			bind, port := bindPortDefaults(cfg)
+			if bind != tc.wantBind || port != tc.wantPort {
+				t.Fatalf("bindPortDefaults = (%q, %d), want (%q, %d)", bind, port, tc.wantBind, tc.wantPort)
+			}
+		})
+	}
+}

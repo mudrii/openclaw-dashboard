@@ -55,9 +55,11 @@ func joinAbsPaths(groups ...[]string) string {
 }
 
 // ValidateLoopbackBind enforces the dashboard's loopback-only bind policy.
+// An empty host is rejected: it would listen on every interface. Callers
+// substitute a loopback default before validating.
 func ValidateLoopbackBind(host string) error {
 	switch strings.TrimSpace(host) {
-	case "", "127.0.0.1", "localhost", "::1":
+	case "127.0.0.1", "localhost", "::1":
 		return nil
 	}
 	if os.Getenv("OPENCLAW_DASHBOARD_ALLOW_NON_LOOPBACK") == "1" {

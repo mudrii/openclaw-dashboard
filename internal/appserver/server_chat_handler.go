@@ -4,10 +4,10 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"io/fs"
 	"log/slog"
 	"net"
 	"net/http"
-	"os"
 	"strings"
 	"unicode/utf8"
 
@@ -84,7 +84,7 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 
 	// Validate + sanitise history — inline switch avoids per-request map alloc
 	maxHist := s.cfg.AI.MaxHistory
-	history := make([]appchat.Message, 0, maxHist)
+	history := make([]appchat.Message, 0, min(maxHist, len(req.History)))
 	start := max(len(req.History)-maxHist, 0)
 	for _, msg := range req.History[start:] {
 		switch msg.Role {
@@ -110,7 +110,7 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 	// Use cached data.json — avoids re-reading + parsing ~100KB per request
 	dashData, err := s.GetDataCached()
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, fs.ErrNotExist) {
 			s.sendJSONRaw(w, r, http.StatusServiceUnavailable, errDataMissing)
 			return
 		}

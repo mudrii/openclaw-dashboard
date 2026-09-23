@@ -21,16 +21,26 @@ import (
 )
 
 const (
-	maxBodyBytes            = 64 * 1024
-	maxQuestionLen          = 2000
-	maxHistoryItem          = 4000
-	refreshTimeout          = 15 * time.Second
+	maxBodyBytes   = 64 * 1024
+	maxQuestionLen = 2000
+	maxHistoryItem = 4000
+	refreshTimeout = 15 * time.Second
+	// RefreshDeadline bounds one data.json collection, whether run by the
+	// server or by the one-shot --refresh CLI.
+	RefreshDeadline         = 2 * time.Minute
 	chatRateLimit           = 10 // max requests per minute per IP
 	chatRateWindow          = 1 * time.Minute
 	chatRateCleanupInterval = 5 * time.Minute
 	// defaultUpstreamHTTPTimeout caps end-to-end calls from this server to
 	// upstream HTTP services (currently the AI chat gateway).
 	defaultUpstreamHTTPTimeout = 60 * time.Second
+	// allowNonLoopbackEnv opts container and LAN deployments out of the
+	// loopback-only policy, including the Host-header check in ServeHTTP.
+	allowNonLoopbackEnv = "OPENCLAW_DASHBOARD_ALLOW_NON_LOOPBACK"
+	// allowedHostsEnv lists extra Host names (comma-separated, no port) that a
+	// loopback-bound server accepts, e.g. the public name forwarded by a
+	// Host-preserving TLS proxy, without lifting the loopback bind policy.
+	allowedHostsEnv = "OPENCLAW_DASHBOARD_ALLOWED_HOSTS"
 )
 
 // Pre-defined error JSON responses — avoid map alloc + marshal on hot paths
@@ -105,6 +115,7 @@ func (rl *chatRateLimiter) cleanup() {
 	})
 }
 
+// Server serves the dashboard SPA and its JSON API. Create it with NewServer.
 type Server struct {
 	dir              string
 	version          string
@@ -115,22 +126,31 @@ type Server struct {
 	runtimeLogs      runtimeLogCache
 	operatorToken    string
 	operationLimiter chatRateLimiter
+	// allowAnyHost disables the loopback Host-header check for container and
+	// LAN deployments that opted out of the loopback-only policy.
+	allowAnyHost bool
+	// allowedHosts holds normalized extra Host names from allowedHostsEnv.
+	allowedHosts map[string]struct{}
 
 	indexHTMLRendered  []byte
 	indexContentLength string // pre-computed strconv.Itoa(len(indexHTMLRendered))
 	corsDefault        string // pre-computed "http://localhost:<port>"
 	httpClient         *http.Client
 
-	mu             sync.Mutex
-	lastRefresh    time.Time
-	refreshRunning bool
-	refreshDone    chan struct{}
+	mu sync.Mutex
+	// lastRefreshAttempt is when the most recent refresh started, successful
+	// or not; /api/refresh debounces on it so a failing collector is not
+	// re-run on every request.
+	lastRefreshAttempt time.Time
+	refreshRunning     bool
+	refreshDone        chan struct{}
 
 	// Cached data.json for /api/chat prompt building
 	dataMu          sync.RWMutex
 	cachedData      map[string]any
 	cachedDataRaw   []byte
 	cachedDataMtime time.Time
+	cachedDataSize  int64
 
 	// System metrics service
 	systemSvc *appsystem.SystemService
@@ -146,6 +166,9 @@ type Server struct {
 	chatLimiter chatRateLimiter
 }
 
+// NewServer builds a Server rooted at dir. serverCtx bounds background work
+// (rate-limit cleanup, refreshes, system probes); refreshFn regenerates
+// data.json on demand.
 func NewServer(dir, version string, cfg appconfig.Config, gatewayToken string, indexHTML []byte, serverCtx context.Context, refreshFn func(context.Context, string, string, appconfig.Config) error) *Server {
 	serverCtx = appopenclaw.WithTarget(serverCtx, cfg.Openclaw)
 	openclawPath := cfg.Openclaw.StatePath(appruntime.ResolveOpenclawPath())
@@ -162,6 +185,8 @@ func NewServer(dir, version string, cfg appconfig.Config, gatewayToken string, i
 		cfg:                cfg,
 		gatewayToken:       gatewayToken,
 		operatorToken:      os.Getenv("OPENCLAW_DASHBOARD_OPERATOR_TOKEN"),
+		allowAnyHost:       os.Getenv(allowNonLoopbackEnv) == "1",
+		allowedHosts:       parseAllowedHosts(os.Getenv(allowedHostsEnv)),
 		openclawPath:       openclawPath,
 		runtimeClient:      appopenclaw.Client{Binary: appsystem.ResolveOpenclawBin()},
 		indexHTMLRendered:  rendered,
@@ -213,11 +238,14 @@ func (s *Server) sendJSON(w http.ResponseWriter, r *http.Request, status int, v 
 }
 
 // sendJSONRaw sends pre-encoded JSON with CORS headers (zero-alloc for known responses).
-// Respects HEAD method: sends headers but no body.
+// Respects HEAD method: sends headers but no body. A Cache-Control header set by
+// the caller (e.g. no-store for operations) is preserved.
 func (s *Server) sendJSONRaw(w http.ResponseWriter, r *http.Request, status int, body []byte) {
 	s.setCORSHeaders(w, r)
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("Cache-Control", "no-cache")
+	if w.Header().Get("Cache-Control") == "" {
+		w.Header().Set("Cache-Control", "no-cache")
+	}
 	w.Header().Set("Content-Length", strconv.Itoa(len(body)))
 	w.WriteHeader(status)
 	if r.Method != http.MethodHead {

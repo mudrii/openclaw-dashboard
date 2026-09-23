@@ -52,7 +52,7 @@ func TestHandleErrors_ReportsDroppedSignaturesWhenSaturated(t *testing.T) {
 	s := NewServer(t.TempDir(), "1.0.0", cfg, "", indexHTML, ctx, refreshFn)
 	s.openclawPath = openclawDir // point log reader at the test fixture
 
-	req := httptest.NewRequest(http.MethodGet, "/api/errors", nil)
+	req := httptest.NewRequest(http.MethodGet, "http://localhost/api/errors", nil)
 	w := httptest.NewRecorder()
 	s.ServeHTTP(w, req)
 

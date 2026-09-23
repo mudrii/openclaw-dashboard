@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -155,10 +156,13 @@ func TestCallGateway_HistoryIncluded(t *testing.T) {
 }
 
 func TestCallGateway_Timeout_Returns504(t *testing.T) {
-	// Test server that sleeps longer than the client timeout
+	// Test server that never answers before the client gives up; it returns
+	// once the client disconnects so ts.Close does not wait on it. The body
+	// is drained first: net/http only watches for a closed connection (and
+	// cancels r.Context) after the request body has been consumed.
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		time.Sleep(2 * time.Second)
-		fmt.Fprint(w, `{"choices":[{"message":{"content":"too late"}}]}`)
+		_, _ = io.Copy(io.Discard, r.Body)
+		<-r.Context().Done()
 	}))
 	defer ts.Close()
 

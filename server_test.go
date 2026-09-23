@@ -25,10 +25,30 @@ func testServer(t *testing.T, dir string) *Server {
 	t.Helper()
 	t.Setenv("OPENCLAW_CONTAINER", "")
 	t.Setenv("OPENCLAW_STATE_DIR", "")
+	isolateOpenclawHome(t)
 	cfg := defaultConfig()
 	cfg.AI.Enabled = false
 	cfg.Refresh.IntervalSeconds = 1
-	return NewServer(dir, "test", cfg, "", []byte("<head><body>__VERSION__</body>"), context.Background())
+	return settleOnCleanup(t, NewServer(dir, "test", cfg, "", []byte("<head><body>__VERSION__</body>"), t.Context()))
+}
+
+// settleOnCleanup waits for srv's in-flight refresh when the test ends. The
+// test context is cancelled first, so the collector returns promptly, and the
+// wait keeps its last writes from racing the TempDir removal.
+func settleOnCleanup(t *testing.T, srv *Server) *Server {
+	t.Helper()
+	t.Cleanup(func() { _ = srv.inner.WaitRefresh(context.Background()) })
+	return srv
+}
+
+// isolateOpenclawHome points OPENCLAW_HOME at an empty temp dir unless the test
+// already chose one, so server fixtures never probe the developer's real
+// OpenClaw state. TestMain clears any inherited value.
+func isolateOpenclawHome(t *testing.T) {
+	t.Helper()
+	if _, ok := os.LookupEnv("OPENCLAW_HOME"); !ok {
+		t.Setenv("OPENCLAW_HOME", t.TempDir())
+	}
 }
 
 // chatEnabledTestServer builds an AI-enabled server whose capability gate reads
@@ -46,15 +66,16 @@ func chatEnabledTestServer(t *testing.T, dir string) *Server {
 	}
 	cfg := defaultConfig()
 	cfg.AI.Enabled = true
-	return NewServer(dir, "test", cfg, "tok", []byte("<head></head>"), context.Background())
+	return settleOnCleanup(t, NewServer(dir, "test", cfg, "tok", []byte("<head></head>"), t.Context()))
 }
 
 func testServerWithConfig(t *testing.T, dir string, cfg Config) *Server {
 	t.Helper()
 	t.Setenv("OPENCLAW_CONTAINER", "")
 	t.Setenv("OPENCLAW_STATE_DIR", "")
+	isolateOpenclawHome(t)
 	cfg.AI.Enabled = false
-	return NewServer(dir, "test", cfg, "", []byte("<head><body>__VERSION__</body>"), context.Background())
+	return settleOnCleanup(t, NewServer(dir, "test", cfg, "", []byte("<head><body>__VERSION__</body>"), t.Context()))
 }
 
 // --- Cache coherence ---
@@ -76,10 +97,13 @@ func TestCacheCoherence_RawUpdateInvalidatesParsed(t *testing.T) {
 		t.Fatalf("expected v1, got %v", parsed["version"])
 	}
 
-	// Advance mtime — write new data
-	time.Sleep(50 * time.Millisecond)
+	// Replace data.json with a newer mtime (no sleep: set it explicitly).
 	data2 := map[string]any{"version": "v2", "totalCostToday": 2.0}
 	writeJSON(t, filepath.Join(dir, "data.json"), data2)
+	newer := time.Now().Add(time.Minute)
+	if err := os.Chtimes(filepath.Join(dir, "data.json"), newer, newer); err != nil {
+		t.Fatal(err)
+	}
 
 	// Simulate /api/refresh reading raw cache (updates cachedDataRaw + mtime)
 	raw, err := srv.getDataRawCached()
@@ -106,7 +130,7 @@ func TestHandleIndex_HEAD_NoBody(t *testing.T) {
 	dir := t.TempDir()
 	srv := testServer(t, dir)
 
-	req := httptest.NewRequest(http.MethodHead, "/", nil)
+	req := httptest.NewRequest(http.MethodHead, "http://localhost/", nil)
 	w := httptest.NewRecorder()
 	srv.ServeHTTP(w, req)
 
@@ -126,9 +150,9 @@ func TestEmbeddedIndexServedWithRuntimePlaceholdersRendered(t *testing.T) {
 	cfg := defaultConfig()
 	cfg.AI.Enabled = false
 	cfg.Refresh.IntervalSeconds = 1
-	srv := NewServer(dir, "2026.7.11-test", cfg, "", indexHTML, context.Background())
+	srv := NewServer(dir, "2026.7.11-test", cfg, "", indexHTML, t.Context())
 
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req := httptest.NewRequest(http.MethodGet, "http://localhost/", nil)
 	w := httptest.NewRecorder()
 	srv.ServeHTTP(w, req)
 
@@ -167,7 +191,7 @@ func TestHandleRefresh_HEAD_NoBody(t *testing.T) {
 	// Create data.json so the handler has something to serve
 	writeJSON(t, filepath.Join(dir, "data.json"), map[string]any{"ok": true})
 
-	req := httptest.NewRequest(http.MethodHead, "/api/refresh", nil)
+	req := httptest.NewRequest(http.MethodHead, "http://localhost/api/refresh", nil)
 	w := httptest.NewRecorder()
 	srv.ServeHTTP(w, req)
 
@@ -189,7 +213,7 @@ func TestHandleRefresh_GET_HasBody(t *testing.T) {
 
 	writeJSON(t, filepath.Join(dir, "data.json"), map[string]any{"ok": true})
 
-	req := httptest.NewRequest(http.MethodGet, "/api/refresh", nil)
+	req := httptest.NewRequest(http.MethodGet, "http://localhost/api/refresh", nil)
 	w := httptest.NewRecorder()
 	srv.ServeHTTP(w, req)
 
@@ -207,9 +231,11 @@ func TestStaticFile_AllowedFile(t *testing.T) {
 	dir := t.TempDir()
 	srv := testServer(t, dir)
 
-	os.WriteFile(filepath.Join(dir, "themes.json"), []byte(`{"dark":true}`), 0644)
+	if err := os.WriteFile(filepath.Join(dir, "themes.json"), []byte(`{"dark":true}`), 0644); err != nil {
+		t.Fatal(err)
+	}
 
-	req := httptest.NewRequest(http.MethodGet, "/themes.json", nil)
+	req := httptest.NewRequest(http.MethodGet, "http://localhost/themes.json", nil)
 	w := httptest.NewRecorder()
 	srv.ServeHTTP(w, req)
 
@@ -225,9 +251,11 @@ func TestStaticFile_DisallowedFile(t *testing.T) {
 	dir := t.TempDir()
 	srv := testServer(t, dir)
 
-	os.WriteFile(filepath.Join(dir, "config.json"), []byte(`{"secret":true}`), 0644)
+	if err := os.WriteFile(filepath.Join(dir, "config.json"), []byte(`{"secret":true}`), 0644); err != nil {
+		t.Fatal(err)
+	}
 
-	req := httptest.NewRequest(http.MethodGet, "/config.json", nil)
+	req := httptest.NewRequest(http.MethodGet, "http://localhost/config.json", nil)
 	w := httptest.NewRecorder()
 	srv.ServeHTTP(w, req)
 
@@ -242,7 +270,7 @@ func TestStaticFile_PathTraversal(t *testing.T) {
 
 	// This should not reach handleStaticFile (not in allowlist)
 	// but test the traversal guard anyway via direct call
-	req := httptest.NewRequest(http.MethodGet, "/../etc/passwd", nil)
+	req := httptest.NewRequest(http.MethodGet, "http://localhost/../etc/passwd", nil)
 	w := httptest.NewRecorder()
 	srv.handleStaticFile(w, req, "/../etc/passwd", "text/plain")
 
@@ -255,9 +283,11 @@ func TestStaticFile_HEAD_NoBody(t *testing.T) {
 	dir := t.TempDir()
 	srv := testServer(t, dir)
 
-	os.WriteFile(filepath.Join(dir, "themes.json"), []byte(`{"dark":true}`), 0644)
+	if err := os.WriteFile(filepath.Join(dir, "themes.json"), []byte(`{"dark":true}`), 0644); err != nil {
+		t.Fatal(err)
+	}
 
-	req := httptest.NewRequest(http.MethodHead, "/themes.json", nil)
+	req := httptest.NewRequest(http.MethodHead, "http://localhost/themes.json", nil)
 	w := httptest.NewRecorder()
 	srv.ServeHTTP(w, req)
 
@@ -275,7 +305,7 @@ func TestMethodNotAllowed(t *testing.T) {
 	dir := t.TempDir()
 	srv := testServer(t, dir)
 
-	req := httptest.NewRequest(http.MethodDelete, "/", nil)
+	req := httptest.NewRequest(http.MethodDelete, "http://localhost/", nil)
 	w := httptest.NewRecorder()
 	srv.ServeHTTP(w, req)
 
@@ -291,7 +321,7 @@ func TestChat_DisabledReturns503(t *testing.T) {
 	srv := testServer(t, dir) // AI disabled by default in test helper
 
 	body := `{"question":"hello"}`
-	req := httptest.NewRequest(http.MethodPost, "/api/chat", strings.NewReader(body))
+	req := httptest.NewRequest(http.MethodPost, "http://localhost/api/chat", strings.NewReader(body))
 	w := httptest.NewRecorder()
 	srv.ServeHTTP(w, req)
 
@@ -307,7 +337,7 @@ func TestChat_EmptyQuestion(t *testing.T) {
 	srv := chatEnabledTestServer(t, dir)
 
 	body := `{"question":"   "}`
-	req := httptest.NewRequest(http.MethodPost, "/api/chat", strings.NewReader(body))
+	req := httptest.NewRequest(http.MethodPost, "http://localhost/api/chat", strings.NewReader(body))
 	w := httptest.NewRecorder()
 	srv.ServeHTTP(w, req)
 
@@ -322,7 +352,7 @@ func TestChat_QuestionTooLong(t *testing.T) {
 
 	q := strings.Repeat("a", maxQuestionLen+1)
 	body := `{"question":"` + q + `"}`
-	req := httptest.NewRequest(http.MethodPost, "/api/chat", strings.NewReader(body))
+	req := httptest.NewRequest(http.MethodPost, "http://localhost/api/chat", strings.NewReader(body))
 	w := httptest.NewRecorder()
 	srv.ServeHTTP(w, req)
 
@@ -336,7 +366,7 @@ func TestChat_BodyTooLarge(t *testing.T) {
 	srv := chatEnabledTestServer(t, dir)
 
 	body := strings.Repeat("x", maxBodyBytes+100)
-	req := httptest.NewRequest(http.MethodPost, "/api/chat", strings.NewReader(body))
+	req := httptest.NewRequest(http.MethodPost, "http://localhost/api/chat", strings.NewReader(body))
 	w := httptest.NewRecorder()
 	srv.ServeHTTP(w, req)
 
@@ -349,7 +379,7 @@ func TestChat_InvalidJSON(t *testing.T) {
 	dir := t.TempDir()
 	srv := chatEnabledTestServer(t, dir)
 
-	req := httptest.NewRequest(http.MethodPost, "/api/chat", strings.NewReader("{bad"))
+	req := httptest.NewRequest(http.MethodPost, "http://localhost/api/chat", strings.NewReader("{bad"))
 	w := httptest.NewRecorder()
 	srv.ServeHTTP(w, req)
 
@@ -362,7 +392,7 @@ func TestChat_MissingDataJSON_Returns503(t *testing.T) {
 	dir := t.TempDir()
 	srv := chatEnabledTestServer(t, dir)
 
-	req := httptest.NewRequest(http.MethodPost, "/api/chat", strings.NewReader(`{"question":"hello"}`))
+	req := httptest.NewRequest(http.MethodPost, "http://localhost/api/chat", strings.NewReader(`{"question":"hello"}`))
 	w := httptest.NewRecorder()
 	srv.ServeHTTP(w, req)
 
@@ -379,7 +409,7 @@ func TestChat_InvalidDataJSON_Returns500(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	req := httptest.NewRequest(http.MethodPost, "/api/chat", strings.NewReader(`{"question":"hello"}`))
+	req := httptest.NewRequest(http.MethodPost, "http://localhost/api/chat", strings.NewReader(`{"question":"hello"}`))
 	w := httptest.NewRecorder()
 	srv.ServeHTTP(w, req)
 
@@ -400,7 +430,7 @@ func TestChat_NullDataJSON_Returns500(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	req := httptest.NewRequest(http.MethodPost, "/api/chat", strings.NewReader(`{"question":"hello"}`))
+	req := httptest.NewRequest(http.MethodPost, "http://localhost/api/chat", strings.NewReader(`{"question":"hello"}`))
 	w := httptest.NewRecorder()
 	srv.ServeHTTP(w, req)
 
@@ -434,9 +464,9 @@ func TestGetDataCached_NullDataJSON_ReturnsError(t *testing.T) {
 
 func TestIndex_VersionInjected(t *testing.T) {
 	dir := t.TempDir()
-	srv := NewServer(dir, "1.2.3", defaultConfig(), "", []byte("<head><body>__VERSION__</body>"), context.Background())
+	srv := NewServer(dir, "1.2.3", defaultConfig(), "", []byte("<head><body>__VERSION__</body>"), t.Context())
 
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req := httptest.NewRequest(http.MethodGet, "http://localhost/", nil)
 	w := httptest.NewRecorder()
 	srv.ServeHTTP(w, req)
 
@@ -447,9 +477,9 @@ func TestIndex_VersionInjected(t *testing.T) {
 
 func TestIndex_RuntimeInjected(t *testing.T) {
 	dir := t.TempDir()
-	srv := NewServer(dir, "1.0", defaultConfig(), "", []byte("<head><body>__RUNTIME__ · v__VERSION__</body>"), context.Background())
+	srv := NewServer(dir, "1.0", defaultConfig(), "", []byte("<head><body>__RUNTIME__ · v__VERSION__</body>"), t.Context())
 
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req := httptest.NewRequest(http.MethodGet, "http://localhost/", nil)
 	w := httptest.NewRecorder()
 	srv.ServeHTTP(w, req)
 
@@ -466,9 +496,9 @@ func TestIndex_ThemeMetaInjected(t *testing.T) {
 	dir := t.TempDir()
 	cfg := defaultConfig()
 	cfg.Theme.Preset = "solar"
-	srv := NewServer(dir, "1.0", cfg, "", []byte("<head><body></body>"), context.Background())
+	srv := NewServer(dir, "1.0", cfg, "", []byte("<head><body></body>"), t.Context())
 
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req := httptest.NewRequest(http.MethodGet, "http://localhost/", nil)
 	w := httptest.NewRecorder()
 	srv.ServeHTTP(w, req)
 
@@ -485,7 +515,7 @@ func TestCORS_LocalhostOriginReflected(t *testing.T) {
 
 	writeJSON(t, filepath.Join(dir, "data.json"), map[string]any{"ok": true})
 
-	req := httptest.NewRequest(http.MethodGet, "/api/refresh", nil)
+	req := httptest.NewRequest(http.MethodGet, "http://localhost/api/refresh", nil)
 	req.Header.Set("Origin", "http://localhost:3000")
 	w := httptest.NewRecorder()
 	srv.ServeHTTP(w, req)
@@ -501,7 +531,7 @@ func TestCORS_ExternalOriginDefaulted(t *testing.T) {
 
 	writeJSON(t, filepath.Join(dir, "data.json"), map[string]any{"ok": true})
 
-	req := httptest.NewRequest(http.MethodGet, "/api/refresh", nil)
+	req := httptest.NewRequest(http.MethodGet, "http://localhost/api/refresh", nil)
 	req.Header.Set("Origin", "http://evil.com")
 	w := httptest.NewRecorder()
 	srv.ServeHTTP(w, req)
@@ -525,7 +555,7 @@ func TestRefresh_DataMissing_Returns503(t *testing.T) {
 	}
 
 	srv := testServer(t, dir)
-	req := httptest.NewRequest(http.MethodGet, "/api/refresh", nil)
+	req := httptest.NewRequest(http.MethodGet, "http://localhost/api/refresh", nil)
 	w := httptest.NewRecorder()
 	srv.ServeHTTP(w, req)
 
@@ -553,7 +583,7 @@ func TestRefresh_DataMissing_WaitsForRefreshAndReturnsFreshData(t *testing.T) {
 	}
 
 	srv := testServer(t, dir)
-	req := httptest.NewRequest(http.MethodGet, "/api/refresh", nil)
+	req := httptest.NewRequest(http.MethodGet, "http://localhost/api/refresh", nil)
 	w := httptest.NewRecorder()
 	srv.ServeHTTP(w, req)
 
@@ -574,7 +604,7 @@ func TestChat_RateLimitExceeded(t *testing.T) {
 	// Send chatRateLimit requests — all should be accepted (400 because no gateway, but not 429)
 	for i := range chatRateLimit {
 		body := `{"question":"hello"}`
-		req := httptest.NewRequest(http.MethodPost, "/api/chat", strings.NewReader(body))
+		req := httptest.NewRequest(http.MethodPost, "http://localhost/api/chat", strings.NewReader(body))
 		req.RemoteAddr = "192.168.1.1:12345"
 		w := httptest.NewRecorder()
 		srv.ServeHTTP(w, req)
@@ -585,7 +615,7 @@ func TestChat_RateLimitExceeded(t *testing.T) {
 
 	// Next request should be rate limited
 	body := `{"question":"one more"}`
-	req := httptest.NewRequest(http.MethodPost, "/api/chat", strings.NewReader(body))
+	req := httptest.NewRequest(http.MethodPost, "http://localhost/api/chat", strings.NewReader(body))
 	req.RemoteAddr = "192.168.1.1:12345"
 	w := httptest.NewRecorder()
 	srv.ServeHTTP(w, req)
@@ -604,14 +634,14 @@ func TestChat_RateLimitPerIP(t *testing.T) {
 
 	// Exhaust rate limit for IP A
 	for range chatRateLimit {
-		req := httptest.NewRequest(http.MethodPost, "/api/chat", strings.NewReader(`{"question":"hi"}`))
+		req := httptest.NewRequest(http.MethodPost, "http://localhost/api/chat", strings.NewReader(`{"question":"hi"}`))
 		req.RemoteAddr = "10.0.0.1:1111"
 		w := httptest.NewRecorder()
 		srv.ServeHTTP(w, req)
 	}
 
 	// IP B should still be allowed
-	req := httptest.NewRequest(http.MethodPost, "/api/chat", strings.NewReader(`{"question":"hi"}`))
+	req := httptest.NewRequest(http.MethodPost, "http://localhost/api/chat", strings.NewReader(`{"question":"hi"}`))
 	req.RemoteAddr = "10.0.0.2:2222"
 	w := httptest.NewRecorder()
 	srv.ServeHTTP(w, req)
@@ -665,7 +695,7 @@ func TestPreWarm_TriggersRefreshCollector(t *testing.T) {
 // --- Loopback bind enforcement ---
 
 func TestValidateLoopbackBind(t *testing.T) {
-	allowed := []string{"", "127.0.0.1", "localhost", "::1", "  127.0.0.1  "}
+	allowed := []string{"127.0.0.1", "localhost", "::1", "  127.0.0.1  "}
 	for _, h := range allowed {
 		if err := appservice.ValidateLoopbackBind(h); err != nil {
 			t.Errorf("ValidateLoopbackBind(%q) = %v, want nil", h, err)
@@ -675,7 +705,9 @@ func TestValidateLoopbackBind(t *testing.T) {
 	// Bracketed IPv6 ("[::1]") is rejected by design: --bind expects a bare
 	// host (net.JoinHostPort adds brackets itself), so the bracketed form is
 	// malformed input and failing closed is the safe direction.
-	rejected := []string{"0.0.0.0", "192.168.1.10", "::", "10.0.0.1", "example.com", "[::1]", "[::1]:5001"}
+	// An empty host would listen on every interface; callers normalize it to
+	// 127.0.0.1 first (see normalizeBind).
+	rejected := []string{"", "   ", "0.0.0.0", "192.168.1.10", "::", "10.0.0.1", "example.com", "[::1]", "[::1]:5001"}
 	for _, h := range rejected {
 		err := appservice.ValidateLoopbackBind(h)
 		if err == nil {

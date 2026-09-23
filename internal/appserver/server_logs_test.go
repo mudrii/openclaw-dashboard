@@ -136,7 +136,9 @@ func TestParseSince(t *testing.T) {
 
 func TestReadMergedLogs_MergesAndSorts(t *testing.T) {
 	dir := t.TempDir()
-	_ = os.MkdirAll(filepath.Join(dir, "logs"), 0o755)
+	if err := os.MkdirAll(filepath.Join(dir, "logs"), 0o755); err != nil {
+		t.Fatal(err)
+	}
 	writeLines(t, filepath.Join(dir, "logs", "gateway.log"),
 		"2026-04-13T10:00:00Z gateway startup",
 		"2026-04-13T10:00:02Z gateway request done",
@@ -147,7 +149,7 @@ func TestReadMergedLogs_MergesAndSorts(t *testing.T) {
 	)
 
 	s := &Server{openclawPath: dir}
-	records, err := s.readMergedLogs([]string{"logs/gateway.log", "logs/cron.log"}, 3)
+	records, err := s.readMergedLogsWithContext(t.Context(), []string{"logs/gateway.log", "logs/cron.log"}, 3)
 	if err != nil {
 		t.Fatalf("readMergedLogs failed: %v", err)
 	}
@@ -182,7 +184,9 @@ func TestReadMergedLogs_MergesAndSorts(t *testing.T) {
 
 func TestReadMergedLogs_PrefersNewestEntriesAcrossSkewedSources(t *testing.T) {
 	dir := t.TempDir()
-	_ = os.MkdirAll(filepath.Join(dir, "logs"), 0o755)
+	if err := os.MkdirAll(filepath.Join(dir, "logs"), 0o755); err != nil {
+		t.Fatal(err)
+	}
 	writeLines(t, filepath.Join(dir, "logs", "gateway.log"),
 		"2026-04-13T10:00:00Z gateway old",
 		"2026-04-13T10:00:01Z gateway still old",
@@ -195,7 +199,7 @@ func TestReadMergedLogs_PrefersNewestEntriesAcrossSkewedSources(t *testing.T) {
 	)
 
 	s := &Server{openclawPath: dir}
-	records, err := s.readMergedLogs([]string{"logs/gateway.log", "logs/cron.log"}, 3)
+	records, err := s.readMergedLogsWithContext(t.Context(), []string{"logs/gateway.log", "logs/cron.log"}, 3)
 	if err != nil {
 		t.Fatalf("readMergedLogs failed: %v", err)
 	}
@@ -229,7 +233,7 @@ func TestHandleLogs_SourceAlias(t *testing.T) {
 	cfg.Logs.Sources = []string{"logs/gateway.log", "logs/cron.log"}
 	srv := newTestServerWithOpenclawHome(t, cfg, openclawDir)
 
-	req := httptest.NewRequest(http.MethodGet, "/api/logs?source=gateway&limit=20", nil)
+	req := httptest.NewRequest(http.MethodGet, "http://localhost/api/logs?source=gateway&limit=20", nil)
 	w := httptest.NewRecorder()
 	srv.ServeHTTP(w, req)
 
@@ -283,7 +287,7 @@ func TestHandleErrors_SourceAlias(t *testing.T) {
 	cfg.Logs.Sources = []string{"logs/gateway.log", "logs/cron.log"}
 	srv := newTestServerWithOpenclawHome(t, cfg, openclawDir)
 
-	req := httptest.NewRequest(http.MethodGet, "/api/errors?source=cron&sort=count&limit=20&windowHours=24", nil)
+	req := httptest.NewRequest(http.MethodGet, "http://localhost/api/errors?source=cron&sort=count&limit=20&windowHours=24", nil)
 	w := httptest.NewRecorder()
 	srv.ServeHTTP(w, req)
 
@@ -360,7 +364,7 @@ func TestHandleErrors_WindowSortAndCap(t *testing.T) {
 	}
 	getItems := func(t *testing.T, sortMode string) []item {
 		t.Helper()
-		req := httptest.NewRequest(http.MethodGet, "/api/errors?windowHours=1&sort="+sortMode+"&limit=20", nil)
+		req := httptest.NewRequest(http.MethodGet, "http://localhost/api/errors?windowHours=1&sort="+sortMode+"&limit=20", nil)
 		w := httptest.NewRecorder()
 		srv.ServeHTTP(w, req)
 		if w.Code != http.StatusOK {
@@ -495,7 +499,7 @@ func TestErrorsRuntimeFailureUsesRuntimeErrorCodes(t *testing.T) {
 			}}
 
 			w := httptest.NewRecorder()
-			s.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/errors", nil))
+			s.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "http://localhost/api/errors", nil))
 
 			if w.Code != tc.status || !strings.Contains(w.Body.String(), `"errorCode":"`+tc.code+`"`) {
 				t.Fatalf("code=%d body=%s", w.Code, w.Body.String())

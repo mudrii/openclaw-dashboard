@@ -41,7 +41,7 @@ func TestRuntimeDetailRoutesAreBoundedReads(t *testing.T) {
 				return exec.CommandContext(ctx, "printf", "%s", body)
 			}}
 			w := httptest.NewRecorder()
-			s.ServeHTTP(w, httptest.NewRequest(http.MethodGet, tc.url, nil))
+			s.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "http://localhost"+tc.url, nil))
 			if w.Code != tc.code {
 				t.Fatalf("code=%d body=%s", w.Code, w.Body.String())
 			}
@@ -69,7 +69,7 @@ func TestRuntimeReadErrorMapsCodesToStatuses(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			s := NewServer(t.TempDir(), "test", appconfig.Default(), "", nil, t.Context(), nil)
 			w := httptest.NewRecorder()
-			s.runtimeReadError(w, httptest.NewRequest(http.MethodGet, "/api/workboard", nil), tc.err)
+			s.runtimeReadError(w, httptest.NewRequest(http.MethodGet, "http://localhost/api/workboard", nil), tc.err)
 			if w.Code != tc.status {
 				t.Fatalf("status=%d want %d", w.Code, tc.status)
 			}
@@ -114,7 +114,7 @@ func TestWorkboardSummaryReportsReadyAndFailure(t *testing.T) {
 			}}
 
 			w := httptest.NewRecorder()
-			s.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/workboard", nil))
+			s.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "http://localhost/api/workboard", nil))
 
 			if w.Code != tc.status || !strings.Contains(w.Body.String(), tc.want) {
 				t.Fatalf("code=%d body=%s", w.Code, w.Body.String())

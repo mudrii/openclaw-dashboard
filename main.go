@@ -19,6 +19,7 @@ import (
 
 	"github.com/mudrii/openclaw-dashboard/internal/appconfig"
 	"github.com/mudrii/openclaw-dashboard/internal/appruntime"
+	appserver "github.com/mudrii/openclaw-dashboard/internal/appserver"
 	"github.com/mudrii/openclaw-dashboard/internal/appservice"
 )
 
@@ -30,8 +31,13 @@ var BuildVersion string
 
 // refreshCLITimeout bounds a one-shot `--refresh` invocation so a hung
 // OpenClaw subprocess cannot block the CLI indefinitely. SIGINT/SIGTERM
-// still cancel earlier via the signal-aware parent context.
-const refreshCLITimeout = 2 * time.Minute
+// still cancel earlier via the signal-aware parent context. It shares the
+// server's per-refresh deadline.
+const refreshCLITimeout = appserver.RefreshDeadline
+
+// defaultBindHost replaces an empty bind so it never becomes a wildcard
+// ":port" listener on every interface.
+const defaultBindHost = "127.0.0.1"
 
 // HTTP server timeouts. WriteTimeout is generous because AI chat responses
 // stream from the gateway and can be slow; IdleTimeout caps keep-alive reuse.
@@ -52,6 +58,29 @@ func parsePortOverride(value string, fallback int, source string) int {
 		return fallback
 	}
 	return port
+}
+
+// normalizeBind trims host and maps an empty value to defaultBindHost.
+func normalizeBind(host string) string {
+	host = strings.TrimSpace(host)
+	if host == "" {
+		return defaultBindHost
+	}
+	return host
+}
+
+// bindPortDefaults resolves the default bind host and port for the CLI flags:
+// DASHBOARD_BIND and DASHBOARD_PORT override the config values.
+func bindPortDefaults(cfg Config) (string, int) {
+	bind := os.Getenv("DASHBOARD_BIND")
+	if bind == "" {
+		bind = cfg.Server.Host
+	}
+	port := cfg.Server.Port
+	if p := os.Getenv("DASHBOARD_PORT"); p != "" {
+		port = parsePortOverride(p, port, "DASHBOARD_PORT")
+	}
+	return bind, port
 }
 
 // Main runs the dashboard CLI and returns a process exit code.
@@ -83,15 +112,7 @@ func Main() int {
 			version := resolveVersion(cmdCtx, dir)
 			cfg := loadConfig(dir)
 
-			// env var overrides
-			envBind := os.Getenv("DASHBOARD_BIND")
-			if envBind == "" {
-				envBind = cfg.Server.Host
-			}
-			envPort := cfg.Server.Port
-			if p := os.Getenv("DASHBOARD_PORT"); p != "" {
-				envPort = parsePortOverride(p, envPort, "DASHBOARD_PORT")
-			}
+			envBind, envPort := bindPortDefaults(cfg)
 
 			b, err := appservice.NewWithContext(cmdCtx)
 			if err != nil {
@@ -100,7 +121,7 @@ func Main() int {
 			}
 			return runServiceCmd(subcmd, serviceCmdOpts{
 				dir:         dir,
-				binPath:     exe,
+				binPath:     appruntime.StableExecutablePath(exe),
 				version:     version,
 				backend:     b,
 				args:        rest,
@@ -128,20 +149,10 @@ func Main() int {
 	version := resolveVersion(cmdCtx, dir)
 	cfg := loadConfig(dir)
 
-	// Env var defaults
-	envBind := os.Getenv("DASHBOARD_BIND")
-	if envBind == "" {
-		envBind = cfg.Server.Host
-	}
-	envPort := os.Getenv("DASHBOARD_PORT")
-	envPortInt := cfg.Server.Port
-
-	if envPort != "" {
-		envPortInt = parsePortOverride(envPort, envPortInt, "DASHBOARD_PORT")
-	}
+	envBind, envPortInt := bindPortDefaults(cfg)
 
 	// CLI flags
-	bind := flag.String("bind", envBind, "Bind address (use 0.0.0.0 for LAN)")
+	bind := flag.String("bind", envBind, "Bind address (loopback only; non-loopback binds such as 0.0.0.0 require OPENCLAW_DASHBOARD_ALLOW_NON_LOOPBACK=1)")
 	flag.StringVar(bind, "b", envBind, "Bind address (shorthand)")
 	port := flag.Int("port", envPortInt, "Listen port")
 	flag.IntVar(port, "p", envPortInt, "Listen port (shorthand)")
@@ -158,9 +169,18 @@ func Main() int {
 		fmt.Fprintf(os.Stderr, "[dashboard] invalid runtime target: %v\n", err)
 		return 1
 	}
+	// Fail fast rather than silently reading a relative ".openclaw" when the
+	// home directory is unknown; the service backends refuse the same way.
+	// OPENCLAW_STATE_DIR names the state directory outright (see StatePath),
+	// so the home-based fallback is irrelevant when it is set.
+	openclawHome, err := appruntime.ResolveOpenclawPathWithError()
+	if err != nil && strings.TrimSpace(os.Getenv("OPENCLAW_STATE_DIR")) == "" {
+		fmt.Fprintf(os.Stderr, "[dashboard] fatal: cannot locate OpenClaw state (set OPENCLAW_HOME or OPENCLAW_STATE_DIR): %v\n", err)
+		return 1
+	}
+	openclawPath := cfg.Openclaw.StatePath(openclawHome)
 
 	if *doRefresh {
-		openclawPath := cfg.Openclaw.StatePath(appruntime.ResolveOpenclawPath())
 		if _, err := os.Stat(openclawPath); !cfg.Openclaw.IsContainer() && errors.Is(err, os.ErrNotExist) {
 			fmt.Fprintf(os.Stderr, "OpenClaw not found at %s\n", openclawPath)
 			return 1
@@ -178,7 +198,7 @@ func Main() int {
 	}
 
 	// Resolve credentials server-side; absence must not disable read-only monitoring.
-	gatewayToken := ResolveGatewayToken(cfg.AI.DotenvPath, cfg.Openclaw.StatePath(appruntime.ResolveOpenclawPath()))
+	gatewayToken := ResolveGatewayToken(cfg.AI.DotenvPath, openclawPath)
 	if cfg.AI.Enabled && gatewayToken == "" {
 		slog.Warn("[dashboard] no gateway token resolved; monitoring stays enabled but every chat request will be refused with credentials_missing")
 	}
@@ -187,6 +207,7 @@ func Main() int {
 	serverCtx, serverCancel := context.WithCancel(cmdCtx)
 	defer serverCancel()
 
+	*bind = normalizeBind(*bind)
 	if err := appservice.ValidateLoopbackBind(*bind); err != nil {
 		fmt.Fprintf(os.Stderr, "[dashboard] fatal: %v\n", err)
 		return 1
@@ -226,7 +247,7 @@ func Main() int {
 	serverErr := make(chan error, 1)
 
 	go func() {
-		if err := httpSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		if err := httpSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			serverErr <- err
 		}
 	}()
@@ -366,7 +387,7 @@ func serviceInstall(opts serviceCmdOpts, bind string, port int) int {
 		BinPath:          opts.binPath,
 		WorkDir:          opts.dir,
 		LogPath:          filepath.Join(opts.dir, "server.log"),
-		Host:             bind,
+		Host:             normalizeBind(bind),
 		Port:             port,
 		AllowNonLoopback: os.Getenv("OPENCLAW_DASHBOARD_ALLOW_NON_LOOPBACK") == "1",
 	}

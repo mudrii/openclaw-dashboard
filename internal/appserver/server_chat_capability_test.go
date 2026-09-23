@@ -34,12 +34,12 @@ func TestSelectedRuntimeChatRejectsDisabledEndpoint(t *testing.T) {
 		return exec.CommandContext(ctx, "printf", "%s", `{"valid":true,"exists":true,"config":{"gateway":{}}}`)
 	}}
 	w := httptest.NewRecorder()
-	s.ServeHTTP(w, httptest.NewRequest("POST", "/api/chat", strings.NewReader(`{"question":"hello"}`)))
+	s.ServeHTTP(w, httptest.NewRequest("POST", "http://localhost/api/chat", strings.NewReader(`{"question":"hello"}`)))
 	if w.Code != 503 || !strings.Contains(w.Body.String(), "endpoint_disabled") || strings.Contains(w.Body.String(), "private-token") {
 		t.Fatalf("response=%d %s", w.Code, w.Body.String())
 	}
 	w = httptest.NewRecorder()
-	s.ServeHTTP(w, httptest.NewRequest("GET", "/api/chat/status", nil))
+	s.ServeHTTP(w, httptest.NewRequest("GET", "http://localhost/api/chat/status", nil))
 	if w.Code != 200 || !strings.Contains(w.Body.String(), `"available":false`) {
 		t.Fatalf("status=%d %s", w.Code, w.Body.String())
 	}
@@ -62,7 +62,7 @@ func TestContainerChatCapabilityUsesGatewayConfig(t *testing.T) {
 				return exec.CommandContext(ctx, "printf", "%s", tc.body)
 			}}
 			w := httptest.NewRecorder()
-			s.ServeHTTP(w, httptest.NewRequest("GET", "/api/chat/status", nil))
+			s.ServeHTTP(w, httptest.NewRequest("GET", "http://localhost/api/chat/status", nil))
 			if !strings.Contains(w.Body.String(), `"state":"`+tc.state+`"`) || strings.Contains(w.Body.String(), "private-token") {
 				t.Fatal(w.Body.String())
 			}
@@ -88,7 +88,7 @@ func TestInheritedContainerChatChecksEndpointBeforeTransport(t *testing.T) {
 		return exec.CommandContext(ctx, "printf", "%s", `{"valid":true,"exists":true,"config":{"gateway":{}}}`)
 	}}
 	w := httptest.NewRecorder()
-	s.ServeHTTP(w, httptest.NewRequest("POST", "/api/chat", strings.NewReader(`{"question":"fixture"}`)))
+	s.ServeHTTP(w, httptest.NewRequest("POST", "http://localhost/api/chat", strings.NewReader(`{"question":"fixture"}`)))
 	if reads != 1 || w.Code != 503 || !strings.Contains(w.Body.String(), "endpoint_disabled") {
 		t.Fatalf("config reads=%d response=%d %s", reads, w.Code, w.Body)
 	}
@@ -125,7 +125,7 @@ func TestNativeChatGateRefusesUnusableCredentials(t *testing.T) {
 			}}
 
 			w := httptest.NewRecorder()
-			s.ServeHTTP(w, httptest.NewRequest("POST", "/api/chat", strings.NewReader(`{"question":"hello"}`)))
+			s.ServeHTTP(w, httptest.NewRequest("POST", "http://localhost/api/chat", strings.NewReader(`{"question":"hello"}`)))
 
 			if w.Code != 503 || !strings.Contains(w.Body.String(), `"errorCode":"`+tc.state+`"`) {
 				t.Fatalf("response=%d %s", w.Code, w.Body.String())

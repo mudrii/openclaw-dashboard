@@ -131,6 +131,55 @@ func TestMainInvalidPortExitsBeforeListen(t *testing.T) {
 	}
 }
 
+// TestMainUnresolvableOpenclawHomeFailsFast pins that Main refuses to run
+// against a relative ".openclaw" when neither OPENCLAW_HOME nor HOME is set.
+func TestMainUnresolvableOpenclawHomeFailsFast(t *testing.T) {
+	t.Setenv("OPENCLAW_DASHBOARD_DIR", t.TempDir())
+	t.Setenv("OPENCLAW_STATE_DIR", "")
+	t.Setenv("OPENCLAW_HOME", "")
+	t.Setenv("HOME", "")
+	setMainArgs(t, []string{"openclaw-dashboard", "--refresh"})
+	resetMainFlags(t)
+	prev := refreshCollectorFunc
+	t.Cleanup(func() { refreshCollectorFunc = prev })
+	refreshCollectorFunc = func(context.Context, string, string, Config) error {
+		t.Error("collector ran without a resolvable OpenClaw home")
+		return nil
+	}
+
+	_, stderr, code := captureMainStdio(t, Main)
+	if code == 0 || !strings.Contains(stderr, "OPENCLAW_HOME") {
+		t.Fatalf("code=%d stderr=%q, want non-zero exit naming OPENCLAW_HOME", code, stderr)
+	}
+}
+
+// TestMainStateDirOverrideNeedsNoHome: OPENCLAW_STATE_DIR names the state
+// directory outright, so an unresolvable HOME must not abort startup.
+func TestMainStateDirOverrideNeedsNoHome(t *testing.T) {
+	stateDir := t.TempDir()
+	t.Setenv("OPENCLAW_DASHBOARD_DIR", t.TempDir())
+	t.Setenv("OPENCLAW_STATE_DIR", stateDir)
+	t.Setenv("OPENCLAW_HOME", "")
+	t.Setenv("HOME", "")
+	setMainArgs(t, []string{"openclaw-dashboard", "--refresh"})
+	resetMainFlags(t)
+	prev := refreshCollectorFunc
+	t.Cleanup(func() { refreshCollectorFunc = prev })
+	var gotPath string
+	refreshCollectorFunc = func(_ context.Context, _, openclawPath string, _ Config) error {
+		gotPath = openclawPath
+		return nil
+	}
+
+	_, stderr, code := captureMainStdio(t, Main)
+	if code != 0 {
+		t.Fatalf("code=%d stderr=%q, want success with OPENCLAW_STATE_DIR set", code, stderr)
+	}
+	if gotPath != stateDir {
+		t.Fatalf("collector openclawPath = %q, want %q", gotPath, stateDir)
+	}
+}
+
 func resetMainFlags(t *testing.T) {
 	t.Helper()
 	saved := flag.CommandLine

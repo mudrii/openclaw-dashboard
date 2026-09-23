@@ -44,7 +44,7 @@ func TestHandleStaticFile_RejectsSymlinkOutsideRoot(t *testing.T) {
 	refreshFn := func(ctx context.Context, d, o string, cfg appconfig.Config) error { return nil }
 	s := NewServer(rootDir, "1.0.0", cfg, "", indexHTML, ctx, refreshFn)
 
-	req := httptest.NewRequest(http.MethodGet, "/themes.json", nil)
+	req := httptest.NewRequest(http.MethodGet, "http://localhost/themes.json", nil)
 	w := httptest.NewRecorder()
 	s.ServeHTTP(w, req)
 

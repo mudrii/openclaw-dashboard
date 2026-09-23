@@ -97,7 +97,7 @@ func TestValidateLoopbackBind(t *testing.T) {
 		allow   string
 		wantErr bool
 	}{
-		{name: "empty", host: ""},
+		{name: "empty rejected", host: "", wantErr: true},
 		{name: "ipv4 loopback", host: "127.0.0.1"},
 		{name: "localhost", host: "localhost"},
 		{name: "ipv6 loopback", host: "::1"},

@@ -34,6 +34,9 @@ func TestChatRejectsUntrustedOriginsBeforeGatewayWork(t *testing.T) {
 		{"https://dashboard.example", true},
 	} {
 		t.Run(tc.origin, func(t *testing.T) {
+			// A public Host behind a TLS-terminating proxy is accepted once the
+			// operator allow-lists it; the loopback bind policy stays in force.
+			t.Setenv(allowedHostsEnv, "dashboard.example")
 			dir := t.TempDir()
 			writeMinimalDataJSON(t, dir)
 			s := chatTestServer(t, dir, 1)

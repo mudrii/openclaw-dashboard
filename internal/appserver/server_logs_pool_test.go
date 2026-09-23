@@ -52,7 +52,7 @@ func TestReadMergedLogs_ManySources(t *testing.T) {
 
 	s := &Server{openclawPath: openclawDir}
 	want := numSources * entriesPerSource
-	records, err := s.readMergedLogs(sources, want)
+	records, err := s.readMergedLogsWithContext(t.Context(), sources, want)
 	if err != nil {
 		t.Fatalf("readMergedLogs failed: %v", err)
 	}
@@ -88,7 +88,7 @@ func TestReadMergedLogs_EmptySources(t *testing.T) {
 	s := &Server{openclawPath: openclawDir}
 
 	// Defensive: must not panic, must return empty result.
-	records, err := s.readMergedLogs(nil, 100)
+	records, err := s.readMergedLogsWithContext(t.Context(), nil, 100)
 	if err != nil {
 		t.Fatalf("nil sources: unexpected error: %v", err)
 	}
@@ -96,7 +96,7 @@ func TestReadMergedLogs_EmptySources(t *testing.T) {
 		t.Fatalf("nil sources: expected 0 records, got %d", len(records))
 	}
 
-	records, err = s.readMergedLogs([]string{}, 100)
+	records, err = s.readMergedLogsWithContext(t.Context(), []string{}, 100)
 	if err != nil {
 		t.Fatalf("empty sources: unexpected error: %v", err)
 	}

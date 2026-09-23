@@ -61,7 +61,7 @@ func writeMinimalDataJSON(t *testing.T, dir string) {
 
 func mustPostChat(t *testing.T, s *Server, body string) *httptest.ResponseRecorder {
 	t.Helper()
-	req := httptest.NewRequest(http.MethodPost, "/api/chat", strings.NewReader(body))
+	req := httptest.NewRequest(http.MethodPost, "http://localhost/api/chat", strings.NewReader(body))
 	req.RemoteAddr = "10.0.0.1:1234"
 	w := httptest.NewRecorder()
 	s.ServeHTTP(w, req)
@@ -117,7 +117,7 @@ var errReadBody = errors.New("read body")
 func TestHandleChat_BodyReadError(t *testing.T) {
 	dir := t.TempDir()
 	s := chatTestServer(t, dir, 1)
-	req := httptest.NewRequest(http.MethodPost, "/api/chat", nil)
+	req := httptest.NewRequest(http.MethodPost, "http://localhost/api/chat", nil)
 	req.RemoteAddr = "10.0.0.9:1234"
 	req.Body = errReadCloser{}
 	w := httptest.NewRecorder()
@@ -165,7 +165,7 @@ func TestHandleChat_RateLimited(t *testing.T) {
 	for range chatRateLimit {
 		s.chatLimiter.allow("10.0.0.5")
 	}
-	req := httptest.NewRequest(http.MethodPost, "/api/chat", strings.NewReader(`{"question":"hi"}`))
+	req := httptest.NewRequest(http.MethodPost, "http://localhost/api/chat", strings.NewReader(`{"question":"hi"}`))
 	req.RemoteAddr = "10.0.0.5:1111"
 	req.Header.Set("Origin", "http://localhost:5173")
 	w := httptest.NewRecorder()

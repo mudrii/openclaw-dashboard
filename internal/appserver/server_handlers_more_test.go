@@ -21,7 +21,7 @@ func TestHandleIndex(t *testing.T) {
 	s := newTestServer(t)
 
 	t.Run("GET / returns rendered index", func(t *testing.T) {
-		req := httptest.NewRequest(http.MethodGet, "/", nil)
+		req := httptest.NewRequest(http.MethodGet, "http://localhost/", nil)
 		w := httptest.NewRecorder()
 		s.ServeHTTP(w, req)
 
@@ -52,7 +52,7 @@ func TestHandleIndex(t *testing.T) {
 	})
 
 	t.Run("GET /index.html returns rendered index", func(t *testing.T) {
-		req := httptest.NewRequest(http.MethodGet, "/index.html", nil)
+		req := httptest.NewRequest(http.MethodGet, "http://localhost/index.html", nil)
 		w := httptest.NewRecorder()
 		s.ServeHTTP(w, req)
 
@@ -65,7 +65,7 @@ func TestHandleIndex(t *testing.T) {
 	})
 
 	t.Run("HEAD / returns 200 with empty body", func(t *testing.T) {
-		req := httptest.NewRequest(http.MethodHead, "/", nil)
+		req := httptest.NewRequest(http.MethodHead, "http://localhost/", nil)
 		w := httptest.NewRecorder()
 		s.ServeHTTP(w, req)
 
@@ -87,7 +87,7 @@ func TestHandleSystem_Disabled(t *testing.T) {
 	s := newTestServer(t) // System.Enabled = false
 
 	t.Run("GET 503 application/json ok:false", func(t *testing.T) {
-		req := httptest.NewRequest(http.MethodGet, "/api/system", nil)
+		req := httptest.NewRequest(http.MethodGet, "http://localhost/api/system", nil)
 		w := httptest.NewRecorder()
 		s.ServeHTTP(w, req)
 
@@ -109,7 +109,7 @@ func TestHandleSystem_Disabled(t *testing.T) {
 	})
 
 	t.Run("HEAD 503 empty body", func(t *testing.T) {
-		req := httptest.NewRequest(http.MethodHead, "/api/system", nil)
+		req := httptest.NewRequest(http.MethodHead, "http://localhost/api/system", nil)
 		w := httptest.NewRecorder()
 		s.ServeHTTP(w, req)
 
@@ -145,7 +145,7 @@ func TestHandleSystem_Enabled(t *testing.T) {
 	status, body := s.systemSvc.GetJSON(context.Background())
 
 	t.Run("GET propagates status + body, Content-Type + Cache-Control", func(t *testing.T) {
-		req := httptest.NewRequest(http.MethodGet, "/api/system", nil)
+		req := httptest.NewRequest(http.MethodGet, "http://localhost/api/system", nil)
 		w := httptest.NewRecorder()
 		s.ServeHTTP(w, req)
 
@@ -167,7 +167,7 @@ func TestHandleSystem_Enabled(t *testing.T) {
 	})
 
 	t.Run("HEAD enabled empty body", func(t *testing.T) {
-		req := httptest.NewRequest(http.MethodHead, "/api/system", nil)
+		req := httptest.NewRequest(http.MethodHead, "http://localhost/api/system", nil)
 		w := httptest.NewRecorder()
 		s.ServeHTTP(w, req)
 
@@ -198,7 +198,7 @@ func TestServeHTTP_MethodGating(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			req := httptest.NewRequest(tc.method, tc.path, nil)
+			req := httptest.NewRequest(tc.method, "http://localhost"+tc.path, nil)
 			w := httptest.NewRecorder()
 			s.ServeHTTP(w, req)
 			if w.Code != tc.want {
@@ -221,12 +221,12 @@ func TestHandleRefresh(t *testing.T) {
 		if err := os.WriteFile(filepath.Join(dir, "data.json"), want, 0o644); err != nil {
 			t.Fatal(err)
 		}
-		// Back-date lastRefresh so it is recent (within debounce window).
+		// Back-date lastRefreshAttempt so it is recent (within debounce window).
 		s.mu.Lock()
-		s.lastRefresh = time.Now()
+		s.lastRefreshAttempt = time.Now()
 		s.mu.Unlock()
 
-		req := httptest.NewRequest(http.MethodGet, "/api/refresh", nil)
+		req := httptest.NewRequest(http.MethodGet, "http://localhost/api/refresh", nil)
 		w := httptest.NewRecorder()
 		s.ServeHTTP(w, req)
 
@@ -244,7 +244,7 @@ func TestHandleRefresh(t *testing.T) {
 		}
 
 		// HEAD: same status, empty body.
-		reqH := httptest.NewRequest(http.MethodHead, "/api/refresh", nil)
+		reqH := httptest.NewRequest(http.MethodHead, "http://localhost/api/refresh", nil)
 		wH := httptest.NewRecorder()
 		s.ServeHTTP(wH, reqH)
 		if wH.Code != http.StatusOK {
@@ -262,7 +262,7 @@ func TestHandleRefresh(t *testing.T) {
 			return os.WriteFile(filepath.Join(d, "data.json"), want, 0o644)
 		})
 
-		req := httptest.NewRequest(http.MethodGet, "/api/refresh", nil)
+		req := httptest.NewRequest(http.MethodGet, "http://localhost/api/refresh", nil)
 		w := httptest.NewRecorder()
 		s.ServeHTTP(w, req)
 
@@ -280,7 +280,7 @@ func TestHandleRefresh(t *testing.T) {
 			return context.Canceled // any error; no data.json written
 		})
 
-		req := httptest.NewRequest(http.MethodGet, "/api/refresh", nil)
+		req := httptest.NewRequest(http.MethodGet, "http://localhost/api/refresh", nil)
 		w := httptest.NewRecorder()
 		s.ServeHTTP(w, req)
 
@@ -305,7 +305,7 @@ func TestHandleRefresh(t *testing.T) {
 
 		ctx, cancel := context.WithCancel(context.Background())
 		cancel()
-		req := httptest.NewRequest(http.MethodGet, "/api/refresh", nil).WithContext(ctx)
+		req := httptest.NewRequest(http.MethodGet, "http://localhost/api/refresh", nil).WithContext(ctx)
 		w := httptest.NewRecorder()
 		s.ServeHTTP(w, req)
 
@@ -337,10 +337,10 @@ func TestHandleRefresh(t *testing.T) {
 		})
 		// Back-date so debounce blocks the refresh and we hit the read path.
 		s.mu.Lock()
-		s.lastRefresh = time.Now()
+		s.lastRefreshAttempt = time.Now()
 		s.mu.Unlock()
 
-		req := httptest.NewRequest(http.MethodGet, "/api/refresh", nil)
+		req := httptest.NewRequest(http.MethodGet, "http://localhost/api/refresh", nil)
 		w := httptest.NewRecorder()
 		s.ServeHTTP(w, req)
 
@@ -359,12 +359,12 @@ func TestHandleRefresh(t *testing.T) {
 			return nil
 		})
 		s.mu.Lock()
-		s.lastRefresh = time.Now()
+		s.lastRefreshAttempt = time.Now()
 		s.mu.Unlock()
 
 		for _, method := range []string{http.MethodGet, http.MethodHead} {
 			t.Run(method, func(t *testing.T) {
-				req := httptest.NewRequest(method, "/api/refresh", nil)
+				req := httptest.NewRequest(method, "http://localhost/api/refresh", nil)
 				w := httptest.NewRecorder()
 				s.ServeHTTP(w, req)
 
@@ -406,7 +406,7 @@ func TestHandleLogs_Disabled(t *testing.T) {
 	cfg.Logs.Enabled = false
 	s := newTestServerWithOpenclawHome(t, cfg, t.TempDir())
 
-	req := httptest.NewRequest(http.MethodGet, "/api/logs", nil)
+	req := httptest.NewRequest(http.MethodGet, "http://localhost/api/logs", nil)
 	w := httptest.NewRecorder()
 	s.ServeHTTP(w, req)
 
@@ -431,7 +431,7 @@ func TestHandleLogs_InvalidSince(t *testing.T) {
 	cfg.Logs.Enabled = true
 	s := newTestServerWithOpenclawHome(t, cfg, t.TempDir())
 
-	req := httptest.NewRequest(http.MethodGet, "/api/logs?since=not-a-time", nil)
+	req := httptest.NewRequest(http.MethodGet, "http://localhost/api/logs?since=not-a-time", nil)
 	w := httptest.NewRecorder()
 	s.ServeHTTP(w, req)
 
@@ -465,7 +465,7 @@ func TestHandleLogs_SinceFilter(t *testing.T) {
 
 	// Cutoff is strictly between the two lines (10:00:02Z).
 	cutoff := time.Date(2026, 4, 13, 10, 0, 2, 0, time.UTC).UnixMilli()
-	req := httptest.NewRequest(http.MethodGet, "/api/logs?source=gateway&since="+strconv.FormatInt(cutoff, 10), nil)
+	req := httptest.NewRequest(http.MethodGet, "http://localhost/api/logs?source=gateway&since="+strconv.FormatInt(cutoff, 10), nil)
 	w := httptest.NewRecorder()
 	s.ServeHTTP(w, req)
 
@@ -524,7 +524,7 @@ func TestHandleLogs_LimitClamp(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			req := httptest.NewRequest(http.MethodGet, "/api/logs"+tc.query, nil)
+			req := httptest.NewRequest(http.MethodGet, "http://localhost/api/logs"+tc.query, nil)
 			w := httptest.NewRecorder()
 			s.ServeHTTP(w, req)
 			if w.Code != http.StatusOK {
@@ -619,12 +619,12 @@ func TestPreWarm_RunsExactlyOneRefresh(t *testing.T) {
 		return nil
 	})
 
-	before := s.lastRefresh
+	before := s.lastRefreshAttempt
 
 	// PreWarm spawns the refresh worker. Capture the refreshDone channel under
 	// the lock the moment PreWarm returns. runRefresh closes this channel from
 	// its deferred cleanup (server_refresh.go) — *after* it has reset
-	// refreshRunning and (on success) advanced lastRefresh. So a closed
+	// refreshRunning and recorded lastRefreshAttempt. So a closed
 	// refreshDone is the deterministic "settled" signal, with no sleep or
 	// busy-poll on unexported fields. If the worker already finished before we
 	// grabbed the lock, refreshDone is nil and the work is already settled.
@@ -641,11 +641,11 @@ func TestPreWarm_RunsExactlyOneRefresh(t *testing.T) {
 	}
 
 	s.mu.Lock()
-	advanced := s.lastRefresh.After(before)
+	advanced := s.lastRefreshAttempt.After(before)
 	running := s.refreshRunning
 	s.mu.Unlock()
 	if !advanced {
-		t.Error("lastRefresh did not advance after PreWarm")
+		t.Error("lastRefreshAttempt did not advance after PreWarm")
 	}
 	if running {
 		t.Error("refreshRunning still set after refreshDone closed")

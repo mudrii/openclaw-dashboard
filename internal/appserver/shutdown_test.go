@@ -49,7 +49,7 @@ func TestStartRefresh_SkipsAfterShutdown(t *testing.T) {
 	writeMinimalData(t, dir)
 
 	// First request — should work
-	req := httptest.NewRequest(http.MethodGet, "/api/refresh", nil)
+	req := httptest.NewRequest(http.MethodGet, "http://localhost/api/refresh", nil)
 	w := httptest.NewRecorder()
 	srv.ServeHTTP(w, req)
 
@@ -63,7 +63,7 @@ func TestStartRefresh_SkipsAfterShutdown(t *testing.T) {
 	cancel()
 
 	// Second request after shutdown — should respond quickly, not hang
-	req2 := httptest.NewRequest(http.MethodGet, "/api/refresh", nil)
+	req2 := httptest.NewRequest(http.MethodGet, "http://localhost/api/refresh", nil)
 	w2 := httptest.NewRecorder()
 
 	done := make(chan struct{})
@@ -97,7 +97,7 @@ func TestHandleRefresh_AfterShutdownMissingDataDoesNotSpawnRefresh(t *testing.T)
 
 	cancel()
 
-	req := httptest.NewRequest(http.MethodGet, "/api/refresh", nil)
+	req := httptest.NewRequest(http.MethodGet, "http://localhost/api/refresh", nil)
 	w := httptest.NewRecorder()
 	done := make(chan struct{})
 	go func() {

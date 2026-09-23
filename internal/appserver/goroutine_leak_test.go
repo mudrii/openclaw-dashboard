@@ -50,7 +50,7 @@ func TestNoGoroutineLeakAfterShutdown(t *testing.T) {
 		// worker, the second reads back through the data cache.
 		for _, target := range []string{"/api/refresh", "/api/refresh", "/api/chat/status"} {
 			w := httptest.NewRecorder()
-			srv.ServeHTTP(w, httptest.NewRequest(http.MethodGet, target, nil))
+			srv.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "http://localhost"+target, nil))
 			if w.Code != http.StatusOK {
 				t.Fatalf("GET %s: got %d, want 200: %s", target, w.Code, w.Body.String())
 			}

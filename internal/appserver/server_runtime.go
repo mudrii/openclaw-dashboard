@@ -14,8 +14,19 @@ import (
 	"github.com/mudrii/openclaw-dashboard/internal/apprefresh"
 )
 
+const (
+	// workboardTimeout bounds the runtime reads behind /api/workboard.
+	workboardTimeout = 25 * time.Second
+	// maxRuntimeKeyLen caps IDs and keys forwarded to the runtime.
+	maxRuntimeKeyLen = 512
+	// automationRunsPageSize is the page size of /api/automation/runs.
+	automationRunsPageSize = 50
+	// maxAutomationRunsOffset caps the history offset a client may request.
+	maxAutomationRunsOffset = 100000
+)
+
 func (s *Server) handleWorkboard(w http.ResponseWriter, r *http.Request) {
-	ctx, cancel := context.WithTimeout(appopenclaw.WithTarget(r.Context(), s.cfg.Openclaw), 25*time.Second)
+	ctx, cancel := context.WithTimeout(appopenclaw.WithTarget(r.Context(), s.cfg.Openclaw), workboardTimeout)
 	defer cancel()
 	result, err := apprefresh.ReadWorkboardSummary(ctx, s.runtimeClient)
 	if err != nil {
@@ -26,7 +37,7 @@ func (s *Server) handleWorkboard(w http.ResponseWriter, r *http.Request) {
 }
 
 func validRuntimeKey(key string) bool {
-	return key != "" && len(key) <= 512 && strings.IndexFunc(key, unicode.IsControl) < 0
+	return key != "" && len(key) <= maxRuntimeKeyLen && strings.IndexFunc(key, unicode.IsControl) < 0
 }
 
 func (s *Server) handleChatCapability(w http.ResponseWriter, r *http.Request) {
@@ -70,12 +81,12 @@ func (s *Server) handleAutomationRuns(w http.ResponseWriter, r *http.Request) {
 	if value := r.URL.Query().Get("offset"); value != "" {
 		offset, err = strconv.Atoi(value)
 	}
-	if !validRuntimeKey(id) || strings.ContainsAny(id, `/\\`) || err != nil || offset < 0 || offset > 100000 {
+	if !validRuntimeKey(id) || strings.ContainsAny(id, `/\\`) || err != nil || offset < 0 || offset > maxAutomationRunsOffset {
 		s.sendJSON(w, r, http.StatusBadRequest, map[string]string{"error": "invalid automation history request"})
 		return
 	}
 	ctx := appopenclaw.WithTarget(r.Context(), s.cfg.Openclaw)
-	result, err := apprefresh.ReadAutomationRuns(ctx, s.runtimeClient, id, offset, 50)
+	result, err := apprefresh.ReadAutomationRuns(ctx, s.runtimeClient, id, offset, automationRunsPageSize)
 	if err != nil {
 		s.runtimeReadError(w, r, err)
 		return

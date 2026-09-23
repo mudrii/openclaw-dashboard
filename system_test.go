@@ -25,7 +25,7 @@ func TestNewSystemService_ReturnsNonNil(t *testing.T) {
 func TestHandleSystem_GET_Returns200WithSchema(t *testing.T) {
 	dir := t.TempDir()
 	srv := testServer(t, dir)
-	req := httptest.NewRequest(http.MethodGet, "/api/system", nil)
+	req := httptest.NewRequest(http.MethodGet, "http://localhost/api/system", nil)
 	w := httptest.NewRecorder()
 	srv.ServeHTTP(w, req)
 
@@ -70,7 +70,7 @@ func TestHandleSystem_GET_Returns200WithSchema(t *testing.T) {
 func TestHandleSystem_HEAD_NoBody(t *testing.T) {
 	dir := t.TempDir()
 	srv := testServer(t, dir)
-	req := httptest.NewRequest(http.MethodHead, "/api/system", nil)
+	req := httptest.NewRequest(http.MethodHead, "http://localhost/api/system", nil)
 	w := httptest.NewRecorder()
 	srv.ServeHTTP(w, req)
 
@@ -85,7 +85,7 @@ func TestHandleSystem_HEAD_NoBody(t *testing.T) {
 func TestHandleSystem_CORS(t *testing.T) {
 	dir := t.TempDir()
 	srv := testServer(t, dir)
-	req := httptest.NewRequest(http.MethodGet, "/api/system", nil)
+	req := httptest.NewRequest(http.MethodGet, "http://localhost/api/system", nil)
 	req.Header.Set("Origin", "http://localhost:9090")
 	w := httptest.NewRecorder()
 	srv.ServeHTTP(w, req)
@@ -105,7 +105,7 @@ func TestHandleSystem_Disabled_Returns503(t *testing.T) {
 	cfg.System.Enabled = false
 	srv := testServerWithConfig(t, dir, cfg)
 
-	req := httptest.NewRequest(http.MethodGet, "/api/system", nil)
+	req := httptest.NewRequest(http.MethodGet, "http://localhost/api/system", nil)
 	w := httptest.NewRecorder()
 	srv.ServeHTTP(w, req)
 
@@ -121,7 +121,7 @@ func TestHandleSystem_ThresholdsInResponse(t *testing.T) {
 	cfg.System.RAM = MetricThreshold{Warn: 60, Critical: 80}
 	srv := testServerWithConfig(t, dir, cfg)
 
-	req := httptest.NewRequest(http.MethodGet, "/api/system", nil)
+	req := httptest.NewRequest(http.MethodGet, "http://localhost/api/system", nil)
 	w := httptest.NewRecorder()
 	srv.ServeHTTP(w, req)
 
@@ -223,13 +223,13 @@ func TestHandleSystem_CacheHit(t *testing.T) {
 	dir := t.TempDir()
 	srv := testServer(t, dir)
 
-	req1 := httptest.NewRequest(http.MethodGet, "/api/system", nil)
+	req1 := httptest.NewRequest(http.MethodGet, "http://localhost/api/system", nil)
 	w1 := httptest.NewRecorder()
 	srv.ServeHTTP(w1, req1)
 
 	time.Sleep(10 * time.Millisecond)
 
-	req2 := httptest.NewRequest(http.MethodGet, "/api/system", nil)
+	req2 := httptest.NewRequest(http.MethodGet, "http://localhost/api/system", nil)
 	w2 := httptest.NewRecorder()
 	srv.ServeHTTP(w2, req2)
 
@@ -244,7 +244,7 @@ func TestHandleSystem_DegradedReturns200(t *testing.T) {
 	cfg.System.DiskPath = "/nonexistent-path-xyz"
 	srv := testServerWithConfig(t, dir, cfg)
 
-	req := httptest.NewRequest(http.MethodGet, "/api/system", nil)
+	req := httptest.NewRequest(http.MethodGet, "http://localhost/api/system", nil)
 	w := httptest.NewRecorder()
 	srv.ServeHTTP(w, req)
 
@@ -364,11 +364,20 @@ func TestParseGatewayStatusJSON_RunningService(t *testing.T) {
 
 func TestParseGatewayStatusJSON_LoadedButNotRunning(t *testing.T) {
 	ctx := context.Background()
-	// loaded=true should still give online (fallback when runtime.status missing)
-	input := `{"service":{"loaded":true,"runtime":{"status":"stopped","pid":0}},"version":""}`
-	got := parseGatewayStatusJSON(ctx, input)
-	if got.Status != "online" {
-		t.Errorf("loaded=true with status=stopped: expected online, got %q", got.Status)
+	for _, tc := range []struct {
+		name, input, want string
+	}{
+		// An explicit runtime status wins over loaded: a loaded but stopped
+		// service is not serving.
+		{"loaded but stopped", `{"service":{"loaded":true,"runtime":{"status":"stopped","pid":0}},"version":""}`, "offline"},
+		// loaded is only the fallback when runtime.status is missing.
+		{"loaded without runtime status", `{"service":{"loaded":true,"runtime":{"pid":0}},"version":""}`, "online"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := parseGatewayStatusJSON(ctx, tc.input); got.Status != tc.want {
+				t.Errorf("Status = %q, want %q", got.Status, tc.want)
+			}
+		})
 	}
 }
 
@@ -464,6 +473,9 @@ func TestGetProcessInfo_CurrentProcess(t *testing.T) {
 	if uptime == "" {
 		t.Errorf("uptime empty for the running test process (memory=%q)", memory)
 	}
+	if memory == "" {
+		t.Errorf("memory empty for the running test process (uptime=%q)", uptime)
+	}
 }
 
 func TestGetProcessInfo_InvalidPID(t *testing.T) {
@@ -476,12 +488,19 @@ func TestGetProcessInfo_InvalidPID(t *testing.T) {
 }
 
 func TestGetProcessInfo_ContextTimeout(t *testing.T) {
-	// Verify function respects a very short context timeout without hanging
-	ctx, cancel := context.WithTimeout(context.Background(), 1)
+	// An already-expired context must not start ps: the call returns promptly
+	// with empty fields instead of reporting a live process.
+	ctx, cancel := context.WithTimeout(t.Context(), 1)
 	defer cancel()
-	pid := os.Getpid()
-	// Should return without blocking even if context is already cancelled
-	_, _ = getProcessInfo(ctx, pid)
+	<-ctx.Done()
+	start := time.Now()
+	uptime, memory := getProcessInfo(ctx, os.Getpid())
+	if uptime != "" || memory != "" {
+		t.Errorf("getProcessInfo(expired ctx) = (%q, %q), want empty", uptime, memory)
+	}
+	if elapsed := time.Since(start); elapsed > time.Second {
+		t.Errorf("getProcessInfo(expired ctx) took %v, want prompt return", elapsed)
+	}
 }
 
 // ── Tests for detectGatewayFallback timeout-bounded client ───────────────
@@ -541,9 +560,13 @@ func TestResolveOpenclawBin_SkipsNonExecutable(t *testing.T) {
 	dir := t.TempDir()
 	// Create a file at a candidate location that is NOT executable
 	binDir := filepath.Join(dir, ".asdf", "shims")
-	os.MkdirAll(binDir, 0755)
+	if err := os.MkdirAll(binDir, 0755); err != nil {
+		t.Fatal(err)
+	}
 	fakeFile := filepath.Join(binDir, "openclaw")
-	os.WriteFile(fakeFile, []byte("not executable"), 0644) // no exec bit
+	if err := os.WriteFile(fakeFile, []byte("not executable"), 0644); err != nil { // no exec bit
+		t.Fatal(err)
+	}
 
 	// resolveOpenclawBin should NOT return this file
 	// (We can't easily test this without modifying HOME, so just test the logic directly)
@@ -562,15 +585,23 @@ func TestResolveOpenclawBin_IntegrationWithTempHome(t *testing.T) {
 
 	// Create asdf shims dir with NON-executable openclaw → should be skipped
 	shimsDir := filepath.Join(tmpHome, ".asdf", "shims")
-	os.MkdirAll(shimsDir, 0755)
+	if err := os.MkdirAll(shimsDir, 0755); err != nil {
+		t.Fatal(err)
+	}
 	nonExec := filepath.Join(shimsDir, "openclaw")
-	os.WriteFile(nonExec, []byte("#!/bin/sh\necho not-exec"), 0644) // no exec bit
+	if err := os.WriteFile(nonExec, []byte("#!/bin/sh\necho not-exec"), 0644); err != nil { // no exec bit
+		t.Fatal(err)
+	}
 
 	// Create asdf nodejs install with EXECUTABLE openclaw → should be found
 	nodeDir := filepath.Join(tmpHome, ".asdf", "installs", "nodejs", "22.0.0", "bin")
-	os.MkdirAll(nodeDir, 0755)
+	if err := os.MkdirAll(nodeDir, 0755); err != nil {
+		t.Fatal(err)
+	}
 	execFile := filepath.Join(nodeDir, "openclaw")
-	os.WriteFile(execFile, []byte("#!/bin/sh\necho exec"), 0755) // exec bit set
+	if err := os.WriteFile(execFile, []byte("#!/bin/sh\necho exec"), 0755); err != nil { // exec bit set
+		t.Fatal(err)
+	}
 
 	// Temporarily remove PATH-based openclaw so resolveOpenclawBin falls through to candidates
 	origPath := os.Getenv("PATH")
@@ -635,7 +666,7 @@ func TestStaleByteInjection(t *testing.T) {
 	srv := testServer(t, dir)
 
 	// Prime the system service cache with a fresh payload
-	req1 := httptest.NewRequest(http.MethodGet, "/api/system", nil)
+	req1 := httptest.NewRequest(http.MethodGet, "http://localhost/api/system", nil)
 	w1 := httptest.NewRecorder()
 	srv.ServeHTTP(w1, req1)
 
@@ -644,7 +675,9 @@ func TestStaleByteInjection(t *testing.T) {
 	}
 
 	var resp1 SystemResponse
-	json.Unmarshal(w1.Body.Bytes(), &resp1)
+	if err := json.Unmarshal(w1.Body.Bytes(), &resp1); err != nil {
+		t.Fatal(err)
+	}
 	if resp1.Stale {
 		t.Fatal("first response should not be stale")
 	}
@@ -653,12 +686,14 @@ func TestStaleByteInjection(t *testing.T) {
 	expireMetricsCacheForTest(srv.systemSvc)
 
 	// Next request should get stale=true
-	req2 := httptest.NewRequest(http.MethodGet, "/api/system", nil)
+	req2 := httptest.NewRequest(http.MethodGet, "http://localhost/api/system", nil)
 	w2 := httptest.NewRecorder()
 	srv.ServeHTTP(w2, req2)
 
 	var resp2 SystemResponse
-	json.Unmarshal(w2.Body.Bytes(), &resp2)
+	if err := json.Unmarshal(w2.Body.Bytes(), &resp2); err != nil {
+		t.Fatal(err)
+	}
 	if !resp2.Stale {
 		t.Error("expected stale=true after cache expiry")
 	}
@@ -669,9 +704,11 @@ func TestStaleByteInjection(t *testing.T) {
 func TestStaticFile_FaviconIco(t *testing.T) {
 	dir := t.TempDir()
 	srv := testServer(t, dir)
-	os.WriteFile(filepath.Join(dir, "favicon.ico"), []byte("ico"), 0644)
+	if err := os.WriteFile(filepath.Join(dir, "favicon.ico"), []byte("ico"), 0644); err != nil {
+		t.Fatal(err)
+	}
 
-	req := httptest.NewRequest(http.MethodGet, "/favicon.ico", nil)
+	req := httptest.NewRequest(http.MethodGet, "http://localhost/favicon.ico", nil)
 	w := httptest.NewRecorder()
 	srv.ServeHTTP(w, req)
 
@@ -686,9 +723,11 @@ func TestStaticFile_FaviconIco(t *testing.T) {
 func TestStaticFile_FaviconPng(t *testing.T) {
 	dir := t.TempDir()
 	srv := testServer(t, dir)
-	os.WriteFile(filepath.Join(dir, "favicon.png"), []byte("png"), 0644)
+	if err := os.WriteFile(filepath.Join(dir, "favicon.png"), []byte("png"), 0644); err != nil {
+		t.Fatal(err)
+	}
 
-	req := httptest.NewRequest(http.MethodGet, "/favicon.png", nil)
+	req := httptest.NewRequest(http.MethodGet, "http://localhost/favicon.png", nil)
 	w := httptest.NewRecorder()
 	srv.ServeHTTP(w, req)
 
@@ -706,7 +745,7 @@ func TestCORS_AllowHeaders_IncludesAuthorization(t *testing.T) {
 	dir := t.TempDir()
 	srv := testServer(t, dir)
 
-	req := httptest.NewRequest(http.MethodOptions, "/api/chat", nil)
+	req := httptest.NewRequest(http.MethodOptions, "http://localhost/api/chat", nil)
 	req.Header.Set("Origin", "http://localhost:8080")
 	w := httptest.NewRecorder()
 	srv.ServeHTTP(w, req)
@@ -812,7 +851,9 @@ if [ "$1" = "status" ] && [ "$2" = "--json" ]; then
 fi
 exit 1
 `
-	os.WriteFile(fake, []byte(script), 0o755)
+	if err := os.WriteFile(fake, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
 
 	inputVersions := SystemVersions{Openclaw: "2026.3.9-test", Latest: "2026.3.10"}
 	oc := collectOpenclawRuntime(context.Background(), fake, 1500, port, inputVersions, false)
@@ -854,7 +895,9 @@ if [ "$1" = "status" ] && [ "$2" = "--json" ]; then
 fi
 exit 1
 `
-	os.WriteFile(fake, []byte(script), 0o755)
+	if err := os.WriteFile(fake, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
 
 	inputVersions := SystemVersions{Openclaw: "2026.3.9-old", Latest: "2026.3.10-old"}
 	oc := collectOpenclawRuntime(context.Background(), fake, 1500, port, inputVersions, false)
@@ -879,7 +922,7 @@ func TestRefresh_DataMissing_HasCORSHeaders(t *testing.T) {
 	}
 
 	srv := testServer(t, dir)
-	req := httptest.NewRequest(http.MethodGet, "/api/refresh", nil)
+	req := httptest.NewRequest(http.MethodGet, "http://localhost/api/refresh", nil)
 	req.Header.Set("Origin", "http://localhost:3000")
 	w := httptest.NewRecorder()
 	srv.ServeHTTP(w, req)
@@ -902,7 +945,7 @@ func TestStaleByteInjection_JSONRoundTrip(t *testing.T) {
 	srv := testServer(t, dir)
 
 	// Prime the cache
-	req1 := httptest.NewRequest(http.MethodGet, "/api/system", nil)
+	req1 := httptest.NewRequest(http.MethodGet, "http://localhost/api/system", nil)
 	w1 := httptest.NewRecorder()
 	srv.ServeHTTP(w1, req1)
 	if w1.Code != http.StatusOK {
@@ -920,7 +963,7 @@ func TestStaleByteInjection_JSONRoundTrip(t *testing.T) {
 	expireMetricsCacheForTest(srv.systemSvc)
 
 	// Stale request: should get stale=true via JSON round-trip (not byte replacement)
-	req2 := httptest.NewRequest(http.MethodGet, "/api/system", nil)
+	req2 := httptest.NewRequest(http.MethodGet, "http://localhost/api/system", nil)
 	w2 := httptest.NewRecorder()
 	srv.ServeHTTP(w2, req2)
 	if w2.Code != http.StatusOK {
@@ -1106,7 +1149,7 @@ func TestHandleSystem_GatewayReasonForContainerTarget(t *testing.T) {
 			srv := NewServer(t.TempDir(), "test", cfg, "", []byte("<head><body>__VERSION__</body>"), t.Context())
 
 			w := httptest.NewRecorder()
-			srv.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/system", nil))
+			srv.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "http://localhost/api/system", nil))
 			if w.Code != http.StatusOK {
 				t.Fatalf("status = %d, want 200: %s", w.Code, w.Body.String())
 			}

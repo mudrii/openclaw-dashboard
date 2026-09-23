@@ -1,6 +1,7 @@
 package appserver
 
 import (
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -17,7 +18,34 @@ var allowedStatic = map[string]string{
 	"/favicon.png": "image/png",
 }
 
+// Allow header values for 405 responses, keyed by route family.
+const (
+	allowReadMethods  = "GET, HEAD, OPTIONS"
+	allowWriteMethods = "OPTIONS, POST"
+)
+
+// readRoutes lists the GET/HEAD API and page routes handled by ServeHTTP.
+// Keep in sync with its switch so wrong-method requests get 405, not 404.
+var readRoutes = map[string]struct{}{
+	"/": {}, "/index.html": {}, "/api/system": {}, "/api/refresh": {},
+	"/api/logs": {}, "/api/errors": {}, "/api/automation/runs": {},
+	"/api/session/context": {}, "/api/workboard": {}, "/api/chat/status": {},
+	"/api/operations/status": {},
+}
+
+// writeRoutes lists the POST routes handled by ServeHTTP.
+var writeRoutes = map[string]struct{}{"/api/operations": {}, "/api/chat": {}}
+
+// ServeHTTP routes dashboard requests. Requests whose Host header does not
+// name a loopback host are refused with 421 Misdirected Request so a DNS
+// rebinding page cannot read the API through a hostile domain, unless
+// OPENCLAW_DASHBOARD_ALLOW_NON_LOOPBACK=1 opted the server out at startup or
+// the host is listed in OPENCLAW_DASHBOARD_ALLOWED_HOSTS.
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if !s.allowAnyHost && !isLoopbackHost(r.Host) && !s.isAllowedHost(r.Host) {
+		http.Error(w, "misdirected request", http.StatusMisdirectedRequest)
+		return
+	}
 	// Accept both GET and HEAD for all read endpoints
 	isRead := r.Method == http.MethodGet || r.Method == http.MethodHead
 
@@ -41,7 +69,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case isRead && r.URL.Path == "/api/chat/status":
 		s.handleChatCapability(w, r)
 	case isRead && r.URL.Path == "/api/operations/status":
-		s.sendJSON(w, r, http.StatusOK, map[string]bool{"enabled": s.cfg.Operations.Enabled && len(s.operatorToken) >= 32})
+		s.sendJSON(w, r, http.StatusOK, map[string]bool{"enabled": s.cfg.Operations.Enabled && len(s.operatorToken) >= minOperatorTokenLen})
 	case r.Method == http.MethodPost && r.URL.Path == "/api/operations":
 		s.handleOperation(w, r)
 	case r.Method == http.MethodOptions:
@@ -60,8 +88,28 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		s.notFound(w, r)
 	default:
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		s.methodNotAllowed(w, r)
 	}
+}
+
+// methodNotAllowed answers a request whose method the path does not accept:
+// 405 with an Allow header for known routes, 404 for unknown paths.
+func (s *Server) methodNotAllowed(w http.ResponseWriter, r *http.Request) {
+	path := r.URL.Path
+	allow := ""
+	if _, ok := writeRoutes[path]; ok {
+		allow = allowWriteMethods
+	} else if _, ok := readRoutes[path]; ok {
+		allow = allowReadMethods
+	} else if _, ok := allowedStatic[path]; ok {
+		allow = allowReadMethods
+	}
+	if allow == "" {
+		s.notFound(w, r)
+		return
+	}
+	w.Header().Set("Allow", allow)
+	http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 }
 
 // HandleStaticFile serves an allowlisted file from the dashboard directory.
@@ -143,6 +191,51 @@ func (s *Server) setCORSHeaders(w http.ResponseWriter, r *http.Request) {
 	} else {
 		w.Header().Set("Access-Control-Allow-Origin", s.corsDefault)
 	}
+}
+
+// hostName strips the port, IPv6 brackets and a trailing root dot from a Host
+// header value and lower-cases it.
+func hostName(hostport string) string {
+	host := hostport
+	if h, _, err := net.SplitHostPort(hostport); err == nil {
+		host = h
+	}
+	host = strings.TrimSuffix(strings.TrimPrefix(host, "["), "]")
+	return strings.ToLower(strings.TrimSuffix(host, "."))
+}
+
+// isLoopbackHost reports whether a Host header value (with or without port)
+// names localhost or a loopback IP literal.
+func isLoopbackHost(hostport string) bool {
+	host := hostName(hostport)
+	return host == "localhost" || net.ParseIP(host).IsLoopback()
+}
+
+// isAllowedHost reports whether a Host header value names one of the operator
+// allow-listed hosts.
+func (s *Server) isAllowedHost(hostport string) bool {
+	host := hostName(hostport)
+	if host == "" {
+		return false
+	}
+	_, ok := s.allowedHosts[host]
+	return ok
+}
+
+// parseAllowedHosts parses a comma-separated host list, ignoring blanks.
+func parseAllowedHosts(raw string) map[string]struct{} {
+	var hosts map[string]struct{}
+	for part := range strings.SplitSeq(raw, ",") {
+		host := hostName(strings.TrimSpace(part))
+		if host == "" {
+			continue
+		}
+		if hosts == nil {
+			hosts = make(map[string]struct{})
+		}
+		hosts[host] = struct{}{}
+	}
+	return hosts
 }
 
 func isLoopbackOrigin(origin string) bool {

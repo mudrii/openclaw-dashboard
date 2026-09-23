@@ -40,7 +40,7 @@ func TestHandleStaticFile_Allowlisted(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	req := httptest.NewRequest(http.MethodGet, "/themes.json", nil)
+	req := httptest.NewRequest(http.MethodGet, "http://localhost/themes.json", nil)
 	w := httptest.NewRecorder()
 	s.ServeHTTP(w, req)
 
@@ -70,7 +70,7 @@ func TestHandleStaticFile_RuntimeFallback(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	req := httptest.NewRequest(http.MethodGet, "/themes.json", nil)
+	req := httptest.NewRequest(http.MethodGet, "http://localhost/themes.json", nil)
 	w := httptest.NewRecorder()
 	s.ServeHTTP(w, req)
 
@@ -87,7 +87,7 @@ func TestHandleStaticFile_RuntimeFallback(t *testing.T) {
 
 func TestHandleStaticFile_NotAllowlisted(t *testing.T) {
 	s := newTestServer(t)
-	req := httptest.NewRequest(http.MethodGet, "/secret.txt", nil)
+	req := httptest.NewRequest(http.MethodGet, "http://localhost/secret.txt", nil)
 	w := httptest.NewRecorder()
 	s.ServeHTTP(w, req)
 	if w.Code != http.StatusNotFound {
@@ -97,7 +97,7 @@ func TestHandleStaticFile_NotAllowlisted(t *testing.T) {
 
 func TestHandleStaticFile_PathTraversal(t *testing.T) {
 	s := newTestServer(t)
-	req := httptest.NewRequest(http.MethodGet, "/../../../etc/passwd", nil)
+	req := httptest.NewRequest(http.MethodGet, "http://localhost/../../../etc/passwd", nil)
 	w := httptest.NewRecorder()
 	s.HandleStaticFile(w, req, "/../../../etc/passwd", "text/plain")
 	if w.Code != http.StatusNotFound {
@@ -107,7 +107,7 @@ func TestHandleStaticFile_PathTraversal(t *testing.T) {
 
 func TestServeHTTP_MethodNotAllowed(t *testing.T) {
 	s := newTestServer(t)
-	req := httptest.NewRequest(http.MethodDelete, "/", nil)
+	req := httptest.NewRequest(http.MethodDelete, "http://localhost/", nil)
 	w := httptest.NewRecorder()
 	s.ServeHTTP(w, req)
 	if w.Code != http.StatusMethodNotAllowed {
@@ -117,7 +117,7 @@ func TestServeHTTP_MethodNotAllowed(t *testing.T) {
 
 func TestServeHTTP_CORS(t *testing.T) {
 	s := newTestServer(t)
-	req := httptest.NewRequest(http.MethodOptions, "/api/chat", nil)
+	req := httptest.NewRequest(http.MethodOptions, "http://localhost/api/chat", nil)
 	req.Header.Set("Origin", "http://localhost:3000")
 	w := httptest.NewRecorder()
 	s.ServeHTTP(w, req)
@@ -135,7 +135,7 @@ func TestServeHTTP_CORS(t *testing.T) {
 
 func TestServeHTTP_CORS_IPv6Loopback(t *testing.T) {
 	s := newTestServer(t)
-	req := httptest.NewRequest(http.MethodOptions, "/api/chat", nil)
+	req := httptest.NewRequest(http.MethodOptions, "http://localhost/api/chat", nil)
 	req.Header.Set("Origin", "http://[::1]:3000")
 	w := httptest.NewRecorder()
 	s.ServeHTTP(w, req)
@@ -165,7 +165,7 @@ func TestServeHTTP_CORS_NonLoopbackDefaulted(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			s := newTestServer(t)
-			req := httptest.NewRequest(http.MethodOptions, "/api/chat", nil)
+			req := httptest.NewRequest(http.MethodOptions, "http://localhost/api/chat", nil)
 			req.Header.Set("Origin", tc.origin)
 			w := httptest.NewRecorder()
 			s.ServeHTTP(w, req)
@@ -189,7 +189,7 @@ func TestServeHTTP_CORS_NonLoopbackDefaulted(t *testing.T) {
 
 func TestServeHTTP_UnknownRoute(t *testing.T) {
 	s := newTestServer(t)
-	req := httptest.NewRequest(http.MethodGet, "/nonexistent", nil)
+	req := httptest.NewRequest(http.MethodGet, "http://localhost/nonexistent", nil)
 	w := httptest.NewRecorder()
 	s.ServeHTTP(w, req)
 	if w.Code != http.StatusNotFound {
@@ -199,7 +199,7 @@ func TestServeHTTP_UnknownRoute(t *testing.T) {
 
 func TestSendJSON_ValidData(t *testing.T) {
 	s := newTestServer(t)
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req := httptest.NewRequest(http.MethodGet, "http://localhost/", nil)
 	w := httptest.NewRecorder()
 	s.sendJSON(w, req, http.StatusOK, map[string]string{"hello": "world"})
 
@@ -221,7 +221,7 @@ func TestSendJSON_ValidData(t *testing.T) {
 
 func TestSendJSON_MarshalError(t *testing.T) {
 	s := newTestServer(t)
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req := httptest.NewRequest(http.MethodGet, "http://localhost/", nil)
 	w := httptest.NewRecorder()
 	// Channels cannot be marshalled to JSON
 	s.sendJSON(w, req, http.StatusOK, make(chan int))

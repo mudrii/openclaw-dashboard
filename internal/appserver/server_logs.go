@@ -182,7 +182,7 @@ func (s *Server) handleErrors(w http.ResponseWriter, r *http.Request) {
 	collectionSource := ""
 	if modern {
 		if source := query.Get("source"); source != "" && source != "all" && source != "gateway" {
-			s.sendJSON(w, r, 400, map[string]string{"error": "source unsupported by runtime logs"})
+			s.sendJSON(w, r, http.StatusBadRequest, map[string]string{"error": "source unsupported by runtime logs"})
 			return
 		}
 		sources = []string{"gateway"}
@@ -277,7 +277,7 @@ func (s *Server) handleErrors(w http.ResponseWriter, r *http.Request) {
 
 	s.sendJSON(w, r, http.StatusOK, errorsResponse{
 		CollectionSource:  collectionSource,
-		BoundedTail:       modern,
+		BoundedTail:       modern || len(entries) >= errorLimitDefault,
 		OK:                true,
 		Window:            windowHours,
 		Count:             len(items),
@@ -287,10 +287,6 @@ func (s *Server) handleErrors(w http.ResponseWriter, r *http.Request) {
 		Sources:           rawSourceList,
 		DroppedSignatures: droppedSignatures,
 	})
-}
-
-func (s *Server) readMergedLogs(sources []string, globalLimit int) ([]apprefresh.LogRecord, error) {
-	return s.readMergedLogsWithContext(context.Background(), sources, globalLimit)
 }
 
 func (s *Server) readMergedLogsWithContext(ctx context.Context, sources []string, globalLimit int) ([]apprefresh.LogRecord, error) {
@@ -394,13 +390,10 @@ func parseSince(raw string, fallback int64) (int64, error) {
 	return fallback, fmt.Errorf("invalid since value %q", raw)
 }
 
-func clampInt(raw string, def, min, max int) int {
+func clampInt(raw string, def, lo, hi int) int {
 	v, err := strconv.Atoi(strings.TrimSpace(raw))
-	if err != nil || v < min {
+	if err != nil || v < lo {
 		return def
 	}
-	if v > max {
-		return max
-	}
-	return v
+	return min(v, hi)
 }

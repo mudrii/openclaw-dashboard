@@ -71,14 +71,14 @@ func TestRuntimeLogsWaiterSurvivesLeaderCancellation(t *testing.T) {
 	go func() {
 		defer close(leaderDone)
 		w := httptest.NewRecorder()
-		s.ServeHTTP(w, httptest.NewRequest("GET", "/api/logs?source=gateway", nil).WithContext(leaderCtx))
+		s.ServeHTTP(w, httptest.NewRequest("GET", "http://localhost/api/logs?source=gateway", nil).WithContext(leaderCtx))
 	}()
 
 	<-started
 	cancelLeader()
 
 	w := httptest.NewRecorder()
-	s.ServeHTTP(w, httptest.NewRequest("GET", "/api/logs?source=gateway", nil))
+	s.ServeHTTP(w, httptest.NewRequest("GET", "http://localhost/api/logs?source=gateway", nil))
 	if w.Code != http.StatusOK {
 		t.Fatalf("waiter inherited the leader's cancellation: %d %s", w.Code, w.Body.String())
 	}
@@ -105,7 +105,7 @@ func TestRuntimeLogsUseGatewayAndCache(t *testing.T) {
 	}}
 	for range 2 {
 		w := httptest.NewRecorder()
-		s.ServeHTTP(w, httptest.NewRequest("GET", "/api/logs?source=gateway&limit=10", nil))
+		s.ServeHTTP(w, httptest.NewRequest("GET", "http://localhost/api/logs?source=gateway&limit=10", nil))
 		if w.Code != 200 || strings.Contains(w.Body.String(), "secret-value") || !strings.Contains(w.Body.String(), `"truncated":true`) {
 			t.Fatalf("response=%d %s", w.Code, w.Body.String())
 		}
@@ -114,7 +114,7 @@ func TestRuntimeLogsUseGatewayAndCache(t *testing.T) {
 		t.Fatalf("calls=%d want 1 cached read", calls)
 	}
 	w := httptest.NewRecorder()
-	s.ServeHTTP(w, httptest.NewRequest("GET", "/api/logs?source=cron", nil))
+	s.ServeHTTP(w, httptest.NewRequest("GET", "http://localhost/api/logs?source=cron", nil))
 	if w.Code != 400 {
 		t.Fatalf("unsupported source accepted: %d", w.Code)
 	}
@@ -136,13 +136,13 @@ func TestRuntimeLogsDoNotCacheCallerCancellation(t *testing.T) {
 	cancelled, cancel := context.WithCancel(t.Context())
 	cancel()
 	first := httptest.NewRecorder()
-	s.ServeHTTP(first, httptest.NewRequest("GET", "/api/logs?source=gateway", nil).WithContext(cancelled))
+	s.ServeHTTP(first, httptest.NewRequest("GET", "http://localhost/api/logs?source=gateway", nil).WithContext(cancelled))
 	if first.Code == http.StatusOK {
 		t.Fatalf("cancelled caller served a response: %d %s", first.Code, first.Body.String())
 	}
 
 	second := httptest.NewRecorder()
-	s.ServeHTTP(second, httptest.NewRequest("GET", "/api/logs?source=gateway", nil))
+	s.ServeHTTP(second, httptest.NewRequest("GET", "http://localhost/api/logs?source=gateway", nil))
 	if second.Code != http.StatusOK || calls != 1 {
 		t.Fatalf("healthy caller inherited the cancelled read: code=%d calls=%d body=%s", second.Code, calls, second.Body.String())
 	}
@@ -168,7 +168,7 @@ func TestRuntimeLogsSingleFlight(t *testing.T) {
 	for range 4 {
 		wg.Go(func() {
 			w := httptest.NewRecorder()
-			s.ServeHTTP(w, httptest.NewRequest("GET", "/api/logs?source=gateway", nil))
+			s.ServeHTTP(w, httptest.NewRequest("GET", "http://localhost/api/logs?source=gateway", nil))
 			if w.Code != http.StatusOK {
 				t.Errorf("concurrent poll failed: %d %s", w.Code, w.Body.String())
 			}
@@ -215,13 +215,13 @@ func TestRuntimeLogsPanickingLeaderAbortsWaiter(t *testing.T) {
 	leaderPanic := make(chan any, 1)
 	go func() {
 		defer func() { leaderPanic <- recover() }()
-		s.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("GET", "/api/logs?source=gateway", nil))
+		s.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("GET", "http://localhost/api/logs?source=gateway", nil))
 	}()
 
 	<-leaderRunning
 	waiter := httptest.NewRecorder()
 	close(waiterSent)
-	s.ServeHTTP(waiter, httptest.NewRequest("GET", "/api/logs?source=gateway", nil))
+	s.ServeHTTP(waiter, httptest.NewRequest("GET", "http://localhost/api/logs?source=gateway", nil))
 
 	if recovered := <-leaderPanic; recovered == nil {
 		t.Fatal("leader panic did not reach its caller")
@@ -234,7 +234,7 @@ func TestRuntimeLogsPanickingLeaderAbortsWaiter(t *testing.T) {
 	}
 
 	next := httptest.NewRecorder()
-	s.ServeHTTP(next, httptest.NewRequest("GET", "/api/logs?source=gateway", nil))
+	s.ServeHTTP(next, httptest.NewRequest("GET", "http://localhost/api/logs?source=gateway", nil))
 	if next.Code != http.StatusOK {
 		t.Fatalf("poll after the aborted read: code=%d body=%s, want 200", next.Code, next.Body.String())
 	}

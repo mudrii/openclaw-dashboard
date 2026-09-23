@@ -3,6 +3,8 @@ package appserver
 import (
 	"context"
 	jsonv2 "encoding/json/v2"
+	"errors"
+	"io/fs"
 	"log/slog"
 	"maps"
 	"net/http"
@@ -31,6 +33,7 @@ func (s *Server) startRefresh() chan struct{} {
 	default:
 	}
 	s.refreshRunning = true
+	s.lastRefreshAttempt = time.Now()
 	ch := make(chan struct{})
 	s.refreshDone = ch
 	s.mu.Unlock()
@@ -39,8 +42,25 @@ func (s *Server) startRefresh() chan struct{} {
 	return ch
 }
 
-// runRefresh generates data.json using the Go-native data collector.
-// Updates lastRefresh only on success.
+// WaitRefresh blocks until the in-flight refresh, if any, has finished or ctx
+// is done, and returns ctx.Err() in the latter case.
+func (s *Server) WaitRefresh(ctx context.Context) error {
+	s.mu.Lock()
+	ch := s.refreshDone
+	s.mu.Unlock()
+	if ch == nil {
+		return nil
+	}
+	select {
+	case <-ch:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+// runRefresh generates data.json using the Go-native data collector, bounded
+// by RefreshDeadline so a hung OpenClaw subprocess cannot pin the worker.
 func (s *Server) runRefresh(done chan struct{}) {
 	defer func() {
 		s.mu.Lock()
@@ -52,14 +72,11 @@ func (s *Server) runRefresh(done chan struct{}) {
 		close(done)
 	}()
 
-	if err := s.refreshFn(s.ctx, s.dir, s.openclawPath, s.cfg); err != nil {
+	ctx, cancel := context.WithTimeout(s.ctx, RefreshDeadline)
+	defer cancel()
+	if err := s.refreshFn(ctx, s.dir, s.openclawPath, s.cfg); err != nil {
 		slog.Error("[dashboard] refresh failed", "error", err)
-		return
 	}
-
-	s.mu.Lock()
-	s.lastRefresh = time.Now()
-	s.mu.Unlock()
 }
 
 // loadData reads data.json with mtime-based caching, filling both raw bytes and
@@ -77,10 +94,10 @@ func (s *Server) loadData() ([]byte, map[string]any, error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	mtime := stat.ModTime()
+	mtime, size := stat.ModTime(), stat.Size()
 
 	s.dataMu.RLock()
-	if s.cachedDataRaw != nil && s.cachedData != nil && !mtime.After(s.cachedDataMtime) {
+	if s.cachedDataRaw != nil && s.cachedData != nil && mtime.Equal(s.cachedDataMtime) && size == s.cachedDataSize {
 		raw := s.cachedDataRaw
 		parsed := maps.Clone(s.cachedData)
 		s.dataMu.RUnlock()
@@ -108,32 +125,35 @@ func (s *Server) loadData() ([]byte, map[string]any, error) {
 
 	s.dataMu.Lock()
 	// Double-check: another goroutine may have updated while we read/parsed
-	if s.cachedDataRaw != nil && s.cachedData != nil && !mtime.After(s.cachedDataMtime) {
+	if s.cachedDataRaw != nil && s.cachedData != nil && mtime.Equal(s.cachedDataMtime) && size == s.cachedDataSize {
 		raw = s.cachedDataRaw
 		parsed = maps.Clone(s.cachedData)
 	} else {
 		s.cachedDataRaw = raw
 		s.cachedData = parsed
 		s.cachedDataMtime = mtime
+		s.cachedDataSize = size
 		parsed = maps.Clone(parsed)
 	}
 	s.dataMu.Unlock()
 	return raw, parsed, nil
 }
 
-// getDataRawCached returns cached data.json bytes — delegates to loadData().
+// GetDataRawCached returns the cached data.json bytes, re-reading the file when
+// its mtime or size changed.
 func (s *Server) GetDataRawCached() ([]byte, error) {
 	raw, _, err := s.loadData()
 	return raw, err
 }
 
 // handleRefresh implements stale-while-revalidate:
-// Returns existing data.json immediately, triggers refresh in background if stale.
+// Returns existing data.json immediately, triggers refresh in background if the
+// last attempt (successful or not) is older than the debounce interval.
 func (s *Server) handleRefresh(w http.ResponseWriter, r *http.Request) {
 	debounce := time.Duration(s.cfg.Refresh.IntervalSeconds) * time.Second
 
 	s.mu.Lock()
-	shouldRun := !s.refreshRunning && time.Since(s.lastRefresh) >= debounce
+	shouldRun := !s.refreshRunning && time.Since(s.lastRefreshAttempt) >= debounce
 	waitCh := s.refreshDone
 	s.mu.Unlock()
 
@@ -143,13 +163,13 @@ func (s *Server) handleRefresh(w http.ResponseWriter, r *http.Request) {
 
 	data, err := s.GetDataRawCached()
 	if err != nil {
-		if !os.IsNotExist(err) {
+		if !errors.Is(err, fs.ErrNotExist) {
 			s.sendJSON(w, r, http.StatusInternalServerError, map[string]string{"error": "failed to read dashboard data"})
 			return
 		}
-		if waitCh == nil {
-			waitCh = s.startRefresh()
-		}
+		// A nil waitCh means the debounce is holding back a retry after a
+		// recent attempt (or shutdown began): report missing data rather than
+		// re-running a collector that just failed.
 		if waitCh != nil {
 			ctx, cancel := context.WithTimeout(r.Context(), refreshTimeout)
 			defer cancel()
@@ -162,7 +182,7 @@ func (s *Server) handleRefresh(w http.ResponseWriter, r *http.Request) {
 				s.writeRefreshResponse(w, r, data)
 				return
 			}
-			if !os.IsNotExist(err) {
+			if !errors.Is(err, fs.ErrNotExist) {
 				s.sendJSON(w, r, http.StatusInternalServerError, map[string]string{"error": "failed to read dashboard data"})
 				return
 			}
@@ -186,7 +206,8 @@ func (s *Server) writeRefreshResponse(w http.ResponseWriter, r *http.Request, da
 	}
 }
 
-// getDataCached returns parsed data.json — delegates to loadData().
+// GetDataCached returns a shallow clone of the parsed data.json, re-reading the
+// file when its mtime or size changed.
 func (s *Server) GetDataCached() (map[string]any, error) {
 	_, parsed, err := s.loadData()
 	if err != nil {
