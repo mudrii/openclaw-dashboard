@@ -1,13 +1,15 @@
-// Package apprefresh collects and parses dashboard-facing log entries.
 package apprefresh
 
 import (
-	"bufio"
 	"cmp"
 	"container/heap"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
+	"io/fs"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -19,6 +21,7 @@ import (
 	"unicode"
 
 	appconfig "github.com/mudrii/openclaw-dashboard/internal/appconfig"
+	"github.com/mudrii/openclaw-dashboard/internal/appopenclaw"
 )
 
 type LogRecord struct {
@@ -42,6 +45,12 @@ var (
 
 const (
 	readTailMaxLineBytes = 1024 * 1024
+	// readTailChunkBytes is the backwards read step used to find line starts.
+	readTailChunkBytes = 64 * 1024
+	// defaultLogRefreshIntervalMs is the normal log-panel poll interval,
+	// matching the frontend LogTail.normalMs default. It is deliberately not
+	// derived from the data refresh debounce.
+	defaultLogRefreshIntervalMs = 15000
 )
 
 var (
@@ -73,11 +82,6 @@ func ReadMergedLogs(openclawPath string, sources []string, globalLimit int) ([]L
 	return ReadMergedLogsWithUnit(openclawPath, sources, globalLimit, ResolveSystemdUnit(""))
 }
 
-// ReadMergedLogsWithContext is ReadMergedLogs with caller cancellation support.
-func ReadMergedLogsWithContext(ctx context.Context, openclawPath string, sources []string, globalLimit int) ([]LogRecord, error) {
-	return ReadMergedLogsWithUnitContext(ctx, openclawPath, sources, globalLimit, ResolveSystemdUnit(""))
-}
-
 // ReadMergedLogsWithUnit is ReadMergedLogs with an explicit systemd unit name
 // for the Linux journald fallback. On Linux, when a source has no log file on
 // disk, gateway output is read from journald (systemd emits no log file) so the
@@ -105,26 +109,31 @@ func ReadMergedLogsWithUnitContext(ctx context.Context, openclawPath string, sou
 	for _, source := range sources {
 		candidates := candidateLogPaths(openclawPath, source)
 		sourceRecords := make([]LogRecord, 0)
+		// Fallback roots may hold the same file (or a migrated copy); a record
+		// already read from an earlier candidate is dropped, but repeated lines
+		// within one file are genuine and kept.
+		seen := map[logRecordDedupKey]struct{}{}
 		for _, path := range candidates {
 			stat, err := os.Stat(path)
 			if err != nil {
+				if !errors.Is(err, fs.ErrNotExist) {
+					slog.Warn("[dashboard] log source stat failed", "source", source, "path", path, "error", err)
+				}
 				continue
 			}
 			lines, err := readTailLines(path, globalLimit)
 			if err != nil {
+				slog.Warn("[dashboard] log source read failed", "source", source, "path", path, "error", err)
 				continue
 			}
-			for _, line := range lines {
-				record, ok := parseLogLine(line, path, stat.ModTime())
-				if !ok {
-					continue
+			fileRecords := parseLogFileLines(lines, path, source, stat.ModTime())
+			for _, record := range fileRecords {
+				if _, dup := seen[record.dedupKey()]; !dup {
+					sourceRecords = append(sourceRecords, record)
 				}
-				record.Source = source
-				record.Raw = line
-				if record.TimestampMs == 0 {
-					record.TimestampMs = stat.ModTime().UnixMilli()
-				}
-				sourceRecords = append(sourceRecords, record)
+			}
+			for _, record := range fileRecords {
+				seen[record.dedupKey()] = struct{}{}
 			}
 		}
 		// Linux journald fallback: when no log file exists for this source,
@@ -137,8 +146,11 @@ func ReadMergedLogsWithUnitContext(ctx context.Context, openclawPath string, sou
 			journaldUsed = true
 		}
 		if len(sourceRecords) > 0 {
-			slices.SortFunc(sourceRecords, compareLogRecords)
-			sourceRecords = dedupeSortedLogRecords(sourceRecords)
+			// Stable: equal timestamps keep candidate-file then line order, so
+			// multi-line entries (stack traces) stay in the order written.
+			slices.SortStableFunc(sourceRecords, func(a, b LogRecord) int {
+				return a.Timestamp.Compare(b.Timestamp)
+			})
 			perSourceRecords = append(perSourceRecords, sourceRecords)
 		}
 	}
@@ -157,22 +169,47 @@ type logRecordDedupKey struct {
 	raw         string
 }
 
-func dedupeSortedLogRecords(records []LogRecord) []LogRecord {
-	seen := make(map[logRecordDedupKey]struct{}, len(records))
-	out := records[:0]
-	for _, record := range records {
-		key := logRecordDedupKey{
-			source:      record.Source,
-			timestampMs: record.TimestampMs,
-			raw:         record.Raw,
-		}
-		if _, ok := seen[key]; ok {
+func (r LogRecord) dedupKey() logRecordDedupKey {
+	return logRecordDedupKey{source: r.Source, timestampMs: r.TimestampMs, raw: r.Raw}
+}
+
+// parseLogFileLines turns one file's tail into records in file order. Lines
+// without their own timestamp (stack traces, wrapped output) inherit the
+// previous timestamped line's time; lines before the first timestamp take
+// the first one found, and a file with none falls back to its mtime.
+func parseLogFileLines(lines []string, path, source string, modTime time.Time) []LogRecord {
+	records := make([]LogRecord, 0, len(lines))
+	var firstTs time.Time
+	for _, line := range lines {
+		// Parse before redacting: redaction rewrites JSON values (e.g.
+		// "hasToken":false) and would make structured lines unparseable.
+		record, ok := parseLogLine(line, path, time.Time{})
+		if !ok {
 			continue
 		}
-		seen[key] = struct{}{}
-		out = append(out, record)
+		if firstTs.IsZero() {
+			firstTs = record.Timestamp
+		}
+		record.Source = source
+		record.Raw = appopenclaw.Redact(line)
+		record.Message = appopenclaw.Redact(record.Message)
+		record.Line = appopenclaw.Redact(record.Line)
+		records = append(records, record)
 	}
-	return out
+	if firstTs.IsZero() {
+		firstTs = modTime
+	}
+	last := firstTs
+	for i := range records {
+		if records[i].Timestamp.IsZero() {
+			records[i].Timestamp = last
+			records[i].TimestampMs = last.UnixMilli()
+			records[i].SeenAt = last.Format(time.RFC3339Nano)
+			continue
+		}
+		last = records[i].Timestamp
+	}
+	return records
 }
 
 func mergeLatestRecords(perSourceRecords [][]LogRecord, globalLimit int) []LogRecord {
@@ -415,9 +452,9 @@ func classifySeverity(line, component string) string {
 func inferSeverity(raw string, line string) string {
 	raw = strings.ToLower(strings.TrimSpace(raw))
 	switch raw {
-	case "err", "error", "fatal", "panic", "stale", "missing", "unavailable", "timeout":
+	case "err", "error", "fatal", "panic":
 		return "error"
-	case "warn", "warning":
+	case "warn", "warning", "stale", "missing", "unavailable", "timeout":
 		return "warn"
 	case "debug":
 		return "debug"
@@ -514,40 +551,86 @@ func readTailLines(path string, limit int) ([]string, error) {
 	if stat.Size() <= 0 {
 		return nil, nil
 	}
-
-	scanner := bufio.NewScanner(f)
-	// Allow scanner buffer to grow up to 2x the line cap so we can capture
-	// over-long lines and truncate them, rather than failing with ErrTooLong.
-	scanner.Buffer(make([]byte, 64*1024), 2*readTailMaxLineBytes)
-
-	ring := make([]string, limit)
-	var count, write int
-	for scanner.Scan() {
-		line := strings.TrimSuffix(scanner.Text(), "\r")
-		if line == "" {
-			continue
-		}
-		if len(line) > readTailMaxLineBytes {
-			line = truncateBytes(line, readTailMaxLineBytes) // rune-safe byte cap
-		}
-		ring[write] = line
-		write = (write + 1) % limit
-		count++
-	}
-	if err := scanner.Err(); err != nil {
+	lines, err := readTailFrom(f, stat.Size(), limit)
+	if err != nil {
 		return nil, fmt.Errorf("read %s: %w", path, err)
 	}
+	return lines, nil
+}
 
-	n := min(count, limit)
-	out := make([]string, 0, n)
-	start := 0
-	if count > limit {
-		start = write
+// readTailFrom returns the last limit non-empty lines of the first size bytes
+// of r, oldest first. It walks backwards from EOF in fixed chunks, so the
+// bytes read are bounded by the tail it returns rather than the file size.
+// Lines longer than readTailMaxLineBytes are truncated rune-safely to their
+// prefix; a trailing "\r" is dropped.
+func readTailFrom(r io.ReaderAt, size int64, limit int) ([]string, error) {
+	if limit <= 0 || size <= 0 {
+		return nil, nil
 	}
-	for i := range n {
-		out = append(out, ring[(start+i)%limit])
+	out := make([]string, 0, min(limit, 64))
+	chunk := make([]byte, min(size, readTailChunkBytes))
+	lineEnd := size // exclusive end of the line whose start is not yet found
+	pos := size     // bytes before pos are not yet scanned
+	emit := func(buf []byte, bufStart, start int64) error {
+		line, err := readTailLine(r, buf, bufStart, start, lineEnd)
+		if err != nil {
+			return err
+		}
+		if line != "" {
+			out = append(out, line)
+		}
+		return nil
 	}
+	for pos > 0 && len(out) < limit {
+		n := min(int64(len(chunk)), pos)
+		pos -= n
+		buf := chunk[:n]
+		if _, err := r.ReadAt(buf, pos); err != nil && !errors.Is(err, io.EOF) {
+			return nil, err
+		}
+		for i := len(buf) - 1; i >= 0 && len(out) < limit; i-- {
+			if buf[i] != '\n' {
+				continue
+			}
+			if err := emit(buf, pos, pos+int64(i)+1); err != nil {
+				return nil, err
+			}
+			lineEnd = pos + int64(i)
+		}
+		if pos == 0 && len(out) < limit {
+			if err := emit(buf, pos, 0); err != nil {
+				return nil, err
+			}
+		}
+	}
+	slices.Reverse(out)
 	return out, nil
+}
+
+// readTailLine returns the capped content of the line [start, end). It slices
+// buf (which begins at file offset bufStart) when the line lies inside it and
+// otherwise reads just the capped prefix from r.
+func readTailLine(r io.ReaderAt, buf []byte, bufStart, start, end int64) (string, error) {
+	// One byte beyond the cap distinguishes "fits after dropping \r" from
+	// "must be truncated", matching the forward scanner's semantics.
+	length := min(end-start, readTailMaxLineBytes+1)
+	if length <= 0 {
+		return "", nil
+	}
+	var raw []byte
+	if start >= bufStart && start+length <= bufStart+int64(len(buf)) {
+		raw = buf[start-bufStart : start-bufStart+length]
+	} else {
+		raw = make([]byte, length)
+		if _, err := r.ReadAt(raw, start); err != nil && !errors.Is(err, io.EOF) {
+			return "", err
+		}
+	}
+	line := string(raw)
+	if end-start == length {
+		line = strings.TrimSuffix(line, "\r")
+	}
+	return truncateBytes(line, readTailMaxLineBytes), nil
 }
 
 func ResolveLogPath(openclawPath, source string) (string, bool) {
@@ -626,7 +709,7 @@ func GetLogRuntimeConfig(cfg appconfig.Config) map[string]any {
 		"errorWindowHours":     cfg.Logs.ErrorWindowHours,
 		"maxErrorSignatures":   cfg.Logs.MaxErrorSignatures,
 		"logSources":           GetEffectiveLogSources(cfg),
-		"logRefreshIntervalMs": cfg.Refresh.IntervalSeconds * 1000,
+		"logRefreshIntervalMs": defaultLogRefreshIntervalMs,
 	}
 }
 

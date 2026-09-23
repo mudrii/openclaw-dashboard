@@ -175,6 +175,28 @@ func runtimeSessionRow(s map[string]any, loc *time.Location, aliases map[string]
 	return row
 }
 
+// alertSessionWindow bounds which runtime sessions can raise context alerts,
+// matching the legacy collector that only lists sessions active in the last day.
+const alertSessionWindow = 24 * time.Hour
+
+// alertableRuntimeSessions keeps non-archived rows updated within
+// alertSessionWindow of now; the runtime list also carries archived and
+// long-idle sessions whose context usage is no longer actionable.
+func alertableRuntimeSessions(rows []map[string]any, now time.Time) []map[string]any {
+	var out []map[string]any
+	for _, row := range rows {
+		if archived, _ := row["archived"].(bool); archived {
+			continue
+		}
+		updated, _ := row["updatedAt"].(float64)
+		if updated <= 0 || now.Sub(time.UnixMilli(int64(updated))) >= alertSessionWindow {
+			continue
+		}
+		out = append(out, row)
+	}
+	return out
+}
+
 func projectFields(source map[string]any, keys ...string) map[string]any {
 	result := make(map[string]any, len(keys))
 	for _, key := range keys {

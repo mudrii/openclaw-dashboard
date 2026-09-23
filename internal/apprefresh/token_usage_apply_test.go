@@ -300,3 +300,74 @@ func keysOf[V any](m map[string]V) []string {
 	}
 	return out
 }
+
+// TestCollectTokenUsage_CallsCountMessagesNotFiles guards against merging
+// cached per-file buckets with add(), which counted one call per transcript.
+func TestCollectTokenUsage_CallsCountMessagesNotFiles(t *testing.T) {
+	tmp := t.TempDir()
+	basePath := filepath.Join(tmp, "agents")
+	line := `{"timestamp":"2026-03-22T10:00:00Z","message":{"role":"assistant","model":"openai/gpt-5","usage":{"totalTokens":100,"input":60,"output":40,"cost":{"total":0.1}}}}`
+	writeJSONL(t, filepath.Join(basePath, "main", "sessions", "x.jsonl"), line, line, line)
+
+	agg := freshAggregates()
+	CollectTokenUsage(
+		basePath, time.UTC, "2026-03-22", "2026-03-15", "2026-02-20",
+		map[string]string{}, map[string]string{}, map[string]string{},
+		agg.modelsAll, agg.modelsToday, agg.models7d, agg.models30d,
+		agg.subagentAll, agg.subagentToday, agg.subagent7d, agg.subagent30d,
+		agg.dailyCosts, agg.dailyTokens, agg.dailyCalls, agg.dailySubagentCosts, agg.dailySubagentCount,
+	)
+
+	for name, m := range map[string]map[string]*TokenBucket{
+		"all": agg.modelsAll, "today": agg.modelsToday, "7d": agg.models7d, "30d": agg.models30d,
+	} {
+		got := m["GPT-5"]
+		if got == nil || got.Calls != 3 || got.Total != 300 {
+			t.Errorf("%s bucket = %+v, want Calls=3 Total=300", name, got)
+		}
+	}
+	if got := agg.dailyCalls["2026-03-22"]["GPT-5"]; got != 3 {
+		t.Errorf("dailyCalls = %d, want 3", got)
+	}
+}
+
+// TestCollectTokenUsageWithCache_InvalidatesOnTimezoneChange guards against
+// reusing daily buckets bucketed under a previous timezone.
+func TestCollectTokenUsageWithCache_InvalidatesOnTimezoneChange(t *testing.T) {
+	tmp := t.TempDir()
+	basePath := filepath.Join(tmp, "agents")
+	cachePath := filepath.Join(tmp, "token-cache.json")
+	// 20:00 UTC on 03-21 is 04:00 on 03-22 in Kuala Lumpur (UTC+8).
+	writeJSONL(t, filepath.Join(basePath, "main", "sessions", "x.jsonl"),
+		`{"timestamp":"2026-03-21T20:00:00Z","message":{"role":"assistant","model":"openai/gpt-5","usage":{"totalTokens":100,"cost":{"total":0.1}}}}`,
+	)
+	kl, err := time.LoadLocation("Asia/Kuala_Lumpur")
+	if err != nil {
+		t.Skipf("tzdata unavailable: %v", err)
+	}
+
+	collect := func(loc *time.Location) tokenAggregates {
+		agg := freshAggregates()
+		CollectTokenUsageWithCache(
+			cachePath,
+			basePath, loc, "2026-03-22", "2026-03-15", "2026-02-20",
+			map[string]string{}, map[string]string{}, map[string]string{},
+			agg.modelsAll, agg.modelsToday, agg.models7d, agg.models30d,
+			agg.subagentAll, agg.subagentToday, agg.subagent7d, agg.subagent30d,
+			agg.dailyCosts, agg.dailyTokens, agg.dailyCalls, agg.dailySubagentCosts, agg.dailySubagentCount,
+		)
+		return agg
+	}
+
+	utc := collect(time.UTC)
+	if _, ok := utc.dailyTokens["2026-03-21"]; !ok {
+		t.Fatalf("UTC run: want usage on 2026-03-21, got %v", utc.dailyTokens)
+	}
+	klAgg := collect(kl)
+	if _, ok := klAgg.dailyTokens["2026-03-22"]; !ok {
+		t.Fatalf("Kuala Lumpur run reused UTC cache: want usage on 2026-03-22, got %v", klAgg.dailyTokens)
+	}
+	if got := klAgg.modelsToday["GPT-5"]; got == nil || got.Total != 100 {
+		t.Fatalf("Kuala Lumpur today bucket = %+v, want Total=100", got)
+	}
+}

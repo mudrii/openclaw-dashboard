@@ -39,7 +39,9 @@ func BuildDailyChart(now time.Time, dailyCosts map[string]map[string]float64,
 	for m, c := range modelTotals {
 		sorted = append(sorted, modelCost{m, c})
 	}
-	slices.SortFunc(sorted, func(a, b modelCost) int { return cmp.Compare(b.cost, a.cost) })
+	slices.SortFunc(sorted, func(a, b modelCost) int {
+		return cmp.Or(cmp.Compare(b.cost, a.cost), cmp.Compare(a.model, b.model))
+	})
 	topModels := map[string]bool{}
 	for i, mc := range sorted {
 		if i >= 6 {

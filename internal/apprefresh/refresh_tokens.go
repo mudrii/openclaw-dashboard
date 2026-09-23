@@ -30,6 +30,17 @@ func (b *TokenBucket) add(inp, out, cr, cw, tt int, cost float64) {
 	b.Cost += cost
 }
 
+// merge folds an already-aggregated bucket into b, preserving its call count.
+func (b *TokenBucket) merge(o TokenBucket) {
+	b.Calls += o.Calls
+	b.Input += o.Input
+	b.Output += o.Output
+	b.CacheRead += o.CacheRead
+	b.CacheWrite += o.CacheWrite
+	b.Total += o.Total
+	b.Cost += o.Cost
+}
+
 type TokenUsageEntry struct {
 	Model          string  `json:"model"`
 	Calls          int     `json:"calls"`
@@ -55,7 +66,7 @@ func BucketsToList(m map[string]*TokenBucket) []TokenUsageEntry {
 	for k, v := range m {
 		pairs = append(pairs, kv{k, v})
 	}
-	slices.SortFunc(pairs, func(a, b kv) int { return cmp.Compare(b.v.Cost, a.v.Cost) })
+	slices.SortFunc(pairs, func(a, b kv) int { return cmp.Or(cmp.Compare(b.v.Cost, a.v.Cost), cmp.Compare(a.k, b.k)) })
 
 	out := make([]TokenUsageEntry, 0, len(pairs))
 	for _, p := range pairs {

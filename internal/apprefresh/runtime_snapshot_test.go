@@ -310,3 +310,83 @@ func TestConfigurationFailureMarksDependentCollectionsPartial(t *testing.T) {
 		})
 	}
 }
+
+// TestRuntimeContextAlertsIgnoreArchivedAndOldSessions matches the legacy
+// collector: only live sessions updated in the last 24h raise context alerts.
+func TestRuntimeContextAlertsIgnoreArchivedAndOldSessions(t *testing.T) {
+	previous := execCommandContext
+	t.Cleanup(func() { execCommandContext = previous; resetModelCatalogForTest() })
+	nowMs := time.Now().UnixMilli()
+	oldMs := time.Now().Add(-30 * 24 * time.Hour).UnixMilli()
+	sessions := fmt.Sprintf(`{"sessions":[
+		{"key":"live","sessionId":"a","displayName":"live","totalTokens":95,"contextTokens":100,"updatedAt":%d},
+		{"key":"archived","sessionId":"b","displayName":"archived","totalTokens":95,"contextTokens":100,"updatedAt":%d,"archived":true},
+		{"key":"old","sessionId":"c","displayName":"old","totalTokens":95,"contextTokens":100,"updatedAt":%d}
+	],"hasMore":false,"totalCount":3}`, nowMs, nowMs, oldMs)
+	execCommandContext = func(ctx context.Context, _ string, args ...string) *exec.Cmd {
+		body := `{}`
+		if len(args) > 2 && args[0] == "gateway" {
+			switch args[2] {
+			case "sessions.list":
+				body = sessions
+			case "tasks.list":
+				body = `{"tasks":[]}`
+			}
+		}
+		return exec.CommandContext(ctx, "printf", "%s", body)
+	}
+	cfg := appconfig.Default()
+	cfg.Openclaw = appopenclaw.Target{Mode: "container", Container: "fixture"}
+	data := collectDashboardData(t.Context(), t.TempDir(), t.TempDir(), cfg)
+	var got []string
+	for _, alert := range data["alerts"].([]map[string]any) {
+		if msg := jsonStr(alert, "message"); strings.HasPrefix(msg, "High context") {
+			got = append(got, msg)
+		}
+	}
+	if len(got) != 1 || !strings.Contains(got[0], "live") {
+		t.Fatalf("context alerts=%v, want only the live session", got)
+	}
+}
+
+// TestDashboardCronRowLimitIsPartialNotUnavailable mirrors the tasks rule: a
+// truncated automation walk still publishes its rows as partial.
+func TestDashboardCronRowLimitIsPartialNotUnavailable(t *testing.T) {
+	t.Setenv("OPENCLAW_CONTAINER", "")
+	t.Setenv("OPENCLAW_STATE_DIR", "")
+	previous := execCommandContext
+	t.Cleanup(func() { execCommandContext = previous; resetModelCatalogForTest() })
+	execCommandContext = func(ctx context.Context, _ string, args ...string) *exec.Cmd {
+		body := `{}`
+		if len(args) > 2 && args[0] == "gateway" {
+			switch args[2] {
+			case "sessions.list":
+				body = `{"sessions":[],"hasMore":false}`
+			case "tasks.list":
+				body = `{"tasks":[]}`
+			case "cron.list":
+				var params map[string]any
+				if err := json.Unmarshal([]byte(args[len(args)-1]), &params); err != nil {
+					t.Fatal(err)
+				}
+				offset := int(params["offset"].(float64))
+				jobs := make([]string, runtimePageSize)
+				for i := range jobs {
+					jobs[i] = fmt.Sprintf(`{"id":"job-%d"}`, offset+i)
+				}
+				body = fmt.Sprintf(`{"jobs":[%s],"hasMore":true,"nextOffset":%d}`, strings.Join(jobs, ","), offset+runtimePageSize)
+			}
+		}
+		return exec.CommandContext(ctx, "printf", "%s", body)
+	}
+	cfg := appconfig.Default()
+	cfg.Openclaw = appopenclaw.Target{Mode: "container", Container: "fixture"}
+	data := collectDashboardData(t.Context(), t.TempDir(), t.TempDir(), cfg)
+	if rows, _ := data["crons"].([]map[string]any); len(rows) != runtimeMaxRows {
+		t.Fatalf("cron rows=%d, want %d", len(rows), runtimeMaxRows)
+	}
+	status := data["collections"].(map[string]CollectionStatus)["crons"]
+	if status.State != "partial" || status.ErrorCode != "row_limit" {
+		t.Fatalf("crons status=%+v, want partial row_limit", status)
+	}
+}

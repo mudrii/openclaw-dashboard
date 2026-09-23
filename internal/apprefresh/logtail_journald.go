@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/mudrii/openclaw-dashboard/internal/appopenclaw"
 )
 
 // defaultSystemdUnit is the systemd --user unit openclaw's gateway runs under
@@ -86,7 +88,8 @@ func collectJournaldRecords(ctx context.Context, unit, source string, limit int)
 			continue
 		}
 		record.Source = source
-		record.Raw = line
+		record.Raw = appopenclaw.Redact(line)
+		record.Message = appopenclaw.Redact(record.Message)
 		records = append(records, record)
 	}
 	return records

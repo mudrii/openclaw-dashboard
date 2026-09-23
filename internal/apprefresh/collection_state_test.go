@@ -129,3 +129,30 @@ func TestStaleRetentionExpiresAtCap(t *testing.T) {
 		})
 	}
 }
+
+// TestDayScopedRetentionDoesNotCrossMidnight guards against republishing
+// yesterday's "today" totals and task rows after a midnight rollover.
+func TestDayScopedRetentionDoesNotCrossMidnight(t *testing.T) {
+	now := time.Now().UTC()
+	midnight := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
+	yesterday := midnight.Add(-time.Minute).Format(time.RFC3339)
+	today := now.Format(time.RFC3339)
+	for _, tc := range []struct {
+		name, collection, field, collectedAt string
+		retain                               bool
+	}{
+		{"today cost from yesterday", "usageToday", "totalCostToday", yesterday, false},
+		{"tasks from yesterday", "tasks", "subagentRunsToday", yesterday, false},
+		{"today cost from today", "usageToday", "totalCostToday", today, true},
+		{"sessions from yesterday", "sessions", "sessions", yesterday, midnight.Add(-time.Minute).After(now.Add(-maxStaleAge))},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			current := map[string]any{"stateDir": "/s", "timezone": "UTC", "runtimeTarget": appopenclaw.Target{}, "collections": map[string]CollectionStatus{tc.collection: {Source: "src", State: "unavailable"}}}
+			previous := map[string]any{"stateDir": "/s", "timezone": "UTC", "runtimeTarget": map[string]any{}, tc.field: "prior", "collections": map[string]any{tc.collection: map[string]any{"source": "src", "state": "ready", "collectedAt": tc.collectedAt}}}
+			retainLastGoodCollections(current, previous)
+			if (current[tc.field] == "prior") != tc.retain {
+				t.Fatalf("%s retained=%v, want %v", tc.field, current[tc.field] == "prior", tc.retain)
+			}
+		})
+	}
+}

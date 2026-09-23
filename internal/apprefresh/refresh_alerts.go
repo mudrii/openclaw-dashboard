@@ -96,7 +96,7 @@ func BuildCostBreakdown(m map[string]*TokenBucket) []map[string]any {
 			pairs = append(pairs, kv{k, v.Cost})
 		}
 	}
-	slices.SortFunc(pairs, func(a, b kv) int { return cmp.Compare(b.cost, a.cost) })
+	slices.SortFunc(pairs, func(a, b kv) int { return cmp.Or(cmp.Compare(b.cost, a.cost), cmp.Compare(a.model, b.model)) })
 	var out []map[string]any
 	for _, p := range pairs {
 		out = append(out, map[string]any{

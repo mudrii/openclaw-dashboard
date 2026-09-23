@@ -354,12 +354,11 @@ func TestInferSeverity_RawWins(t *testing.T) {
 		{"error raw", "error", "fine", "error"},
 		{"fatal raw", "fatal", "fine", "error"},
 		{"panic raw", "panic", "fine", "error"},
-		// stale/missing/unavailable/timeout are mapped to "error" by the raw
-		// switch (not "warn"), even though classifySeverity treats them as warn.
-		{"stale raw maps to error", "stale", "fine", "error"},
-		{"missing raw maps to error", "missing", "fine", "error"},
-		{"unavailable raw maps to error", "unavailable", "fine", "error"},
-		{"timeout raw maps to error", "timeout", "fine", "error"},
+		// stale/missing/unavailable/timeout are warnings, matching classifySeverity.
+		{"stale raw maps to warn", "stale", "fine", "warn"},
+		{"missing raw maps to warn", "missing", "fine", "warn"},
+		{"unavailable raw maps to warn", "unavailable", "fine", "warn"},
+		{"timeout raw maps to warn", "timeout", "fine", "warn"},
 		{"warn raw", "warn", "fine", "warn"},
 		{"warning raw", "warning", "fine", "warn"},
 		{"debug raw", "debug", "fine", "debug"},

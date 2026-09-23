@@ -18,8 +18,11 @@ import (
 const tokenUsageCacheVersion = 3
 
 type tokenUsageCache struct {
-	Version int                              `json:"version"`
-	Files   map[string]tokenUsageFileSummary `json:"files"`
+	Version int `json:"version"`
+	// Location is the timezone the Daily buckets were computed in; a cache
+	// built under a different zone is discarded because its dates are wrong.
+	Location string                           `json:"location,omitempty"`
+	Files    map[string]tokenUsageFileSummary `json:"files"`
 }
 
 type tokenUsageFileSummary struct {
@@ -57,9 +60,15 @@ func CollectTokenUsageWithCache(
 	allFiles = canonicalLegacyUsageFiles(allFiles)
 
 	cache := loadTokenUsageCache(cachePath)
+	if cache.Location != loc.String() && len(cache.Files) > 0 {
+		slog.Info("[dashboard] token usage cache timezone changed, recomputing",
+			"path", cachePath, "got", cache.Location, "want", loc.String())
+		cache.Files = map[string]tokenUsageFileSummary{}
+	}
 	nextCache := tokenUsageCache{
-		Version: tokenUsageCacheVersion,
-		Files:   make(map[string]tokenUsageFileSummary, len(allFiles)),
+		Version:  tokenUsageCacheVersion,
+		Location: loc.String(),
+		Files:    make(map[string]tokenUsageFileSummary, len(allFiles)),
 	}
 	// Pre-size for typical batch (~64 subagent sessions) to avoid early grow.
 	subagentRuns := make([]map[string]any, 0, 64)
@@ -304,9 +313,9 @@ func applyTokenUsageSummary(
 
 	for model, bucket := range summary.Models {
 		displayModel := resolveUsageModel(model, modelAliases)
-		getBucket(modelsAll, displayModel).add(bucket.Input, bucket.Output, bucket.CacheRead, bucket.CacheWrite, bucket.Total, bucket.Cost)
+		getBucket(modelsAll, displayModel).merge(bucket)
 		if isSubagent {
-			getBucket(subagentAll, displayModel).add(bucket.Input, bucket.Output, bucket.CacheRead, bucket.CacheWrite, bucket.Total, bucket.Cost)
+			getBucket(subagentAll, displayModel).merge(bucket)
 		}
 	}
 
@@ -317,21 +326,21 @@ func applyTokenUsageSummary(
 			ensureMapMapInt(dailyTokens, date)[displayModel] += bucket.Total
 			ensureMapMapInt(dailyCalls, date)[displayModel] += bucket.Calls
 			if date == todayStr {
-				getBucket(modelsToday, displayModel).add(bucket.Input, bucket.Output, bucket.CacheRead, bucket.CacheWrite, bucket.Total, bucket.Cost)
+				getBucket(modelsToday, displayModel).merge(bucket)
 				if isSubagent {
-					getBucket(subagentToday, displayModel).add(bucket.Input, bucket.Output, bucket.CacheRead, bucket.CacheWrite, bucket.Total, bucket.Cost)
+					getBucket(subagentToday, displayModel).merge(bucket)
 				}
 			}
 			if date >= date7d {
-				getBucket(models7d, displayModel).add(bucket.Input, bucket.Output, bucket.CacheRead, bucket.CacheWrite, bucket.Total, bucket.Cost)
+				getBucket(models7d, displayModel).merge(bucket)
 				if isSubagent {
-					getBucket(subagent7d, displayModel).add(bucket.Input, bucket.Output, bucket.CacheRead, bucket.CacheWrite, bucket.Total, bucket.Cost)
+					getBucket(subagent7d, displayModel).merge(bucket)
 				}
 			}
 			if date >= date30d {
-				getBucket(models30d, displayModel).add(bucket.Input, bucket.Output, bucket.CacheRead, bucket.CacheWrite, bucket.Total, bucket.Cost)
+				getBucket(models30d, displayModel).merge(bucket)
 				if isSubagent {
-					getBucket(subagent30d, displayModel).add(bucket.Input, bucket.Output, bucket.CacheRead, bucket.CacheWrite, bucket.Total, bucket.Cost)
+					getBucket(subagent30d, displayModel).merge(bucket)
 				}
 			}
 			if isSubagent {

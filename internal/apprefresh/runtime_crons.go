@@ -2,11 +2,16 @@ package apprefresh
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
 	"github.com/mudrii/openclaw-dashboard/internal/appopenclaw"
 )
+
+// errCronRowLimit reports an automation walk stopped by runtimeMaxRows; the
+// rows gathered so far are real, as with errTaskRowLimit.
+var errCronRowLimit = errors.New("automation inventory reached row limit")
 
 func collectRuntimeCrons(ctx context.Context, client appopenclaw.Client, loc *time.Location) ([]map[string]any, error) {
 	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
@@ -42,5 +47,5 @@ func collectRuntimeCrons(ctx context.Context, client appopenclaw.Client, loc *ti
 		}
 		offset = response.NextOffset
 	}
-	return rows, fmt.Errorf("automation inventory reached row limit")
+	return rows, errCronRowLimit
 }

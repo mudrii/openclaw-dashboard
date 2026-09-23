@@ -37,6 +37,10 @@ var collectionFields = map[string][]string{
 	"modelReadiness":  {"modelReadiness"},
 }
 
+// dayScopedCollections hold values that are only meaningful for the calendar
+// day they were collected on; they are never carried across midnight.
+var dayScopedCollections = map[string]bool{"usageToday": true, "tasks": true}
+
 func readPreviousSnapshot(path string) map[string]any {
 	f, err := os.Open(path)
 	if err != nil {
@@ -65,6 +69,11 @@ func retainLastGoodCollections(current, previous map[string]any) {
 		return
 	}
 	oldStatuses := asObj(previous["collections"])
+	loc, err := time.LoadLocation(jsonStr(current, "timezone"))
+	if err != nil {
+		loc = time.UTC
+	}
+	today := time.Now().In(loc).Format(time.DateOnly)
 	for name, fields := range collectionFields {
 		status, exists := statuses[name]
 		warming := strings.HasPrefix(name, "usage") && status.State == "partial"
@@ -82,6 +91,8 @@ func retainLastGoodCollections(current, previous map[string]any) {
 		// An unreadable or expired timestamp cannot vouch for the payload, so
 		// the outage stands rather than chaining a stale value forever.
 		if stamp, err := time.Parse(time.RFC3339, collectedAt); err != nil || time.Since(stamp) > maxStaleAge {
+			continue
+		} else if dayScopedCollections[name] && stamp.In(loc).Format(time.DateOnly) != today {
 			continue
 		}
 		for _, field := range fields {

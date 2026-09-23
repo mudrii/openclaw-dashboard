@@ -30,7 +30,7 @@ func TestCollectGitLog_Parsing(t *testing.T) {
 	}{
 		{
 			name: "well-formed 3-field lines",
-			stub: emit("abc123|fix things|2 hours ago\ndef456|add feature|3 days ago"),
+			stub: emit("abc123\x1ffix things\x1f2 hours ago\ndef456\x1fadd feature\x1f3 days ago"),
 			want: []map[string]any{
 				{"hash": "abc123", "message": "fix things", "ago": "2 hours ago"},
 				{"hash": "def456", "message": "add feature", "ago": "3 days ago"},
@@ -38,16 +38,23 @@ func TestCollectGitLog_Parsing(t *testing.T) {
 		},
 		{
 			name: "2-field line yields empty ago",
-			stub: emit("abc123|just a message"),
+			stub: emit("abc123\x1fjust a message"),
 			want: []map[string]any{
 				{"hash": "abc123", "message": "just a message", "ago": ""},
 			},
 		},
 		{
-			name: "lines without pipe are skipped",
-			stub: emit("no-pipe-here\nabc123|kept|now"),
+			name: "lines without separator are skipped",
+			stub: emit("no-sep-here\nabc123\x1fkept\x1fnow"),
 			want: []map[string]any{
 				{"hash": "abc123", "message": "kept", "ago": "now"},
+			},
+		},
+		{
+			name: "pipe in subject is kept",
+			stub: emit("abc123\x1ffix(a|b): handle x|y\x1f1 hour ago"),
+			want: []map[string]any{
+				{"hash": "abc123", "message": "fix(a|b): handle x|y", "ago": "1 hour ago"},
 			},
 		},
 		{

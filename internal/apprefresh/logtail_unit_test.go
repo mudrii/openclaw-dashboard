@@ -259,8 +259,9 @@ func TestGetLogRuntimeConfig(t *testing.T) {
 
 	got := GetLogRuntimeConfig(cfg)
 
-	if got["logRefreshIntervalMs"] != 30*1000 {
-		t.Errorf("logRefreshIntervalMs = %v, want %d", got["logRefreshIntervalMs"], 30*1000)
+	// Log polling is independent of the data refresh debounce.
+	if got["logRefreshIntervalMs"] != 15000 {
+		t.Errorf("logRefreshIntervalMs = %v, want 15000", got["logRefreshIntervalMs"])
 	}
 	sources, ok := got["logSources"].([]string)
 	if !ok {
@@ -269,5 +270,27 @@ func TestGetLogRuntimeConfig(t *testing.T) {
 	want := GetEffectiveLogSources(cfg)
 	if len(sources) != len(want) || sources[0] != want[0] {
 		t.Errorf("logSources = %v, want %v", sources, want)
+	}
+}
+
+// TestInferSeverityMatchesClassifySeverity keeps structured level fields and
+// free-text classification in agreement for the same token.
+func TestInferSeverityMatchesClassifySeverity(t *testing.T) {
+	for _, tc := range []struct{ raw, want string }{
+		{"error", "error"}, {"fatal", "error"}, {"panic", "error"}, {"err", "error"},
+		{"warn", "warn"}, {"warning", "warn"},
+		{"stale", "warn"}, {"missing", "warn"}, {"unavailable", "warn"}, {"timeout", "warn"},
+		{"debug", "debug"},
+	} {
+		t.Run(tc.raw, func(t *testing.T) {
+			if got := inferSeverity(tc.raw, ""); got != tc.want {
+				t.Errorf("inferSeverity(%q) = %q, want %q", tc.raw, got, tc.want)
+			}
+			if tc.raw != "err" {
+				if got := classifySeverity(tc.raw, ""); got != tc.want {
+					t.Errorf("classifySeverity(%q) = %q, want %q", tc.raw, got, tc.want)
+				}
+			}
+		})
 	}
 }

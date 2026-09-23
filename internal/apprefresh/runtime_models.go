@@ -10,10 +10,14 @@ import (
 	"github.com/mudrii/openclaw-dashboard/internal/appopenclaw"
 )
 
-func collectRuntimeModels(ctx context.Context, client appopenclaw.Client, agents []string) ([]map[string]any, error) {
+// collectRuntimeModels gathers model readiness one agent at a time. An agent
+// that fails is named in the status while the other agents' rows are kept.
+func collectRuntimeModels(ctx context.Context, client appopenclaw.Client, agents []string) ([]map[string]any, CollectionStatus) {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	rows := []map[string]any{}
+	var firstErr error
+	var failed []string
 	for _, agent := range agents {
 		var status struct {
 			Allowed         []string `json:"allowed"`
@@ -28,11 +32,16 @@ func collectRuntimeModels(ctx context.Context, client appopenclaw.Client, agents
 				} `json:"providers"`
 			} `json:"auth"`
 		}
-		if err := client.ReadAgentModels(ctx, agent, &status); err != nil {
-			return rows, err
+		err := client.ReadAgentModels(ctx, agent, &status)
+		if err == nil && status.Allowed == nil {
+			err = fmt.Errorf("missing model policy")
 		}
-		if status.Allowed == nil {
-			return rows, fmt.Errorf("missing model policy")
+		if err != nil {
+			if firstErr == nil {
+				firstErr = err
+			}
+			failed = append(failed, agent)
+			continue
 		}
 		for _, model := range status.Allowed {
 			provider, _, _ := strings.Cut(model, "/")
@@ -55,5 +64,5 @@ func collectRuntimeModels(ctx context.Context, client appopenclaw.Client, agents
 			rows = append(rows, map[string]any{"agentId": agent, "modelId": model, "provider": provider, "allowed": true, "default": model == status.ResolvedDefault, "authKind": kind, "missingProviderInUse": missing, "catalogName": catalog, "inferenceVerified": false})
 		}
 	}
-	return rows, nil
+	return rows, perAgentStatus("cli.models.status", firstErr, failed, len(agents))
 }
