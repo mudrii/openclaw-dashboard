@@ -2,12 +2,12 @@ package appsystem
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"path/filepath"
 	"regexp"
 	"testing"
 
@@ -21,42 +21,28 @@ import (
 // path (runWithTimeout shells out), portable across darwin + linux CI.
 func writeFakeOclawBin(t *testing.T, stdout string, exitCode int) string {
 	t.Helper()
-	dir := t.TempDir()
-	bin := filepath.Join(dir, "openclaw")
 	// printf is portable; heredoc-free so quoting stays simple. The script
 	// ignores its argv (status/--json/--deep/gateway) and always emits stdout.
-	script := fmt.Sprintf("#!/bin/sh\nprintf '%%s' %q\nexit %d\n", stdout, exitCode)
-	if err := os.WriteFile(bin, []byte(script), 0o755); err != nil {
-		t.Fatalf("write fake oclaw bin: %v", err)
-	}
-	return bin
+	script := fmt.Sprintf("printf '%%s' %q\nexit %d\n", stdout, exitCode)
+	return writeFakeCLI(t, t.TempDir(), "openclaw", script)
 }
 
 // writeSleepingOclawBin writes a fake CLI that outlives any probe deadline, so
 // the caller's timeout is the only thing that can end the call.
 func writeSleepingOclawBin(t *testing.T) string {
 	t.Helper()
-	bin := filepath.Join(t.TempDir(), "openclaw")
-	if err := os.WriteFile(bin, []byte("#!/bin/sh\nsleep 30\n"), 0o755); err != nil {
-		t.Fatalf("write sleeping oclaw bin: %v", err)
-	}
-	return bin
+	return writeFakeCLI(t, t.TempDir(), "openclaw", "exec sleep 30\n")
 }
 
 func writeArgCheckingOclawBin(t *testing.T, stdout string, exitCode int, wantArgs ...string) string {
 	t.Helper()
-	dir := t.TempDir()
-	bin := filepath.Join(dir, "openclaw")
 	check := ""
 	for i, arg := range wantArgs {
 		check += fmt.Sprintf("[ \"${%d}\" = %q ] || exit 64\n", i+1, arg)
 	}
 	check += fmt.Sprintf("[ \"$#\" -eq %d ] || exit 64\n", len(wantArgs))
-	script := "#!/bin/sh\n" + check + fmt.Sprintf("printf '%%s' %q\nexit %d\n", stdout, exitCode)
-	if err := os.WriteFile(bin, []byte(script), 0o755); err != nil {
-		t.Fatalf("write arg-checking oclaw bin: %v", err)
-	}
-	return bin
+	script := check + fmt.Sprintf("printf '%%s' %q\nexit %d\n", stdout, exitCode)
+	return writeFakeCLI(t, t.TempDir(), "openclaw", script)
 }
 
 // gatewayStatusJSON is a canned `openclaw status --json` body with the INT-2
@@ -192,6 +178,54 @@ func TestCollectOpenclawRuntime(t *testing.T) {
 	})
 }
 
+// TestStubProbesForTest pins the seams other packages use to exercise
+// /api/system hermetically: with both stubs installed a cold collection
+// finishes without spawning a process or opening a connection, reports the
+// canned host and OpenClaw values, and still measures the disk for real.
+func TestStubProbesForTest(t *testing.T) {
+	swapSharedSystemHTTPClient(t, &http.Client{Transport: hostProbeGuardTransport{t: t}})
+	svc := NewSystemService(appconfig.SystemConfig{
+		Enabled:            true,
+		MetricsTTLSeconds:  10,
+		VersionsTTLSeconds: 300,
+		DiskPath:           "/",
+	}, "dash-test", context.Background())
+	svc.binOnce.Do(func() {})
+	svc.binPath = "/nonexistent-openclaw-binary-for-stub-test"
+	svc.StubHostProbesForTest()
+	svc.StubOpenclawProbesForTest()
+
+	code, body := svc.GetJSON(context.Background())
+	if code != http.StatusOK {
+		t.Fatalf("code = %d, body=%s, want 200", code, body)
+	}
+	var resp SystemResponse
+	if err := json.Unmarshal(body, &resp); err != nil {
+		t.Fatalf("decode: %v\nbody: %s", err, body)
+	}
+	if resp.Degraded || len(resp.Errors) != 0 {
+		t.Fatalf("degraded=%v errors=%v, want a clean payload from stubs", resp.Degraded, resp.Errors)
+	}
+	if resp.CPU.Percent != 12.5 || resp.RAM.Percent != 25 || resp.Swap.TotalBytes == 0 {
+		t.Fatalf("host metrics = %+v %+v %+v, want the canned values", resp.CPU, resp.RAM, resp.Swap)
+	}
+	if resp.Versions.Dashboard != "dash-test" || resp.Versions.Openclaw != "test" || resp.Versions.Gateway.Status != "online" {
+		t.Fatalf("versions = %+v, want the canned values", resp.Versions)
+	}
+	if resp.Openclaw.Status.CurrentVersion != "test" || !resp.Openclaw.Gateway.Live {
+		t.Fatalf("openclaw = %+v, want the canned runtime patched with the canned version", resp.Openclaw)
+	}
+	if resp.Disk.TotalBytes <= 0 {
+		t.Fatalf("disk = %+v, want a real statfs measurement", resp.Disk)
+	}
+	svc.latestMu.RLock()
+	latest := svc.latestVer
+	svc.latestMu.RUnlock()
+	if latest != "" {
+		t.Fatalf("latestVer = %q, want the stubbed empty npm lookup", latest)
+	}
+}
+
 // TestGetJSON_DisabledAndColdCollect covers the two undertested GetJSON branches.
 func TestGetJSON_DisabledAndColdCollect(t *testing.T) {
 	t.Run("disabled returns 503 with disabled body", func(t *testing.T) {
@@ -221,6 +255,9 @@ func TestGetJSON_DisabledAndColdCollect(t *testing.T) {
 		// Pin the bin so refresh()'s openclawBin() resolves deterministically.
 		svc.binOnce.Do(func() {})
 		svc.binPath = bin
+		svc.StubHostProbesForTest()
+		// Never reach a gateway the developer may be running on the default port.
+		swapSharedSystemHTTPClient(t, &http.Client{Transport: errTransport{}})
 
 		code, body := svc.GetJSON(context.Background())
 		if code != http.StatusOK {
@@ -265,7 +302,7 @@ func TestCollectVersionsLocal_FallbackHTTP(t *testing.T) {
 		// fallback fires. Non-empty non-JSON stdout would parse to "offline" via
 		// the text branch and suppress the fallback — empty is the trigger.
 		bin := writeFakeOclawBin(t, "", 1)
-		v := CollectVersionsLocal(ctx, "dash-1.0", 500, 18789, bin)
+		v := CollectVersionsLocal(ctx, "dash-1.0", 5000, 18789, bin)
 
 		if v.Gateway.Status != "online" {
 			t.Fatalf("Gateway.Status = %q, want online via HTTP fallback", v.Gateway.Status)
@@ -294,10 +331,7 @@ func TestCollectVersionsLocal_FallbackHTTP(t *testing.T) {
 
 func TestCollectVersionsLocal_CommandContracts(t *testing.T) {
 	ctx := context.Background()
-	dir := t.TempDir()
-	bin := filepath.Join(dir, "openclaw")
-	script := `#!/bin/sh
-if [ "$#" -eq 1 ] && [ "$1" = "--version" ]; then
+	script := `if [ "$#" -eq 1 ] && [ "$1" = "--version" ]; then
 	printf '%s' 'openclaw 2026.7.11'
 	exit 0
 fi
@@ -307,9 +341,7 @@ if [ "$#" -eq 3 ] && [ "$1" = "gateway" ] && [ "$2" = "status" ] && [ "$3" = "--
 fi
 exit 64
 `
-	if err := os.WriteFile(bin, []byte(script), 0o755); err != nil {
-		t.Fatalf("write fake openclaw: %v", err)
-	}
+	bin := writeFakeCLI(t, t.TempDir(), "openclaw", script)
 
 	v := CollectVersionsLocal(ctx, "dash-1.0", 1000, 1, bin)
 
@@ -367,15 +399,19 @@ func (h hostProbeGuardTransport) RoundTrip(req *http.Request) (*http.Response, e
 // unresolvable gateway status stays "unknown" with a reason instead of a
 // plausible host-derived value.
 func TestCollectVersionsLocal_ContainerSkipsHostProbe(t *testing.T) {
+	// The finishing CLIs get a generous deadline so a loaded host cannot turn
+	// them into timeouts; the hanging CLI gets a short one because every one of
+	// its sequential probes runs to the deadline.
 	for _, tt := range []struct {
-		name     string
-		exitCode int
-		wantErr  string
-		hang     bool
+		name      string
+		exitCode  int
+		wantErr   string
+		hang      bool
+		timeoutMs int
 	}{
-		{"cli succeeds with no usable json", 0, "host_probe_not_applicable", false},
-		{"cli fails", 1, "unavailable", false},
-		{"cli times out", 0, "timeout", true},
+		{"cli succeeds with no usable json", 0, "host_probe_not_applicable", false, 5000},
+		{"cli fails", 1, "unavailable", false, 5000},
+		{"cli times out", 0, "timeout", true, 100},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			swapSharedSystemHTTPClient(t, &http.Client{Transport: hostProbeGuardTransport{t: t}})
@@ -385,7 +421,7 @@ func TestCollectVersionsLocal_ContainerSkipsHostProbe(t *testing.T) {
 				bin = writeSleepingOclawBin(t)
 			}
 
-			v := CollectVersionsLocal(ctx, "dash-1.0", 500, 18789, bin)
+			v := CollectVersionsLocal(ctx, "dash-1.0", tt.timeoutMs, 18789, bin)
 
 			if v.Gateway.Status != "unknown" {
 				t.Fatalf("Gateway.Status = %q, want unknown", v.Gateway.Status)
@@ -409,7 +445,7 @@ func TestCollectOpenclawRuntime_ContainerSkipsGatewayProbe(t *testing.T) {
 	ctx := appopenclaw.WithTarget(t.Context(), appopenclaw.Target{Mode: "container", Container: "gateway"})
 	bin := writeFakeOclawBin(t, gatewayStatusLeanJSON, 0)
 
-	oc := CollectOpenclawRuntime(ctx, bin, 500, 18789, SystemVersions{}, false)
+	oc := CollectOpenclawRuntime(ctx, bin, 5000, 18789, SystemVersions{}, false)
 
 	if oc.Gateway.Reason != gatewayReasonHostProbeNotApplicable {
 		t.Fatalf("Gateway.Reason = %q, want %q", oc.Gateway.Reason, gatewayReasonHostProbeNotApplicable)

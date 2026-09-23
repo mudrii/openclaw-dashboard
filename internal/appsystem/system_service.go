@@ -35,6 +35,7 @@ type SystemService struct {
 	collectDisk       func(path string) SystemDisk
 	collectCPURAMSwap func(ctx context.Context, cpuTimeoutMs int) (SystemCPU, SystemRAM, SystemSwap)
 	collectOpenclaw   func(ctx context.Context, oclawBin string) SystemOpenclaw
+	collectVersions   func(ctx context.Context) SystemVersions
 
 	metricsMu           sync.RWMutex
 	metricsPayload      []byte
@@ -95,8 +96,39 @@ func NewSystemService(cfg appconfig.SystemConfig, dashVer string, serverCtx cont
 	s.collectOpenclaw = func(ctx context.Context, oclawBin string) SystemOpenclaw {
 		return CollectOpenclawRuntime(ctx, oclawBin, s.cfg.GatewayTimeoutMs, s.cfg.GatewayPort, SystemVersions{}, s.cfg.DeepStatus)
 	}
+	s.collectVersions = func(ctx context.Context) SystemVersions {
+		return CollectVersionsLocal(ctx, s.dashVer, s.cfg.GatewayTimeoutMs, s.cfg.GatewayPort, s.openclawBin())
+	}
 	s.refresh = s.refreshMetrics
 	return s
+}
+
+// StubHostProbesForTest replaces the CPU/RAM/swap collector and the npm
+// latest-version lookup with instant canned results, so tests in other
+// packages can drive /api/system without spawning top, vm_stat or sysctl and
+// without reaching the network. Disk collection stays real (one statfs call).
+// Call it before the first GetJSON; it is not safe to use concurrently.
+func (s *SystemService) StubHostProbesForTest() {
+	s.collectCPURAMSwap = func(context.Context, int) (SystemCPU, SystemRAM, SystemSwap) {
+		const gib = 1 << 30
+		return SystemCPU{Percent: 12.5, Cores: 4},
+			SystemRAM{UsedBytes: 4 * gib, TotalBytes: 16 * gib, Percent: 25},
+			SystemSwap{TotalBytes: 2 * gib}
+	}
+	s.fetchLatest = func(context.Context, int) string { return "" }
+}
+
+// StubOpenclawProbesForTest replaces the OpenClaw CLI and gateway probes
+// (versions and runtime status) with canned results, so tests in other
+// packages never execute the host's openclaw install or probe its gateway.
+// Call it before the first GetJSON; it is not safe to use concurrently.
+func (s *SystemService) StubOpenclawProbesForTest() {
+	s.collectVersions = func(context.Context) SystemVersions {
+		return SystemVersions{Dashboard: s.dashVer, Openclaw: "test", Gateway: SystemGateway{Status: "online"}}
+	}
+	s.collectOpenclaw = func(context.Context, string) SystemOpenclaw {
+		return SystemOpenclaw{Gateway: SystemOpenclawGateway{Live: true, Ready: true, HealthEndpointOk: true, ReadyEndpointOk: true}}
+	}
 }
 
 // SetMetricsTimestampForTest overrides the metrics cache timestamp so tests
@@ -381,7 +413,7 @@ func (s *SystemService) getVersionsCached(ctx context.Context) SystemVersions {
 	s.verRefresh = true
 	s.verMu.Unlock()
 
-	v := CollectVersionsLocal(ctx, s.dashVer, s.cfg.GatewayTimeoutMs, s.cfg.GatewayPort, s.openclawBin())
+	v := s.collectVersions(ctx)
 	s.verMu.Lock()
 	s.verRefresh = false
 	// Cache only when ctx finished cleanly. If a cold-path deadline cut us

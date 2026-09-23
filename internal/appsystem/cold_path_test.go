@@ -139,7 +139,7 @@ func TestRefresh_ColdPath_HostMetricsAlwaysShipped(t *testing.T) {
 	port, closeSrv := hangingGateway(t, 5*time.Second)
 	defer closeSrv()
 
-	cfg := coldPathCfg(port, 1500)
+	cfg := coldPathCfg(port, 500)
 	svc := newColdPathTestService(t, cfg)
 
 	body, _ := svc.refresh(context.Background())

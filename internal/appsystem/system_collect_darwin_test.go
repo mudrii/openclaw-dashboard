@@ -2,7 +2,38 @@
 
 package appsystem
 
-import "testing"
+import (
+	"context"
+	"testing"
+
+	"github.com/mudrii/openclaw-dashboard/internal/appconfig"
+)
+
+// TestCollectCPURAMSwapParallel_RealHost runs the real top, sysctl and vm_stat
+// probes once. Every other test either stubs them or cuts them off at a short
+// cold-path deadline, so this is the one check that the host commands and
+// their parsers still agree. It costs about one second (top samples twice).
+func TestCollectCPURAMSwapParallel_RealHost(t *testing.T) {
+	cpu, ram, swap := collectCPURAMSwapParallel(context.Background(), appconfig.DefaultCPUTimeoutMs)
+	if cpu.Error != nil {
+		t.Fatalf("cpu error: %s", *cpu.Error)
+	}
+	if cpu.Cores <= 0 || cpu.Percent < 0 || cpu.Percent > 100 {
+		t.Fatalf("cpu = %+v, want cores > 0 and a 0-100 percent", cpu)
+	}
+	if ram.Error != nil {
+		t.Fatalf("ram error: %s", *ram.Error)
+	}
+	if ram.TotalBytes <= 0 || ram.UsedBytes <= 0 {
+		t.Fatalf("ram = %+v, want positive used and total bytes", ram)
+	}
+	if swap.Error != nil {
+		t.Fatalf("swap error: %s", *swap.Error)
+	}
+	if swap.UsedBytes > swap.TotalBytes {
+		t.Fatalf("swap = %+v, want used <= total", swap)
+	}
+}
 
 // C9b: parseTopCPU must return an error (not panic) when the matched line
 // somehow lacks a capture group. Defense-in-depth against future regex changes.
