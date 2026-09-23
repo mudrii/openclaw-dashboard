@@ -12,11 +12,40 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"unicode"
+
+	"github.com/mudrii/openclaw-dashboard/internal/appopenclaw"
 )
 
 const maxGatewayResp = 1 << 20
 
+// maxErrorPreviewRunes caps the upstream body echoed in a non-200 gateway
+// error. The body is redacted before it is cut.
+const maxErrorPreviewRunes = 200
+
+// maxPromptFieldRunes caps each untrusted string (session, cron, alert,
+// diagnostic, model names) written into the system prompt.
+const maxPromptFieldRunes = 200
+
+// maxCompletionTokens is the max_tokens requested for each chat completion.
+const maxCompletionTokens = 512
+
+// promptField makes an untrusted string safe to embed in one line of the system
+// prompt: whitespace and control-character runs collapse to a single space, so
+// a crafted name cannot start a new prompt section, and the result is capped at
+// maxPromptFieldRunes with a trailing "…" when cut.
+func promptField(s string) string {
+	s = strings.Join(strings.FieldsFunc(s, func(r rune) bool {
+		return unicode.IsSpace(r) || unicode.IsControl(r)
+	}), " ")
+	if r := []rune(s); len(r) > maxPromptFieldRunes {
+		s = string(r[:maxPromptFieldRunes]) + "…"
+	}
+	return s
+}
+
 // BuildSystemPrompt builds a compact system prompt from dashboard data.
+// Every string taken from data passes through promptField.
 // Optimised: direct WriteString calls instead of fmt.Sprintf to avoid heap allocs.
 func BuildSystemPrompt(data map[string]any) string {
 	var b strings.Builder
@@ -24,7 +53,7 @@ func BuildSystemPrompt(data map[string]any) string {
 
 	str := func(m map[string]any, key string) string {
 		v, _ := m[key].(string)
-		return v
+		return promptField(v)
 	}
 	flt := func(m map[string]any, key string) float64 {
 		switch v := m[key].(type) {
@@ -50,17 +79,17 @@ func BuildSystemPrompt(data map[string]any) string {
 		}
 		switch t := v.(type) {
 		case string:
-			return t
+			return promptField(t)
 		case float64:
 			return strconv.FormatFloat(t, 'f', -1, 64)
 		case int:
 			return strconv.Itoa(t)
 		default:
-			return fmt.Sprint(v)
+			return promptField(fmt.Sprint(v))
 		}
 	}
 
-	lastRefresh, _ := data["lastRefresh"].(string)
+	lastRefresh := str(data, "lastRefresh")
 
 	b.WriteString("You are an AI assistant embedded in the OpenClaw Dashboard.\n")
 	b.WriteString("Answer questions concisely. Use plain text, no markdown.\n")
@@ -114,8 +143,7 @@ func BuildSystemPrompt(data map[string]any) string {
 			if i > 0 {
 				b.WriteString(", ")
 			}
-			model, _ := m["model"].(string)
-			b.WriteString(model)
+			b.WriteString(str(m, "model"))
 			b.WriteString(" $")
 			b.WriteString(fmtCost2(flt(m, "cost")))
 		}
@@ -187,7 +215,7 @@ func BuildSystemPrompt(data map[string]any) string {
 						if i > 0 {
 							b.WriteString("; ")
 						}
-						b.WriteString(s)
+						b.WriteString(promptField(s))
 					}
 				}
 			}
@@ -226,7 +254,7 @@ func BuildSystemPrompt(data map[string]any) string {
 		parts := make([]string, 0, len(fb))
 		for _, f := range fb {
 			s, _ := f.(string)
-			if s != "" {
+			if s = promptField(s); s != "" {
 				parts = append(parts, s)
 			}
 		}
@@ -242,16 +270,20 @@ func BuildSystemPrompt(data map[string]any) string {
 	return b.String()
 }
 
+// Message is one chat turn in the OpenAI-compatible completions format.
 type Message struct {
 	Role    string `json:"role"`
 	Content string `json:"content"`
 }
 
+// Request is the dashboard chat request body: the new question plus prior turns.
 type Request struct {
 	Question string    `json:"question"`
 	History  []Message `json:"history"`
 }
 
+// CompletionPayload is the request body CallGateway posts to the gateway's
+// /v1/chat/completions endpoint.
 type CompletionPayload struct {
 	Model     string    `json:"model"`
 	Messages  []Message `json:"messages"`
@@ -259,7 +291,7 @@ type CompletionPayload struct {
 	Stream    bool      `json:"stream"`
 }
 
-// gatewayError wraps a gateway failure with the appropriate HTTP status code.
+// GatewayError wraps a gateway failure with the appropriate HTTP status code.
 // Used by handleChat to return 502 (Bad Gateway) vs 504 (Gateway Timeout).
 type GatewayError struct {
 	Status int // HTTP status to return to the client (502 or 504)
@@ -296,7 +328,7 @@ func CallGateway(ctx context.Context, system string, history []Message, question
 	payload := CompletionPayload{
 		Model:     model,
 		Messages:  messages,
-		MaxTokens: 512,
+		MaxTokens: maxCompletionTokens,
 		Stream:    false,
 	}
 	body, err := json.Marshal(payload)
@@ -336,11 +368,13 @@ func CallGateway(ctx context.Context, system string, history []Message, question
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		preview := string(respBody)
-		if r := []rune(preview); len(r) > 200 {
-			preview = string(r[:200]) // rune-safe cut: avoid splitting a multibyte rune
+		// Redact the whole body before cutting it: a secret straddling the cut
+		// would otherwise escape both redactors as an unrecognisable prefix.
+		preview := appopenclaw.Redact(redactToken(string(respBody), token))
+		if r := []rune(preview); len(r) > maxErrorPreviewRunes {
+			preview = string(r[:maxErrorPreviewRunes]) // rune-safe cut: avoid splitting a multibyte rune
 		}
-		return "", &GatewayError{Status: http.StatusBadGateway, Msg: redactToken(fmt.Sprintf("gateway HTTP %d: %s", resp.StatusCode, preview), token)}
+		return "", &GatewayError{Status: http.StatusBadGateway, Msg: fmt.Sprintf("gateway HTTP %d: %s", resp.StatusCode, preview)}
 	}
 
 	var result struct {

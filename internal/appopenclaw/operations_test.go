@@ -8,7 +8,9 @@ import (
 )
 
 func TestNarrowOperationsCarryExactTargets(t *testing.T) {
+	calls := 0
 	client := Client{Runner: func(ctx context.Context, _ string, args ...string) *exec.Cmd {
+		calls++
 		var p map[string]any
 		if err := json.Unmarshal([]byte(args[len(args)-1]), &p); err != nil {
 			t.Fatal(err)
@@ -46,5 +48,8 @@ func TestNarrowOperationsCarryExactTargets(t *testing.T) {
 	}
 	if err := client.SetAutomationEnabled(t.Context(), "job", "", true, &result); err == nil {
 		t.Fatal("refused to require revision")
+	}
+	if calls != 3 {
+		t.Fatalf("runner calls = %d, want 3 (rejected requests must not execute)", calls)
 	}
 }

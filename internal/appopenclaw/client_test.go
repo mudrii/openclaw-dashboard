@@ -5,9 +5,11 @@ import (
 	"errors"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestTargetCommand(t *testing.T) {
@@ -86,6 +88,21 @@ func TestInvalidTargetDoesNotExecute(t *testing.T) {
 		if cmd.Err == nil {
 			t.Fatal("invalid target could execute")
 		}
+		if err := cmd.Run(); err == nil || cmd.Process != nil {
+			t.Fatalf("invalid target %+v started a process (err=%v)", target, err)
+		}
+		var started *exec.Cmd
+		client := Client{Binary: os.Args[0], Runner: func(ctx context.Context, binary string, args ...string) *exec.Cmd {
+			started = CommandContext(ctx, binary, args...)
+			return started
+		}}
+		var result any
+		if err := client.Read(WithTarget(t.Context(), target), "status", map[string]any{}, &result); err == nil {
+			t.Fatalf("Read with invalid target %+v succeeded", target)
+		}
+		if started == nil || started.Process != nil {
+			t.Fatalf("Read with invalid target %+v started a process", target)
+		}
 	}
 }
 
@@ -152,6 +169,92 @@ func TestReadBoundary(t *testing.T) {
 		var result any
 		if err := client.Read(ctx, "tasks.list", map[string]any{}, &result); ErrorCode(err) != "timeout" {
 			t.Fatalf("error=%v", err)
+		}
+	})
+}
+
+func TestIsContainer(t *testing.T) {
+	for _, tt := range []struct {
+		name      string
+		mode      string
+		container string
+		env       string
+		want      bool
+	}{
+		{"inherit none", "", "", "", false},
+		{"inherit env", "", "", "from-env", true},
+		{"inherit explicit container", "", "selected", "", true},
+		{"native ignores env", "native", "", "from-env", false},
+		{"native plain", "native", "", "", false},
+		{"container mode", "container", "selected", "", true},
+		{"container mode with env", "container", "selected", "from-env", true},
+		{"container mode without name", "container", "", "", true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("OPENCLAW_CONTAINER", tt.env)
+			target := Target{Mode: tt.mode, Container: tt.container}
+			if got := target.IsContainer(); got != tt.want {
+				t.Fatalf("%+v.IsContainer() with OPENCLAW_CONTAINER=%q = %v, want %v", target, tt.env, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestReadErrorUnwrapsCause(t *testing.T) {
+	t.Run("timeout keeps deadline cause", func(t *testing.T) {
+		ctx, cancel := context.WithDeadline(t.Context(), time.Now().Add(-time.Second))
+		defer cancel()
+		client := Client{Runner: func(ctx context.Context, _ string, _ ...string) *exec.Cmd {
+			return exec.CommandContext(ctx, "sleep", "10")
+		}}
+		var result any
+		err := client.Read(ctx, "tasks.list", map[string]any{}, &result)
+		if ErrorCode(err) != "timeout" {
+			t.Fatalf("code=%q, want timeout (err=%v)", ErrorCode(err), err)
+		}
+		if !errors.Is(err, context.DeadlineExceeded) {
+			t.Fatalf("errors.Is(%v, context.DeadlineExceeded) = false, want true", err)
+		}
+	})
+	t.Run("command error keeps cause", func(t *testing.T) {
+		cause := errors.New("exit status 3")
+		err := CommandError([]byte("boom"), cause)
+		if !errors.Is(err, cause) {
+			t.Fatalf("errors.Is(CommandError(..., cause), cause) = false, want true")
+		}
+	})
+}
+
+func TestCLIEnv(t *testing.T) {
+	stateDir := filepath.Join(t.TempDir(), ".openclaw")
+	if err := os.MkdirAll(stateDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(stateDir, "openclaw.json"), []byte("{}"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("OPENCLAW_HOME", stateDir)
+
+	t.Run("strips legacy state-directory home", func(t *testing.T) {
+		env := CLIEnv("/usr/local/bin/openclaw")
+		if env == nil {
+			t.Fatal("CLIEnv returned nil, want the environment without OPENCLAW_HOME")
+		}
+		for _, kv := range env {
+			if strings.HasPrefix(kv, "OPENCLAW_HOME=") {
+				t.Fatalf("OPENCLAW_HOME not stripped: %q", kv)
+			}
+		}
+	})
+	t.Run("other binary inherits environment", func(t *testing.T) {
+		if env := CLIEnv("/usr/local/bin/other"); env != nil {
+			t.Fatalf("CLIEnv(other) = %d entries, want nil", len(env))
+		}
+	})
+	t.Run("home without config is kept", func(t *testing.T) {
+		t.Setenv("OPENCLAW_HOME", filepath.Join(t.TempDir(), ".openclaw"))
+		if env := CLIEnv("openclaw"); env != nil {
+			t.Fatalf("CLIEnv without openclaw.json = %d entries, want nil", len(env))
 		}
 	})
 }

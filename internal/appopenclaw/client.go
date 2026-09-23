@@ -19,6 +19,14 @@ import (
 // abandoned as too_large.
 const MaxOutputBytes = 8 << 20
 
+// callTimeout bounds one CLI invocation end to end. It exceeds
+// gatewayCallTimeoutMs so the CLI can report its own gateway timeout first.
+const callTimeout = 12 * time.Second
+
+// gatewayCallTimeoutMs is the --timeout (milliseconds) passed to
+// "openclaw gateway call".
+const gatewayCallTimeoutMs = "10000"
+
 // Target selects which OpenClaw runtime a call reaches: the CLI binary, native
 // or container mode, the container name, and the CLI profile.
 type Target struct {
@@ -97,12 +105,7 @@ func (t Target) IsContainer() bool {
 // OPENCLAW_STATE_DIR follows the CLI's precedence over profile defaults.
 func (t Target) StatePath(fallback string) string {
 	if path := strings.TrimSpace(os.Getenv("OPENCLAW_STATE_DIR")); path != "" {
-		if strings.HasPrefix(path, "~/") {
-			if home, err := os.UserHomeDir(); err == nil {
-				return filepath.Join(home, path[2:])
-			}
-		}
-		return filepath.Clean(path)
+		return filepath.Clean(ExpandHome(path))
 	}
 	if t.Profile != "" {
 		return filepath.Join(filepath.Dir(fallback), ".openclaw-"+t.Profile)
@@ -173,9 +176,6 @@ func ErrorCode(err error) string {
 	}
 	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
 		return "timeout"
-	}
-	if errors.Is(err, exec.ErrNotFound) || errors.Is(err, os.ErrNotExist) {
-		return "unavailable"
 	}
 	return "unavailable"
 }
@@ -316,7 +316,7 @@ func (c Client) runJSON(ctx context.Context, method string, args []string, value
 			logCollectionFailure(logCtx, method, err)
 		}
 	}()
-	ctx, cancel := context.WithTimeout(ctx, 12*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, callTimeout)
 	defer cancel()
 	runner := c.Runner
 	if runner == nil {
@@ -351,5 +351,10 @@ func (c Client) Read(ctx context.Context, method string, params any, value any) 
 	if err != nil {
 		return fmt.Errorf("encode OpenClaw parameters: %w", err)
 	}
-	return c.runJSON(ctx, method, []string{"gateway", "call", method, "--json", "--timeout", "10000", "--params", string(data)}, value)
+	return c.runJSON(ctx, method, gatewayCallArgs(method, data), value)
+}
+
+// gatewayCallArgs builds the argv for one bounded "openclaw gateway call".
+func gatewayCallArgs(method string, params []byte) []string {
+	return []string{"gateway", "call", method, "--json", "--timeout", gatewayCallTimeoutMs, "--params", string(params)}
 }

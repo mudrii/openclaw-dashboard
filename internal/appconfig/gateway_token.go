@@ -2,8 +2,11 @@ package appconfig
 
 import (
 	"encoding/json"
+	"log/slog"
 	"os"
 	"path/filepath"
+
+	"github.com/mudrii/openclaw-dashboard/internal/appopenclaw"
 )
 
 // ResolveGatewayToken keeps credentials server-side. Only process/dotenv
@@ -20,7 +23,8 @@ func ResolveGatewayToken(dotenvPath, statePath string) string {
 	if token := env["OPENCLAW_GATEWAY_TOKEN"]; token != "" {
 		return token
 	}
-	raw, err := os.ReadFile(filepath.Join(statePath, "openclaw.json"))
+	configPath := filepath.Join(statePath, "openclaw.json")
+	raw, err := os.ReadFile(configPath)
 	if err != nil {
 		return ""
 	}
@@ -31,7 +35,8 @@ func ResolveGatewayToken(dotenvPath, statePath string) string {
 			} `json:"auth"`
 		} `json:"gateway"`
 	}
-	if json.Unmarshal(raw, &cfg) != nil {
+	if err := appopenclaw.UnmarshalConfig(raw, &cfg); err != nil {
+		slog.Warn("[dashboard] gateway token: cannot parse OpenClaw config", "path", configPath, "error", err)
 		return ""
 	}
 	var literal string

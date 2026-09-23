@@ -40,5 +40,5 @@ func (c Client) writeRPC(ctx context.Context, method string, params any, result 
 	if err != nil {
 		return fmt.Errorf("encode %s params: %w", method, err)
 	}
-	return c.runJSON(ctx, method, []string{"gateway", "call", method, "--json", "--timeout", "10000", "--params", string(data)}, result)
+	return c.runJSON(ctx, method, gatewayCallArgs(method, data), result)
 }

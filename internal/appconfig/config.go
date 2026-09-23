@@ -4,7 +4,9 @@ package appconfig
 import (
 	"bufio"
 	"encoding/json"
+	"errors"
 	"io"
+	"io/fs"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -14,28 +16,35 @@ import (
 	"github.com/mudrii/openclaw-dashboard/internal/appopenclaw"
 )
 
+// BotConfig is the bot identity shown in the dashboard header.
 type BotConfig struct {
 	Name  string `json:"name"`
 	Emoji string `json:"emoji"`
 }
 
+// ThemeConfig selects the dashboard colour theme preset.
 type ThemeConfig struct {
 	Preset string `json:"preset"`
 }
 
+// RefreshConfig controls how often dashboard data is recollected.
 type RefreshConfig struct {
 	IntervalSeconds int `json:"intervalSeconds"`
 }
 
+// ServerConfig is the dashboard HTTP listen address.
 type ServerConfig struct {
 	Port int    `json:"port"`
 	Host string `json:"host"`
 }
 
+// ValidPort reports whether port is a usable TCP port number (1-65535).
 func ValidPort(port int) bool {
 	return port >= 1 && port <= 65535
 }
 
+// AIConfig configures the dashboard chat panel and its AI gateway. MaxHistory
+// is clamped by Load to [minMaxHistory, maxMaxHistory].
 type AIConfig struct {
 	Enabled     bool   `json:"enabled"`
 	GatewayPort int    `json:"gatewayPort"`
@@ -60,6 +69,17 @@ const DefaultCPUTimeoutMs = 6000
 // `openclaw status --json` in docker exec (~10s overhead, issue #31).
 const DefaultColdPathTimeoutMs = 8000
 
+// defaultMaxHistory, minMaxHistory and maxMaxHistory bound ai.maxHistory:
+// non-positive values reset to the default, larger ones clamp to the maximum.
+const (
+	defaultMaxHistory = 6
+	minMaxHistory     = 1
+	maxMaxHistory     = 50
+)
+
+// LogsConfig configures the log tail and error feed. The snake_case fields are
+// legacy aliases: Load applies each one only when its camelCase counterpart is
+// absent from config.json (or set to an empty/non-positive value).
 type LogsConfig struct {
 	Enabled              bool     `json:"enabled"`
 	TailLines            int      `json:"tailLines"`
@@ -74,6 +94,7 @@ type LogsConfig struct {
 	ErrorFeedWindowHours int      `json:"error_feed_window_hours"`
 }
 
+// AlertsConfig holds the thresholds that raise dashboard alerts.
 type AlertsConfig struct {
 	DailyCostHigh float64 `json:"dailyCostHigh"`
 	DailyCostWarn float64 `json:"dailyCostWarn"`
@@ -81,11 +102,13 @@ type AlertsConfig struct {
 	MemoryMb      float64 `json:"memoryMb"`
 }
 
+// MetricThreshold is a warn/critical percentage pair for one system metric.
 type MetricThreshold struct {
 	Warn     float64 `json:"warn"`
 	Critical float64 `json:"critical"`
 }
 
+// SystemConfig configures host metrics collection and version probes.
 type SystemConfig struct {
 	Enabled            bool `json:"enabled"`
 	PollSeconds        int  `json:"pollSeconds"`
@@ -115,6 +138,7 @@ type SystemConfig struct {
 	Disk            MetricThreshold `json:"disk"`
 }
 
+// Config is the complete dashboard configuration loaded from config.json.
 type Config struct {
 	Operations OperationsConfig   `json:"operations,omitzero"`
 	Openclaw   appopenclaw.Target `json:"openclaw,omitzero"`
@@ -129,11 +153,14 @@ type Config struct {
 	System     SystemConfig       `json:"system"`
 }
 
-// Operations are opt-in and also require a separate operator credential.
+// OperationsConfig gates runtime write operations. Operations are opt-in and
+// also require a separate operator credential.
 type OperationsConfig struct {
 	Enabled bool `json:"enabled"`
 }
 
+// Default returns the built-in configuration used for every key config.json
+// omits.
 func Default() Config {
 	return Config{
 		Bot:      BotConfig{Name: "OpenClaw Dashboard", Emoji: "🦞"},
@@ -145,7 +172,7 @@ func Default() Config {
 			Enabled:     true,
 			GatewayPort: 18789,
 			Model:       "",
-			MaxHistory:  6,
+			MaxHistory:  defaultMaxHistory,
 			DotenvPath:  defaultDotenvPath,
 		},
 		Logs: LogsConfig{
@@ -250,19 +277,30 @@ func jsonFields(t reflect.Type) map[string]reflect.Type {
 	return out
 }
 
+// Load reads <dir>/config.json over Default() and clamps every field to its
+// valid range. When <dir>/config.json does not exist it falls back to
+// <dir>/assets/runtime/config.json; any other open or read error, and a missing
+// fallback, log a warning and yield defaults.
 func Load(dir string) Config {
 	cfg := Default()
 	path := filepath.Join(dir, "config.json")
 	f, err := os.Open(path)
-	if err != nil {
-		f, err = os.Open(filepath.Join(dir, "assets", "runtime", "config.json"))
+	if errors.Is(err, fs.ErrNotExist) {
+		path = filepath.Join(dir, "assets", "runtime", "config.json")
+		f, err = os.Open(path)
 	}
-	if err != nil {
+	var raw []byte
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
 		slog.Warn("[dashboard] config: no config.json found, using defaults")
-	} else {
+	case err != nil:
+		slog.Warn("[dashboard] config: cannot open config.json, using defaults", "path", path, "error", err)
+	default:
 		defer func() { _ = f.Close() }()
-		raw, readErr := io.ReadAll(f)
+		var readErr error
+		raw, readErr = io.ReadAll(f)
 		if readErr != nil {
+			raw = nil
 			slog.Warn("[dashboard] config: read error, using defaults", "error", readErr)
 		} else {
 			warnUnknownConfigKeys(raw)
@@ -271,27 +309,17 @@ func Load(dir string) Config {
 			}
 		}
 	}
-	if len(cfg.Logs.Sources) == 0 && len(cfg.Logs.LogSources) > 0 {
-		cfg.Logs.Sources = append([]string{}, cfg.Logs.LogSources...)
-	}
+	applyLegacyLogAliases(&cfg.Logs, raw)
 	if len(cfg.Logs.Sources) == 0 {
 		// An empty/omitted sources list falls back to the built-in defaults so
 		// the log feed is never silently left with zero sources, consistent
 		// with how every other Logs field clamps to a sane default.
 		cfg.Logs.Sources = append([]string{}, Default().Logs.Sources...)
 	}
-	if cfg.Logs.TailLines <= 0 && cfg.Logs.LogTailLines > 0 {
-		cfg.Logs.TailLines = cfg.Logs.LogTailLines
+	if cfg.AI.MaxHistory < minMaxHistory {
+		cfg.AI.MaxHistory = defaultMaxHistory
 	}
-	if cfg.Logs.FastRefreshMs <= 0 && cfg.Logs.LogFastRefreshMs > 0 {
-		cfg.Logs.FastRefreshMs = cfg.Logs.LogFastRefreshMs
-	}
-	if cfg.Logs.ErrorWindowHours <= 0 && cfg.Logs.ErrorFeedWindowHours > 0 {
-		cfg.Logs.ErrorWindowHours = cfg.Logs.ErrorFeedWindowHours
-	}
-	if cfg.AI.MaxHistory <= 0 {
-		cfg.AI.MaxHistory = 6
-	}
+	cfg.AI.MaxHistory = min(cfg.AI.MaxHistory, maxMaxHistory)
 	if !ValidPort(cfg.AI.GatewayPort) {
 		cfg.AI.GatewayPort = 18789
 	}
@@ -385,6 +413,41 @@ func Load(dir string) Config {
 	return cfg
 }
 
+// applyLegacyLogAliases copies each snake_case logs alias onto its camelCase
+// field when the camelCase key is absent from the raw logs object, or present
+// with an empty/non-positive value. Key presence matters because Default()
+// pre-fills the camelCase fields, so their values alone cannot show whether
+// the operator set them.
+func applyLegacyLogAliases(logs *LogsConfig, raw []byte) {
+	var doc struct {
+		Logs map[string]json.RawMessage `json:"logs"`
+	}
+	if len(raw) > 0 {
+		_ = json.Unmarshal(raw, &doc) // malformed JSON was already reported by Load
+	}
+	unset := func(key string, zero bool) bool {
+		_, present := doc.Logs[key]
+		return !present || zero
+	}
+	if len(logs.LogSources) > 0 && unset("sources", len(logs.Sources) == 0) {
+		logs.Sources = append([]string{}, logs.LogSources...)
+	}
+	if logs.LogTailLines > 0 && unset("tailLines", logs.TailLines <= 0) {
+		logs.TailLines = logs.LogTailLines
+	}
+	if logs.LogFastRefreshMs > 0 && unset("fastRefreshMs", logs.FastRefreshMs <= 0) {
+		logs.FastRefreshMs = logs.LogFastRefreshMs
+	}
+	if logs.ErrorFeedWindowHours > 0 && unset("errorWindowHours", logs.ErrorWindowHours <= 0) {
+		logs.ErrorWindowHours = logs.ErrorFeedWindowHours
+	}
+}
+
+// ReadDotenv parses a .env file into a map. Missing or unreadable files yield
+// an empty map. Each non-comment line is KEY=VALUE, optionally prefixed by
+// "export" and whitespace. A value opening with ' or " ends at the matching
+// closing quote (text after it is ignored); an unquoted value ends before the
+// first " #" or "\t#" inline comment. A "#" not preceded by whitespace is kept.
 func ReadDotenv(path string) map[string]string {
 	result := make(map[string]string)
 	expanded := ExpandHome(path)
@@ -400,10 +463,9 @@ func ReadDotenv(path string) map[string]string {
 			continue
 		}
 		// Strip an optional "export" keyword before splitting on '=' so that
-		// "notexport=val" stays a literal key while "export FOO=bar" yields
-		// FOO=bar. CutPrefix matches the literal "export " (single space);
-		// any further whitespace is absorbed by the TrimSpace below.
-		if rest, ok := strings.CutPrefix(line, "export "); ok {
+		// "notexport=val" and "exportFOO=1" stay literal keys while
+		// "export FOO=bar" or "export<TAB>FOO=bar" yields FOO=bar.
+		if rest, ok := strings.CutPrefix(line, "export"); ok && rest != "" && (rest[0] == ' ' || rest[0] == '\t') {
 			line = strings.TrimSpace(rest)
 		}
 		before, after, ok := strings.Cut(line, "=")
@@ -414,14 +476,7 @@ func ReadDotenv(path string) map[string]string {
 		if key == "" {
 			continue
 		}
-		val := strings.TrimSpace(after)
-		if len(val) >= 2 {
-			if (val[0] == '"' && val[len(val)-1] == '"') ||
-				(val[0] == '\'' && val[len(val)-1] == '\'') {
-				val = val[1 : len(val)-1]
-			}
-		}
-		result[key] = val
+		result[key] = dotenvValue(after)
 	}
 	if err := scanner.Err(); err != nil {
 		slog.Warn("[dashboard] dotenv: scanner error", "path", expanded, "error", err)
@@ -429,14 +484,43 @@ func ReadDotenv(path string) map[string]string {
 	return result
 }
 
-func ExpandHome(path string) string {
-	if strings.HasPrefix(path, "~/") {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			slog.Warn("[dashboard] UserHomeDir failed, cannot expand ~", "error", err)
-			return path
+// dotenvValue extracts the value from the text after '=' in a .env line.
+func dotenvValue(raw string) string {
+	val := strings.TrimSpace(raw)
+	if val != "" && (val[0] == '"' || val[0] == '\'') {
+		if end := closingQuote(val); end > 0 {
+			return val[1:end]
 		}
-		return filepath.Join(home, path[2:])
+		return val // unterminated quote: keep the literal text
 	}
-	return path
+	if i := strings.Index(raw, " #"); i >= 0 {
+		raw = raw[:i]
+	}
+	if i := strings.Index(raw, "\t#"); i >= 0 {
+		raw = raw[:i]
+	}
+	return strings.TrimSpace(raw)
+}
+
+// closingQuote returns the index of the quote closing val[0], or -1. Inside
+// double quotes a backslash-escaped quote does not close the value; the
+// escape is kept verbatim.
+func closingQuote(val string) int {
+	quote := val[0]
+	for i := 1; i < len(val); i++ {
+		switch {
+		case quote == '"' && val[i] == '\\':
+			i++ // skip the escaped byte
+		case val[i] == quote:
+			return i
+		}
+	}
+	return -1
+}
+
+// ExpandHome replaces a leading "~/" with the current user's home directory.
+// Other paths, and every path when the home directory is unknown, are
+// returned unchanged.
+func ExpandHome(path string) string {
+	return appopenclaw.ExpandHome(path)
 }

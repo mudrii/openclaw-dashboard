@@ -1,6 +1,7 @@
 package appopenclaw
 
 import (
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -22,4 +23,20 @@ func CLIEnv(name string) []string {
 		return nil
 	}
 	return withoutEnv(os.Environ(), "OPENCLAW_HOME")
+}
+
+// ExpandHome replaces a leading "~/" with the current user's home directory.
+// Other paths, and every path when the home directory cannot be determined,
+// are returned unchanged.
+func ExpandHome(path string) string {
+	rest, ok := strings.CutPrefix(path, "~/")
+	if !ok {
+		return path
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		slog.Warn("[dashboard] UserHomeDir failed, cannot expand ~", "error", err)
+		return path
+	}
+	return filepath.Join(home, rest)
 }
