@@ -1,6 +1,9 @@
 package appopenclaw
 
-import "regexp"
+import (
+	"regexp"
+	"strings"
+)
 
 // sensitiveLabels are the credential-bearing names matched in "key=value", JSON and
 // flag forms. Plural "tokens" never matches because every pattern requires a
@@ -45,6 +48,64 @@ var knownSecret = regexp.MustCompile(`\b(?:sk-[A-Za-z0-9_-]{8,}` +
 // Redact removes common credential formats from operational text. Arbitrary
 // transcript/secret-store payloads are never collected as log substitutes.
 func Redact(text string) string {
+	if !mayContainSecret(text) {
+		return text
+	}
+	return redactPatterns(text)
+}
+
+// redactTriggers are ASCII literals, one of which every redaction pattern
+// needs to match (case-insensitively) somewhere in the text.
+var redactTriggers = []string{
+	"token", "password", "secret", "key", "bearer", "authorization",
+	"sk-", "ghp_", "gho_", "ghu_", "ghs_", "ghr_", "xox", "aiza",
+}
+
+// mayContainSecret is an exact prefilter for redactPatterns: it returns false
+// only when no pattern can match, so most log lines skip the regex passes.
+// Non-ASCII text always takes the full path because (?i) folds some
+// non-ASCII runes onto ASCII letters (e.g. U+212A KELVIN SIGN onto "k").
+func mayContainSecret(text string) bool {
+	for i := range len(text) {
+		if text[i] >= 0x80 {
+			return true
+		}
+	}
+	lower := strings.ToLower(text)
+	for _, lit := range redactTriggers {
+		if strings.Contains(lower, lit) {
+			return true
+		}
+	}
+	if strings.Contains(text, "://") && strings.Contains(text, "@") {
+		return true // urlUserinfo
+	}
+	return hasTelegramTokenTail(text)
+}
+
+// hasTelegramTokenTail reports whether a ':' is followed by at least 30
+// token characters, which knownSecret's Telegram alternative requires.
+func hasTelegramTokenTail(text string) bool {
+	run := -1 // -1: not counting since the last ':'
+	for i := range len(text) {
+		c := text[i]
+		switch {
+		case c == ':':
+			run = 0
+		case run >= 0 && (c >= 'A' && c <= 'Z' || c >= 'a' && c <= 'z' || c >= '0' && c <= '9' || c == '_' || c == '-'):
+			run++
+			if run >= 30 {
+				return true
+			}
+		default:
+			run = -1
+		}
+	}
+	return false
+}
+
+// redactPatterns applies every redaction pattern.
+func redactPatterns(text string) string {
 	text = secretFlag.ReplaceAllString(text, "${1}[REDACTED]")
 	text = urlUserinfo.ReplaceAllString(text, "${1}[REDACTED]@")
 	text = bearerSecret.ReplaceAllString(text, "Bearer [REDACTED]")
