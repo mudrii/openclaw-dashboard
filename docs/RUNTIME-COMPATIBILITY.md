@@ -1,6 +1,6 @@
 # OpenClaw runtime compatibility
 
-The dashboard targets OpenClaw's migrated runtime (2026.8.2 and 2026.9.1) without opening private SQLite tables. A Go 1.27.1 candidate passed read-only browser checks against Podman 2026.9.1, followed by a user-run Podman read contract test. Subsequent audit fixes require rebuilding and retesting the candidate; native/Docker end-to-end certification remains pending. See the dated [validation record](plans/2026-09-05-release-validation.md). It remains a zero-dependency Go server with one embedded SPA. Rebuild after frontend edits.
+Dashboard release v2026.9.7 targets OpenClaw's migrated runtime (2026.8.2 and 2026.9.1) without opening private SQLite tables. A Go 1.27.1 candidate passed read-only browser checks against Podman 2026.9.1, followed by a user-run Podman read contract test. Subsequent audit fixes require rebuilding and retesting the candidate; native/Docker end-to-end certification remains pending. See the dated [validation record](plans/2026-09-05-release-validation.md). It remains a zero-dependency Go server with one embedded SPA. Rebuild after frontend edits.
 
 ## Selecting the runtime
 

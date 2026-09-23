@@ -164,7 +164,7 @@ If any of the three is unavailable, the `Run GoReleaser` step in
 
 ```sh
 # Download the archive + checksums + bundle
-RELEASE=v2026.5.20
+RELEASE=v2026.9.7   # the release tag you downloaded
 curl -fsSL -o checksums-sha256.txt \
   https://github.com/mudrii/openclaw-dashboard/releases/download/$RELEASE/checksums-sha256.txt
 curl -fsSL -o checksums-sha256.txt.bundle \

@@ -85,6 +85,9 @@ CI also builds the Dockerfile and runs `scripts/container-smoke.sh` in the final
 
 ### What the Go tests cover
 
+Root-package tests (`package dashboard`) cover the facade, CLI, and repository
+contracts; behavior tests live next to the code in `internal/*`.
+
 | File | Focus |
 |------|--------|
 | `server_test.go` | HTTP handlers, status codes, JSON bodies, CORS, debouncing behavior, static asset serving |
@@ -92,6 +95,17 @@ CI also builds the Dockerfile and runs `scripts/container-smoke.sh` in the final
 | `chat_test.go` | Chat API contract and validation |
 | `config_test.go` | `config.json` loading and defaults |
 | `version_test.go` | Version string and build metadata behavior |
+| `openclaw_test.go` | Root facade aliases and wrappers over `internal/appopenclaw` (redaction, error codes, token resolution) |
+| `refresh_test.go` | Root refresh-collector wrappers: token usage classification, model names, formatting helpers |
+| `refresh_script_test.go` | `assets/runtime/refresh.sh` preserves runtime-selection environment variables |
+| `main_cli_test.go` | CLI entry points: `--refresh`, container refresh without local state, invalid ports, chat credential warnings |
+| `main_shutdown_test.go` | Graceful shutdown sequence and exit handling |
+| `service_cmd_test.go` | Service subcommand dispatch, argument normalisation, status output, listen-address formatting |
+| `web_contract_test.go` | `web/index.html` markup contracts: unique IDs, ARIA targets, section bindings, no external dependencies, README screenshot links |
+| `web_runtime_test.go` | Runs `scripts/frontend-regression.cjs` and checks embedded script syntax and presentation helpers with Node (skips without Node) |
+| `ops_contract_test.go` | CI/Makefile/docs contracts: canonical make targets, pinned actions, PR template, release credentials, Docker tags |
+| `release_gate_test.go` | Release packaging requires frontend validation and ships the runtime-compatibility doc |
+| `testmain_test.go` | Package `TestMain` setup |
 
 Tests use `net/http/httptest`, temporary directories, and real handler wiring where possible — prefer exercising the actual server types over heavy mocking.
 
@@ -124,6 +138,24 @@ Run `make frontend-test` for dependency-free tests of the actual embedded functi
 - **XSS audit** — search for template literals that insert dynamic data without `esc()` (see [Security Testing](#security-testing))
 
 For behavior that is easy to get wrong (tab switching, chart toggles, scroll preservation), describe the manual scenario in the PR and run through it locally.
+
+For a real-browser pass over the full UI without an OpenClaw runtime, run the
+optional synthetic suite. It needs an externally installed Playwright package
+and, by default, Google Chrome (`BROWSER_CHANNEL` selects another Playwright
+channel); it adds no project dependency and all `/api/*` calls are answered
+from `testdata/browser/dashboard.cjs`:
+
+```bash
+node scripts/ui-fixture-server.cjs &   # serves web/index.html on http://127.0.0.1:8083
+PLAYWRIGHT_MODULE=/absolute/path/to/node_modules/playwright \
+DASHBOARD_TEST_URL=http://127.0.0.1:8083 \
+  node scripts/ui-browser-smoke.cjs
+kill %1
+```
+
+Results and a final screenshot go to `dist/ui-browser-results` (override with
+`UI_TEST_OUTPUT`). `DASHBOARD_TEST_URL` can instead point at any running
+dashboard, since the suite intercepts the API.
 
 Use an isolated rebuilt candidate with chat and operations disabled for live UI validation. The optional `scripts/runtime-browser-smoke.cjs` uses an externally installed browser/Playwright and expects a container-backed candidate; it is not a native/Docker/Podman compatibility matrix. See [runtime validation](docs/RUNTIME-COMPATIBILITY.md#validation) and record the exact binary tested.
 

@@ -88,6 +88,18 @@ selected CLI, host CLI (when containerized), and gateway runtime.
 }
 ```
 
+### Runtime Selection
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `openclaw.mode` | string | `""` | `native`, `container`, or empty to inherit the CLI's environment-based selection (including `OPENCLAW_CONTAINER`) |
+| `openclaw.container` | string | `""` | Container name passed to the CLI as `--container`; required when `mode` is `container`, rejected when `mode` is `native` |
+| `openclaw.binary` | string | `""` | Overrides the `openclaw` CLI executable |
+| `openclaw.profile` | string | `""` | Passes `--profile <name>` to the CLI and selects the `.openclaw-<name>` state directory next to the default one (unless `OPENCLAW_STATE_DIR` is set) |
+| `operations.enabled` | boolean | `false` | Enables the opt-in operator actions described below; also requires `OPENCLAW_DASHBOARD_OPERATOR_TOKEN` |
+
+Container and profile names must match `[A-Za-z0-9][A-Za-z0-9_.-]*`.
+
 ### Runtime compatibility and optional operations
 
 For migrated OpenClaw state, see [runtime compatibility](RUNTIME-COMPATIBILITY.md) for authoritative data sources, capability states, API endpoints and validation commands.
@@ -180,12 +192,31 @@ Panel visibility is not configurable — all panels are always displayed.
 |-----|------|---------|-------------|
 | `refresh.intervalSeconds` | number | `30` | Minimum seconds between data refreshes (debounce) |
 
+`refresh.intervalSeconds` only debounces `/api/refresh`. The browser still
+reloads dashboard data every 60 seconds, and the Logs panel polls every 15
+seconds (or `logs.fastRefreshMs` in fast mode); neither is derived from this
+value.
+
+#### Frozen daily history
+
+If `frozen-daily.json` exists in the dashboard runtime directory, the collector
+uses it as a manually curated backstop for the daily cost chart. It is a JSON
+object keyed by `YYYY-MM-DD`; each value may carry `total`, `tokens`,
+`subagentRuns`, `subagentCost`, and `models` (model → cost). A frozen day
+replaces the computed day only when its `total` is strictly higher than the
+computed total. The file is never written by the dashboard.
+
 ### Server
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
 | `server.port` | number | `8080` | HTTP server port |
-| `server.host` | string | `"127.0.0.1"` | Bind address (`0.0.0.0` for LAN access) |
+| `server.host` | string | `"127.0.0.1"` | Bind address. An empty value is normalized to `127.0.0.1`. Non-loopback addresses such as `0.0.0.0` (LAN access) also require `OPENCLAW_DASHBOARD_ALLOW_NON_LOOPBACK=1`; see [Security](#security) |
+
+```bash
+# LAN access: the opt-in is required, otherwise startup aborts
+OPENCLAW_DASHBOARD_ALLOW_NON_LOOPBACK=1 openclaw-dashboard --bind 0.0.0.0 --port 8080
+```
 
 ### Alerts
 
@@ -198,7 +229,21 @@ Panel visibility is not configurable — all panels are always displayed.
 
 ### OpenClaw Path
 
-Generated dashboard services omit `OPENCLAW_HOME` by default. This lets the dashboard read the normal `$HOME/.openclaw` data directory while the `openclaw` CLI subprocesses use their own default environment for cron, task, channel, and status data. Only set `OPENCLAW_HOME` when you intentionally run OpenClaw from a custom environment; do not set it to `$HOME/.openclaw`, or current OpenClaw CLI releases will look under `$HOME/.openclaw/.openclaw`. The `openclawPath` key in `config.json` is not read by the current runtime.
+The dashboard reads local OpenClaw files from a state directory chosen in this
+order: `OPENCLAW_STATE_DIR`, then the `openclaw.profile` directory
+(`.openclaw-<profile>` next to the default), then `OPENCLAW_HOME`, then
+`~/.openclaw`.
+
+The dashboard treats `OPENCLAW_HOME` as **the OpenClaw state directory itself**
+(the directory that contains `openclaw.json`), not as its parent. `install.sh`
+uses the same meaning and installs into `${OPENCLAW_HOME:-~/.openclaw}/dashboard`.
+The OpenClaw CLI interprets `OPENCLAW_HOME` differently (as the parent of
+`.openclaw`), so when the value names a `.openclaw` directory that contains
+`openclaw.json`, the dashboard removes it from the environment of `openclaw`
+CLI subprocesses. Leave it unset for the default `~/.openclaw`. Generated
+services record `OPENCLAW_HOME` only when it was set (as an absolute path) in
+the installing shell. The `openclawPath` key in `config.json` is not read by
+the current runtime.
 
 ### System Metrics
 
@@ -214,8 +259,8 @@ Generated dashboard services omit `OPENCLAW_HOME` by default. This lets the dash
 | `system.deepStatus` | boolean | `false` | Opt into `openclaw status --json --deep`. Lean status (default) returns the task queue, plugin-compatibility warnings, and channel summary; deep status additionally returns the event-loop health and last-heartbeat blocks at the cost of a slower status call. Surfaced in the Runtime Health panel. |
 | `system.gatewayPort` | number | `18789` | Gateway port for health probes (defaults to `ai.gatewayPort`) |
 | `system.diskPath` | string | `"/"` | Filesystem path to report disk usage for |
-| `system.warnPercent` | number | `70` | Global warn threshold (% used) — overridden by per-metric values |
-| `system.criticalPercent` | number | `85` | Global critical threshold (% used) — overridden by per-metric values |
+| `system.warnPercent` | number | `70` | Fallback warn threshold (% used), applied only to a per-metric `warn` that is missing or invalid (≤0 or ≥100) |
+| `system.criticalPercent` | number | `85` | Fallback critical threshold (% used), applied only to a per-metric `critical` that is invalid (not above its `warn`, or >100) |
 | `system.cpu.warn` | number | `80` | CPU warn threshold (%) |
 | `system.cpu.critical` | number | `95` | CPU critical threshold (%) |
 | `system.ram.warn` | number | `80` | RAM warn threshold (%) |
@@ -225,17 +270,34 @@ Generated dashboard services omit `OPENCLAW_HOME` by default. This lets the dash
 | `system.disk.warn` | number | `80` | Disk warn threshold (%) |
 | `system.disk.critical` | number | `95` | Disk critical threshold (%) |
 
+The per-metric thresholds default to 80/95 and are what the metrics bar uses.
+Because those defaults are always valid, setting only `system.warnPercent` /
+`system.criticalPercent` does not change the bar; set the per-metric values
+instead.
+
 ### Logs
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
 | `logs.enabled` | boolean | `true` | Enable/disable the Logs panel and error feed |
-| `logs.tailLines` | number | `200` | Lines tailed per source |
-| `logs.fastRefreshMs` | number | `3000` | Logs panel fast-refresh interval (ms) |
-| `logs.errorWindowHours` | number | `24` | Window for the error-signature feed |
-| `logs.maxErrorSignatures` | number | `1000` | Cap on distinct error signatures tracked |
-| `logs.sources` | string[] | `["logs/gateway.log", "logs/gateway.err.log"]` | Log files to tail (relative to the OpenClaw home) |
+| `logs.tailLines` | number | `200` | Lines tailed per source (1–1000; out-of-range values reset to 200) |
+| `logs.fastRefreshMs` | number | `3000` | Logs panel fast-refresh interval (1000–30000 ms; out-of-range values reset to 3000). The normal interval is fixed at 15 s |
+| `logs.errorWindowHours` | number | `24` | Window for the error-signature feed (1–168; out-of-range values reset to 24) |
+| `logs.maxErrorSignatures` | number | `1000` | Cap on distinct error signatures tracked (1–10000; out-of-range values reset to 1000) |
+| `logs.sources` | string[] | `["logs/gateway.log", "logs/gateway.err.log"]` | Log files to tail, relative to the OpenClaw state directory. An empty list uses the defaults |
 | `logs.systemdUnit` | string | `"openclaw-gateway"` | Systemd `--user` unit name for the Linux journald fallback. When a log source has no file on disk (the systemd gateway logs to journald, not a file), the dashboard reads `journalctl --user -u <unit>.service -o json`. Overridable by the `OPENCLAW_SYSTEMD_UNIT` env var; `OPENCLAW_PROFILE` appends a `-<profile>` suffix. Linux only; ignored on macOS. |
+
+**Deprecated aliases.** The snake_case keys `logs.log_sources`,
+`logs.log_tail_lines`, `logs.log_fast_refresh_ms`, and
+`logs.error_feed_window_hours` are still read, but only when the matching
+camelCase key (`sources`, `tailLines`, `fastRefreshMs`, `errorWindowHours`) is
+absent, empty, or non-positive. Prefer the camelCase keys; the aliases go
+through the same range checks.
+
+**Fallback log directory.** OpenClaw 2026.5.18+ writes gateway logs to
+`~/Library/Logs/openclaw/`. For each source, the dashboard also reads
+`~/Library/Logs/openclaw/<name>` (the source path without its leading `logs/`)
+and merges it with the file under the state directory.
 
 ### AI Chat
 
@@ -244,8 +306,14 @@ Generated dashboard services omit `OPENCLAW_HOME` by default. This lets the dash
 | `ai.enabled` | boolean | `true` | Enable/disable AI chat panel and `/api/chat` endpoint |
 | `ai.gatewayPort` | number | `18789` | OpenClaw gateway port used for chat completions |
 | `ai.model` | string | `""` | Gateway model ID for chat requests |
-| `ai.maxHistory` | number | `6` | Server-side cap for previous chat messages included in context |
-| `ai.dotenvPath` | string | `"~/.openclaw/.env"` | Path to dotenv file containing `OPENCLAW_GATEWAY_TOKEN` |
+| `ai.maxHistory` | number | `6` | Server-side cap for previous chat messages included in context. Clamped to 1–50; zero or negative falls back to 6 |
+| `ai.dotenvPath` | string | `"~/.openclaw/.env"` | Path to dotenv file containing `OPENCLAW_GATEWAY_TOKEN`. The default follows the selected state directory (`<stateDir>/.env`); an explicit path is used as given |
+
+The dotenv reader accepts `KEY=value` and `export KEY=value` lines, skips blank
+lines and `#` comment lines, and strips one pair of matching single or double
+quotes. An unquoted value ends at ` #` (whitespace followed by `#`), so
+`TOKEN=abc # comment` yields `abc`; a quoted value may be followed by a
+comment, as in `TOKEN="abc" # comment`.
 
 ### AI Chat Setup
 
@@ -261,14 +329,14 @@ Generated dashboard services omit `OPENCLAW_HOME` by default. This lets the dash
 }
 ```
 
-2. Ensure `OPENCLAW_GATEWAY_TOKEN` exists in your dotenv file (default: `~/.openclaw/.env`).
+2. Ensure `OPENCLAW_GATEWAY_TOKEN` exists in your dotenv file (default: `.env` in the selected state directory, normally `~/.openclaw/.env`).
 3. Restart gateway and dashboard after changing gateway or dotenv config.
 
 ## Environment Variables
 
 | Variable | Description |
 |----------|-------------|
-| `OPENCLAW_HOME` | Optional custom OpenClaw environment passed through only when explicitly set before service install; normally unset |
+| `OPENCLAW_HOME` | OpenClaw state directory itself (contains `openclaw.json`); default `~/.openclaw`. Recorded in generated services only when set at install time; see [OpenClaw Path](#openclaw-path) |
 | `OPENCLAW_GATEWAY_TOKEN` | Gateway bearer token; process environment takes precedence over `ai.dotenvPath`, then supported literal/env SecretRef values in local gateway configuration |
 | `OPENCLAW_STATE_DIR` | Explicit local state directory; overrides the state path derived from `openclaw.profile` |
 | `OPENCLAW_CONTAINER` | Inherited container selection when `openclaw.mode` does not override it |
@@ -278,8 +346,9 @@ Generated dashboard services omit `OPENCLAW_HOME` by default. This lets the dash
 | `OPENCLAW_CONFIG_PATH` | Overrides the OpenClaw config path used to locate the gateway lock file. The lock supplies install-independent gateway PID/uptime/RSS. |
 | `OPENCLAW_DASHBOARD_DIR` | Override the dashboard runtime directory |
 | `OPENCLAW_DASHBOARD_ALLOW_NON_LOOPBACK` | Set to the literal value `1` to permit non-loopback bind hosts (e.g., `0.0.0.0`). Required for containerized deployments where the bind has to be reachable from outside the container. Off by default; see Security below. |
+| `OPENCLAW_DASHBOARD_ALLOWED_HOSTS` | Comma-separated extra `Host` names (no port, case-insensitive) accepted by the Host header check, e.g. the public name a Host-preserving TLS proxy or `tailscale serve` forwards. Keeps the loopback bind policy in force. Unset by default. |
 | `DASHBOARD_PORT` | Override the HTTP listen port (takes precedence over `server.port` in config) |
-| `DASHBOARD_BIND` | Override the HTTP bind address (takes precedence over `server.host` in config) |
+| `DASHBOARD_BIND` | Override the HTTP bind address (takes precedence over `server.host` in config); empty means `127.0.0.1` |
 
 ## Security
 
@@ -287,10 +356,19 @@ The dashboard is designed to run on a developer or operator's local machine.
 A few hard rules are enforced at startup or per-request:
 
 - **Loopback-only bind by default.** `--bind`/`DASHBOARD_BIND` accept only
-  `127.0.0.1`, `localhost`, `::1`, or empty. Anything else aborts startup
-  unless `OPENCLAW_DASHBOARD_ALLOW_NON_LOOPBACK=1` is set. Rationale: the
-  chat rate-limit map grows unbounded between cleanup cycles, so exposing the
-  HTTP surface to a public network turns it into a DoS surface.
+  `127.0.0.1`, `localhost`, or `::1`; an empty value is normalized to
+  `127.0.0.1`. Anything else aborts startup unless
+  `OPENCLAW_DASHBOARD_ALLOW_NON_LOOPBACK=1` is set. Rationale: the chat
+  rate-limit map grows unbounded between cleanup cycles, so exposing the HTTP
+  surface to a public network turns it into a DoS surface.
+- **Host header check (DNS rebinding).** Every request must carry a `Host`
+  header naming `localhost` or a loopback address (any port). Other hosts get
+  `421 Misdirected Request`, so a page on a hostile domain that rebinds to
+  `127.0.0.1` cannot read the API. `OPENCLAW_DASHBOARD_ALLOWED_HOSTS` adds
+  specific names (for a reverse proxy) without relaxing anything else;
+  `OPENCLAW_DASHBOARD_ALLOW_NON_LOOPBACK=1` disables this check along with
+  the bind restriction, so LAN and container deployments must rely on their
+  own network boundary.
 - **Container deployment.** Set `OPENCLAW_DASHBOARD_ALLOW_NON_LOOPBACK=1` and
   bind to `0.0.0.0` so the published port works, or use
   `docker run --network=host ... openclaw-dashboard --bind 127.0.0.1 --port 8080`
@@ -301,14 +379,20 @@ A few hard rules are enforced at startup or per-request:
   `Referrer-Policy: no-referrer`. Inline scripts still need `'unsafe-inline'`
   (the SPA inlines its bundles), but cross-origin exfiltration and
   clickjacking are blocked.
-- **Gateway token redaction.** `appchat.CallGateway` strips the bearer token
-  from any 5xx response body before surfacing the error to the browser.
+- **Gateway errors stay server-side.** When the chat gateway call fails, the
+  browser receives only a fixed message (`gateway unavailable` or
+  `gateway timed out`), never upstream response text. The full error is
+  written to the server log with the bearer token redacted from any echoed
+  response body.
 - **Chat origin checks.** Browser chat requests require an HTTP/HTTPS origin
   matching the request Host (including port),
   or an HTTP loopback development origin. Foreign and opaque (`null`) origins
   receive HTTP 403 before gateway work; CORS response headers alone do not
   prevent a simple cross-origin POST. Origin-less CLI clients remain supported.
-  A TLS reverse proxy must preserve the public Host for chat.
+  A TLS reverse proxy must preserve the public Host for chat, and that Host
+  must be listed in `OPENCLAW_DASHBOARD_ALLOWED_HOSTS` (for example
+  `OPENCLAW_DASHBOARD_ALLOWED_HOSTS=dashboard.example.com`) so it passes the
+  Host header check above; the dashboard keeps its `127.0.0.1` bind.
 
 ## Data Flow
 

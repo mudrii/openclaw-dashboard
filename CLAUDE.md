@@ -23,10 +23,10 @@ Zero-dependency Go HTTP server with embedded SPA frontend for OpenClaw bot metri
 
 ## Environment
 
-- Go 1.27 (toolchain `go1.27.1` per `go.mod`), darwin/arm64 + linux/amd64+arm64
+- Go 1.27 (toolchain `go1.27.1` per `go.mod`), darwin/amd64+arm64 + linux/amd64+arm64 (release archives per `.goreleaser.yml`)
 - Treat `go.mod`, `toolchain`, CI config as the source of truth
 - Prefer `make` targets over raw commands when a Makefile exists
-- `make check` is the canonical gate: `vet`, `lint` (golangci-lint with `gosec` + `errorlint` enabled), `test -race`, `govulncheck`
+- `make check` is the canonical gate: `frontend-test` (Node on `PATH`), `workflow-test`, `vet`, `lint` (golangci-lint with `gosec` + `errorlint` enabled), `test` (`-race`), `govulncheck`, `staticcheck`, `build`
 - `CGO_ENABLED=0` is set across all four build paths (`Makefile`, `Dockerfile`, `.goreleaser.yml`, `flake.nix`); keep it that way
 - Loopback-only HTTP bind is enforced at startup; container deployments opt in via `OPENCLAW_DASHBOARD_ALLOW_NON_LOOPBACK=1`
 
@@ -36,10 +36,10 @@ Check each project's Makefile for exact targets. Common conventions:
 
 ```sh
 make build        # build binary
-make test         # go test ./...
+make test         # go test -race -count=1 ./...
 make lint         # golangci-lint
-make fmt          # gofmt / gofumpt
-make ci           # full gate (or make check, make all)
+make fmt          # gofmt -w .
+make check        # full gate (needs Node for frontend-test)
 ```
 
 After writing code:

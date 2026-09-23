@@ -2,7 +2,7 @@
 
 A beautiful, zero-dependency command center for [OpenClaw](https://github.com/openclaw/openclaw) AI agents.
 
-For the current working-tree runtime changes, see [OpenClaw runtime compatibility](docs/RUNTIME-COMPATIBILITY.md) and the [pre-release validation record](docs/plans/2026-09-05-release-validation.md). These changes are not a published release; screenshots below may show the earlier layout.
+For the migrated-runtime support in v2026.9.7 (see `VERSION`), see [OpenClaw runtime compatibility](docs/RUNTIME-COMPATIBILITY.md) and the [release validation record](docs/plans/2026-09-05-release-validation.md). Screenshots below may show the earlier layout.
 
 ![OpenClaw Dashboard](screenshots/00-full-dashboard.png)
 
@@ -146,6 +146,19 @@ After upgrading, verify the installed release with:
 openclaw-dashboard --version
 ```
 
+If you run the dashboard as a background service, restart it so the service
+loads the new binary:
+
+```bash
+openclaw-dashboard restart
+```
+
+Service definitions record the stable Homebrew `opt` path
+(`$(brew --prefix)/opt/openclaw-dashboard/bin/openclaw-dashboard`) rather than
+the versioned `Cellar` path, so they keep working after `brew upgrade`. A
+service installed by an older release may still point at a removed `Cellar`
+path; run `openclaw-dashboard install` once to rewrite it.
+
 ### Running as a Background Service
 
 The binary has built-in service management — no shell scripts needed:
@@ -154,8 +167,9 @@ The binary has built-in service management — no shell scripts needed:
 # Install and start as a system service (launchd on macOS, systemd on Linux)
 openclaw-dashboard install
 
-# With custom port and bind address
-openclaw-dashboard install --port 9090 --bind 0.0.0.0
+# With custom port and bind address (a non-loopback bind requires the opt-in,
+# which is also recorded in the service definition)
+OPENCLAW_DASHBOARD_ALLOW_NON_LOOPBACK=1 openclaw-dashboard install --port 9090 --bind 0.0.0.0
 
 # Check status
 openclaw-dashboard status
@@ -168,6 +182,10 @@ openclaw-dashboard restart
 # Remove the service (config and data are preserved)
 openclaw-dashboard uninstall
 ```
+
+On macOS, `stop` unloads the LaunchAgent (its `KeepAlive` setting would
+otherwise restart the process immediately); it stays stopped until `start`,
+`restart`, or the next login. `start` loads the LaunchAgent again when needed.
 
 All commands are also available under the `service` namespace:
 ```bash
@@ -302,7 +320,9 @@ internal/appchat/            chat prompt + gateway client
 internal/appopenclaw/        selected-runtime CLI adapter and operation allowlists
 internal/apprefresh/         data collector
 internal/appserver/          HTTP server
+internal/appservice/         launchd/systemd service management
 internal/appsystem/          metrics and runtime probes
+*.go (package dashboard)     root facade: thin wrappers and type aliases over internal/
 web/index.html              embedded frontend
 assets/runtime/             runtime defaults
 data.json                   generated dashboard data
@@ -336,7 +356,7 @@ Read routes also support HEAD. Operations are disabled by default; see [authoriz
 | Static files | Allowlisted only (`themes.json`, optional favicons) |
 | Rate limiting | 10 req/min per-IP on `/api/chat` |
 | HTTP timeouts | Read 30s / Write 90s / Idle 120s |
-| Pre-warm | Runs `--refresh` at startup |
+| Pre-warm | Starts the refresh collector in-process (background) at startup |
 | Shutdown | Graceful (drains requests, 5s timeout) |
 | Gateway limit | 1MB response cap |
 | Tests | `make test` |
@@ -447,12 +467,20 @@ package installs it is `~/.openclaw/dashboard/config.json`.
 | `alerts.contextPct` | `80` | Context usage % threshold for alerts |
 | `alerts.memoryMb` | `640` | Gateway memory threshold (MB) for alerts |
 | `server.port` | `8080` | Server port (also `--port` / `-p` flag or `DASHBOARD_PORT` env) |
-| `server.host` | `"127.0.0.1"` | Server bind address (also `--bind` / `-b` flag or `DASHBOARD_BIND` env) |
+| `server.host` | `"127.0.0.1"` | Server bind address (also `--bind` / `-b` flag or `DASHBOARD_BIND` env); empty means `127.0.0.1`, non-loopback needs `OPENCLAW_DASHBOARD_ALLOW_NON_LOOPBACK=1` |
 | `ai.enabled` | `true` | Enable/disable the AI chat panel and `/api/chat` endpoint |
 | `ai.gatewayPort` | `18789` | Port of your OpenClaw gateway |
 | `ai.model` | `""` | Model to use for chat — any model ID registered in your OpenClaw gateway |
-| `ai.maxHistory` | `6` | Number of previous messages to include for context |
-| `ai.dotenvPath` | `"~/.openclaw/.env"` | Path to `.env` file containing `OPENCLAW_GATEWAY_TOKEN` |
+| `ai.maxHistory` | `6` | Number of previous messages to include for context (1–50) |
+| `ai.dotenvPath` | `"~/.openclaw/.env"` | Path to `.env` file containing `OPENCLAW_GATEWAY_TOKEN`; the default follows the selected state directory |
+| `openclaw.mode` / `.container` / `.binary` / `.profile` | unset | Runtime selection (native or container, CLI path, profile); see [runtime selection](docs/CONFIGURATION.md#runtime-selection) |
+| `operations.enabled` | `false` | Opt-in operator actions; also needs `OPENCLAW_DASHBOARD_OPERATOR_TOKEN` |
+| `logs.enabled` | `true` | Enable/disable the Logs panel and error feed |
+| `logs.tailLines` | `200` | Lines tailed per source (1–1000) |
+| `logs.fastRefreshMs` | `3000` | Logs panel fast-mode poll interval (1000–30000 ms); normal mode polls every 15 s |
+| `logs.errorWindowHours` | `24` | Error-feed window (1–168 hours) |
+| `logs.maxErrorSignatures` | `1000` | Distinct error signatures tracked (1–10000) |
+| `logs.sources` | `["logs/gateway.log", "logs/gateway.err.log"]` | Log files relative to the OpenClaw state directory |
 | `system.enabled` | `true` | Enable/disable the top metrics bar and `/api/system` endpoint |
 | `system.pollSeconds` | `10` | How often the browser polls `/api/system` (seconds, 2–60) |
 | `system.metricsTtlSeconds` | `10` | Server-side metrics cache TTL (seconds) |
@@ -464,8 +492,8 @@ package installs it is `~/.openclaw/dashboard/config.json`.
 | `system.gatewayPort` | `18789` | Gateway port for health probes (defaults to `ai.gatewayPort`) |
 | `logs.systemdUnit` | `"openclaw-gateway"` | Systemd `--user` unit for the Linux journald log fallback (env `OPENCLAW_SYSTEMD_UNIT` overrides; `OPENCLAW_PROFILE` adds a suffix) |
 | `system.diskPath` | `"/"` | Filesystem path to report disk usage for |
-| `system.warnPercent` | `70` | Global warn threshold (% used) — overridden by per-metric values |
-| `system.criticalPercent` | `85` | Global critical threshold (% used) — overridden by per-metric values |
+| `system.warnPercent` | `70` | Fallback warn threshold, used only when a per-metric `warn` is invalid |
+| `system.criticalPercent` | `85` | Fallback critical threshold, used only when a per-metric `critical` is invalid |
 | `system.cpu.warn` | `80` | CPU warn threshold (%) |
 | `system.cpu.critical` | `95` | CPU critical threshold (%) |
 | `system.ram.warn` | `80` | RAM warn threshold (%) |
@@ -549,7 +577,7 @@ The chat panel requires:
      "http": { "endpoints": { "chatCompletions": { "enabled": true } } }
    }
    ```
-2. `OPENCLAW_GATEWAY_TOKEN` set in your `.env` file (defaults to `~/.openclaw/.env`)
+2. `OPENCLAW_GATEWAY_TOKEN` set in your `.env` file (defaults to `.env` in the selected state directory, normally `~/.openclaw/.env`)
 
 The chat is stateless — each question is sent directly to the gateway with a system prompt built from live `data.json`. No agent memory or tools bleed in.
 
@@ -609,7 +637,7 @@ Live sessions with model, type badges (DM / group / subagent), context usage %, 
 ---
 
 ### 📊 Token Usage & Cost
-Per-model token and cost breakdown with 7d / 30d / all-time tabs. Includes input tokens, output tokens, cache reads, and total cost per model — sortable at a glance.
+Per-model token and cost breakdown with Today / 7d / 30d / all-time tabs. Includes input tokens, output tokens, cache reads, and total cost per model — sortable at a glance.
 
 ![Token Usage](screenshots/05-token-usage.png)
 
@@ -658,7 +686,7 @@ Or using the uninstall script to remove the runtime directory as well:
 - Pre-built Go binary — no third-party Go libraries or frontend package installation required
 - `bash` (only needed if using the optional `refresh.sh` wrapper script, not required for the binary itself)
 - **OpenClaw** — Accessible host CLI and selected native installation or Docker/Podman container. Migrated data requires the CLI/gateway; state files alone are insufficient. The default native state directory is `~/.openclaw`
-- **macOS** 10.15+ or **Linux** (Ubuntu 18.04+, Debian 10+, ARM64)
+- **macOS** 12+ (Go 1.25+ binaries require Monterey or later) or **Linux** (Ubuntu 18.04+, Debian 10+, ARM64)
 - Modern web browser
 
 ## Contributing

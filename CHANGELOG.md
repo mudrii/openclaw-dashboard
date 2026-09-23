@@ -1,5 +1,76 @@
 # Changelog
 
+## Unreleased
+
+Full code, test and documentation audit with fixes across every package.
+
+**Behaviour changes to note**
+
+- The server now rejects requests whose `Host` header is not `localhost` or a
+  loopback address with `421 Misdirected Request` (DNS-rebinding protection).
+  A reverse proxy that forwards a public Host (Caddy, `tailscale serve`) must
+  list it in the new `OPENCLAW_DASHBOARD_ALLOWED_HOSTS`.
+- An empty `--bind` is normalized to `127.0.0.1` instead of listening on all
+  interfaces.
+- `openclaw-dashboard stop` on macOS unloads the LaunchAgent (previously
+  `KeepAlive` restarted it immediately); `start` loads it.
+- Service installs record the stable Homebrew `opt` path, so they survive
+  `brew upgrade`.
+- Startup fails fast when none of `OPENCLAW_STATE_DIR`, `OPENCLAW_HOME` or
+  `HOME` resolves, instead of using a relative `.openclaw`.
+- After a failed refresh, `/api/refresh` waits for the debounce interval before
+  retrying the collector.
+- `ai.maxHistory` is clamped to 1–50. The log panel polls every 15s instead of
+  following `refresh.intervalSeconds`.
+
+**Security**
+
+- Redact the chat gateway error body before truncating it, so a token cut at
+  the preview boundary no longer leaks a prefix into the server log.
+- Extend credential redaction to Basic/other auth schemes, escaped JSON,
+  quoted values with spaces, `--token`-style flags, URL userinfo, and GitHub,
+  Slack, Google and Telegram token formats; legacy file and journald log lines
+  are now redacted too.
+- Flatten and length-cap untrusted session, cron and alert text before it
+  enters the chat system prompt.
+
+**Fixes**
+
+- systemd: write `WorkingDirectory=` unquoted (systemd rejected the quoted
+  form, so Linux services never started) and escape `%`/`$` specifiers.
+- launchd: parse `ps` start times in local time (uptime was off by the UTC
+  offset); status probes honour `::1` binds.
+- Per-model token "Calls" count messages rather than transcript files; the
+  token cache is invalidated when the timezone changes; day-scoped figures are
+  not carried across midnight; migrated runtimes no longer raise context
+  alerts for archived or old sessions.
+- Log tail reads backwards from EOF (bounded I/O, no failure on >2 MiB lines),
+  keeps multi-line stack traces in order with inherited timestamps, and logs
+  per-source read errors.
+- Legacy snake_case log config aliases take effect; dotenv supports inline
+  ` #` comments and `export<TAB>`; `openclaw.json` may contain comments and
+  trailing commas.
+- `/api/system` shares one cold-path collection between concurrent requests,
+  returns 503 consistently for all-failed payloads, bounds `statfs`, computes
+  disk usage like `df`, and reports a loaded-but-stopped gateway as offline.
+- HTTP: 405 responses carry `Allow`, unknown paths return 404, operations keep
+  `Cache-Control: no-store`, the refresh worker has an overall deadline, and
+  the data cache keys on mtime and size.
+- Frontend: "Last Activity" refreshes, hidden tabs stop polling, session and
+  sub-agent log filters match their entries, small cost charts get correct
+  axis precision, the error feed clears on failure, render errors surface in
+  the banner, and chat/log controls gain accessible labels.
+
+**Internal**
+
+- Split `appsystem/system_service.go` into cohesive files, extract phases of
+  `collectDashboardData`, deduplicate launchd/systemd helpers, name magic
+  values, remove dead code, and replace sleep-based tests with `synctest`.
+- Root tests no longer probe the developer's real OpenClaw install; the root
+  test package runs roughly twice as fast.
+- Documentation corrected against the code: bind/Host rules, `OPENCLAW_HOME`,
+  threshold semantics, clamp ranges, runtime-selection keys, and release gate.
+
 ## v2026.9.7 — 2026-09-07
 
 - Restore the original cost overview layout while displaying available cost data: partial monthly projections, known-cost model donuts, and 7/30-day model cost charts. Unpriced usage is explicitly excluded rather than treated as free.

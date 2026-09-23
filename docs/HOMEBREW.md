@@ -15,9 +15,15 @@ This repository owns the release automation:
 Tagging a release runs GoReleaser, publishes the release artifacts, and updates
 the Homebrew formula in the tap repository. Release tags must point to commits
 reachable from `main`, and the tag name must exactly match this repository's
-`VERSION` file. Before GoReleaser pushes the tap update, the workflow runs
-`make check` plus shellcheck for `assets/runtime/refresh.sh`, `install.sh`, and
-`uninstall.sh`.
+`VERSION` file. Before GoReleaser pushes the tap update, the release workflow
+requires, in order:
+
+- a completed, successful `Tests` workflow run (`tests.yml`) on `main` for the
+  exact tagged commit;
+- `make check`;
+- `shellcheck --severity=warning` for `assets/runtime/refresh.sh`,
+  `install.sh`, `uninstall.sh`, and `scripts/container-smoke.sh`;
+- `make container-test` (builds the runtime image and runs its smoke test).
 
 ## Required secrets
 
@@ -46,11 +52,16 @@ binary seeds a writable runtime directory at:
 
 - `~/.openclaw/dashboard`
 
-That runtime directory is where users should edit:
+`config.json`, `themes.json`, `refresh.sh`, and `examples/config.minimal.json`
+are copied only when missing, so user edits survive upgrades. `VERSION` is
+overwritten on every start so the runtime directory tracks the installed
+release. Users edit `config.json` and `themes.json` there; the collector writes
+`data.json` there.
 
-- `config.json`
-- `themes.json`
-- `data.json`
+Service definitions created by `openclaw-dashboard install` record the stable
+`$(brew --prefix)/opt/openclaw-dashboard/bin/openclaw-dashboard` path rather
+than the versioned `Cellar` path, so they survive `brew upgrade`; run
+`openclaw-dashboard restart` after an upgrade to load the new binary.
 
 The packaged defaults come from this repo's `assets/runtime/` directory and are
 installed into `pkgshare` during the release build. Example configs are shipped
