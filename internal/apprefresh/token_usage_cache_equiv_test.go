@@ -41,19 +41,20 @@ func referenceParseTokenUsage(r io.Reader, size, mtime int64, loc *time.Location
 						var costTotal float64
 						if costObj, ok := usage["cost"].(map[string]any); ok {
 							if t, ok := costObj["total"].(float64); ok {
-								costTotal = t
+								costTotal = usageCost(t)
 							}
 						}
 						if costTotal < 0 {
 							costTotal = 0
 						}
-						inp, _ := usage["input"].(float64)
-						out, _ := usage["output"].(float64)
-						cr, _ := usage["cacheRead"].(float64)
-						cw, _ := usage["cacheWrite"].(float64)
+						inpF, _ := usage["input"].(float64)
+						outF, _ := usage["output"].(float64)
+						crF, _ := usage["cacheRead"].(float64)
+						cwF, _ := usage["cacheWrite"].(float64)
+						inp, out, cr, cw, ti := usageTokens(inpF), usageTokens(outF), usageTokens(crF), usageTokens(cwF), usageTokens(tt)
 
 						modelBucket := summary.Models[model]
-						modelBucket.add(int(inp), int(out), int(cr), int(cw), int(tt), costTotal)
+						modelBucket.add(inp, out, cr, cw, ti, costTotal)
 						summary.Models[model] = modelBucket
 						summary.SessionCost += costTotal
 						summary.SessionModel = model
@@ -67,7 +68,7 @@ func referenceParseTokenUsage(r io.Reader, size, mtime int64, loc *time.Location
 									summary.Daily[msgDate] = map[string]TokenBucket{}
 								}
 								dailyBucket := summary.Daily[msgDate][model]
-								dailyBucket.add(int(inp), int(out), int(cr), int(cw), int(tt), costTotal)
+								dailyBucket.add(inp, out, cr, cw, ti, costTotal)
 								summary.Daily[msgDate][model] = dailyBucket
 								if sessionFirstTs.IsZero() {
 									sessionFirstTs = t

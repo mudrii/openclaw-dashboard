@@ -263,11 +263,8 @@ func (p *tokenUsageParser) parseFile(path string, info os.FileInfo, loc *time.Lo
 			usage, ok := ev.usage()
 			if valid && ok && usage.total > 0 && !bytes.Contains(ev.model, []byte("delivery-mirror")) {
 				model := p.model(ev.model)
-				costTotal := usage.costTotal
-				if costTotal < 0 {
-					costTotal = 0
-				}
-				inp, out, cr, cw, tt := int(usage.input), int(usage.output), int(usage.read), int(usage.write), int(usage.total)
+				costTotal := usageCost(usage.costTotal)
+				inp, out, cr, cw, tt := usageTokens(usage.input), usageTokens(usage.output), usageTokens(usage.read), usageTokens(usage.write), usageTokens(usage.total)
 
 				modelBucket := summary.Models[model]
 				modelBucket.add(inp, out, cr, cw, tt, costTotal)
@@ -418,4 +415,31 @@ func resolveUsageModel(model string, modelAliases map[string]string) string {
 	// panel matches the Sessions panel (e.g. "GLM-5.2", not a raw "glm-5.2"
 	// alias); a genuine custom alias passes through ModelName's default arm.
 	return ModelName(aliasOrID(modelAliases, model))
+}
+
+// Per-event caps for session usage values. Session JSONL is written by the
+// OpenClaw runtime but can be corrupt or hand-edited; without the caps one
+// absurd value overflows the int totals or sums the cost to +Inf, which
+// json.Marshal rejects, failing the token cache and data.json writes.
+const (
+	maxUsageEventTokens = 1 << 40
+	maxUsageEventCost   = 1e9
+)
+
+// usageTokens converts a decoded token count to an int in
+// [0, maxUsageEventTokens]; negatives and NaN count as zero.
+func usageTokens(f float64) int {
+	if !(f > 0) {
+		return 0
+	}
+	return int(min(f, maxUsageEventTokens))
+}
+
+// usageCost clamps a decoded cost to [0, maxUsageEventCost]; negatives and
+// NaN count as zero.
+func usageCost(f float64) float64 {
+	if !(f > 0) {
+		return 0
+	}
+	return min(f, maxUsageEventCost)
 }
