@@ -15,6 +15,9 @@ import (
 	"github.com/mudrii/openclaw-dashboard/internal/appconfig"
 )
 
+// darwinCommandTimeoutMs bounds the sysctl and vm_stat probes.
+const darwinCommandTimeoutMs = 2000
+
 // Pre-compiled regexes — compiled once at startup, not per-call.
 var (
 	reTopIdle    = regexp.MustCompile(`(\d+(?:\.\d+)?)%\s+idle`) // P1-3: handles integer idle (e.g. "100% idle")
@@ -54,7 +57,7 @@ func collectCPU(ctx context.Context, timeoutMs int) SystemCPU {
 // collectRAM and collectSwap are independent — run them in parallel.
 func collectRAM(ctx context.Context) SystemRAM {
 	// total bytes
-	totalOut, err := runWithTimeout(ctx, 2000, "/usr/sbin/sysctl", "-n", "hw.memsize")
+	totalOut, err := runWithTimeout(ctx, darwinCommandTimeoutMs, "/usr/sbin/sysctl", "-n", "hw.memsize")
 	if err != nil {
 		e := fmt.Sprintf("sysctl hw.memsize failed: %v", err)
 		return SystemRAM{Error: &e}
@@ -66,7 +69,7 @@ func collectRAM(ctx context.Context) SystemRAM {
 	}
 
 	// page stats
-	vmOut, err := runWithTimeout(ctx, 2000, "/usr/bin/vm_stat")
+	vmOut, err := runWithTimeout(ctx, darwinCommandTimeoutMs, "/usr/bin/vm_stat")
 	if err != nil {
 		e := fmt.Sprintf("vm_stat failed: %v", err)
 		return SystemRAM{TotalBytes: totalBytes, Error: &e}
@@ -84,7 +87,7 @@ func collectRAM(ctx context.Context) SystemRAM {
 }
 
 func collectSwap(ctx context.Context) SystemSwap {
-	out, err := runWithTimeout(ctx, 2000, "/usr/sbin/sysctl", "vm.swapusage")
+	out, err := runWithTimeout(ctx, darwinCommandTimeoutMs, "/usr/sbin/sysctl", "vm.swapusage")
 	if err != nil {
 		e := fmt.Sprintf("sysctl vm.swapusage failed: %v", err)
 		return SystemSwap{Error: &e}

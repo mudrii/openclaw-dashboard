@@ -5,145 +5,134 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/mudrii/openclaw-dashboard/internal/appconfig"
 )
 
 func TestGetLatestVersionCached_ConcurrentCalls_NoRace(t *testing.T) {
-	cfg := appconfig.SystemConfig{
-		Enabled:            true,
-		VersionsTTLSeconds: 1,
-		GatewayTimeoutMs:   100,
-		MetricsTTLSeconds:  10,
-		PollSeconds:        10,
-	}
+	synctest.Test(t, func(t *testing.T) {
+		cfg := appconfig.SystemConfig{
+			Enabled:            true,
+			VersionsTTLSeconds: 1,
+			GatewayTimeoutMs:   100,
+			MetricsTTLSeconds:  10,
+			PollSeconds:        10,
+		}
 
-	var fetchCount atomic.Int32
-	svc := NewSystemService(cfg, "test", context.Background())
-	svc.fetchLatest = func(_ context.Context, _ int) string {
-		fetchCount.Add(1)
-		return "2026.4.11"
-	}
+		var fetchCount atomic.Int32
+		svc := NewSystemService(cfg, "test", context.Background())
+		svc.fetchLatest = func(_ context.Context, _ int) string {
+			fetchCount.Add(1)
+			return "2026.4.11"
+		}
 
-	const goroutines = 20
-	var wg sync.WaitGroup
-	wg.Add(goroutines)
+		const goroutines = 20
+		var wg sync.WaitGroup
+		wg.Add(goroutines)
 
-	for range goroutines {
-		go func() {
-			defer wg.Done()
-			svc.getLatestVersionCached()
-		}()
-	}
-	wg.Wait()
+		for range goroutines {
+			go func() {
+				defer wg.Done()
+				svc.getLatestVersionCached()
+			}()
+		}
+		wg.Wait()
 
-	// Poll until the background goroutine finishes
-	waitForLatestRefreshDone(t, svc)
+		// Poll until the background goroutine finishes
+		synctest.Wait() // background fetch goroutine has finished
 
-	if got := fetchCount.Load(); got != 1 {
-		t.Errorf("expected exactly 1 fetch, got %d", got)
-	}
+		if got := fetchCount.Load(); got != 1 {
+			t.Errorf("expected exactly 1 fetch, got %d", got)
+		}
 
-	// Second batch: expire cache and fire again
-	svc.latestMu.Lock()
-	svc.latestAt = time.Time{}
-	svc.latestMu.Unlock()
-	fetchCount.Store(0)
+		// Second batch: expire cache and fire again
+		svc.latestMu.Lock()
+		svc.latestAt = time.Time{}
+		svc.latestMu.Unlock()
+		fetchCount.Store(0)
 
-	wg.Add(goroutines)
-	for range goroutines {
-		go func() {
-			defer wg.Done()
-			svc.getLatestVersionCached()
-		}()
-	}
-	wg.Wait()
-	waitForLatestRefreshDone(t, svc)
+		wg.Add(goroutines)
+		for range goroutines {
+			go func() {
+				defer wg.Done()
+				svc.getLatestVersionCached()
+			}()
+		}
+		wg.Wait()
+		synctest.Wait() // background fetch goroutine has finished
 
-	if got := fetchCount.Load(); got != 1 {
-		t.Errorf("expected exactly 1 fetch after cache expiry, got %d", got)
-	}
+		if got := fetchCount.Load(); got != 1 {
+			t.Errorf("expected exactly 1 fetch after cache expiry, got %d", got)
+		}
+	})
 }
 
 func TestGetLatestVersionCached_ReturnsCachedValueWhileRefreshing(t *testing.T) {
-	cfg := appconfig.SystemConfig{
-		Enabled:            true,
-		VersionsTTLSeconds: 300,
-		GatewayTimeoutMs:   100,
-		MetricsTTLSeconds:  10,
-		PollSeconds:        10,
-	}
+	synctest.Test(t, func(t *testing.T) {
+		cfg := appconfig.SystemConfig{
+			Enabled:            true,
+			VersionsTTLSeconds: 300,
+			GatewayTimeoutMs:   100,
+			MetricsTTLSeconds:  10,
+			PollSeconds:        10,
+		}
 
-	fetched := make(chan struct{})
-	svc := NewSystemService(cfg, "test", context.Background())
-	svc.fetchLatest = func(_ context.Context, _ int) string {
-		<-fetched
-		return "2026.4.11-new"
-	}
+		fetched := make(chan struct{})
+		svc := NewSystemService(cfg, "test", context.Background())
+		svc.fetchLatest = func(_ context.Context, _ int) string {
+			<-fetched
+			return "2026.4.11-new"
+		}
 
-	// Pre-seed expired cache
-	svc.latestMu.Lock()
-	svc.latestVer = "2026.4.10-old"
-	svc.latestAt = time.Now().Add(-time.Hour)
-	svc.latestMu.Unlock()
+		// Pre-seed expired cache
+		svc.latestMu.Lock()
+		svc.latestVer = "2026.4.10-old"
+		svc.latestAt = time.Now().Add(-time.Hour)
+		svc.latestMu.Unlock()
 
-	v := svc.getLatestVersionCached()
-	if v != "2026.4.10-old" {
-		t.Errorf("expected stale cached value '2026.4.10-old', got %q", v)
-	}
+		v := svc.getLatestVersionCached()
+		if v != "2026.4.10-old" {
+			t.Errorf("expected stale cached value '2026.4.10-old', got %q", v)
+		}
 
-	close(fetched)
-	waitForLatestRefreshDone(t, svc)
+		close(fetched)
+		synctest.Wait() // background fetch goroutine has finished
 
-	svc.latestMu.RLock()
-	v = svc.latestVer
-	svc.latestMu.RUnlock()
-	if v != "2026.4.11-new" {
-		t.Errorf("expected updated value '2026.4.11-new', got %q", v)
-	}
+		svc.latestMu.RLock()
+		v = svc.latestVer
+		svc.latestMu.RUnlock()
+		if v != "2026.4.11-new" {
+			t.Errorf("expected updated value '2026.4.11-new', got %q", v)
+		}
+	})
 }
 
 func TestGetLatestVersionCached_NegativeCaching(t *testing.T) {
-	cfg := appconfig.SystemConfig{
-		Enabled:            true,
-		VersionsTTLSeconds: 1,
-		GatewayTimeoutMs:   100,
-		MetricsTTLSeconds:  10,
-		PollSeconds:        10,
-	}
+	synctest.Test(t, func(t *testing.T) {
+		cfg := appconfig.SystemConfig{
+			Enabled:            true,
+			VersionsTTLSeconds: 1,
+			GatewayTimeoutMs:   100,
+			MetricsTTLSeconds:  10,
+			PollSeconds:        10,
+		}
 
-	svc := NewSystemService(cfg, "test", context.Background())
-	svc.fetchLatest = func(_ context.Context, _ int) string {
-		return "" // simulate failure
-	}
+		svc := NewSystemService(cfg, "test", context.Background())
+		svc.fetchLatest = func(_ context.Context, _ int) string {
+			return "" // simulate failure
+		}
 
-	svc.getLatestVersionCached()
-	waitForLatestRefreshDone(t, svc)
+		svc.getLatestVersionCached()
+		synctest.Wait() // background fetch goroutine has finished
 
-	svc.latestMu.RLock()
-	at := svc.latestAt
-	svc.latestMu.RUnlock()
-
-	if at.IsZero() {
-		t.Error("expected latestAt to be set even on fetch failure (negative caching)")
-	}
-}
-
-// waitForLatestRefreshDone polls until the background goroutine finishes.
-func waitForLatestRefreshDone(t *testing.T, svc *SystemService) {
-	t.Helper()
-	deadline := time.Now().Add(3 * time.Second)
-	for {
 		svc.latestMu.RLock()
-		running := svc.latestRefresh
+		at := svc.latestAt
 		svc.latestMu.RUnlock()
-		if !running {
-			return
+
+		if at.IsZero() {
+			t.Error("expected latestAt to be set even on fetch failure (negative caching)")
 		}
-		if time.Now().After(deadline) {
-			t.Fatal("timed out waiting for background refresh to complete")
-		}
-		time.Sleep(5 * time.Millisecond)
-	}
+	})
 }

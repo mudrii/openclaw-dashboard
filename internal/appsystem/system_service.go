@@ -3,32 +3,15 @@ package appsystem
 import (
 	"context"
 	"encoding/json"
-	"errors"
-	"fmt"
-	"io"
 	"log/slog"
-	"math"
 	"net/http"
-	"os"
-	"os/exec"
-	"path/filepath"
-	"regexp"
-	"slices"
-	"strconv"
-	"strings"
 	"sync"
-	"syscall"
+	"sync/atomic"
 	"time"
 
 	appconfig "github.com/mudrii/openclaw-dashboard/internal/appconfig"
 	"github.com/mudrii/openclaw-dashboard/internal/appopenclaw"
 )
-
-// ErrCommandTimeout is returned when runWithTimeout's context deadline fired.
-var ErrCommandTimeout = errors.New("command timeout")
-
-// ErrCommandNotFound is returned when the binary itself could not be located.
-var ErrCommandNotFound = errors.New("command not found")
 
 // SystemService collects host metrics and versions with TTL caching.
 type SystemService struct {
@@ -47,12 +30,22 @@ type SystemService struct {
 	// the hard-fail back-off window; defaults to refreshMetrics.
 	refresh func(ctx context.Context) ([]byte, bool)
 
+	// Collector seams used by refreshMetrics; tests replace them to model
+	// failing or hung collectors without touching the host.
+	collectDisk       func(path string) SystemDisk
+	collectCPURAMSwap func(ctx context.Context, cpuTimeoutMs int) (SystemCPU, SystemRAM, SystemSwap)
+	collectOpenclaw   func(ctx context.Context, oclawBin string) SystemOpenclaw
+
 	metricsMu           sync.RWMutex
 	metricsPayload      []byte
 	metricsStalePayload []byte // pre-computed version with "stale":true
+	metricsHardFail     bool   // cached payload came from a collection where every core collector failed
 	metricsAt           time.Time
 	metricsRefresh      bool
-	hardFailUntil       time.Time // back-off window: skip background refresh while now < hardFailUntil
+	hardFailUntil       time.Time       // back-off window: skip background refresh while now < hardFailUntil
+	coldCall            *coldCollection // in-flight synchronous collection shared by cold callers
+
+	diskInFlight atomic.Bool // a statfs call is still running (possibly hung)
 
 	verMu      sync.RWMutex
 	verCached  SystemVersions
@@ -68,28 +61,46 @@ type SystemService struct {
 	binPath string
 }
 
-// sharedSystemHTTPClient is reused across all system probes (gateway healthz/
-// readyz, npm version). Every call site already wraps requests in a per-call
-// context deadline (1.5–3s); the client-level Timeout is a defense-in-depth
-// backstop, set well above any per-call deadline so it never interferes yet
-// still bounds a future caller that forgets to pass a deadlined context.
-var sharedSystemHTTPClient = &http.Client{Timeout: 30 * time.Second}
+// Fallbacks applied when a caller passes a non-positive port or timeout.
+const (
+	defaultGatewayPort           = 18789 // OpenClaw gateway default HTTP port
+	defaultGatewayProbeTimeoutMs = 1500  // gateway healthz/readyz/HEAD probes
+	defaultCommandTimeoutMs      = 5000  // external CLI invocations
+	npmLatestTimeoutMs           = 3000  // npm dist-tags lookup
+	processInfoTimeout           = 3 * time.Second
+)
 
-// maxJSONResponseBytes caps every JSON body we decode from the gateway or npm
-// dist-tags endpoint. Keep full package metadata out of this small-body path.
-const maxJSONResponseBytes = 1 << 16
+// coldCollection is a synchronous collection shared by every GetJSON caller
+// that finds the cache empty while it runs. code and body are written before
+// done is closed and are read-only afterwards.
+type coldCollection struct {
+	done chan struct{}
+	code int
+	body []byte
+}
 
+// NewSystemService returns a SystemService for cfg. dashVer is reported as the
+// dashboard version; serverCtx is the server lifecycle context used for
+// background refreshes (and the selected OpenClaw target), never for
+// per-request work.
 func NewSystemService(cfg appconfig.SystemConfig, dashVer string, serverCtx context.Context) *SystemService {
 	s := &SystemService{
-		cfg:         cfg,
-		dashVer:     dashVer,
-		shutdownCtx: serverCtx,
-		fetchLatest: FetchLatestNpmVersion,
+		cfg:               cfg,
+		dashVer:           dashVer,
+		shutdownCtx:       serverCtx,
+		fetchLatest:       FetchLatestNpmVersion,
+		collectDisk:       CollectDiskRoot,
+		collectCPURAMSwap: collectCPURAMSwapParallel,
+	}
+	s.collectOpenclaw = func(ctx context.Context, oclawBin string) SystemOpenclaw {
+		return CollectOpenclawRuntime(ctx, oclawBin, s.cfg.GatewayTimeoutMs, s.cfg.GatewayPort, SystemVersions{}, s.cfg.DeepStatus)
 	}
 	s.refresh = s.refreshMetrics
 	return s
 }
 
+// SetMetricsTimestampForTest overrides the metrics cache timestamp so tests
+// can age the cached payload.
 func (s *SystemService) SetMetricsTimestampForTest(ts time.Time) {
 	s.metricsMu.Lock()
 	s.metricsAt = ts
@@ -116,13 +127,21 @@ func (s *SystemService) GetJSON(ctx context.Context) (int, []byte) {
 	ttl := time.Duration(s.cfg.MetricsTTLSeconds) * time.Second
 
 	// Single decision under one lock: classify cache state and, if a stale
-	// hit needs a background refresh, claim the refresh slot atomically.
+	// hit needs a background refresh, claim the refresh slot atomically. A
+	// cold miss joins the in-flight synchronous collection or becomes its
+	// leader, so concurrent cold callers share one collection.
 	s.metricsMu.Lock()
 	var (
 		freshPayload []byte
 		stalePayload []byte
+		cachedCode   = http.StatusOK
 		kickRefresh  bool
+		cold         *coldCollection
+		coldLeader   bool
 	)
+	if s.metricsHardFail {
+		cachedCode = http.StatusServiceUnavailable
+	}
 	switch {
 	case s.metricsPayload != nil && time.Since(s.metricsAt) < ttl:
 		freshPayload = s.metricsPayload
@@ -139,11 +158,17 @@ func (s *SystemService) GetJSON(ctx context.Context) (int, []byte) {
 			s.metricsRefresh = true
 			kickRefresh = true
 		}
+	default:
+		if s.coldCall == nil {
+			s.coldCall = &coldCollection{done: make(chan struct{})}
+			coldLeader = true
+		}
+		cold = s.coldCall
 	}
 	s.metricsMu.Unlock()
 
 	if freshPayload != nil {
-		return http.StatusOK, freshPayload
+		return cachedCode, freshPayload
 	}
 	if stalePayload != nil {
 		if kickRefresh {
@@ -163,13 +188,37 @@ func (s *SystemService) GetJSON(ctx context.Context) (int, []byte) {
 				s.metricsMu.Unlock()
 			}()
 		}
-		return http.StatusOK, stalePayload
+		return cachedCode, stalePayload
 	}
 
-	// No cache — collect synchronously.
+	if !coldLeader {
+		select {
+		case <-cold.done:
+			return cold.code, cold.body
+		case <-ctx.Done():
+			return http.StatusServiceUnavailable, coldUnavailableBody
+		}
+	}
+
+	// No cache — collect synchronously on behalf of every cold caller. The
+	// result is shared and cached, so it must not inherit this request's
+	// cancellation; refreshMetrics bounds it with the cold-path timeout.
+	cold.code, cold.body = s.collectCold(context.WithoutCancel(ctx))
+	s.metricsMu.Lock()
+	s.coldCall = nil
+	s.metricsMu.Unlock()
+	close(cold.done)
+	return cold.code, cold.body
+}
+
+// coldUnavailableBody is returned when a cold collection produced no payload.
+var coldUnavailableBody = []byte(`{"ok":false,"degraded":true,"error":"system metrics unavailable"}`)
+
+// collectCold runs one synchronous collection and maps it to a response.
+func (s *SystemService) collectCold(ctx context.Context) (int, []byte) {
 	data, hardFail := s.refresh(ctx)
 	if data == nil {
-		return http.StatusServiceUnavailable, []byte(`{"ok":false,"degraded":true,"error":"system metrics unavailable"}`)
+		return http.StatusServiceUnavailable, coldUnavailableBody
 	}
 	if hardFail {
 		return http.StatusServiceUnavailable, data
@@ -217,12 +266,12 @@ func (s *SystemService) refreshMetrics(ctx context.Context) ([]byte, bool) {
 		// so serializing them would double the cold-path wall time. We pass
 		// SystemVersions{} here and patch openclaw.Status.{Current,Latest}Version
 		// from `ver` after wg.Wait() once both goroutines have finished.
-		openclaw = CollectOpenclawRuntime(coldCtx, oclawBin, s.cfg.GatewayTimeoutMs, s.cfg.GatewayPort, SystemVersions{}, s.cfg.DeepStatus)
+		openclaw = s.collectOpenclaw(coldCtx, oclawBin)
 	}()
-	go func() { defer wg.Done(); disk = CollectDiskRoot(s.cfg.DiskPath) }()
+	go func() { defer wg.Done(); disk = s.collectDiskBounded(coldCtx) }()
 	go func() {
 		defer wg.Done()
-		cpu, ram, swap = collectCPURAMSwapParallel(coldCtx, s.cfg.CPUTimeoutMs)
+		cpu, ram, swap = s.collectCPURAMSwap(coldCtx, s.cfg.CPUTimeoutMs)
 	}()
 	wg.Wait()
 
@@ -299,6 +348,7 @@ func (s *SystemService) refreshMetrics(ctx context.Context) ([]byte, bool) {
 	s.metricsMu.Lock()
 	s.metricsPayload = b
 	s.metricsStalePayload = staleB
+	s.metricsHardFail = allFailed
 	s.metricsAt = time.Now()
 	s.metricsMu.Unlock()
 	return b, allFailed
@@ -372,7 +422,7 @@ func (s *SystemService) getLatestVersionCached() string {
 	s.latestMu.Unlock()
 
 	go func() {
-		latest := s.fetchLatest(s.shutdownCtx, s.cfg.GatewayTimeoutMs)
+		latest := s.fetchLatest(s.shutdownCtx, npmLatestTimeoutMs)
 		now := time.Now()
 		s.latestMu.Lock()
 		if latest != "" {
@@ -393,730 +443,4 @@ func (s *SystemService) getLatestVersionCached() string {
 	}()
 
 	return v
-}
-
-// collectDiskRoot uses syscall.Statfs — works on both darwin and linux.
-func CollectDiskRoot(path string) SystemDisk {
-	d := SystemDisk{Path: path}
-	var stat syscall.Statfs_t
-	if err := syscall.Statfs(path, &stat); err != nil {
-		e := fmt.Sprintf("statfs %s: %v", path, err)
-		d.Error = &e
-		return d
-	}
-	d.TotalBytes = int64(stat.Blocks) * int64(stat.Bsize)
-	free := int64(stat.Bavail) * int64(stat.Bsize)
-	d.UsedBytes = d.TotalBytes - free
-	if d.TotalBytes > 0 {
-		d.Percent = math.Round(float64(d.UsedBytes)/float64(d.TotalBytes)*1000) / 10
-	}
-	return d
-}
-
-// gatewayReasonHostProbeNotApplicable marks a gateway status that could not be
-// determined because the only remaining probe would have measured the host
-// rather than the selected container.
-const gatewayReasonHostProbeNotApplicable = "host_probe_not_applicable"
-
-// collectVersionsLocal probes openclaw + gateway CLIs without performing any
-// outbound network request. Latest-version lookup is handled asynchronously.
-func CollectVersionsLocal(ctx context.Context, dashVer string, timeoutMs int, gatewayPort int, oclawBin string) SystemVersions {
-	v := SystemVersions{Dashboard: dashVer}
-
-	// OpenClaw version
-	out, err := runOpenclawWithTimeout(ctx, timeoutMs, oclawBin, "--version")
-	if err != nil {
-		v.Openclaw = "unknown"
-	} else {
-		v.Openclaw = normalizeCLIVersion(out)
-	}
-	target := appopenclaw.TargetFromContext(ctx)
-	v.Target = target.Effective()
-	if target.IsContainer() {
-		hostCtx := appopenclaw.WithTarget(ctx, appopenclaw.Target{Binary: target.Binary, Mode: "native"})
-		if hostOut, hostErr := runOpenclawWithTimeout(hostCtx, timeoutMs, oclawBin, "--version"); hostErr == nil {
-			v.HostOpenclaw = normalizeCLIVersion(hostOut)
-		}
-	}
-
-	// Gateway status — use --json flag for reliable parsing.
-	// I2 fix: attempt to parse stdout even on non-zero exit — many CLIs emit valid JSON
-	// to stdout while exiting non-zero (e.g., gateway offline but status successfully queried).
-	gw := SystemGateway{Status: "unknown"}
-	gwOut, gwErr := runOpenclawWithTimeout(ctx, timeoutMs, oclawBin, "gateway", "status", "--json")
-	if gwOut != "" {
-		gw = ParseGatewayStatusJSON(ctx, gwOut)
-	}
-	if gw.Status == "unknown" {
-		if target.IsContainer() {
-			// DetectGatewayFallback probes 127.0.0.1, which describes the host,
-			// not the container: an unpublished container port would report a
-			// healthy gateway as offline. Report the gap instead.
-			reason := gatewayReasonHostProbeNotApplicable
-			if gwErr != nil {
-				reason = appopenclaw.ErrorCode(gwErr)
-			}
-			gw.Error = &reason
-		} else {
-			// stdout had no usable JSON — fall back to HTTP probe
-			gw = DetectGatewayFallback(ctx, gatewayPort, timeoutMs)
-		}
-	}
-	v.Gateway = gw
-
-	return v
-}
-
-// statusArgs builds the `openclaw status` argv. Deep status (--deep) adds the
-// event-loop and last-heartbeat blocks but is slower, so it is opt-in via
-// System.DeepStatus.
-func statusArgs(deep bool) []string {
-	args := []string{"status", "--json"}
-	if deep {
-		args = append(args, "--deep")
-	}
-	return args
-}
-
-func CollectOpenclawRuntime(ctx context.Context, oclawBin string, timeoutMs int, gatewayPort int, versions SystemVersions, deepStatus bool) SystemOpenclaw {
-	openclaw := SystemOpenclaw{
-		Gateway: SystemOpenclawGateway{},
-		Status: SystemOpenclawStatus{
-			CurrentVersion: versions.Openclaw,
-			LatestVersion:  versions.Latest,
-		},
-		Freshness: SystemOpenclawFreshness{},
-	}
-	stamp := func() string { return time.Now().UTC().Format(time.RFC3339) }
-
-	var wg sync.WaitGroup
-	var gw SystemOpenclawGateway
-	var gwErrs []string
-	var gwFresh string
-	var status SystemOpenclawStatus
-	var statusErr error
-	var statusFresh string
-
-	wg.Add(2)
-	go func() {
-		defer wg.Done()
-		// The probe GETs 127.0.0.1, which describes the host gateway: for a
-		// container target both its liveness and its connection-refused errors
-		// would be about the wrong process, so report the gap instead.
-		if appopenclaw.TargetFromContext(ctx).IsContainer() {
-			gw.Reason = gatewayReasonHostProbeNotApplicable
-			return
-		}
-		gw, gwErrs = probeOpenclawGatewayEndpoints(ctx, gatewayPort, timeoutMs)
-		if len(gwErrs) == 0 {
-			gwFresh = stamp()
-		}
-	}()
-	go func() {
-		defer wg.Done()
-		out, err := runOpenclawWithTimeout(ctx, timeoutMs, oclawBin, statusArgs(deepStatus)...)
-		// I2 fix: attempt to parse stdout even on non-zero exit — CLIs often emit valid JSON while
-		// subprocess stdout is parsed regardless of returncode. Many CLIs emit valid JSON to
-		// stdout while exiting non-zero (e.g., status reported but gateway connect failed).
-		if out != "" {
-			if parsed, parseErr := parseOpenclawStatusJSON(out, versions); parseErr == nil {
-				status = parsed
-				statusFresh = stamp()
-			}
-		}
-		if err != nil {
-			statusErr = fmt.Errorf("status --json: %w", err)
-		}
-	}()
-	wg.Wait()
-
-	openclaw.Gateway = gw
-	if len(gwErrs) > 0 {
-		openclaw.Errors = append(openclaw.Errors, gwErrs...)
-	}
-	if statusErr != nil {
-		openclaw.Errors = append(openclaw.Errors, statusErr.Error())
-	}
-	// I2 fix: apply parsed status data regardless of error — stdout may have useful
-	// data even on non-zero exit. statusFresh is non-empty only when parse succeeded.
-	if statusFresh != "" {
-		openclaw.Status = status
-	}
-	openclaw.Freshness = SystemOpenclawFreshness{
-		Gateway: gwFresh,
-		Status:  statusFresh,
-	}
-
-	if openclaw.Status.CurrentVersion == "" {
-		openclaw.Status.CurrentVersion = versions.Openclaw
-	}
-	if openclaw.Status.LatestVersion == "" {
-		openclaw.Status.LatestVersion = versions.Latest
-	}
-
-	return openclaw
-}
-
-func probeOpenclawGatewayEndpoints(ctx context.Context, gatewayPort int, timeoutMs int) (SystemOpenclawGateway, []string) {
-	if gatewayPort <= 0 {
-		gatewayPort = 18789
-	}
-	if timeoutMs <= 0 {
-		timeoutMs = 1500
-	}
-	tctx, cancel := context.WithTimeout(ctx, time.Duration(timeoutMs)*time.Millisecond)
-	defer cancel()
-	base := fmt.Sprintf("http://127.0.0.1:%d", gatewayPort)
-	client := sharedSystemHTTPClient
-	gw := SystemOpenclawGateway{}
-	var errs []string
-
-	if m, err := FetchJSONMap(tctx, client, base+"/healthz"); err != nil {
-		errs = append(errs, "gateway /healthz: "+err.Error())
-	} else {
-		gw.HealthEndpointOk = true
-		if ok, okSet := BoolFromAny(m["ok"]); okSet {
-			gw.Live = ok
-		}
-		if s, ok := m["status"].(string); ok && strings.EqualFold(s, "live") {
-			gw.Live = true
-		}
-	}
-
-	// readyz returns 503 when not ready — but the body still contains useful JSON
-	// (ready, failing, uptimeMs). Parse it on both 200 and 503.
-	if m, err := fetchJSONMapAllowStatus(tctx, client, base+"/readyz", 200, 503); err != nil {
-		errs = append(errs, "gateway /readyz: "+err.Error())
-	} else {
-		gw.ReadyEndpointOk = true
-		if ready, ok := BoolFromAny(m["ready"]); ok {
-			gw.Ready = ready
-		}
-		if uptime, ok := int64FromAny(m["uptimeMs"]); ok {
-			gw.UptimeMs = uptime
-		}
-		gw.Failing = stringSliceFromAny(m["failing"])
-	}
-
-	return gw, errs
-}
-
-// fetchJSONMapAllowStatus is like fetchJSONMap but accepts specific HTTP status
-// codes as valid (e.g., readyz returns 503 with a useful JSON body).
-func fetchJSONMapAllowStatus(ctx context.Context, client *http.Client, url string, allowedStatuses ...int) (map[string]any, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		return nil, err
-	}
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = resp.Body.Close() }()
-	allowed := slices.Contains(allowedStatuses, resp.StatusCode)
-	if !allowed {
-		return nil, fmt.Errorf("status %d", resp.StatusCode)
-	}
-	var payload map[string]any
-	if err := json.NewDecoder(io.LimitReader(resp.Body, maxJSONResponseBytes)).Decode(&payload); err != nil {
-		return nil, err
-	}
-	return payload, nil
-}
-
-func FetchJSONMap(ctx context.Context, client *http.Client, url string) (map[string]any, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		return nil, err
-	}
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = resp.Body.Close() }()
-	// Reject any non-2xx status — both 4xx (client error) and 5xx (server error)
-	// indicate the endpoint did not return a valid JSON payload we should trust. (I1 fix)
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("status %d", resp.StatusCode)
-	}
-	var payload map[string]any
-	if err := json.NewDecoder(io.LimitReader(resp.Body, maxJSONResponseBytes)).Decode(&payload); err != nil {
-		return nil, err
-	}
-	return payload, nil
-}
-
-func parseOpenclawStatusJSON(output string, versions SystemVersions) (SystemOpenclawStatus, error) {
-	status := SystemOpenclawStatus{CurrentVersion: versions.Openclaw, LatestVersion: versions.Latest}
-	var raw map[string]any
-	if err := decodeJSONObjectFromOutput(output, &raw); err != nil {
-		return status, err
-	}
-	if current, ok := raw["currentVersion"].(string); ok && current != "" {
-		status.CurrentVersion = current
-	}
-	if current, ok := raw["version"].(string); ok && current != "" && status.CurrentVersion == "" {
-		status.CurrentVersion = current
-	}
-	if latest, ok := raw["latestVersion"].(string); ok && latest != "" {
-		status.LatestVersion = latest
-	}
-	if ms, ok := int64FromAny(raw["connectLatencyMs"]); ok {
-		status.ConnectLatencyMs = ms
-	}
-	if sec, ok := raw["security"].(map[string]any); ok {
-		status.Security = sec
-	}
-	if sec, ok := raw["securityAudit"].(map[string]any); ok {
-		status.SecurityAudit = sec
-	}
-	if diag, ok := raw["secretDiagnostics"]; ok {
-		status.SecretDiagnostics = diag
-	}
-	if update, ok := raw["update"].(map[string]any); ok {
-		status.Update = update
-	}
-	if updateChannel, ok := raw["updateChannel"]; ok {
-		status.UpdateChannel = updateChannel
-	}
-	if updateChannelSource, ok := raw["updateChannelSource"]; ok {
-		status.UpdateChannelSource = updateChannelSource
-	}
-	if runtimeVersion, ok := raw["runtimeVersion"].(string); ok {
-		status.RuntimeVersion = runtimeVersion
-		if status.CurrentVersion == "" {
-			status.CurrentVersion = runtimeVersion
-		}
-	}
-	// INT-2: additive rich blocks. Typed sub-objects (tasks, eventLoop) are
-	// re-decoded from their raw value; loose blocks pass through as maps. Any
-	// absent or malformed block is left nil so minimal status output is
-	// back-compatible.
-	status.Tasks = decodeStatusField[SystemOpenclawTasks](raw, "tasks")
-	status.EventLoop = decodeStatusField[SystemOpenclawEventLoop](raw, "eventLoop")
-	if pc, ok := raw["pluginCompatibility"].(map[string]any); ok {
-		status.PluginCompatibility = pc
-	}
-	if hb, ok := raw["lastHeartbeat"].(map[string]any); ok {
-		status.LastHeartbeat = hb
-	} else if hb, ok := raw["heartbeat"].(map[string]any); ok {
-		status.LastHeartbeat = hb
-	}
-	status.ChannelSummary = stringSliceFromAny(raw["channelSummary"])
-	if agents, ok := raw["agents"]; ok {
-		status.Agents = agents
-	}
-	if gateway, ok := raw["gateway"].(map[string]any); ok {
-		status.Gateway = gateway
-	}
-	if gatewayService, ok := raw["gatewayService"].(map[string]any); ok {
-		status.GatewayService = gatewayService
-	}
-	if nodeService, ok := raw["nodeService"].(map[string]any); ok {
-		status.NodeService = nodeService
-	}
-	if memory, ok := raw["memory"].(map[string]any); ok {
-		status.Memory = memory
-	}
-	if memoryPlugin, ok := raw["memoryPlugin"].(map[string]any); ok {
-		status.MemoryPlugin = memoryPlugin
-	}
-	if osInfo, ok := raw["os"].(map[string]any); ok {
-		status.OS = osInfo
-	}
-	if sessions, ok := raw["sessions"]; ok {
-		status.Sessions = sessions
-	}
-	if taskAudit, ok := raw["taskAudit"].(map[string]any); ok {
-		status.TaskAudit = taskAudit
-	}
-	if retainedLost, ok := raw["taskAuditRetainedLost"]; ok {
-		status.TaskAuditRetainedLost = retainedLost
-	}
-	if events, ok := raw["queuedSystemEvents"]; ok {
-		status.QueuedSystemEvents = events
-	}
-	return status, nil
-}
-
-// decodeStatusField re-decodes a named sub-object of the parsed status map into
-// a typed struct, returning nil when the key is absent or its value does not
-// decode. Used for the typed INT-2 blocks (tasks, eventLoop) so a malformed
-// block degrades to "not shown" rather than failing the whole status parse.
-func decodeStatusField[T any](raw map[string]any, key string) *T {
-	v, ok := raw[key]
-	if !ok || v == nil {
-		// Absent or explicit JSON null → omit the block (a nil value would
-		// otherwise decode to a non-nil zero struct and emit an empty block).
-		return nil
-	}
-	b, err := json.Marshal(v)
-	if err != nil {
-		return nil
-	}
-	var out T
-	if err := json.Unmarshal(b, &out); err != nil {
-		return nil
-	}
-	return &out
-}
-
-// decodeJSONObjectFromOutput finds the first '{'-prefixed substring of output
-// that parses as a valid JSON object and decodes it into v. CLI tools often
-// emit log preambles like "[INFO] starting up {wrong} {actual:json}" — naive
-// "first brace wins" fails on those, so we scan forward through every '{'
-// position until one parses. Emits a debug log when the JSON started after
-// non-empty preamble so operators can spot stdout pollution from upstream.
-func decodeJSONObjectFromOutput(output string, v any) error {
-	var lastErr error
-	for i := 0; i < len(output); i++ {
-		if output[i] != '{' {
-			continue
-		}
-		if err := json.Unmarshal([]byte(output[i:]), v); err == nil {
-			if i > 0 {
-				slog.Debug("decoded JSON after preamble", "preamble_bytes", i)
-			}
-			return nil
-		} else {
-			lastErr = err
-		}
-	}
-	if lastErr != nil {
-		return fmt.Errorf("decode json: %w", lastErr)
-	}
-	return fmt.Errorf("json object not found")
-}
-
-func BoolFromAny(v any) (bool, bool) {
-	b, ok := v.(bool)
-	return b, ok
-}
-
-func int64FromAny(v any) (int64, bool) {
-	switch x := v.(type) {
-	case int:
-		return int64(x), true
-	case int64:
-		return x, true
-	case float64:
-		return int64(x), true
-	case json.Number:
-		i, err := x.Int64()
-		if err == nil {
-			return i, true
-		}
-		return 0, false
-	default:
-		return 0, false
-	}
-}
-
-func stringSliceFromAny(v any) []string {
-	arr, ok := v.([]any)
-	if !ok {
-		return nil
-	}
-	out := make([]string, 0, len(arr))
-	for _, it := range arr {
-		if s, ok := it.(string); ok && s != "" {
-			out = append(out, s)
-		}
-	}
-	return out
-}
-
-// parseGatewayStatusJSON parses `openclaw gateway status --json` output.
-// The JSON has shape: {"service":{"loaded":true,"runtime":{...}},...}
-func ParseGatewayStatusJSON(ctx context.Context, output string) SystemGateway {
-	var result struct {
-		Service struct {
-			Loaded     bool   `json:"loaded"`
-			TargetRole string `json:"targetRole"`
-			Runtime    struct {
-				Status string `json:"status"`
-				PID    int    `json:"pid"`
-			} `json:"runtime"`
-		} `json:"service"`
-		Version string `json:"version"`
-		Gateway struct {
-			Version string `json:"version"`
-		} `json:"gateway"`
-		RPC *struct {
-			OK      bool   `json:"ok"`
-			Version string `json:"version"`
-			Server  struct {
-				Version string `json:"version"`
-			} `json:"server"`
-		} `json:"rpc"`
-	}
-	if err := decodeJSONObjectFromOutput(output, &result); err == nil {
-		// Prefer runtime.Status == "running" over just Loaded
-		status := "offline"
-		if result.Service.Runtime.Status == "running" || result.Service.Loaded {
-			status = "online"
-		}
-		gw := SystemGateway{Version: result.Version, Status: status, PID: result.Service.Runtime.PID}
-		if result.Gateway.Version != "" {
-			gw.Version = result.Gateway.Version
-		}
-		if result.RPC != nil {
-			gw.Status = "unknown"
-			if result.RPC.OK {
-				gw.Status = "online"
-			}
-			if result.RPC.Version != "" {
-				gw.Version = result.RPC.Version
-			}
-			if result.RPC.Server.Version != "" {
-				gw.Version = result.RPC.Server.Version
-			}
-		}
-		if result.Service.TargetRole == "diagnostic-only" || appopenclaw.TargetFromContext(ctx).IsContainer() {
-			gw.PID = 0
-		}
-		// Get uptime + memory from /proc or ps if we have a PID
-		if gw.PID > 0 {
-			gw.Uptime, gw.Memory = GetProcessInfo(ctx, gw.PID)
-		}
-		return gw
-	}
-	// Fallback: text parsing
-	lower := strings.ToLower(output)
-	if !strings.Contains(lower, "not loaded") && !strings.Contains(lower, "not running") &&
-		(strings.Contains(lower, "loaded") || strings.Contains(lower, "running")) {
-		return SystemGateway{Status: "online"}
-	}
-	return SystemGateway{Status: "offline"}
-}
-
-// formatBytes formats bytes into a human-readable string (KB/MB/GB).
-func FormatBytes(b int64) string {
-	if b < 0 {
-		return "0B"
-	}
-	const (
-		KB = 1024
-		MB = KB * 1024
-		GB = MB * 1024
-	)
-	switch {
-	case b >= GB:
-		return fmt.Sprintf("%.1fGB", float64(b)/float64(GB))
-	case b >= MB:
-		return fmt.Sprintf("%.1fMB", float64(b)/float64(MB))
-	case b >= KB:
-		return fmt.Sprintf("%.0fKB", float64(b)/float64(KB))
-	default:
-		return fmt.Sprintf("%dB", b)
-	}
-}
-
-// getProcessInfo returns uptime and memory usage for a PID using ps.
-// Uses a 3-second context timeout to avoid hanging on unresponsive ps.
-func GetProcessInfo(ctx context.Context, pid int) (uptime string, memory string) {
-	// C9b: reject non-positive PIDs early — ps would either fail or, worse on
-	// some kernels, treat 0 as "all processes" and return ambiguous output.
-	if pid <= 0 {
-		return "", ""
-	}
-	tctx, cancel := context.WithTimeout(ctx, 3*time.Second)
-	defer cancel()
-	// Get elapsed time and RSS via ps
-	out, err := exec.CommandContext(tctx, "ps", "-o", "etime=,rss=", "-p", fmt.Sprintf("%d", pid)).Output()
-	if err != nil {
-		return "", ""
-	}
-	fields := strings.Fields(strings.TrimSpace(string(out)))
-	if len(fields) >= 1 {
-		uptime = strings.TrimSpace(fields[0])
-	}
-	if len(fields) >= 2 {
-		if rssKB, err := strconv.ParseInt(fields[1], 10, 64); err == nil {
-			memory = FormatBytes(rssKB * 1024)
-		}
-	}
-	return
-}
-
-// detectGatewayFallback checks if the gateway HTTP port is responding.
-// timeoutMs controls how long to wait; defaults to 1500ms if <= 0.
-func DetectGatewayFallback(ctx context.Context, gatewayPort int, timeoutMs int) SystemGateway {
-	if gatewayPort <= 0 {
-		gatewayPort = 18789
-	}
-	if timeoutMs <= 0 {
-		timeoutMs = 1500
-	}
-	tctx, cancel := context.WithTimeout(ctx, time.Duration(timeoutMs)*time.Millisecond)
-	defer cancel()
-	req, err := http.NewRequestWithContext(tctx, http.MethodHead, fmt.Sprintf("http://127.0.0.1:%d/", gatewayPort), nil)
-	if err != nil {
-		e := "probe failed"
-		return SystemGateway{Status: "offline", Error: &e}
-	}
-	client := sharedSystemHTTPClient
-	resp, err := client.Do(req)
-	if err == nil {
-		_ = resp.Body.Close()
-		return SystemGateway{Status: "online"}
-	}
-	e := "unreachable"
-	return SystemGateway{Status: "offline", Error: &e}
-}
-
-// runWithTimeout runs an external command with a context deadline.
-// On failure, stderr is appended to the error message for better diagnostics.
-func runWithTimeout(ctx context.Context, timeoutMs int, name string, args ...string) (string, error) {
-	if timeoutMs <= 0 {
-		timeoutMs = 5000
-	}
-	tctx, cancel := context.WithTimeout(ctx, time.Duration(timeoutMs)*time.Millisecond)
-	defer cancel()
-	cmd := exec.CommandContext(tctx, name, args...)
-	if env := OpenclawCLIEnv(name); env != nil {
-		cmd.Env = env
-	}
-	out, err := cmd.Output()
-	if err != nil {
-		if errors.Is(tctx.Err(), context.DeadlineExceeded) {
-			return strings.TrimSpace(string(out)), fmt.Errorf("%w: %s", ErrCommandTimeout, name)
-		}
-		if errors.Is(err, exec.ErrNotFound) || errors.Is(err, os.ErrNotExist) {
-			return strings.TrimSpace(string(out)), fmt.Errorf("%w: %s", ErrCommandNotFound, name)
-		}
-		var exitErr *exec.ExitError
-		if errors.As(err, &exitErr) && len(exitErr.Stderr) > 0 {
-			return strings.TrimSpace(string(out)), fmt.Errorf("%w: %s", err, strings.TrimSpace(string(exitErr.Stderr)))
-		}
-		return strings.TrimSpace(string(out)), err
-	}
-	return strings.TrimSpace(string(out)), nil
-}
-
-var versionishTokenRe = regexp.MustCompile(`[0-9]+|[A-Za-z]+`)
-
-func normalizeCLIVersion(out string) string {
-	parts := strings.Fields(out)
-	if len(parts) > 1 && strings.EqualFold(parts[0], "openclaw") {
-		return parts[1]
-	}
-	return strings.TrimSpace(out)
-}
-
-func runOpenclawWithTimeout(ctx context.Context, timeoutMs int, name string, args ...string) (string, error) {
-	if timeoutMs <= 0 {
-		timeoutMs = 5000
-	}
-	ctx, cancel := context.WithTimeout(ctx, time.Duration(timeoutMs)*time.Millisecond)
-	defer cancel()
-	out, err := appopenclaw.Output(appopenclaw.CommandContext(ctx, name, args...), appopenclaw.MaxOutputBytes)
-	if err := ctx.Err(); err != nil {
-		// Wrap the context error too: callers classify the failure with
-		// errors.Is, and "timeout" must not degrade to a generic "unavailable".
-		return string(out), fmt.Errorf("%w: %w", ErrCommandTimeout, err)
-	}
-	return strings.TrimSpace(string(out)), err
-}
-
-func versionishGreater(a, b string) bool {
-	ta := versionishTokenRe.FindAllString(strings.ToLower(a), -1)
-	tb := versionishTokenRe.FindAllString(strings.ToLower(b), -1)
-	n := min(len(tb), len(ta))
-	for i := range n {
-		ai, aErr := strconv.Atoi(ta[i])
-		bi, bErr := strconv.Atoi(tb[i])
-		switch {
-		case aErr == nil && bErr == nil:
-			if ai != bi {
-				return ai > bi
-			}
-		case aErr == nil:
-			return true
-		case bErr == nil:
-			return false
-		default:
-			if ta[i] != tb[i] {
-				return ta[i] > tb[i]
-			}
-		}
-	}
-	return len(ta) > len(tb)
-}
-
-// resolveOpenclawBin finds the openclaw binary, checking PATH then known asdf locations.
-// asdf shims may not be on the server's PATH when launched as a background process.
-func ResolveOpenclawBin() string {
-	if p, err := exec.LookPath("openclaw"); err == nil {
-		return p
-	}
-	home, _ := os.UserHomeDir()
-	candidates := []string{
-		filepath.Join(home, ".asdf", "shims", "openclaw"),
-	}
-	// Also probe asdf nodejs installs — sort newest-first using version-aware comparison.
-	if nodeDir := filepath.Join(home, ".asdf", "installs", "nodejs"); nodeDir != "" {
-		if entries, err := os.ReadDir(nodeDir); err == nil {
-			slices.SortFunc(entries, func(a, b os.DirEntry) int {
-				if versionishGreater(a.Name(), b.Name()) {
-					return -1
-				}
-				if versionishGreater(b.Name(), a.Name()) {
-					return 1
-				}
-				return 0
-			})
-			for _, e := range entries {
-				if e.IsDir() {
-					candidates = append(candidates, filepath.Join(nodeDir, e.Name(), "bin", "openclaw"))
-				}
-			}
-		}
-	}
-	candidates = append(candidates,
-		"/usr/local/bin/openclaw",
-		"/opt/homebrew/bin/openclaw",
-	)
-	for _, c := range candidates {
-		if info, err := os.Stat(c); err == nil && !info.IsDir() && info.Mode()&0111 != 0 {
-			return c
-		}
-	}
-	return "openclaw" // last resort — may fail but gives a clear error
-}
-
-// fetchLatestNpmVersion queries the npm registry for the latest openclaw version.
-// Best-effort: returns "" on any error.
-func FetchLatestNpmVersion(ctx context.Context, timeoutMs int) string {
-	timeout := time.Duration(timeoutMs) * time.Millisecond
-	if timeout <= 0 {
-		timeout = 3 * time.Second
-	}
-	tctx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
-	client := sharedSystemHTTPClient
-	req, err := http.NewRequestWithContext(tctx, http.MethodGet, "https://registry.npmjs.org/-/package/openclaw/dist-tags", nil)
-	if err != nil {
-		slog.Warn("[dashboard] FetchLatestNpmVersion: request creation failed", "error", err)
-		return ""
-	}
-	req.Header.Set("Accept", "application/json")
-	resp, err := client.Do(req)
-	if err != nil {
-		slog.Warn("[dashboard] FetchLatestNpmVersion: request failed", "error", err)
-		return ""
-	}
-	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode != http.StatusOK {
-		slog.Warn("[dashboard] FetchLatestNpmVersion: unexpected status", "status", resp.StatusCode)
-		return ""
-	}
-	var pkg struct {
-		Version string `json:"latest"`
-	}
-	if err := json.NewDecoder(io.LimitReader(resp.Body, maxJSONResponseBytes)).Decode(&pkg); err != nil {
-		slog.Warn("[dashboard] FetchLatestNpmVersion: JSON decode failed", "error", err)
-		return ""
-	}
-	return pkg.Version
 }

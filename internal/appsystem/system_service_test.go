@@ -12,6 +12,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	appconfig "github.com/mudrii/openclaw-dashboard/internal/appconfig"
@@ -153,107 +154,113 @@ func TestParseGatewayStatusJSON_SkipsInvalidBracePreamble(t *testing.T) {
 }
 
 func TestGetLatestVersionCached_FailureIsNegativelyCached(t *testing.T) {
-	var calls atomic.Int32
-	svc := NewSystemService(appconfig.SystemConfig{
-		Enabled:            true,
-		VersionsTTLSeconds: 60,
-		GatewayTimeoutMs:   100,
-	}, "test", context.Background())
-	svc.fetchLatest = func(ctx context.Context, timeoutMs int) string {
-		calls.Add(1)
-		return ""
-	}
+	synctest.Test(t, func(t *testing.T) {
+		var calls atomic.Int32
+		svc := NewSystemService(appconfig.SystemConfig{
+			Enabled:            true,
+			VersionsTTLSeconds: 60,
+			GatewayTimeoutMs:   100,
+		}, "test", context.Background())
+		svc.fetchLatest = func(ctx context.Context, timeoutMs int) string {
+			calls.Add(1)
+			return ""
+		}
 
-	_ = svc.getLatestVersionCached()
-	waitForLatestRefreshDone(t, svc)
+		_ = svc.getLatestVersionCached()
+		synctest.Wait() // background fetch goroutine has finished
 
-	if got := calls.Load(); got != 1 {
-		t.Fatalf("expected one failed fetch, got %d", got)
-	}
+		if got := calls.Load(); got != 1 {
+			t.Fatalf("expected one failed fetch, got %d", got)
+		}
 
-	// Within TTL the negatively-cached result returns via the RLock fast-path
-	// with no goroutine spawned, so assert immediately — a sleep here proves
-	// nothing and only adds flakiness under load.
-	_ = svc.getLatestVersionCached()
-	if got := calls.Load(); got != 1 {
-		t.Fatalf("expected failed fetch to be cached within TTL, got %d calls", got)
-	}
+		// Within TTL the negatively-cached result returns via the RLock fast-path
+		// with no goroutine spawned, so assert immediately — a sleep here proves
+		// nothing and only adds flakiness under load.
+		_ = svc.getLatestVersionCached()
+		if got := calls.Load(); got != 1 {
+			t.Fatalf("expected failed fetch to be cached within TTL, got %d calls", got)
+		}
+	})
 }
 
 func TestGetLatestVersionCached_BackgroundFetchUsesShutdownContext(t *testing.T) {
-	serverCtx, cancel := context.WithCancel(context.Background())
-	svc := NewSystemService(appconfig.SystemConfig{
-		Enabled:            true,
-		VersionsTTLSeconds: 60,
-		GatewayTimeoutMs:   100,
-	}, "test", serverCtx)
-	done := make(chan error, 1)
-	svc.fetchLatest = func(ctx context.Context, timeoutMs int) string {
-		done <- ctx.Err()
-		return ""
-	}
-
-	cancel()
-	_ = svc.getLatestVersionCached()
-
-	select {
-	case err := <-done:
-		if !errors.Is(err, context.Canceled) {
-			t.Fatalf("fetchLatest ctx err = %v, want context.Canceled", err)
+	synctest.Test(t, func(t *testing.T) {
+		serverCtx, cancel := context.WithCancel(context.Background())
+		svc := NewSystemService(appconfig.SystemConfig{
+			Enabled:            true,
+			VersionsTTLSeconds: 60,
+			GatewayTimeoutMs:   100,
+		}, "test", serverCtx)
+		done := make(chan error, 1)
+		svc.fetchLatest = func(ctx context.Context, timeoutMs int) string {
+			done <- ctx.Err()
+			return ""
 		}
-	case <-time.After(time.Second):
-		t.Fatal("fetchLatest was not called")
-	}
-	waitForLatestRefreshDone(t, svc)
+
+		cancel()
+		_ = svc.getLatestVersionCached()
+		synctest.Wait() // background fetch goroutine has finished
+
+		select {
+		case err := <-done:
+			if !errors.Is(err, context.Canceled) {
+				t.Fatalf("fetchLatest ctx err = %v, want context.Canceled", err)
+			}
+		default:
+			t.Fatal("fetchLatest was not called")
+		}
+		svc.latestMu.RLock()
+		running := svc.latestRefresh
+		svc.latestMu.RUnlock()
+		if running {
+			t.Fatal("latestRefresh was not cleared")
+		}
+	})
 }
 
 func TestGetJSON_StaleBackgroundRefreshUsesShutdownContextAndClearsState(t *testing.T) {
-	serverCtx, cancel := context.WithCancel(context.Background())
-	svc := NewSystemService(appconfig.SystemConfig{
-		Enabled:            true,
-		MetricsTTLSeconds:  1,
-		ColdPathTimeoutMs:  100,
-		VersionsTTLSeconds: 60,
-	}, "test", serverCtx)
-	done := make(chan error, 1)
-	svc.refresh = func(ctx context.Context) ([]byte, bool) {
-		done <- ctx.Err()
-		return nil, true
-	}
-	svc.metricsMu.Lock()
-	svc.metricsPayload = []byte(`{"ok":true}`)
-	svc.metricsStalePayload = []byte(`{"ok":true,"stale":true}`)
-	svc.metricsAt = time.Now().Add(-time.Hour)
-	svc.metricsMu.Unlock()
-
-	cancel()
-	status, body := svc.GetJSON(context.Background())
-	if status != http.StatusOK {
-		t.Fatalf("status = %d, want 200 body=%s", status, body)
-	}
-
-	select {
-	case err := <-done:
-		if !errors.Is(err, context.Canceled) {
-			t.Fatalf("refresh ctx err = %v, want context.Canceled", err)
+	synctest.Test(t, func(t *testing.T) {
+		serverCtx, cancel := context.WithCancel(context.Background())
+		svc := NewSystemService(appconfig.SystemConfig{
+			Enabled:            true,
+			MetricsTTLSeconds:  1,
+			ColdPathTimeoutMs:  100,
+			VersionsTTLSeconds: 60,
+		}, "test", serverCtx)
+		done := make(chan error, 1)
+		svc.refresh = func(ctx context.Context) ([]byte, bool) {
+			done <- ctx.Err()
+			return nil, true
 		}
-	case <-time.After(time.Second):
-		t.Fatal("background refresh was not called")
-	}
+		svc.metricsMu.Lock()
+		svc.metricsPayload = []byte(`{"ok":true}`)
+		svc.metricsStalePayload = []byte(`{"ok":true,"stale":true}`)
+		svc.metricsAt = time.Now().Add(-time.Hour)
+		svc.metricsMu.Unlock()
 
-	deadline := time.Now().Add(time.Second)
-	for {
+		cancel()
+		status, body := svc.GetJSON(context.Background())
+		if status != http.StatusOK {
+			t.Fatalf("status = %d, want 200 body=%s", status, body)
+		}
+		synctest.Wait() // background refresh goroutine has finished
+
+		select {
+		case err := <-done:
+			if !errors.Is(err, context.Canceled) {
+				t.Fatalf("refresh ctx err = %v, want context.Canceled", err)
+			}
+		default:
+			t.Fatal("background refresh was not called")
+		}
+
 		svc.metricsMu.RLock()
 		running := svc.metricsRefresh
 		svc.metricsMu.RUnlock()
-		if !running {
-			return
-		}
-		if time.Now().After(deadline) {
+		if running {
 			t.Fatal("metricsRefresh was not cleared")
 		}
-		time.Sleep(time.Millisecond)
-	}
+	})
 }
 
 func TestProbeOpenclawGatewayEndpoints_RespectsTimeout(t *testing.T) {
