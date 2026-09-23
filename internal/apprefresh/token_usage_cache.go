@@ -72,6 +72,7 @@ func CollectTokenUsageWithCache(
 	}
 	// Pre-size for typical batch (~64 subagent sessions) to avoid early grow.
 	subagentRuns := make([]map[string]any, 0, 64)
+	var parser tokenUsageParser
 
 	for _, path := range allFiles {
 		info, err := os.Stat(path)
@@ -81,7 +82,7 @@ func CollectTokenUsageWithCache(
 
 		summary, ok := cache.Files[path]
 		if !ok || summary.Size != info.Size() || summary.ModTimeUnixNano != info.ModTime().UnixNano() {
-			summary, err = parseTokenUsageFile(path, info, loc)
+			summary, err = parser.parseFile(path, info, loc)
 			if err != nil {
 				slog.Warn("[dashboard] token usage parse skipped", "path", path, "error", err)
 				continue
@@ -169,6 +170,65 @@ func saveTokenUsageCache(path string, cache tokenUsageCache) {
 }
 
 func parseTokenUsageFile(path string, info os.FileInfo, loc *time.Location) (tokenUsageFileSummary, error) {
+	var p tokenUsageParser
+	return p.parseFile(path, info, loc)
+}
+
+// tokenUsageParser parses transcripts one after another, reusing its read
+// buffer, line decoder and string caches across files.
+type tokenUsageParser struct {
+	reader *bufio.Reader
+	long   []byte // assembles lines longer than the reader's buffer
+	lines  usageLineDecoder
+
+	lastModel string // most recent model, reused while it repeats
+	lastDay   struct {
+		year  int
+		month time.Month
+		day   int
+		key   string
+	}
+}
+
+// readLine returns the next line including its '\n', like ReadBytes, but
+// without copying it; the slice is only valid until the next call.
+func (p *tokenUsageParser) readLine() ([]byte, error) {
+	line, err := p.reader.ReadSlice('\n')
+	if !errors.Is(err, bufio.ErrBufferFull) {
+		return line, err
+	}
+	p.long = append(p.long[:0], line...)
+	for errors.Is(err, bufio.ErrBufferFull) {
+		line, err = p.reader.ReadSlice('\n')
+		p.long = append(p.long, line...)
+	}
+	return p.long, err
+}
+
+// model returns b as a string, reusing the previous allocation while a
+// session keeps using the same model.
+func (p *tokenUsageParser) model(b []byte) string {
+	if len(b) == 0 {
+		return "unknown"
+	}
+	if string(b) != p.lastModel {
+		p.lastModel = string(b)
+	}
+	return p.lastModel
+}
+
+// dateKey formats t as a YYYY-MM-DD bucket key, reusing the previous key
+// for consecutive messages on the same day.
+func (p *tokenUsageParser) dateKey(t time.Time) string {
+	y, m, d := t.Date()
+	if p.lastDay.key == "" || y != p.lastDay.year || m != p.lastDay.month || d != p.lastDay.day {
+		p.lastDay.year, p.lastDay.month, p.lastDay.day = y, m, d
+		p.lastDay.key = t.Format("2006-01-02")
+	}
+	return p.lastDay.key
+}
+
+func (p *tokenUsageParser) parseFile(path string, info os.FileInfo, loc *time.Location) (tokenUsageFileSummary, error) {
 	summary := tokenUsageFileSummary{
 		Size:            info.Size(),
 		ModTimeUnixNano: info.ModTime().UnixNano(),
@@ -182,20 +242,20 @@ func parseTokenUsageFile(path string, info os.FileInfo, loc *time.Location) (tok
 	}
 	defer func() { _ = fh.Close() }()
 
-	reader := bufio.NewReaderSize(fh, 256*1024)
-	var lines usageLineDecoder
+	if p.reader == nil {
+		p.reader = bufio.NewReaderSize(fh, 256*1024)
+	} else {
+		p.reader.Reset(fh)
+	}
 	var sessionFirstTs, sessionLastTs time.Time
 	for {
-		line, err := reader.ReadBytes('\n')
+		line, err := p.readLine()
 		line = bytes.TrimSpace(line)
 		if len(line) > 0 {
-			ev, valid := lines.decode(line)
+			ev, valid := p.lines.decode(line)
 			usage, ok := ev.usage()
-			model := ev.model
-			if model == "" {
-				model = "unknown"
-			}
-			if valid && ok && usage.total > 0 && !strings.Contains(model, "delivery-mirror") {
+			if valid && ok && usage.total > 0 && !bytes.Contains(ev.model, []byte("delivery-mirror")) {
+				model := p.model(ev.model)
 				costTotal := usage.costTotal
 				if costTotal < 0 {
 					costTotal = 0
@@ -208,10 +268,10 @@ func parseTokenUsageFile(path string, info os.FileInfo, loc *time.Location) (tok
 				summary.SessionCost += costTotal
 				summary.SessionModel = model
 
-				if ev.timestamp != "" {
-					if t, err := time.Parse(time.RFC3339Nano, ev.timestamp); err == nil {
+				if len(ev.timestamp) > 0 {
+					if t, err := time.Parse(time.RFC3339Nano, string(ev.timestamp)); err == nil {
 						t = t.In(loc)
-						msgDate := t.Format("2006-01-02")
+						msgDate := p.dateKey(t)
 						if summary.Daily[msgDate] == nil {
 							summary.Daily[msgDate] = map[string]TokenBucket{}
 						}

@@ -249,6 +249,34 @@ func TestParseTokenUsageFile_MatchesReferenceOnFixture(t *testing.T) {
 			assertParseMatchesReference(t, content, loc)
 		}
 	}
+
+	// CollectTokenUsageWithCache reuses one parser across files; its buffers
+	// and caches must not leak state from one transcript into the next.
+	var shared tokenUsageParser
+	for _, loc := range []*time.Location{time.UTC, time.FixedZone("minus7", -7*3600)} {
+		for _, p := range paths {
+			info, err := os.Stat(p)
+			if err != nil {
+				t.Fatal(err)
+			}
+			got, err := shared.parseFile(p, info, loc)
+			if err != nil {
+				t.Fatal(err)
+			}
+			fh, err := os.Open(p)
+			if err != nil {
+				t.Fatal(err)
+			}
+			want, err := referenceParseTokenUsage(fh, info.Size(), info.ModTime().UnixNano(), loc)
+			_ = fh.Close()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !reflect.DeepEqual(got, want) {
+				t.Fatalf("shared parser summary mismatch for %s (%s)", p, loc)
+			}
+		}
+	}
 }
 
 func FuzzParseTokenUsageLine_MatchesReference(f *testing.F) {

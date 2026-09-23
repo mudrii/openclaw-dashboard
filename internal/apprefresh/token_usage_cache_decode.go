@@ -21,17 +21,18 @@ var errNotJSONObject = errors.New("transcript line is not a JSON object")
 // usageFields is a transcript "usage" member. A field whose JSON value is not
 // a number reads as zero, exactly as a failed float64 assertion did.
 type usageFields struct {
-	present                               bool // the member was a JSON object
-	total, input, output, read, write     float64
-	costTotal                             float64
+	present                           bool // the member was a JSON object
+	total, input, output, read, write float64
+	costTotal                         float64
 }
 
 // usageEvent is the subset of a transcript line that token usage reads.
 type usageEvent struct {
-	timestamp   string // top-level "timestamp" when it is a string
+	// timestamp and model alias decoder buffers: valid until the next decode.
+	timestamp   []byte // top-level "timestamp" when it is a string
 	hasMessage  bool   // "message" was a JSON object
 	isAssistant bool   // message.role == "assistant"
-	model       string // message.model when it is a string
+	model       []byte // message.model when it is a string
 	topUsage    usageFields
 	msgUsage    usageFields
 }
@@ -55,6 +56,9 @@ func (ev *usageEvent) usage() (usageFields, bool) {
 type usageLineDecoder struct {
 	src bytes.Reader
 	dec jsontext.Decoder
+
+	// Unquoted string members, reused across lines.
+	timestamp, role, model []byte
 }
 
 // decode reports the usage-relevant fields of line and whether line is one
@@ -95,7 +99,8 @@ func (d *usageLineDecoder) event() (usageEvent, error) {
 		case "usage":
 			ev.topUsage, err = d.usage()
 		case "timestamp":
-			ev.timestamp, err = d.optionalString()
+			d.timestamp, err = d.optionalString(d.timestamp)
+			ev.timestamp = d.timestamp
 		default:
 			err = d.skip()
 		}
@@ -110,7 +115,7 @@ func (d *usageLineDecoder) event() (usageEvent, error) {
 // message decodes a "message" member. A repeated member replaces every
 // field of an earlier one, as a map assignment would.
 func (d *usageLineDecoder) message(ev *usageEvent) error {
-	ev.hasMessage, ev.isAssistant, ev.model, ev.msgUsage = false, false, "", usageFields{}
+	ev.hasMessage, ev.isAssistant, ev.model, ev.msgUsage = false, false, nil, usageFields{}
 	if d.dec.PeekKind() != '{' {
 		return d.skip()
 	}
@@ -125,11 +130,11 @@ func (d *usageLineDecoder) message(ev *usageEvent) error {
 		}
 		switch name.String() {
 		case "role":
-			var role string
-			role, err = d.optionalString()
-			ev.isAssistant = role == "assistant"
+			d.role, err = d.optionalString(d.role)
+			ev.isAssistant = string(d.role) == "assistant"
 		case "model":
-			ev.model, err = d.optionalString()
+			d.model, err = d.optionalString(d.model)
+			ev.model = d.model
 		case "usage":
 			ev.msgUsage, err = d.usage()
 		default:
@@ -209,16 +214,22 @@ func (d *usageLineDecoder) costTotal() (float64, error) {
 	return total, err
 }
 
-// optionalString returns the next value if it is a string, else "".
-func (d *usageLineDecoder) optionalString() (string, error) {
+// optionalString unquotes the next value into dst[:0] if it is a string,
+// else returns dst[:0] empty.
+func (d *usageLineDecoder) optionalString(dst []byte) ([]byte, error) {
+	dst = dst[:0]
 	if d.dec.PeekKind() != '"' {
-		return "", d.skip()
+		return dst, d.skip()
 	}
-	tok, err := d.dec.ReadToken()
+	v, err := d.dec.ReadValue()
 	if err != nil {
-		return "", err
+		return dst, err
 	}
-	return tok.String(), nil
+	// The decoder already validated v, so the only error AppendUnquote can
+	// report is invalid UTF-8, which it has replaced with U+FFFD — the same
+	// lenient result encoding/json produced.
+	dst, _ = jsontext.AppendUnquote(dst, v)
+	return dst, nil
 }
 
 // optionalNumber returns the next value if it is a number, else 0.
