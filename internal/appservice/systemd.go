@@ -19,15 +19,21 @@ import (
 
 const systemdUnitName = "openclaw-dashboard"
 
+// unitTmpl renders the user unit. Every templated value goes through one of
+// the systemd_escape.go encoders: WorkingDirectory= is not unquoted by systemd
+// (systemdPath), Environment= is (systemdQuote), and ExecStart= additionally
+// expands $VAR references (systemdExecArg).
 var unitTmpl = template.Must(template.New("unit").Funcs(template.FuncMap{
-	"systemdQuote": strconv.Quote,
+	"systemdPath":    systemdPath,
+	"systemdQuote":   systemdQuote,
+	"systemdExecArg": systemdExecArg,
 }).Parse(`[Unit]
 Description=OpenClaw Dashboard Server
 After=network.target
 
 [Service]
 Type=simple
-WorkingDirectory={{systemdQuote .WorkDir}}
+WorkingDirectory={{systemdPath .WorkDir}}
 Environment={{systemdQuote (printf "OPENCLAW_DASHBOARD_DIR=%s" .WorkDir)}}
 Environment={{systemdQuote (printf "PATH=%s" .PathEnv)}}
 {{- if .OpenclawHome}}
@@ -39,7 +45,7 @@ Environment={{systemdQuote (printf "OPENCLAW_CONTAINER=%s" .OpenclawContainer)}}
 {{- if .AllowNonLoopback}}
 Environment="OPENCLAW_DASHBOARD_ALLOW_NON_LOOPBACK=1"
 {{- end}}
-ExecStart={{systemdQuote .BinPath}} --bind {{systemdQuote .Host}} --port {{.Port}}
+ExecStart={{systemdExecArg .BinPath}} --bind {{systemdExecArg .Host}} --port {{.Port}}
 Restart=always
 RestartSec=5
 
@@ -111,7 +117,7 @@ func (sb *systemdBackend) Install(cfg InstallConfig) error {
 	if err := os.MkdirAll(sb.unitDir, 0o755); err != nil {
 		return fmt.Errorf("create systemd user dir: %w", err)
 	}
-	openclawHome, err := systemdOpenclawHome()
+	openclawHome, err := openclawHomeEnv()
 	if err != nil {
 		return fmt.Errorf("resolve OPENCLAW_HOME: %w", err)
 	}
@@ -122,7 +128,7 @@ func (sb *systemdBackend) Install(cfg InstallConfig) error {
 		WorkDir:           cfg.WorkDir,
 		OpenclawHome:      openclawHome,
 		OpenclawContainer: os.Getenv("OPENCLAW_CONTAINER"),
-		PathEnv:           systemdPathEnv(),
+		PathEnv:           servicePathEnv(systemdDefaultPath),
 		AllowNonLoopback:  cfg.AllowNonLoopback,
 	}
 	var buf bytes.Buffer
@@ -147,27 +153,13 @@ func (sb *systemdBackend) Install(cfg InstallConfig) error {
 	return nil
 }
 
-func systemdOpenclawHome() (string, error) {
-	if raw := strings.TrimSpace(os.Getenv("OPENCLAW_HOME")); raw != "" {
-		if err := validateAbsPath(raw); err != nil {
-			return "", fmt.Errorf("OPENCLAW_HOME: %w", err)
-		}
-		return raw, nil
-	}
-	return "", nil
-}
-
-func systemdPathEnv() string {
-	return joinAbsPaths(
-		strings.Split(os.Getenv("PATH"), ":"),
-		[]string{
-			"/usr/local/bin",
-			"/usr/bin",
-			"/bin",
-			"/usr/sbin",
-			"/sbin",
-		},
-	)
+// systemdDefaultPath is appended to the installing shell's PATH in the unit.
+var systemdDefaultPath = []string{
+	"/usr/local/bin",
+	"/usr/bin",
+	"/bin",
+	"/usr/sbin",
+	"/sbin",
 }
 
 func (sb *systemdBackend) Uninstall() error {
@@ -269,7 +261,7 @@ func (sb *systemdBackend) Status() (ServiceStatus, error) {
 
 	// Running requires active state + HTTP probe
 	if props["ActiveState"] == "active" && st.Port > 0 {
-		if sb.probeFunc(fmt.Sprintf("http://127.0.0.1:%d/", st.Port)) {
+		if sb.probeFunc(probeURL(parseUnitBindHost(string(unitContent)), st.Port)) {
 			st.Running = true
 		}
 	}

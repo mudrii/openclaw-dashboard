@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -126,7 +127,7 @@ func TestSystemd_Install_PersistsNonLoopbackOverride(t *testing.T) {
 	}
 }
 
-func TestSystemd_Install_quotesPathsWithSpaces(t *testing.T) {
+func TestSystemd_Install_pathsWithSpaces(t *testing.T) {
 	sb, dir := newTestSystemd(t)
 	cfg := InstallConfig{
 		BinPath: "/home/test user/bin/openclaw-dashboard",
@@ -144,8 +145,10 @@ func TestSystemd_Install_quotesPathsWithSpaces(t *testing.T) {
 		t.Fatalf("unit file not written: %v", err)
 	}
 	content := string(data)
-	if !strings.Contains(content, `WorkingDirectory="/home/test user/.openclaw/dashboard"`) {
-		t.Fatalf("expected quoted working directory, got:\n%s", content)
+	// systemd does not unquote WorkingDirectory=; a quoted value fails with
+	// "path is not absolute", so the path must be written verbatim.
+	if !strings.Contains(content, "WorkingDirectory=/home/test user/.openclaw/dashboard\n") {
+		t.Fatalf("expected unquoted working directory, got:\n%s", content)
 	}
 	// Assert the quoted binary path and the port token appear on the ExecStart
 	// line, rather than pinning the entire line verbatim. The quoting of the
@@ -501,6 +504,97 @@ func TestSystemd_parseSystemctlProps(t *testing.T) {
 			props := parseSystemctlProps(tc.input)
 			if props[tc.key] != tc.value {
 				t.Errorf("props[%q] = %q, want %q", tc.key, props[tc.key], tc.value)
+			}
+		})
+	}
+}
+
+func TestSystemd_Install_escapesSpecifiers(t *testing.T) {
+	sb, dir := newTestSystemd(t)
+	t.Setenv("OPENCLAW_HOME", "/srv/50%off")
+	t.Setenv("PATH", "/opt/100%/bin:/usr/bin")
+	cfg := InstallConfig{
+		BinPath: "/opt/100%/bin/openclaw-dashboard",
+		WorkDir: "/home/u/100%/dashboard",
+		Host:    "127.0.0.1",
+		Port:    8080,
+	}
+	if err := sb.Install(cfg); err != nil {
+		t.Fatalf("Install: %v", err)
+	}
+	data, err := os.ReadFile(filepath.Join(dir, "openclaw-dashboard.service"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	content := string(data)
+	for _, want := range []string{
+		"WorkingDirectory=/home/u/100%%/dashboard\n",
+		`Environment="OPENCLAW_DASHBOARD_DIR=/home/u/100%%/dashboard"`,
+		`Environment="OPENCLAW_HOME=/srv/50%%off"`,
+		`Environment="PATH=/opt/100%%/bin:/usr/bin`,
+		`ExecStart="/opt/100%%/bin/openclaw-dashboard"`,
+	} {
+		if !strings.Contains(content, want) {
+			t.Errorf("unit missing %q\n%s", want, content)
+		}
+	}
+	// Every '%' in the rendered unit must be part of a '%%' escape pair.
+	if strings.Contains(strings.ReplaceAll(content, "%%", ""), "%") {
+		t.Errorf("unit contains an unescaped %%:\n%s", content)
+	}
+}
+
+func TestSystemd_Install_rejectsNewlineInWorkDir(t *testing.T) {
+	sb, dir := newTestSystemd(t)
+	cfg := InstallConfig{
+		BinPath: "/usr/local/bin/openclaw-dashboard",
+		WorkDir: "/tmp/x\nExecStartPre=/bin/sh",
+		Host:    "127.0.0.1",
+		Port:    8080,
+	}
+	if err := sb.Install(cfg); err == nil {
+		t.Fatal("Install accepted a WorkDir containing a newline")
+	}
+	if _, err := os.Stat(filepath.Join(dir, "openclaw-dashboard.service")); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("unit file should not be written, stat err = %v", err)
+	}
+}
+
+func TestSystemd_Status_ProbesBoundHost(t *testing.T) {
+	tests := []struct {
+		host string
+		want string
+	}{
+		{host: "::1", want: "http://[::1]:9090/"},
+		{host: "0.0.0.0", want: "http://127.0.0.1:9090/"},
+		{host: "127.0.0.1", want: "http://127.0.0.1:9090/"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.host, func(t *testing.T) {
+			sb, _ := newTestSystemd(t)
+			if err := sb.Install(InstallConfig{BinPath: "/bin/d", WorkDir: "/tmp", Host: tc.host, Port: 9090}); err != nil {
+				t.Fatalf("Install: %v", err)
+			}
+			var probed string
+			sb.probeFunc = func(url string) bool {
+				probed = url
+				return true
+			}
+			sb.runCmd = func(_ context.Context, name string, args ...string) ([]byte, error) {
+				if name == "systemctl" && slices.Contains(args, "show") {
+					return []byte("ActiveState=active\nMainPID=1\n"), nil
+				}
+				return nil, nil
+			}
+			st, err := sb.Status()
+			if err != nil {
+				t.Fatalf("Status: %v", err)
+			}
+			if !st.Running {
+				t.Error("Running = false, want true")
+			}
+			if probed != tc.want {
+				t.Errorf("probed %q, want %q", probed, tc.want)
 			}
 		})
 	}

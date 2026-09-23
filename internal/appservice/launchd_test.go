@@ -226,7 +226,7 @@ type stubResult struct {
 }
 
 func TestLaunchd_Start(t *testing.T) {
-	t.Run("succeeds when launchctl start exits 0", func(t *testing.T) {
+	t.Run("succeeds when the job is loaded and launchctl start exits 0", func(t *testing.T) {
 		lb := stubLaunchd(t, nil)
 		if err := lb.Start(); err != nil {
 			t.Errorf("Start: %v", err)
@@ -273,7 +273,7 @@ func TestLaunchd_StartPassesLifecycleContext(t *testing.T) {
 }
 
 func TestLaunchd_Stop(t *testing.T) {
-	t.Run("succeeds when launchctl stop exits 0", func(t *testing.T) {
+	t.Run("succeeds when launchctl unload exits 0", func(t *testing.T) {
 		lb := stubLaunchd(t, nil)
 		if err := lb.Stop(); err != nil {
 			t.Errorf("Stop: %v", err)
@@ -282,7 +282,7 @@ func TestLaunchd_Stop(t *testing.T) {
 
 	t.Run("surfaces launchctl failure output", func(t *testing.T) {
 		lb := stubLaunchd(t, map[string]stubResult{
-			"stop": {out: []byte("no such process"), err: errors.New("exit status 3")},
+			"unload": {out: []byte("no such process"), err: errors.New("exit status 3")},
 		})
 		err := lb.Stop()
 		if err == nil {
@@ -295,19 +295,19 @@ func TestLaunchd_Stop(t *testing.T) {
 }
 
 func TestLaunchd_Restart(t *testing.T) {
-	t.Run("succeeds even when the prior stop fails (service not running)", func(t *testing.T) {
-		// Restart ignores the stop error and depends only on start succeeding.
+	t.Run("succeeds even when the prior unload fails (service not loaded)", func(t *testing.T) {
+		// Restart ignores the unload error and depends only on load succeeding.
 		lb := stubLaunchd(t, map[string]stubResult{
-			"stop": {err: errors.New("exit status 3")}, // not running
+			"unload": {err: errors.New("exit status 3")}, // not loaded
 		})
 		if err := lb.Restart(); err != nil {
-			t.Errorf("Restart should ignore stop failure, got: %v", err)
+			t.Errorf("Restart should ignore unload failure, got: %v", err)
 		}
 	})
 
-	t.Run("fails when the underlying start fails", func(t *testing.T) {
+	t.Run("fails when the underlying load fails", func(t *testing.T) {
 		lb := stubLaunchd(t, map[string]stubResult{
-			"start": {out: []byte("load failed"), err: errors.New("exit status 1")},
+			"load": {out: []byte("load failed"), err: errors.New("exit status 1")},
 		})
 		err := lb.Restart()
 		if err == nil {
@@ -495,7 +495,7 @@ func TestLaunchd_parsePlistPort(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got := parsePlistPort(tc.content)
+			got := parsePlist(tc.content).Port
 			if got != tc.wantPort {
 				t.Errorf("parsePlistPort: got %d, want %d\ncontent: %s", got, tc.wantPort, tc.content)
 			}
@@ -522,7 +522,7 @@ func TestParsePlistPort_Reformatted(t *testing.T) {
 		</array>
 	</dict>
 </plist>`
-	if got := parsePlistPort(content); got != 7777 {
+	if got := parsePlist(content).Port; got != 7777 {
 		t.Errorf("parsePlistPort reformatted: got %d, want 7777", got)
 	}
 }
@@ -547,7 +547,7 @@ func TestParsePlistLogPath_Reformatted(t *testing.T) {
 		</string>
 	</dict>
 </plist>`
-	got := parsePlistLogPath(content)
+	got := parsePlist(content).LogPath
 	if got != "/var/log/openclaw/dashboard.log" {
 		t.Errorf("parsePlistLogPath reformatted: got %q, want %q", got, "/var/log/openclaw/dashboard.log")
 	}

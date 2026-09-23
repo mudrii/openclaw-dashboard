@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -87,18 +88,16 @@ func SeedHomebrewRuntimeDir(binDir string) (string, bool, error) {
 		{filepath.Join(shareDir, "refresh.sh"), filepath.Join(runtimeDir, "refresh.sh"), 0o755, "refresh.sh"},
 		{filepath.Join(shareDir, "themes.json"), filepath.Join(runtimeDir, "themes.json"), 0o644, "themes.json"},
 		{filepath.Join(shareDir, "config.json"), filepath.Join(runtimeDir, "config.json"), 0o644, "config.json"},
-		{filepath.Join(shareDir, "VERSION"), filepath.Join(runtimeDir, "VERSION"), 0o644, "VERSION"},
 	}
 	for _, f := range required {
 		if err := CopyIfMissing(f.src, f.dst, f.mode); err != nil {
 			return "", false, fmt.Errorf("seed %s: %w", f.name, err)
 		}
 	}
-	if err := CopyFile(
-		filepath.Join(shareDir, "VERSION"),
-		filepath.Join(runtimeDir, "VERSION"),
-		0o644,
-	); err != nil {
+	// VERSION is always overwritten so the runtime dir tracks the installed
+	// release; user-editable assets above are only seeded when missing.
+	versionDst := filepath.Join(runtimeDir, "VERSION")
+	if err := CopyFile(filepath.Join(shareDir, "VERSION"), versionDst, 0o644); err != nil {
 		return "", false, fmt.Errorf("sync VERSION: %w", err)
 	}
 	if err := CopyIfMissing(
@@ -112,6 +111,9 @@ func SeedHomebrewRuntimeDir(binDir string) (string, bool, error) {
 		if _, err := os.Stat(f.dst); err != nil {
 			return "", false, fmt.Errorf("missing required asset %s", f.name)
 		}
+	}
+	if _, err := os.Stat(versionDst); err != nil {
+		return "", false, errors.New("missing required asset VERSION")
 	}
 
 	return runtimeDir, true, nil
@@ -256,16 +258,59 @@ func openTempSibling(dst string, mode os.FileMode) (*os.File, error) {
 }
 
 // ResolveOpenclawPath returns the OpenClaw root directory used by dashboard collectors.
-// It honors OPENCLAW_HOME and falls back to ~/.openclaw.
+// It honors OPENCLAW_HOME and falls back to ~/.openclaw. When the home
+// directory cannot be resolved it logs a warning and returns the legacy
+// relative ".openclaw"; callers that can surface the failure should use
+// ResolveOpenclawPathWithError instead.
 func ResolveOpenclawPath() string {
+	p, err := ResolveOpenclawPathWithError()
+	if err != nil {
+		slog.Warn("[dashboard] cannot resolve OpenClaw home; falling back to relative .openclaw", "error", err)
+		return ".openclaw"
+	}
+	return p
+}
+
+// ResolveOpenclawPathWithError returns the OpenClaw root directory, honoring
+// OPENCLAW_HOME and falling back to ~/.openclaw. It returns an error rather
+// than a relative path when OPENCLAW_HOME is unset and the home directory
+// cannot be resolved.
+func ResolveOpenclawPathWithError() (string, error) {
 	if override := strings.TrimSpace(os.Getenv("OPENCLAW_HOME")); override != "" {
-		return appconfig.ExpandHome(override)
+		return appconfig.ExpandHome(override), nil
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return ".openclaw"
+		return "", fmt.Errorf("resolve user home: %w", err)
 	}
-	return filepath.Join(home, ".openclaw")
+	return filepath.Join(home, ".openclaw"), nil
+}
+
+// StableExecutablePath maps a symlink-resolved Homebrew keg binary
+// (<prefix>/Cellar/<formula>/<version>/bin/<name>) to the version-independent
+// opt link (<prefix>/opt/<formula>/bin/<name>) so service definitions survive
+// `brew upgrade`, which deletes the old keg. The input is returned unchanged
+// when it is not a keg binary or the opt path does not exist.
+func StableExecutablePath(resolved string) string {
+	return stableExecutablePath(resolved, os.Stat)
+}
+
+func stableExecutablePath(resolved string, stat func(string) (fs.FileInfo, error)) string {
+	if !filepath.IsAbs(resolved) {
+		return resolved
+	}
+	binDir := filepath.Dir(resolved)
+	kegDir := filepath.Dir(binDir)
+	formulaDir := filepath.Dir(kegDir)
+	cellarDir := filepath.Dir(formulaDir)
+	if filepath.Base(binDir) != "bin" || filepath.Base(cellarDir) != "Cellar" {
+		return resolved
+	}
+	opt := filepath.Join(filepath.Dir(cellarDir), "opt", filepath.Base(formulaDir), "bin", filepath.Base(resolved))
+	if _, err := stat(opt); err != nil {
+		return resolved
+	}
+	return opt
 }
 
 // DetectVersion returns the project version, preferring a VERSION file in dir

@@ -132,7 +132,7 @@ func (lb *launchdBackend) Install(cfg InstallConfig) error {
 	if err := os.MkdirAll(lb.plistDir, 0o755); err != nil {
 		return fmt.Errorf("create LaunchAgents dir: %w", err)
 	}
-	openclawHome, err := launchdOpenclawHome()
+	openclawHome, err := openclawHomeEnv()
 	if err != nil {
 		return fmt.Errorf("resolve OPENCLAW_HOME: %w", err)
 	}
@@ -144,7 +144,7 @@ func (lb *launchdBackend) Install(cfg InstallConfig) error {
 		WorkDir:           cfg.WorkDir,
 		LogPath:           cfg.LogPath,
 		HomeDir:           userHomeDir(),
-		PathEnv:           launchdPathEnv(),
+		PathEnv:           servicePathEnv(launchdDefaultPath),
 		OpenclawHome:      openclawHome,
 		OpenclawContainer: os.Getenv("OPENCLAW_CONTAINER"),
 		AllowNonLoopback:  cfg.AllowNonLoopback,
@@ -171,28 +171,14 @@ func userHomeDir() string {
 	return os.Getenv("HOME")
 }
 
-func launchdPathEnv() string {
-	return joinAbsPaths(
-		strings.Split(os.Getenv("PATH"), ":"),
-		[]string{
-			"/opt/homebrew/bin",
-			"/usr/local/bin",
-			"/usr/bin",
-			"/bin",
-			"/usr/sbin",
-			"/sbin",
-		},
-	)
-}
-
-func launchdOpenclawHome() (string, error) {
-	if raw := strings.TrimSpace(os.Getenv("OPENCLAW_HOME")); raw != "" {
-		if err := validateAbsPath(raw); err != nil {
-			return "", fmt.Errorf("OPENCLAW_HOME: %w", err)
-		}
-		return raw, nil
-	}
-	return "", nil
+// launchdDefaultPath is appended to the installing shell's PATH in the plist.
+var launchdDefaultPath = []string{
+	"/opt/homebrew/bin",
+	"/usr/local/bin",
+	"/usr/bin",
+	"/bin",
+	"/usr/sbin",
+	"/sbin",
 }
 
 func (lb *launchdBackend) Uninstall() error {
@@ -200,9 +186,13 @@ func (lb *launchdBackend) Uninstall() error {
 	if _, err := os.Stat(p); errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("service not installed (plist not found: %s)", p)
 	}
+	// unload fails when the job is not loaded (for example after Stop); that
+	// is only an error if launchd still knows the job.
 	out, err := lb.runCmd(lb.ctx, "launchctl", "unload", p)
 	if err != nil {
-		return fmt.Errorf("launchctl unload: %s: %w", strings.TrimSpace(string(out)), err)
+		if _, listErr := lb.runCmd(lb.ctx, "launchctl", "list", launchdLabel); listErr == nil {
+			return fmt.Errorf("launchctl unload: %s: %w", strings.TrimSpace(string(out)), err)
+		}
 	}
 	if err := os.Remove(p); err != nil {
 		return fmt.Errorf("remove plist: %w", err)
@@ -210,7 +200,13 @@ func (lb *launchdBackend) Uninstall() error {
 	return nil
 }
 
+// Start loads the job when it is not registered with launchd (for example
+// after Stop) and otherwise asks launchd to start it. RunAtLoad starts the
+// process as part of the load.
 func (lb *launchdBackend) Start() error {
+	if _, err := lb.runCmd(lb.ctx, "launchctl", "list", launchdLabel); err != nil {
+		return lb.load()
+	}
 	out, err := lb.runCmd(lb.ctx, "launchctl", "start", launchdLabel)
 	if err != nil {
 		return fmt.Errorf("launchctl start: %s: %w", strings.TrimSpace(string(out)), err)
@@ -218,18 +214,31 @@ func (lb *launchdBackend) Start() error {
 	return nil
 }
 
+// Stop unloads the job. The plist sets KeepAlive, so `launchctl stop` would
+// only make launchd restart the process immediately; unloading is the only
+// way for it to stay stopped. The plist stays in place, so the job is loaded
+// again at the next login.
 func (lb *launchdBackend) Stop() error {
-	out, err := lb.runCmd(lb.ctx, "launchctl", "stop", launchdLabel)
+	out, err := lb.runCmd(lb.ctx, "launchctl", "unload", lb.plistPath())
 	if err != nil {
-		return fmt.Errorf("launchctl stop: %s: %w", strings.TrimSpace(string(out)), err)
+		return fmt.Errorf("launchctl unload: %s: %w", strings.TrimSpace(string(out)), err)
 	}
 	return nil
 }
 
+// Restart unloads (ignoring the error when the job is not loaded) and loads
+// the job again, which also picks up plist changes.
 func (lb *launchdBackend) Restart() error {
-	// ignore stop error — service may not be running
-	_, _ = lb.runCmd(lb.ctx, "launchctl", "stop", launchdLabel)
-	return lb.Start()
+	_, _ = lb.runCmd(lb.ctx, "launchctl", "unload", lb.plistPath())
+	return lb.load()
+}
+
+func (lb *launchdBackend) load() error {
+	out, err := lb.runCmd(lb.ctx, "launchctl", "load", lb.plistPath())
+	if err != nil {
+		return fmt.Errorf("launchctl load: %s: %w", strings.TrimSpace(string(out)), err)
+	}
+	return nil
 }
 
 func (lb *launchdBackend) Status() (ServiceStatus, error) {
@@ -238,10 +247,11 @@ func (lb *launchdBackend) Status() (ServiceStatus, error) {
 	// AutoStart = plist file exists
 	p := lb.plistPath()
 	plistContent, err := os.ReadFile(p)
-	var logPath string
+	var info plistInfo
 	if err == nil {
 		st.AutoStart = true
-		st.Port, logPath = parsePlist(string(plistContent))
+		info = parsePlist(string(plistContent))
+		st.Port = info.Port
 	}
 
 	// Running = launchctl list succeeds and contains PID
@@ -254,14 +264,14 @@ func (lb *launchdBackend) Status() (ServiceStatus, error) {
 	if pid > 0 && st.Port > 0 {
 		st.PID = pid
 		st.Uptime = resolveUptime(lb.ctx, lb.runCmd, pid)
-		if lb.probeFunc(fmt.Sprintf("http://127.0.0.1:%d/", st.Port)) {
+		if lb.probeFunc(probeURL(info.Host, st.Port)) {
 			st.Running = true
 		}
 	}
 
 	// Last 20 log lines
-	if st.AutoStart && logPath != "" {
-		st.LogLines = tailFile(logPath, 20)
+	if st.AutoStart && info.LogPath != "" {
+		st.LogLines = tailFile(info.LogPath, 20)
 	}
 	return st, nil
 }
@@ -291,16 +301,25 @@ func parseLaunchctlPID(out string) int {
 	return 0
 }
 
-// parsePlist parses a launchd plist and extracts the --port value from any
-// <array> of <string>s and the StandardOutPath value. On malformed input or
-// missing fields it returns zero values; errors are not propagated.
+// plistInfo is the subset of an installed plist that Status needs.
+type plistInfo struct {
+	Port    int
+	Host    string
+	LogPath string
+}
+
+// parsePlist parses a launchd plist and extracts the --port and --bind values
+// from any <array> of <string>s and the StandardOutPath value. On malformed
+// input or missing fields it returns zero values; errors are not propagated.
 //
 // Behavior:
-//   - port: the <string> immediately following a <string>--port</string>
-//     entry inside an <array>.
-//   - logPath: the next <string> appearing after the most recent
+//   - Port / Host: the <string> immediately following a <string>--port</string>
+//     / <string>--bind</string> entry inside the first <array> carrying a port.
+//   - LogPath: the next <string> appearing after the most recent
 //     <key>StandardOutPath</key>.
-func parsePlist(content string) (port int, logPath string) {
+func parsePlist(content string) plistInfo {
+	var port int
+	var host string
 	dec := xml.NewDecoder(strings.NewReader(content))
 	dec.Strict = false
 
@@ -361,9 +380,14 @@ func parsePlist(content string) (port int, logPath string) {
 				}
 				if inArray == 0 && port == 0 {
 					for i, a := range arrStrs {
-						if a == "--port" && i+1 < len(arrStrs) {
-							port, _ = strconv.Atoi(strings.TrimSpace(arrStrs[i+1]))
+						if i+1 >= len(arrStrs) {
 							break
+						}
+						switch a {
+						case "--port":
+							port, _ = strconv.Atoi(strings.TrimSpace(arrStrs[i+1]))
+						case "--bind":
+							host = strings.TrimSpace(arrStrs[i+1])
 						}
 					}
 				}
@@ -374,22 +398,11 @@ func parsePlist(content string) (port int, logPath string) {
 			}
 		}
 	}
-	return port, strings.TrimSpace(stdOut)
+	return plistInfo{Port: port, Host: host, LogPath: strings.TrimSpace(stdOut)}
 }
 
-// parsePlistPort reads the --port value from the ProgramArguments in a plist.
-func parsePlistPort(content string) int {
-	port, _ := parsePlist(content)
-	return port
-}
-
-// parsePlistLogPath reads StandardOutPath from a plist.
-func parsePlistLogPath(content string) string {
-	_, logPath := parsePlist(content)
-	return logPath
-}
-
-// resolveUptime fetches the process start time via ps and computes elapsed duration.
+// resolveUptime fetches the process start time via ps and computes elapsed
+// duration. ps prints lstart in the host's local time zone.
 func resolveUptime(ctx context.Context, run runCmdFunc, pid int) time.Duration {
 	out, err := run(ctx, "ps", "-p", strconv.Itoa(pid), "-o", "lstart=")
 	if err != nil || len(out) == 0 {
@@ -401,7 +414,7 @@ func resolveUptime(ctx context.Context, run runCmdFunc, pid int) time.Duration {
 		"Mon Jan _2 15:04:05 2006",
 		"Mon Jan  2 15:04:05 2006",
 	} {
-		if t, err := time.Parse(layout, s); err == nil {
+		if t, err := time.ParseInLocation(layout, s, time.Local); err == nil {
 			return time.Since(t)
 		}
 	}

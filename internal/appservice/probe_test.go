@@ -67,3 +67,27 @@ func TestProbeHTTP(t *testing.T) {
 		}
 	})
 }
+
+func TestProbeURL(t *testing.T) {
+	tests := []struct {
+		host string
+		port int
+		want string
+	}{
+		{host: "", port: 8080, want: "http://127.0.0.1:8080/"},
+		{host: "0.0.0.0", port: 8080, want: "http://127.0.0.1:8080/"},
+		{host: "127.0.0.1", port: 8080, want: "http://127.0.0.1:8080/"},
+		{host: "::", port: 8080, want: "http://[::1]:8080/"},
+		{host: "::1", port: 9090, want: "http://[::1]:9090/"},
+		{host: "[::1]", port: 9090, want: "http://[::1]:9090/"},
+		{host: "localhost", port: 7070, want: "http://localhost:7070/"},
+		{host: "192.168.1.5", port: 7070, want: "http://192.168.1.5:7070/"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.host, func(t *testing.T) {
+			if got := probeURL(tc.host, tc.port); got != tc.want {
+				t.Errorf("probeURL(%q, %d) = %q, want %q", tc.host, tc.port, got, tc.want)
+			}
+		})
+	}
+}
