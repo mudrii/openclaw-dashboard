@@ -1,9 +1,11 @@
 package apprefresh
 
 import (
+	"bytes"
 	"cmp"
 	"context"
 	"encoding/json"
+	"io"
 	"log/slog"
 	"math"
 	"os"
@@ -178,37 +180,59 @@ func readLastSessionModel(path string) (string, bool) {
 	if err != nil {
 		return "", false
 	}
+	return scanLastSessionModel(f, info.Size())
+}
 
+// scanLastSessionModel walks the first size bytes of r backwards in fixed
+// chunks and returns the model of the last model_change record. The chunk
+// buffer is reused, and a line split across chunks is carried over to the next
+// (earlier) chunk before it is inspected.
+func scanLastSessionModel(r io.ReaderAt, size int64) (string, bool) {
 	const chunkSize int64 = 64 * 1024
-	var tail string
-	for end := info.Size(); end > 0; {
+	var buf, carry []byte
+	for end := size; end > 0; {
 		start := max(end-chunkSize, 0)
-		buf := make([]byte, end-start)
-		if _, err := f.ReadAt(buf, start); err != nil {
+		n := int(end - start)
+		buf = slices.Grow(buf[:0], n+len(carry))[:n]
+		if _, err := r.ReadAt(buf, start); err != nil {
 			return "", false
 		}
+		buf = append(buf, carry...)
 
-		chunk := string(buf) + tail
-		lines := strings.Split(chunk, "\n")
-		if start > 0 {
-			tail = lines[0]
-			lines = lines[1:]
-		} else {
-			tail = ""
-		}
-
-		for _, line := range slices.Backward(lines) {
-			if model, ok := sessionModelFromLine(line); ok {
+		lineEnd := len(buf)
+		for i := lineEnd - 1; i >= 0; i-- {
+			if buf[i] != '\n' {
+				continue
+			}
+			if model, ok := sessionModelFromBytes(buf[i+1 : lineEnd]); ok {
 				return model, true
 			}
+			lineEnd = i
 		}
+		if start == 0 {
+			return sessionModelFromBytes(buf[:lineEnd])
+		}
+		// The first line may begin in an earlier chunk.
+		carry = append(carry[:0], buf[:lineEnd]...)
 		end = start
 	}
-
-	if model, ok := sessionModelFromLine(tail); ok {
-		return model, true
-	}
 	return "", false
+}
+
+// sessionModelMarker is the literal every model_change record carries. JSON
+// can only spell the decoded "model_change" type value without this literal via
+// a \u escape, so a line containing neither cannot be a model_change record and
+// skips the JSON decode.
+var (
+	sessionModelMarker = []byte("model_change")
+	jsonUnicodeEscape  = []byte(`\u`)
+)
+
+func sessionModelFromBytes(line []byte) (string, bool) {
+	if !bytes.Contains(line, sessionModelMarker) && !bytes.Contains(line, jsonUnicodeEscape) {
+		return "", false
+	}
+	return sessionModelFromLine(string(line))
 }
 
 func sessionModelFromLine(line string) (string, bool) {
