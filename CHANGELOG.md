@@ -61,6 +61,41 @@ Full code, test and documentation audit with fixes across every package.
   axis precision, the error feed clears on failure, render errors surface in
   the banner, and chat/log controls gain accessible labels.
 
+**Performance** (benchstat, interleaved runs, p<0.05)
+
+- Token usage: stream transcript lines through `encoding/json/jsontext`
+  instead of decoding into maps, reuse buffers across files, and skip the
+  cache rewrite when nothing changed. Parsing a 2,000-line transcript:
+  23.5ms → 5.6ms, 178k → 420 allocs; cold collection of 200 transcripts:
+  510ms → 130ms. Results are checked against the previous decoder by an
+  equivalence oracle and fuzzer.
+- Collector: decode only `model_change` transcript lines, reuse unchanged
+  transcript scans across refreshes (size + mtime), reject non-timestamp log
+  prefixes before `time.Parse`, and run the legacy CLI/probe reads alongside
+  the other collectors. Full legacy refresh: 147ms → 25ms, 1.23M → 41k
+  allocs; `data.json` output is byte-identical.
+- Log redaction skips the regex set for lines that cannot contain a secret:
+  4.3× faster on typical log lines.
+- Warm `/api/refresh` no longer clones the parsed snapshot: −14% time, −78%
+  bytes.
+- Frontend: cached date formatters, single-pass escaping, and skipping
+  identical DOM rewrites. On a large dataset an unchanged refresh drops from
+  56ms to 9ms and an idle log poll from 17ms to 0.3ms in Chrome, with
+  identical rendered output.
+
+**Stability**
+
+- A corrupt transcript line with huge or negative usage values no longer
+  produces `+Inf` costs or integer overflow that made `data.json` writes
+  fail (found by fuzzing).
+- `http.Server` sets `ReadHeaderTimeout` (10s) and `MaxHeaderBytes`
+  (64 KiB).
+- Fuzz tests for every untrusted-input parser, goroutine-leak tests for the
+  server, refresh worker, runtime log cache and system metrics, and an
+  opt-in HTTP soak (`OPENCLAW_SOAK=1`).
+- Tests are hermetic and no longer run real host probes or the local
+  OpenClaw install: root package 32s → 3s, appsystem 13s → 6s.
+
 **Internal**
 
 - Split `appsystem/system_service.go` into cohesive files, extract phases of
