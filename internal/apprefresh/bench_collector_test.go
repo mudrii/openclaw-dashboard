@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -292,6 +293,30 @@ func BenchmarkCollectDashboardDataLegacy(b *testing.B) {
 	env := newBenchCollectorEnv(b)
 	ctx := context.Background()
 	for b.Loop() {
+		_ = collectDashboardData(ctx, env.dashboardDir, env.openclawPath, env.cfg)
+	}
+}
+
+// BenchmarkCollectDashboardDataLegacySlowCLI gives every CLI and probe seam a
+// fixed latency (subprocesses run /bin/sleep) and drops the live session model
+// cache each iteration, as a refresh does once its TTL lapses, so the result
+// shows how much subprocess latency the collector overlaps.
+func BenchmarkCollectDashboardDataLegacySlowCLI(b *testing.B) {
+	env := newBenchCollectorEnv(b)
+	const latency = 30 * time.Millisecond
+	sleep := func() { time.Sleep(latency) }
+	execCommandContext = func(ctx context.Context, _ string, _ ...string) *exec.Cmd {
+		return exec.CommandContext(ctx, "/bin/sleep", strconv.FormatFloat(latency.Seconds(), 'f', -1, 64))
+	}
+	fetchLiveSessionModels = func(context.Context) map[string]string { sleep(); return map[string]string{} }
+	channelStatusCollector = func(context.Context, func(context.Context, string, ...string) *exec.Cmd, func() string) (map[string]any, bool) {
+		sleep()
+		return nil, false
+	}
+	readyzProbe = func(context.Context, int) ([]string, bool) { sleep(); return nil, false }
+	ctx := context.Background()
+	for b.Loop() {
+		resetLiveSessionModelCacheForTest()
 		_ = collectDashboardData(ctx, env.dashboardDir, env.openclawPath, env.cfg)
 	}
 }

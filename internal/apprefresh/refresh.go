@@ -312,6 +312,27 @@ func collectDashboardData(ctx context.Context, dashboardDir, openclawPath string
 		}
 	}()
 
+	// The legacy CLI and probe reads depend on nothing collected below, so
+	// they start now and overlap the collectors above instead of running one
+	// after another later in the pass. lwg is waited before their first use.
+	sessionLiveModelTTL := time.Duration(cfg.Refresh.IntervalSeconds) * time.Second
+	probeReadyz := !modern && !appopenclaw.TargetFromContext(ctx).IsContainer()
+	var lwg sync.WaitGroup
+	var cliChannelStatus map[string]any
+	var cliChannelStatusOK bool
+	var readyzFailing []string
+	var legacySubagentRuns []map[string]any
+	if !modern {
+		// Warms the cache collectSessions reads; a lookup made while this
+		// fetch is in flight waits for it rather than starting another.
+		lwg.Go(func() { getLiveSessionModels(ctx, now, sessionLiveModelTTL) })
+		lwg.Go(func() { cliChannelStatus, cliChannelStatusOK = channelStatusCollector(ctx, nil, nil) })
+		lwg.Go(func() { legacySubagentRuns = collectSubagentRuns(ctx, nil, nil, loc) })
+	}
+	if probeReadyz {
+		lwg.Go(func() { readyzFailing, _ = readyzProbe(ctx, cfg.AI.GatewayPort) })
+	}
+
 	// Read configuration from the selected runtime while collectors are in flight.
 	compactionMode := "unknown"
 	var skills []map[string]any
@@ -362,7 +383,6 @@ func collectDashboardData(ctx context.Context, dashboardDir, openclawPath string
 
 	// Sessions
 	knownSIDs := map[string]string{}
-	sessionLiveModelTTL := time.Duration(cfg.Refresh.IntervalSeconds) * time.Second
 	var sessionsList []map[string]any
 	if modern {
 		sessionsList = runtimeSessions.Rows
@@ -383,17 +403,15 @@ func collectDashboardData(ctx context.Context, dashboardDir, openclawPath string
 		collections["sessions"] = collectionStatus("legacy.session.files", nil, true)
 	}
 
-	if !modern {
-		if cliChannelStatus, ok := channelStatusCollector(ctx, nil, nil); ok {
-			overlayChannelStatus(agentConfig, cliChannelStatus)
-		}
+	lwg.Wait()
+	if cliChannelStatusOK {
+		overlayChannelStatus(agentConfig, cliChannelStatus)
 	}
 
 	// Backfill channel connectivity: gateway /readyz failing[] is authoritative
 	// for failures; on probe failure we fall back to the session-activity
 	// heuristic (failing is nil, so no channel is blanked).
-	if !modern && !appopenclaw.TargetFromContext(ctx).IsContainer() {
-		readyzFailing, _ := readyzProbe(ctx, cfg.AI.GatewayPort)
+	if probeReadyz {
 		backfillChannelConnectivity(agentConfig, sessionsList, readyzFailing)
 	} else {
 		agentConfig["channelStatus"] = map[string]any{}
@@ -421,7 +439,7 @@ func collectDashboardData(ctx context.Context, dashboardDir, openclawPath string
 			}
 		}
 	} else {
-		subagentRuns = collectSubagentRuns(ctx, nil, nil, loc)
+		subagentRuns = legacySubagentRuns
 	}
 
 	slices.SortFunc(subagentRuns, func(a, b map[string]any) int {
