@@ -73,6 +73,7 @@ func CollectTokenUsageWithCache(
 	// Pre-size for typical batch (~64 subagent sessions) to avoid early grow.
 	subagentRuns := make([]map[string]any, 0, 64)
 	var parser tokenUsageParser
+	parsed := 0
 
 	for _, path := range allFiles {
 		info, err := os.Stat(path)
@@ -82,6 +83,7 @@ func CollectTokenUsageWithCache(
 
 		summary, ok := cache.Files[path]
 		if !ok || summary.Size != info.Size() || summary.ModTimeUnixNano != info.ModTime().UnixNano() {
+			parsed++
 			summary, err = parser.parseFile(path, info, loc)
 			if err != nil {
 				slog.Warn("[dashboard] token usage parse skipped", "path", path, "error", err)
@@ -98,7 +100,12 @@ func CollectTokenUsageWithCache(
 		)
 	}
 
-	saveTokenUsageCache(cachePath, nextCache)
+	// Every entry of nextCache is either freshly parsed or copied from the
+	// loaded cache, so with no parses and equal sizes the loaded cache (same
+	// zone) already holds exactly nextCache: skip the marshal and fsync.
+	if parsed > 0 || cache.Location != nextCache.Location || len(cache.Files) != len(nextCache.Files) {
+		saveTokenUsageCache(cachePath, nextCache)
+	}
 	return subagentRuns
 }
 
