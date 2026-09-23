@@ -914,6 +914,74 @@ test('system status fills the runtime health card and degrades explicitly', `
     assert.match($('runtimeHealthPanelInner').innerHTML,/Runtime Health unavailable/);
   }finally{State.data=previous;window._sysBarActive=false;}
 `);
+test('setHTML skips identical markup but never a write another writer invalidated', `
+  let writes=0;
+  const el={firstChild:null,lastChild:null,_h:'',get innerHTML(){return this._h;},set innerHTML(v){writes++;this._h=v;this.firstChild=v?{}:null;this.lastChild=this.firstChild;}};
+  setHTML(el,'<p>a</p>');setHTML(el,'<p>a</p>');
+  assert.equal(writes,1,'identical markup must not be re-parsed');
+  setHTML(el,'<p>b</p>');
+  assert.equal(writes,2);
+  el.innerHTML='<p>other writer</p>';
+  setHTML(el,'<p>b</p>');
+  assert.equal(el.innerHTML,'<p>b</p>','a write by another path must not leave setHTML believing its markup is still present');
+  assert.doesNotThrow(()=>setHTML(null,'x'));
+`);
+test('log tail restores lines after a status message with an unchanged payload', `
+  const prev=[LogTail._source,LogTail._severity];
+  try{
+    LogTail._source='all';LogTail._severity='all';LogTail.setRegex('');
+    const payload={entries:[{source:'gateway',severity:'info',message:'hello',seenAt:'t'}]};
+    LogTail._render(payload);
+    assert.match($('logTail').innerHTML,/hello/);
+    LogTail._setStatus('Network error while fetching logs.');
+    assert.match($('logTail').innerHTML,/Network error/);
+    LogTail._render(payload);
+    assert.match($('logTail').innerHTML,/hello/,'identical payload must repaint after the status message replaced it');
+  }finally{[LogTail._source,LogTail._severity]=prev;}
+`);
+test('cached absolute-time formatter matches toLocaleString and follows timezone changes', `
+  const previous=State.data;
+  try{
+    const options=tz=>({timeZone:tz,timeZoneName:'short',hour12:false,year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit'});
+    for(const tz of ['UTC','Asia/Kuala_Lumpur','America/New_York','UTC']){
+      State.data={timezone:tz};
+      for(const ts of [1757063220000,'2026-01-31T23:59:59Z',Date.UTC(2026,2,29,1,30)])
+        assert.equal(formatAbsTime(ts),new Date(ts).toLocaleString('en-GB',options(tz)),tz+' '+ts);
+    }
+    State.data={timezone:'Not/AZone'};
+    assert.equal(formatAbsTime(1757063220000),new Date(1757063220000).toLocaleString('en-GB',options('UTC')));
+    State.data={};
+    assert.match(formatAbsTime(1757063220000),/UTC/);
+  }finally{State.data=previous;}
+`);
+test('shared payload keys dirty every watching section and the memo does not outlive a diff', `
+  const table=[{model:'a',totalTokensRaw:1}];
+  State.prevTabs={usage:'today',subRuns:'today',subTokens:'today'};State.prevChartDays=7;
+  State.prev={tokenUsage7d:table};
+  State.data={tokenUsage7d:[{model:'a',totalTokensRaw:2}]};
+  const tabs={usage:'today',subRuns:'today',subTokens:'today'};
+  let d=DirtyChecker.diff({data:State.data,tabs,chartDays:7});
+  assert.deepEqual([d.usage,d.subTokens,d.charts,d.cost],[true,true,true,false]);
+  State.prev=State.data;
+  d=DirtyChecker.diff({data:State.data,tabs,chartDays:7});
+  assert.deepEqual([d.usage,d.subTokens,d.charts],[false,false,false]);
+  State.prev=null;State.prevTabs={};
+`);
+test('runtime session selector keeps the chosen session across identical refreshes', `
+  const link=TestedRuntimePanels.linkSession,tasks=TestedRuntimePanels.renderTasks;
+  try{
+    TestedRuntimePanels.linkSession=()=>{};TestedRuntimePanels.renderTasks=()=>{};
+    const D={sessions:[{key:'agent:main:one',name:'One'},{key:'agent:main:two',name:'Two'}]};
+    TestedRuntimePanels.render(D);
+    $('workSessionSelect').value='agent:main:two';
+    TestedRuntimePanels.render(D);
+    assert.equal($('workSessionSelect').value,'agent:main:two');
+    assert.match($('workSessionSelect').innerHTML,/Two/);
+    TestedRuntimePanels.render({sessions:[]});
+    assert.match($('workSessionSelect').innerHTML,/No sessions reported/);
+    assert.doesNotMatch($('workSessionSelect').innerHTML,/Two/);
+  }finally{TestedRuntimePanels.linkSession=link;TestedRuntimePanels.renderTasks=tasks;}
+`);
 
 (async () => {
   for (const run of pending) await run();

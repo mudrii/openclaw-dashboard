@@ -770,7 +770,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,'SF Pro','Helvetica Neue',sans
 // === Utilities ===
 const COLORS=['#6366f1','#9333ea','#ec4899','#f59e0b','#10b981','#06b6d4','#f87171','#84cc16'];
 const $=id=>document.getElementById(id);
-const esc = s => String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+// esc runs for every rendered cell; most values need no escaping, so a single
+// test skips the replace entirely and one pass handles the rest. Kept on one
+// self-contained line: web_runtime_test.go extracts it by pattern.
+const esc = (map=>{const any=/[&<>"']/,all=/[&<>"']/g,sub=c=>map[c];return s=>{const v=String(s==null?'':s);return any.test(v)?v.replace(all,sub):v;};})({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'});
 function safeColor(v){
   return /^#[0-9a-fA-F]{3,8}$/.test(v||'') ? v : '#888888';
 }
@@ -785,13 +788,25 @@ function relTime(ts){
   if(diff<86400)return Math.floor(diff/3600)+'h ago';
   return Math.floor(diff/86400)+'d ago';
 }
+// absTimeFormat caches the formatter for the current dashboard timezone.
+// toLocaleString builds a new Intl.DateTimeFormat on every call, which dominated
+// log and error-feed rendering; the output is identical. An invalid timezone
+// falls back to UTC, as toLocaleString's RangeError path did.
+let _absTimeFormat={timeZone:null,format:null};
+function absTimeFormat(timeZone){
+  if(_absTimeFormat.timeZone===timeZone)return _absTimeFormat.format;
+  const options={timeZone,timeZoneName:'short',hour12:false,year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit'};
+  let format;
+  try{format=new Intl.DateTimeFormat('en-GB',options);}
+  catch{format=new Intl.DateTimeFormat('en-GB',{...options,timeZone:'UTC'});}
+  _absTimeFormat={timeZone,format};
+  return format;
+}
 function formatAbsTime(ts){
   if(!ts)return'—';
   const d=new Date(ts);
   if(isNaN(d.getTime()))return'—';
-  const options={timeZone:State.data.timezone||'UTC',timeZoneName:'short',hour12:false,year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit'};
-  try{return d.toLocaleString('en-GB',options);}
-  catch{return d.toLocaleString('en-GB',{...options,timeZone:'UTC'});}
+  return absTimeFormat(State.data.timezone||'UTC').format(d);
 }
 
 // === Runtime data presentation ===
@@ -910,6 +925,21 @@ function gatewayUnknownText(reason){
 function gatewayUnknownHtml(gw){
   if(String(gw&&gw.status||'').toLowerCase()!=='unknown')return '';
   return '<span style="color:var(--yellow)">●</span> '+gatewayUnknownText(gw.statusReason||gw.error);
+}
+// setHTML assigns innerHTML unless the markup equals what setHTML last wrote
+// to this element and the element still holds the children that write made.
+// Re-assigning identical markup re-parses the whole subtree (and drops text
+// selection, inner scroll and open <select> state) for no visible change. Any
+// other writer replaces the children, failing the identity check, so a stale
+// entry never suppresses a needed write. Only use it on elements whose
+// descendants are not mutated in place.
+const _htmlWritten=new WeakMap();
+function setHTML(el,html){
+  if(!el)return;
+  const last=_htmlWritten.get(el);
+  if(last&&last.html===html&&last.first===el.firstChild&&last.last===el.lastChild)return;
+  el.innerHTML=html;
+  _htmlWritten.set(el,{html,first:el.firstChild,last:el.lastChild});
 }
 function runtimeActivity(s){return s.active===true?'Running'+(Array.isArray(s.activeRunIds)?' ('+s.activeRunIds.length+')':''):s.active===false?'Idle':'Activity not reported';}
 function runtimeValue(v){return v===true?'Yes':v===false?'No':v==null||String(v).trim()===''?'Not reported':String(v);}
@@ -1189,7 +1219,7 @@ const LogTail = {
       status.style.display = 'block';
       status.textContent = msg;
     }
-    if (list) list.innerHTML = `<div class="log-empty">${esc(msg)}</div>`;
+    if (list) setHTML(list, `<div class="log-empty">${esc(msg)}</div>`);
   },
 
   _renderControls() {
@@ -1241,20 +1271,20 @@ const LogTail = {
     if (logCount) logCount.textContent = (prepared.length ? prepared.length + ' log lines' : 'No matching logs')+(payload?.collectionSource?' · '+payload.collectionSource+' · bounded tail'+(payload.truncated?' (truncated)':''):'');
     const shouldStickBottom = list.scrollHeight - list.clientHeight - list.scrollTop < 24;
     if (!entries.length) {
-      list.innerHTML = '<div class="log-empty">No logs found</div>';
+      setHTML(list, '<div class="log-empty">No logs found</div>');
       return;
     }
     if (!prepared.length) {
-      list.innerHTML = '<div class="log-empty">No matching logs</div>';
+      setHTML(list, '<div class="log-empty">No matching logs</div>');
       return;
     }
-    list.innerHTML = prepared.map((entry) => {
+    setHTML(list, prepared.map((entry) => {
       const sev = (entry.severity || 'info').toLowerCase();
       const seen = entry.seenAt || formatAbsTime(entry.timestamp || 0);
       const source = entry.source || 'log';
       const msg = this._highlight(entry.message || entry.line || '');
       return `<div class="log-line"><span class="log-line-sev log-${esc(sev)}">${esc(sev)}</span><span class="log-line-source">${esc(source)} · ${esc(seen)}</span><span class="log-line-msg">${msg}</span></div>`;
-    }).join('');
+    }).join(''));
     if (shouldStickBottom) list.scrollTop = list.scrollHeight;
   },
 
@@ -1497,10 +1527,19 @@ const DirtyChecker = {
   // SESSION_FIELDS lists every session field the sessions table renders; updatedAt
   // drives the "Last Activity" relative time, so it must dirty the section too.
   SESSION_FIELDS: ['key','name','model','type','contextPct','totalTokens','active','spawnedBy','label','subject','updatedAt','tokenState','contextState','activeRunIds'],
-  sectionChanged(keys, collectionNames) {
+  sectionChanged(keys, collectionNames, memo) {
     if (!State.prev) return true;
-    if (keys.some(k => JSON.stringify(State.data[k]) !== JSON.stringify(State.prev[k]))) return true;
+    if (keys.some(k => this.keyChanged(k, memo))) return true;
     return (collectionNames || []).some(name => this.collectionSnapshot(State.data, name) !== this.collectionSnapshot(State.prev, name));
+  },
+  // keyChanged compares one top-level payload key. Several sections watch the
+  // same large keys (the token usage tables feed cost, usage, subTokens and
+  // charts), so diff passes a per-call memo and each key is serialised once.
+  keyChanged(k, memo) {
+    if (memo && memo.has(k)) return memo.get(k);
+    const changed = JSON.stringify(State.data[k]) !== JSON.stringify(State.prev[k]);
+    if (memo) memo.set(k, changed);
+    return changed;
   },
   // collectionSnapshot projects only the status fields a panel renders. The raw
   // status also carries attemptedAt, which moves on every poll even when the
@@ -1521,20 +1560,21 @@ const DirtyChecker = {
   diff(snap) {
     const D = snap.data;
     const prevD = State.prev;
+    const memo = new Map();
     return {
-      alerts: this.sectionChanged(['alerts']),
+      alerts: this.sectionChanged(['alerts'], null, memo),
       health: true,
-      cost: this.sectionChanged(['totalCostToday','totalCostAllTime','projectedMonthly','costBreakdown','tokenUsage','usageToday','usageAll'], ['usageToday','usageAll']),
-      crons: this.sectionChanged(['crons'], ['crons']),
+      cost: this.sectionChanged(['totalCostToday','totalCostAllTime','projectedMonthly','costBreakdown','tokenUsage','usageToday','usageAll'], ['usageToday','usageAll'], memo),
+      crons: this.sectionChanged(['crons'], ['crons'], memo),
       sessions: !prevD || this.stableSnapshot(D.sessions, this.SESSION_FIELDS) !== this.stableSnapshot(prevD.sessions, this.SESSION_FIELDS),
-      usage: this.sectionChanged(['tokenUsage','tokenUsageToday','tokenUsage7d','tokenUsage30d','subagentUsage','subagentUsageToday','subagentUsage7d','subagentUsage30d']) || snap.tabs.usage !== State.prevTabs.usage,
+      usage: this.sectionChanged(['tokenUsage','tokenUsageToday','tokenUsage7d','tokenUsage30d','subagentUsage','subagentUsageToday','subagentUsage7d','subagentUsage30d'], null, memo) || snap.tabs.usage !== State.prevTabs.usage,
       subRuns: (!prevD || ['subagentRuns','subagentRuns7d','subagentRuns30d','subagentRunsToday'].some(k => this.stableSnapshot(D[k], ['task','agent','status','durationSec','timestamp']) !== this.stableSnapshot((prevD||{})[k], ['task','agent','status','durationSec','timestamp']))) || snap.tabs.subRuns !== State.prevTabs.subRuns,
-      subTokens: this.sectionChanged(['tokenUsage','tokenUsageToday','tokenUsage7d','tokenUsage30d','subagentUsage','subagentUsageToday','subagentUsage7d','subagentUsage30d']) || snap.tabs.subTokens !== State.prevTabs.subTokens,
-      charts: this.sectionChanged(['dailyChart','tokenUsage7d','tokenUsage30d'], ['usage7d','usage30d']) || snap.chartDays !== State.prevChartDays,
-      models: this.sectionChanged(['availableModels'], ['configuration']),
-      skills: this.sectionChanged(['skills','skillInventory'], ['skillInventory']),
-      git: this.sectionChanged(['gitLog']),
-      agentConfig: this.sectionChanged(['agentConfig','subagentConfig','channels'], ['configuration']),
+      subTokens: this.sectionChanged(['tokenUsage','tokenUsageToday','tokenUsage7d','tokenUsage30d','subagentUsage','subagentUsageToday','subagentUsage7d','subagentUsage30d'], null, memo) || snap.tabs.subTokens !== State.prevTabs.subTokens,
+      charts: this.sectionChanged(['dailyChart','tokenUsage7d','tokenUsage30d'], ['usage7d','usage30d'], memo) || snap.chartDays !== State.prevChartDays,
+      models: this.sectionChanged(['availableModels'], ['configuration'], memo),
+      skills: this.sectionChanged(['skills','skillInventory'], ['skillInventory'], memo),
+      git: this.sectionChanged(['gitLog'], null, memo),
+      agentConfig: this.sectionChanged(['agentConfig','subagentConfig','channels'], ['configuration'], memo),
     };
   }
 };
@@ -1567,14 +1607,13 @@ const RuntimePanels = {
     const port=Number(D.gateway?.port);
     $('nativeControl').href='http://127.0.0.1:'+(Number.isInteger(port)&&port>0&&port<65536?port:18789)+'/';
 	$('nativeChat').href=$('nativeControl').href;
-    $('collectionStatus').innerHTML=runtimeTable(['Collection','Source','State','Last good'],Object.entries(statuses).map(([name,s])=>[name,s.source,[s.state,s.errorCode].filter(Boolean).join(' · '),s.collectedAt]));
+    setHTML($('collectionStatus'),runtimeTable(['Collection','Source','State','Last good'],Object.entries(statuses).map(([name,s])=>[name,s.source,[s.state,s.errorCode].filter(Boolean).join(' · '),s.collectedAt])));
     setStatusText('sessionSource',collectionLabel(statuses.sessions));
     const selected=$('workSessionSelect').value;
-    $('workSessionSelect').innerHTML=(D.sessions||[]).map(s=>'<option value="'+esc(s.key)+'">'+esc(s.name||s.key)+'</option>').join('');
-    if((D.sessions||[]).some(s=>s.key===selected))$('workSessionSelect').value=selected;
     const noSessions=!(D.sessions||[]).length;
+    setHTML($('workSessionSelect'),noSessions?'<option value="">No sessions reported</option>':D.sessions.map(s=>'<option value="'+esc(s.key)+'">'+esc(s.name||s.key)+'</option>').join(''));
+    if((D.sessions||[]).some(s=>s.key===selected))$('workSessionSelect').value=selected;
     $('workSessionSelect').disabled=noSessions;
-    if(noSessions)$('workSessionSelect').innerHTML='<option value="">No sessions reported</option>';
     $('workSessionInspect').disabled=noSessions;
     $('nativeSession').hidden=noSessions;
 	this.linkSession();
@@ -1584,19 +1623,19 @@ const RuntimePanels = {
     this.renderTasks(D);
 	this.renderHealth(D);
 	for(const [id,rows] of [['operationJob',(D.crons||[]).map(c=>[c.id,c.name||c.id])],['operationRun',(D.sessions||[]).flatMap(s=>(s.active===true&&Array.isArray(s.activeRunIds)?s.activeRunIds:[]).map(run=>[JSON.stringify([s.key,run]),s.name+' · '+run]))]]){
-	  const selected=$(id).value;$(id).innerHTML=rows.map(([value,label])=>'<option value="'+esc(value)+'">'+esc(label)+'</option>').join('');if(rows.some(([value])=>value===selected))$(id).value=selected;
+	  const selected=$(id).value;setHTML($(id),rows.map(([value,label])=>'<option value="'+esc(value)+'">'+esc(label)+'</option>').join(''));if(rows.some(([value])=>value===selected))$(id).value=selected;
 	}
-    $('sessionWork').innerHTML=runtimeTable(['Session','Activity','Exact runs','Placement','Visibility','Goal','Goal state','Tokens / budget'],(D.sessions||[]).map(s=>[s.name,runtimeActivity(s),Array.isArray(s.activeRunIds)?s.activeRunIds.join(', ')||'None':null,s.placement?.state||s.placement?.kind,s.visibility,s.goal?.objective||'No goal',s.goal?s.goal.status:'Not applicable',s.goal?String(s.goal.tokensUsed??'?')+' / '+String(s.goal.tokenBudget??'unlimited'):'Not applicable']));
-    $('memoryHealth').innerHTML='<p>'+esc(collectionLabel(statuses.memory))+'</p>'+runtimeTable(['Agent','Provider','Embedding checked','Embedding ready','Dreaming','Short-term','Promoted today','Next maintenance'],(D.memory||[]).map(m=>[m.agentId,m.provider,m.embedding?.checked,m.embedding?.checked===false?'Not checked':m.embedding?.ok,m.dreaming?.enabled,m.dreaming?.shortTermCount,m.dreaming?.promotedToday,Object.entries(m.dreaming?.phases||{}).map(([phase,s])=>phase+': '+formatAbsTime(s.nextRunAtMs)).join(' · ')]));
-    $('memoryIndexHealth').innerHTML='<p>'+esc(collectionLabel(statuses.memoryIndex))+'</p>'+runtimeTable(['Agent','Model','Files','Chunks','Dirty'],(D.memoryIndex||[]).map(m=>[m.agentId,m.status?.model,m.status?.files,m.status?.chunks,m.status?.dirty]));
-    $('channelAccounts').innerHTML='<p>'+esc(collectionLabel(statuses.channels))+'</p>'+runtimeTable(['Channel','Account','Configured','Running','Connected','Probe OK','Error reported'],(D.channels||[]).map(c=>[c.channel,c.accountId,c.configured,c.running,c.connected,c.probe?.ok??'Not probed',c.hasError]));
-    $('pluginInventory').innerHTML='<p>'+esc(collectionLabel(statuses.pluginInventory))+'</p>'+runtimeTable(['ID','Version','Origin','Enabled','Load state','Tools'],(D.pluginInventory||[]).map(p=>[p.id,p.version||'Not reported',p.origin,p.enabled,p.status,(p.toolNames||[]).join(', ')||'None reported']));
-    $('skillInventory').innerHTML='<p>'+esc(collectionLabel(statuses.skillInventory))+'</p>'+runtimeTable(['Agent','Skill','Eligible','Model visible','Disabled','Missing requirements'],(D.skillInventory||[]).map(s=>[s.agentId,s.name,s.eligible,s.modelVisible,s.disabled,Object.entries(s.missing||{}).filter(([,v])=>v?.length).map(([k,v])=>k+': '+v.join(', ')).join(' · ')||'None']));
-	$('modelReadiness').innerHTML='<p>'+esc(collectionLabel(statuses.modelReadiness))+'</p>'+runtimeTable(['Agent','Model','Allowed','Default','Catalog name','Reported auth kind','Missing provider in use','Interpretation'],(D.modelReadiness||[]).map(m=>[m.agentId,m.modelId,m.allowed,m.default,m.catalogName,m.authKind,m.missingProviderInUse,modelAuthExplanation(m)]));
+    setHTML($('sessionWork'),runtimeTable(['Session','Activity','Exact runs','Placement','Visibility','Goal','Goal state','Tokens / budget'],(D.sessions||[]).map(s=>[s.name,runtimeActivity(s),Array.isArray(s.activeRunIds)?s.activeRunIds.join(', ')||'None':null,s.placement?.state||s.placement?.kind,s.visibility,s.goal?.objective||'No goal',s.goal?s.goal.status:'Not applicable',s.goal?String(s.goal.tokensUsed??'?')+' / '+String(s.goal.tokenBudget??'unlimited'):'Not applicable'])));
+    setHTML($('memoryHealth'),'<p>'+esc(collectionLabel(statuses.memory))+'</p>'+runtimeTable(['Agent','Provider','Embedding checked','Embedding ready','Dreaming','Short-term','Promoted today','Next maintenance'],(D.memory||[]).map(m=>[m.agentId,m.provider,m.embedding?.checked,m.embedding?.checked===false?'Not checked':m.embedding?.ok,m.dreaming?.enabled,m.dreaming?.shortTermCount,m.dreaming?.promotedToday,Object.entries(m.dreaming?.phases||{}).map(([phase,s])=>phase+': '+formatAbsTime(s.nextRunAtMs)).join(' · ')])));
+    setHTML($('memoryIndexHealth'),'<p>'+esc(collectionLabel(statuses.memoryIndex))+'</p>'+runtimeTable(['Agent','Model','Files','Chunks','Dirty'],(D.memoryIndex||[]).map(m=>[m.agentId,m.status?.model,m.status?.files,m.status?.chunks,m.status?.dirty])));
+    setHTML($('channelAccounts'),'<p>'+esc(collectionLabel(statuses.channels))+'</p>'+runtimeTable(['Channel','Account','Configured','Running','Connected','Probe OK','Error reported'],(D.channels||[]).map(c=>[c.channel,c.accountId,c.configured,c.running,c.connected,c.probe?.ok??'Not probed',c.hasError])));
+    setHTML($('pluginInventory'),'<p>'+esc(collectionLabel(statuses.pluginInventory))+'</p>'+runtimeTable(['ID','Version','Origin','Enabled','Load state','Tools'],(D.pluginInventory||[]).map(p=>[p.id,p.version||'Not reported',p.origin,p.enabled,p.status,(p.toolNames||[]).join(', ')||'None reported'])));
+    setHTML($('skillInventory'),'<p>'+esc(collectionLabel(statuses.skillInventory))+'</p>'+runtimeTable(['Agent','Skill','Eligible','Model visible','Disabled','Missing requirements'],(D.skillInventory||[]).map(s=>[s.agentId,s.name,s.eligible,s.modelVisible,s.disabled,Object.entries(s.missing||{}).filter(([,v])=>v?.length).map(([k,v])=>k+': '+v.join(', ')).join(' · ')||'None'])));
+	setHTML($('modelReadiness'),'<p>'+esc(collectionLabel(statuses.modelReadiness))+'</p>'+runtimeTable(['Agent','Model','Allowed','Default','Catalog name','Reported auth kind','Missing provider in use','Interpretation'],(D.modelReadiness||[]).map(m=>[m.agentId,m.modelId,m.allowed,m.default,m.catalogName,m.authKind,m.missingProviderInUse,modelAuthExplanation(m)])));
 	const backup=D.diagnostics?.backup||{};
-	$('backupHealth').innerHTML='<p>Status: '+esc(collectionLabel(statuses.diagnostics))+' · Configuration: '+esc(collectionLabel(statuses.configuration))+'</p>'+runtimeTable(['Diagnostic','Reported value'],[['Backup enabled (runtime status)',backup.enabled??'Runtime does not report backup enablement'],['Backup enabled (explicit config)',D.agentConfig?.backupConfig?.enabled??'Not explicitly configured'],['Last attempt',backupTimestamp(backup,'attempt')==null?'Runtime does not report backup attempts':formatAbsTime(backupTimestamp(backup,'attempt'))],['Last success',backupTimestamp(backup,'success')==null?'Runtime does not report backup success':formatAbsTime(backupTimestamp(backup,'success'))],['Diagnostics enabled (explicit config)',D.agentConfig?.diagnosticConfig?.enabled??'Not explicitly configured'],['OpenTelemetry enabled (explicit config)',D.agentConfig?.diagnosticConfig?.otel?.enabled??'Not explicitly configured']])+'<p>Omitted configuration does not establish the effective default. Scheduled jobs do not prove successful or restorable backups.</p>';
+	setHTML($('backupHealth'),'<p>Status: '+esc(collectionLabel(statuses.diagnostics))+' · Configuration: '+esc(collectionLabel(statuses.configuration))+'</p>'+runtimeTable(['Diagnostic','Reported value'],[['Backup enabled (runtime status)',backup.enabled??'Runtime does not report backup enablement'],['Backup enabled (explicit config)',D.agentConfig?.backupConfig?.enabled??'Not explicitly configured'],['Last attempt',backupTimestamp(backup,'attempt')==null?'Runtime does not report backup attempts':formatAbsTime(backupTimestamp(backup,'attempt'))],['Last success',backupTimestamp(backup,'success')==null?'Runtime does not report backup success':formatAbsTime(backupTimestamp(backup,'success'))],['Diagnostics enabled (explicit config)',D.agentConfig?.diagnosticConfig?.enabled??'Not explicitly configured'],['OpenTelemetry enabled (explicit config)',D.agentConfig?.diagnosticConfig?.otel?.enabled??'Not explicitly configured']])+'<p>Omitted configuration does not establish the effective default. Scheduled jobs do not prove successful or restorable backups.</p>');
 	const pricing=D.agentConfig?.modelPricing||{},missing=D.usageAll?.missingCostByModel||{};
-	$('pricingCoverage').innerHTML='<p>Usage: '+esc(collectionLabel(statuses.usageAll))+' · Configuration: '+esc(collectionLabel(statuses.configuration))+'</p>'+runtimeTable(['Exact provider/model ID','Unpriced entries (all history)','Configured input','Output','Cache read','Cache write'],Object.keys(missing).map(id=>[id,missing[id],...['input','output','cacheRead','cacheWrite'].map(k=>Number.isFinite(pricing[id]?.[k])?runtimeMoney(pricing[id][k],6):'Not reported in configuration')]))+'<p>Configured rates are USD per million tokens, not provider invoices. Verify the exact provider/model ID and actual plan rates in the selected runtime. All-zero defaults do not establish free usage. Recheck usage after a supported upstream pricing refresh; do not rewrite historical records or fabricate prices.</p>';
+	setHTML($('pricingCoverage'),'<p>Usage: '+esc(collectionLabel(statuses.usageAll))+' · Configuration: '+esc(collectionLabel(statuses.configuration))+'</p>'+runtimeTable(['Exact provider/model ID','Unpriced entries (all history)','Configured input','Output','Cache read','Cache write'],Object.keys(missing).map(id=>[id,missing[id],...['input','output','cacheRead','cacheWrite'].map(k=>Number.isFinite(pricing[id]?.[k])?runtimeMoney(pricing[id][k],6):'Not reported in configuration')]))+'<p>Configured rates are USD per million tokens, not provider invoices. Verify the exact provider/model ID and actual plan rates in the selected runtime. All-zero defaults do not establish free usage. Recheck usage after a supported upstream pricing refresh; do not rewrite historical records or fabricate prices.</p>');
   },
   renderTasks(D){
     const rows=filterRuntimeTasks(D.tasks||[],$('taskStatus').value,$('taskRuntime').value,$('taskSearch').value);
@@ -1606,7 +1645,7 @@ const RuntimePanels = {
     $('taskPrev').disabled=this.taskPage===0;
     $('taskNext').disabled=(this.taskPage+1)*this.pageSize>=rows.length;
     setStatusText('taskSource',collectionLabel(D.collections?.tasks));
-    $('taskLedger').innerHTML=runtimeTable(['Task / stable ID','Agent','Runtime','Status','Owner / session','Run ID','Progress','Delivery','Duration'],page.map(t=>[(t.task||'')+' · '+t.id,taskAgentLabel(t),t.runtime,t.status,taskOwnerLabel(t),t.runId,t.progressSummary||t.terminalSummary,t.deliveryStatus,t.durationSec==null?null:t.durationSec+'s']));
+    setHTML($('taskLedger'),runtimeTable(['Task / stable ID','Agent','Runtime','Status','Owner / session','Run ID','Progress','Delivery','Duration'],page.map(t=>[(t.task||'')+' · '+t.id,taskAgentLabel(t),t.runtime,t.status,taskOwnerLabel(t),t.runId,t.progressSummary||t.terminalSummary,t.deliveryStatus,t.durationSec==null?null:t.durationSec+'s'])));
   },
   renderHealth(D){
     if(D?.collections?.runtimeHealth?.source!=='gateway.status')return;
