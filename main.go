@@ -41,11 +41,30 @@ const defaultBindHost = "127.0.0.1"
 
 // HTTP server timeouts. WriteTimeout is generous because AI chat responses
 // stream from the gateway and can be slow; IdleTimeout caps keep-alive reuse.
+// ReadHeaderTimeout is tighter than ReadTimeout so a slow-header (Slowloris)
+// client releases its connection sooner, and MaxHeaderBytes bounds per-request
+// header memory well below net/http's 1 MiB default.
 const (
-	httpReadTimeout  = 30 * time.Second
-	httpWriteTimeout = 90 * time.Second
-	httpIdleTimeout  = 120 * time.Second
+	httpReadHeaderTimeout = 10 * time.Second
+	httpReadTimeout       = 30 * time.Second
+	httpWriteTimeout      = 90 * time.Second
+	httpIdleTimeout       = 120 * time.Second
+	httpMaxHeaderBytes    = 64 << 10
 )
+
+// newHTTPServer returns the dashboard's http.Server for addr with every
+// timeout and the header size limit set.
+func newHTTPServer(addr string, handler http.Handler) *http.Server {
+	return &http.Server{
+		Addr:              addr,
+		Handler:           handler,
+		ReadHeaderTimeout: httpReadHeaderTimeout,
+		ReadTimeout:       httpReadTimeout,
+		WriteTimeout:      httpWriteTimeout,
+		IdleTimeout:       httpIdleTimeout,
+		MaxHeaderBytes:    httpMaxHeaderBytes,
+	}
+}
 
 func listenAddr(host string, port int) string {
 	return net.JoinHostPort(host, strconv.Itoa(port))
@@ -223,13 +242,7 @@ func Main() int {
 	srv.PreWarm()
 
 	addr := listenAddr(*bind, *port)
-	httpSrv := &http.Server{
-		Addr:         addr,
-		Handler:      srv,
-		ReadTimeout:  httpReadTimeout,
-		WriteTimeout: httpWriteTimeout,
-		IdleTimeout:  httpIdleTimeout,
-	}
+	httpSrv := newHTTPServer(addr, srv)
 
 	fmt.Printf("[dashboard] v%s\n", version)
 	fmt.Printf("[dashboard] Serving on http://%s/\n", addr)
