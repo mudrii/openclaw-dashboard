@@ -236,9 +236,12 @@ func TestParseTokenUsageFile_MatchesReferenceOnEdgeLines(t *testing.T) {
 }
 
 func TestParseTokenUsageFile_MatchesReferenceOnFixture(t *testing.T) {
-	basePath, _ := writeTokenUsageFixture(t, t.TempDir(), 12, 1200)
+	// 10 files covers every per-file shape (f%3, f%8, f%10) and 520 lines
+	// crosses the mid-session model switch at line 499, while keeping the
+	// oracle affordable under -race.
+	basePath, _ := writeTokenUsageFixture(t, t.TempDir(), 10, 520)
 	paths, err := filepath.Glob(filepath.Join(basePath, "*/sessions/*.jsonl*"))
-	if err != nil || len(paths) != 12 {
+	if err != nil || len(paths) != 10 {
 		t.Fatalf("fixture paths = %d, err = %v", len(paths), err)
 	}
 	for _, loc := range []*time.Location{time.UTC, time.FixedZone("minus7", -7*3600)} {
