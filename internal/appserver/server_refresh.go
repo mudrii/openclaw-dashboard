@@ -89,6 +89,14 @@ func (s *Server) runRefresh(done chan struct{}) {
 // The raw byte slice is treated as immutable (only ever replaced wholesale)
 // and is returned as-is.
 func (s *Server) loadData() ([]byte, map[string]any, error) {
+	return s.loadCachedData(true)
+}
+
+// loadCachedData implements loadData. With wantParsed false it returns a nil
+// map and skips the clone, so a warm /api/refresh, which only serves the raw
+// bytes, does not copy the parsed map on every request. The clone, when
+// taken, happens under dataMu because the cached map may be written in place.
+func (s *Server) loadCachedData(wantParsed bool) ([]byte, map[string]any, error) {
 	dataPath := filepath.Join(s.dir, "data.json")
 	stat, err := os.Stat(dataPath)
 	if err != nil {
@@ -99,7 +107,10 @@ func (s *Server) loadData() ([]byte, map[string]any, error) {
 	s.dataMu.RLock()
 	if s.cachedDataRaw != nil && s.cachedData != nil && mtime.Equal(s.cachedDataMtime) && size == s.cachedDataSize {
 		raw := s.cachedDataRaw
-		parsed := maps.Clone(s.cachedData)
+		var parsed map[string]any
+		if wantParsed {
+			parsed = maps.Clone(s.cachedData)
+		}
 		s.dataMu.RUnlock()
 		return raw, parsed, nil
 	}
@@ -126,14 +137,17 @@ func (s *Server) loadData() ([]byte, map[string]any, error) {
 	s.dataMu.Lock()
 	// Double-check: another goroutine may have updated while we read/parsed
 	if s.cachedDataRaw != nil && s.cachedData != nil && mtime.Equal(s.cachedDataMtime) && size == s.cachedDataSize {
-		raw = s.cachedDataRaw
-		parsed = maps.Clone(s.cachedData)
+		raw, parsed = s.cachedDataRaw, s.cachedData
 	} else {
 		s.cachedDataRaw = raw
 		s.cachedData = parsed
 		s.cachedDataMtime = mtime
 		s.cachedDataSize = size
+	}
+	if wantParsed {
 		parsed = maps.Clone(parsed)
+	} else {
+		parsed = nil
 	}
 	s.dataMu.Unlock()
 	return raw, parsed, nil
@@ -142,7 +156,7 @@ func (s *Server) loadData() ([]byte, map[string]any, error) {
 // GetDataRawCached returns the cached data.json bytes, re-reading the file when
 // its mtime or size changed.
 func (s *Server) GetDataRawCached() ([]byte, error) {
-	raw, _, err := s.loadData()
+	raw, _, err := s.loadCachedData(false)
 	return raw, err
 }
 
