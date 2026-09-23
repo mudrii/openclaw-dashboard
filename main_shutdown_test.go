@@ -37,11 +37,14 @@ func TestShutdownSequence(t *testing.T) {
 		t.Fatalf("build failed: %v", err)
 	}
 
+	env := hermeticDashboardEnv(t, dir)
+
 	// Pick a free port to avoid collisions with concurrent tests.
 	port := freePort(t)
 
 	t.Run("single SIGINT exits within 6s", func(t *testing.T) {
 		cmd := exec.Command(bin, "--bind", "127.0.0.1", "--port", strconv.Itoa(port))
+		cmd.Env = env
 		cmd.Stdout = os.Stderr
 		cmd.Stderr = os.Stderr
 		cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
@@ -64,6 +67,7 @@ func TestShutdownSequence(t *testing.T) {
 	t.Run("single SIGTERM exits within 6s", func(t *testing.T) {
 		port3 := freePort(t)
 		cmd := exec.Command(bin, "--bind", "127.0.0.1", "--port", strconv.Itoa(port3))
+		cmd.Env = env
 		cmd.Stdout = os.Stderr
 		cmd.Stderr = os.Stderr
 		cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
@@ -85,6 +89,7 @@ func TestShutdownSequence(t *testing.T) {
 	t.Run("second SIGINT accelerates exit", func(t *testing.T) {
 		port2 := freePort(t)
 		cmd := exec.Command(bin, "--bind", "127.0.0.1", "--port", strconv.Itoa(port2))
+		cmd.Env = env
 		cmd.Stdout = os.Stderr
 		cmd.Stderr = os.Stderr
 		cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
@@ -112,6 +117,29 @@ func TestShutdownSequence(t *testing.T) {
 			t.Fatalf("second SIGINT did not accelerate exit: %v", d)
 		}
 	})
+}
+
+// hermeticDashboardEnv keeps a dashboard binary built into dir away from the
+// developer's OpenClaw install: dir's config.json selects a missing CLI and a
+// closed gateway port, and
+// the environment supplies an empty home and state directory and a PATH
+// without the openclaw CLI. Later duplicates win in exec's environment.
+func hermeticDashboardEnv(t *testing.T, dir string) []string {
+	t.Helper()
+	config := `{"openclaw":{"binary":` + strconv.Quote(filepath.Join(dir, "missing-openclaw")) + `},` +
+		`"ai":{"gatewayPort":` + strconv.Itoa(freePort(t)) + `}}`
+	if err := os.WriteFile(filepath.Join(dir, "config.json"), []byte(config), 0o600); err != nil {
+		t.Fatalf("write config.json: %v", err)
+	}
+	home := t.TempDir()
+	return append(os.Environ(),
+		"HOME="+home,
+		"OPENCLAW_HOME="+filepath.Join(home, ".openclaw"),
+		"OPENCLAW_DASHBOARD_DIR="+dir,
+		"OPENCLAW_CONTAINER=",
+		"OPENCLAW_STATE_DIR=",
+		"PATH=/usr/bin:/bin:/usr/sbin:/sbin",
+	)
 }
 
 // freePort returns an available TCP port on 127.0.0.1.

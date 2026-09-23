@@ -42,10 +42,8 @@ func TestRefreshScriptPreservesRuntimeSelection(t *testing.T) {
 			if err := os.WriteFile(path, script, 0o755); err != nil {
 				t.Fatal(err)
 			}
-			fake := "#!/bin/sh\nprintf 'SELECTION=%s|%s|%s|%s\\n' \"${OPENCLAW_HOME-}\" \"${OPENCLAW_STATE_DIR-}\" \"${OPENCLAW_CONTAINER-}\" \"$*\"\n"
-			if err := os.WriteFile(filepath.Join(dir, "openclaw-dashboard"), []byte(fake), 0o755); err != nil {
-				t.Fatal(err)
-			}
+			fake := "printf 'SELECTION=%s|%s|%s|%s\\n' \"${OPENCLAW_HOME-}\" \"${OPENCLAW_STATE_DIR-}\" \"${OPENCLAW_CONTAINER-}\" \"$*\"\n"
+			writeFakeCLI(t, dir, "openclaw-dashboard", fake)
 			cmd := exec.CommandContext(t.Context(), "/bin/bash", path)
 			// Selection and validation belong to the binary, including missing state.
 			cmd.Env = []string{"PATH=/usr/bin:/bin", "HOME=" + filepath.Join(dir, "home"), "OPENCLAW_HOME=" + tc.home, "OPENCLAW_STATE_DIR=" + tc.state, "OPENCLAW_CONTAINER=" + tc.container}

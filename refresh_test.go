@@ -568,6 +568,14 @@ func TestBuildSIDToKeyMap(t *testing.T) {
 
 // --------------- runRefreshCollector with pre-loaded Config ---------------
 
+// missingOpenclawBinary returns an OpenClaw CLI path that does not exist, so a
+// collector run exercises file collection without executing the developer's
+// installed CLI or contacting its gateway.
+func missingOpenclawBinary(t *testing.T) string {
+	t.Helper()
+	return filepath.Join(t.TempDir(), "missing-openclaw")
+}
+
 func TestRunRefreshCollector_AcceptsConfig(t *testing.T) {
 	dir := t.TempDir()
 	openclawPath := t.TempDir()
@@ -575,6 +583,7 @@ func TestRunRefreshCollector_AcceptsConfig(t *testing.T) {
 	os.MkdirAll(agentsDir, 0o755)
 
 	cfg := Config{Timezone: "UTC"}
+	cfg.Openclaw.Binary = missingOpenclawBinary(t)
 	err := runRefreshCollectorWithContext(context.Background(), dir, openclawPath, cfg)
 	if err != nil {
 		t.Fatalf("runRefreshCollector with config: %v", err)
@@ -591,7 +600,9 @@ func TestRunRefreshCollector_WithoutConfig(t *testing.T) {
 	agentsDir := filepath.Join(openclawPath, "agents", "main", "sessions")
 	os.MkdirAll(agentsDir, 0o755)
 
-	err := runRefreshCollectorWithContext(context.Background(), dir, openclawPath, loadConfig(dir))
+	cfg := loadConfig(dir)
+	cfg.Openclaw.Binary = missingOpenclawBinary(t)
+	err := runRefreshCollectorWithContext(context.Background(), dir, openclawPath, cfg)
 	if err != nil {
 		t.Fatalf("runRefreshCollector without config: %v", err)
 	}

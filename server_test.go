@@ -29,7 +29,8 @@ func testServer(t *testing.T, dir string) *Server {
 	cfg := defaultConfig()
 	cfg.AI.Enabled = false
 	cfg.Refresh.IntervalSeconds = 1
-	return settleOnCleanup(t, NewServer(dir, "test", cfg, "", []byte("<head><body>__VERSION__</body>"), t.Context()))
+	isolateOpenclawCLI(t, &cfg)
+	return settleOnCleanup(t, hermeticSystem(NewServer(dir, "test", cfg, "", []byte("<head><body>__VERSION__</body>"), t.Context())))
 }
 
 // settleOnCleanup waits for srv's in-flight refresh when the test ends. The
@@ -39,6 +40,25 @@ func settleOnCleanup(t *testing.T, srv *Server) *Server {
 	t.Helper()
 	t.Cleanup(func() { _ = srv.inner.WaitRefresh(context.Background()) })
 	return srv
+}
+
+// hermeticSystem replaces srv's host, npm and OpenClaw probes with canned
+// results so /api/system fixtures never spawn top/vm_stat or the developer's
+// openclaw CLI, and never reach the network. Disk collection stays real.
+func hermeticSystem(srv *Server) *Server {
+	srv.systemSvc.StubHostProbesForTest()
+	srv.systemSvc.StubOpenclawProbesForTest()
+	return srv
+}
+
+// isolateOpenclawCLI points the OpenClaw target at a missing binary unless the
+// test chose one, so refreshes and runtime reads triggered by a fixture never
+// execute the developer's installed CLI or contact its gateway.
+func isolateOpenclawCLI(t *testing.T, cfg *Config) {
+	t.Helper()
+	if cfg.Openclaw.Binary == "" {
+		cfg.Openclaw.Binary = missingOpenclawBinary(t)
+	}
 }
 
 // isolateOpenclawHome points OPENCLAW_HOME at an empty temp dir unless the test
@@ -66,7 +86,8 @@ func chatEnabledTestServer(t *testing.T, dir string) *Server {
 	}
 	cfg := defaultConfig()
 	cfg.AI.Enabled = true
-	return settleOnCleanup(t, NewServer(dir, "test", cfg, "tok", []byte("<head></head>"), t.Context()))
+	isolateOpenclawCLI(t, &cfg)
+	return settleOnCleanup(t, hermeticSystem(NewServer(dir, "test", cfg, "tok", []byte("<head></head>"), t.Context())))
 }
 
 func testServerWithConfig(t *testing.T, dir string, cfg Config) *Server {
@@ -75,7 +96,8 @@ func testServerWithConfig(t *testing.T, dir string, cfg Config) *Server {
 	t.Setenv("OPENCLAW_STATE_DIR", "")
 	isolateOpenclawHome(t)
 	cfg.AI.Enabled = false
-	return settleOnCleanup(t, NewServer(dir, "test", cfg, "", []byte("<head><body>__VERSION__</body>"), t.Context()))
+	isolateOpenclawCLI(t, &cfg)
+	return settleOnCleanup(t, hermeticSystem(NewServer(dir, "test", cfg, "", []byte("<head><body>__VERSION__</body>"), t.Context())))
 }
 
 // --- Cache coherence ---

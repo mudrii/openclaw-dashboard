@@ -281,18 +281,13 @@ func TestCollectOpenclawRuntime_GracefulDegradation(t *testing.T) {
 	parts := strings.Split(gw.URL, ":")
 	port, _ := strconv.Atoi(parts[len(parts)-1])
 
-	binDir := t.TempDir()
-	fake := filepath.Join(binDir, "openclaw")
-	script := `#!/bin/sh
-if [ "$1" = "status" ] && [ "$2" = "--json" ]; then
+	script := `if [ "$1" = "status" ] && [ "$2" = "--json" ]; then
   echo '{"connectLatencyMs":42,"security":{"mode":"strict"}}'
   exit 0
 fi
 exit 1
 `
-	if err := os.WriteFile(fake, []byte(script), 0o755); err != nil {
-		t.Fatalf("write fake openclaw: %v", err)
-	}
+	fake := writeFakeCLI(t, t.TempDir(), "openclaw", script)
 
 	oc := collectOpenclawRuntime(context.Background(), fake, 1500, port, SystemVersions{Openclaw: "2026.3.7", Latest: "2026.3.8"}, false)
 	if !oc.Gateway.Live || !oc.Gateway.Ready {
@@ -514,6 +509,8 @@ func TestDetectGatewayFallback_UsesTimeoutClient(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		select {
 		case <-time.After(1 * time.Second):
+		case <-r.Context().Done():
+			return
 		case <-ctx.Done():
 			return
 		}
@@ -841,19 +838,14 @@ func TestCollectOpenclawRuntime_ReceivesVersionsFromCaller(t *testing.T) {
 	parts := strings.Split(gw.URL, ":")
 	port, _ := strconv.Atoi(parts[len(parts)-1])
 
-	binDir := t.TempDir()
-	fake := filepath.Join(binDir, "openclaw")
 	// status --json returns empty JSON (no version fields)
-	script := `#!/bin/sh
-if [ "$1" = "status" ] && [ "$2" = "--json" ]; then
+	script := `if [ "$1" = "status" ] && [ "$2" = "--json" ]; then
   echo '{"connectLatencyMs":5}'
   exit 0
 fi
 exit 1
 `
-	if err := os.WriteFile(fake, []byte(script), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	fake := writeFakeCLI(t, t.TempDir(), "openclaw", script)
 
 	inputVersions := SystemVersions{Openclaw: "2026.3.9-test", Latest: "2026.3.10"}
 	oc := collectOpenclawRuntime(context.Background(), fake, 1500, port, inputVersions, false)
@@ -886,18 +878,13 @@ func TestCollectOpenclawRuntime_StatusOverridesCallerVersions(t *testing.T) {
 	parts := strings.Split(gw.URL, ":")
 	port, _ := strconv.Atoi(parts[len(parts)-1])
 
-	binDir := t.TempDir()
-	fake := filepath.Join(binDir, "openclaw")
-	script := `#!/bin/sh
-if [ "$1" = "status" ] && [ "$2" = "--json" ]; then
+	script := `if [ "$1" = "status" ] && [ "$2" = "--json" ]; then
   echo '{"currentVersion":"2026.3.11-live","latestVersion":"2026.3.12"}'
   exit 0
 fi
 exit 1
 `
-	if err := os.WriteFile(fake, []byte(script), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	fake := writeFakeCLI(t, t.TempDir(), "openclaw", script)
 
 	inputVersions := SystemVersions{Openclaw: "2026.3.9-old", Latest: "2026.3.10-old"}
 	oc := collectOpenclawRuntime(context.Background(), fake, 1500, port, inputVersions, false)
@@ -1056,19 +1043,14 @@ func TestCollectOpenclawRuntime_StatusParsesStdoutOnNonZeroExit(t *testing.T) {
 	parts := strings.Split(gw.URL, ":")
 	port, _ := strconv.Atoi(parts[len(parts)-1])
 
-	binDir := t.TempDir()
-	fake := filepath.Join(binDir, "openclaw")
 	// status --json exits 1 but emits useful JSON to stdout
-	script := `#!/bin/sh
-if [ "$1" = "status" ] && [ "$2" = "--json" ]; then
+	script := `if [ "$1" = "status" ] && [ "$2" = "--json" ]; then
   echo '{"currentVersion":"2026.3.9","latestVersion":"2026.3.10","connectLatencyMs":55}'
   exit 1
 fi
 exit 1
 `
-	if err := os.WriteFile(fake, []byte(script), 0o755); err != nil {
-		t.Fatalf("write fake openclaw: %v", err)
-	}
+	fake := writeFakeCLI(t, t.TempDir(), "openclaw", script)
 
 	inputVer := SystemVersions{Openclaw: "2026.3.8-fallback", Latest: "2026.3.10"}
 	oc := collectOpenclawRuntime(context.Background(), fake, 2000, port, inputVer, false)
@@ -1136,10 +1118,7 @@ func TestHandleSystem_GatewayReasonForContainerTarget(t *testing.T) {
 			// and no status error, so any reason reported comes from the target
 			// decision rather than from a failed command.
 			binDir := t.TempDir()
-			fake := filepath.Join(binDir, "openclaw")
-			if err := os.WriteFile(fake, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
-				t.Fatalf("write fake openclaw: %v", err)
-			}
+			writeFakeCLI(t, binDir, "openclaw", "exit 0\n")
 			t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 
 			cfg := defaultConfig()
@@ -1147,6 +1126,9 @@ func TestHandleSystem_GatewayReasonForContainerTarget(t *testing.T) {
 			cfg.Openclaw = tc.target
 			cfg.System.GatewayPort = port
 			srv := NewServer(t.TempDir(), "test", cfg, "", []byte("<head><body>__VERSION__</body>"), t.Context())
+			// The OpenClaw probes under test stay real (fake CLI + stub gateway);
+			// only the host metrics and npm lookup are canned.
+			srv.systemSvc.StubHostProbesForTest()
 
 			w := httptest.NewRecorder()
 			srv.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "http://localhost/api/system", nil))

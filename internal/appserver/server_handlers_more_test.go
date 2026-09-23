@@ -132,17 +132,15 @@ func TestHandleSystem_Enabled(t *testing.T) {
 	refreshFn := func(ctx context.Context, d, o string, cfg appconfig.Config) error { return nil }
 	s := NewServer(dir, "1.0.0-test", cfg, "", []byte("<html><head></head><body></body></html>"), ctx, refreshFn)
 
-	// The enabled path is data-dependent: GetJSON collects host metrics
-	// synchronously on first call (cold path) and, on most dev/CI hosts, at
-	// least one collector succeeds → 200 + cached payload. We cannot force a
-	// deterministic 200 here: metricsPayload is unexported in package appsystem
-	// and the only test seam (SetMetricsTimestampForTest) sets the timestamp, not
-	// the bytes — priming the payload from this package would require a new
-	// exported seam, i.e. a production change, which is out of scope for a
-	// tests-only fix. So we read whatever status the host yields and assert the
-	// handler's status/body propagation against THAT value, plus the headers and
-	// HEAD contract that must hold on every enabled response regardless of status.
+	// Canned host and OpenClaw probes make the cold collection deterministic
+	// and hermetic (no top/vm_stat, no openclaw CLI, no network); only the
+	// disk statfs stays real, so the enabled path answers 200.
+	s.systemSvc.StubHostProbesForTest()
+	s.systemSvc.StubOpenclawProbesForTest()
 	status, body := s.systemSvc.GetJSON(context.Background())
+	if status != http.StatusOK {
+		t.Fatalf("GetJSON status = %d, body=%s, want 200 from stubbed probes", status, body)
+	}
 
 	t.Run("GET propagates status + body, Content-Type + Cache-Control", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "http://localhost/api/system", nil)
