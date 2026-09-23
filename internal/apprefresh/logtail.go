@@ -382,18 +382,10 @@ func ParseLogTimestamp(candidates ...string) (time.Time, string) {
 
 	for _, candidate := range candidates {
 		c := strings.TrimSpace(candidate)
-		if c == "" {
+		if c == "" || !onlyTimestampBytes(c) {
 			continue
 		}
-		for _, layout := range []string{
-			time.RFC3339Nano,
-			time.RFC3339,
-			"2006-01-02 15:04:05.999999999",
-			"2006-01-02 15:04:05",
-			"2006-01-02T15:04:05.999999999",
-			"2006-01-02T15:04:05",
-			"2006-01-02T15:04:05Z",
-		} {
+		for _, layout := range logTimestampLayouts {
 			if parsed, err := time.ParseInLocation(layout, c, time.Local); err == nil {
 				return parsed, c
 			}
@@ -414,6 +406,35 @@ func ParseLogTimestamp(candidates ...string) (time.Time, string) {
 		}
 	}
 	return time.Time{}, ""
+}
+
+// logTimestampLayouts are the whole-string formats ParseLogTimestamp accepts,
+// tried in order.
+var logTimestampLayouts = []string{
+	time.RFC3339Nano,
+	time.RFC3339,
+	"2006-01-02 15:04:05.999999999",
+	"2006-01-02 15:04:05",
+	"2006-01-02T15:04:05.999999999",
+	"2006-01-02T15:04:05",
+	"2006-01-02T15:04:05Z",
+}
+
+// onlyTimestampBytes reports whether s consists solely of bytes some
+// logTimestampLayouts entry can match: digits, the '-' ':' 'T' ' ' separators,
+// '.' or ',' before fractional seconds, and the 'Z' '+' '-' zone designators.
+// Any other byte makes every layout fail, so a whole log line is rejected
+// without paying for (and allocating) one failed time.Parse per layout.
+func onlyTimestampBytes(s string) bool {
+	for i := range len(s) {
+		switch c := s[i]; {
+		case '0' <= c && c <= '9':
+		case c == '-', c == ':', c == 'T', c == ' ', c == '.', c == ',', c == 'Z', c == '+':
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 func classifySeverity(line, component string) string {
