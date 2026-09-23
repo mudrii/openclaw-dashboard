@@ -10,7 +10,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strconv"
-	"strings"
 	"testing"
 	"time"
 
@@ -373,45 +372,5 @@ func BenchmarkNormalizeErrorSignature(b *testing.B) {
 		for _, m := range msgs {
 			_ = NormalizeErrorSignature(m)
 		}
-	}
-}
-
-// TestBenchFixtureDataJSONDump writes the collector output for the bench
-// fixture to $APPREFRESH_GOLDEN_OUT (skipped otherwise). The fixture state is
-// generated once into $APPREFRESH_GOLDEN_STATE (reused when it exists) so two
-// builds can be compared byte-for-byte on identical input.
-func TestBenchFixtureDataJSONDump(t *testing.T) {
-	out := os.Getenv("APPREFRESH_GOLDEN_OUT")
-	stateRoot := os.Getenv("APPREFRESH_GOLDEN_STATE")
-	if out == "" || stateRoot == "" {
-		t.Skip("set APPREFRESH_GOLDEN_OUT and APPREFRESH_GOLDEN_STATE to dump the fixture snapshot")
-	}
-	stubCollectorSeams(t)
-	openclawPath := filepath.Join(stateRoot, "openclaw")
-	if _, err := os.Stat(openclawPath); err != nil {
-		buildLegacyBenchState(t, stateRoot, time.Now())
-	}
-	dashboardDir := t.TempDir()
-	cfg := benchCollectorConfig()
-	// Two passes: the second exercises the warm token cache and the
-	// previous-snapshot retention path.
-	for range 2 {
-		if err := RunRefreshCollector(context.Background(), dashboardDir, openclawPath, cfg); err != nil {
-			t.Fatal(err)
-		}
-	}
-	data, err := os.ReadFile(filepath.Join(dashboardDir, "data.json"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	var lines []string
-	for line := range strings.Lines(string(data)) {
-		if strings.Contains(line, `"lastRefresh`) || strings.Contains(line, `"collectedAt"`) || strings.Contains(line, `"attemptedAt"`) {
-			continue
-		}
-		lines = append(lines, line)
-	}
-	if err := os.WriteFile(out, []byte(strings.Join(lines, "")), 0o600); err != nil {
-		t.Fatal(err)
 	}
 }
