@@ -137,8 +137,9 @@ func buildLegacyBenchState(tb testing.TB, root string, now time.Time) string {
 				key = fmt.Sprintf("agent:%s:main-%d", agent, i)
 			}
 			// Spread activity over ~26h so a slice falls outside the 24h window;
-			// offsets avoid the 30-minute "active" boundary.
-			updated := now.Add(-time.Duration(i*16)*time.Minute - 7*time.Minute)
+			// offsets avoid the 30-minute "active" boundary, and the per-agent
+			// second keeps updatedAt unique so the session order is deterministic.
+			updated := now.Add(-time.Duration(i*16)*time.Minute - 7*time.Minute - time.Duration(ai)*time.Second)
 			entry := map[string]any{
 				"sessionId":     sid,
 				"updatedAt":     float64(updated.UnixMilli()),
@@ -201,7 +202,7 @@ func writeBenchTranscript(tb testing.TB, path string, now time.Time, seed int, m
 			continue
 		}
 		_, _ = fmt.Fprintf(w, `{"type":"message","id":"a-%d","timestamp":%q,"message":{"role":"assistant","content":[{"type":"text","text":"Here is the summary for item %d with several sentences of output text."}],"provider":%q,"model":%q,"usage":{"input":%d,"output":%d,"cacheRead":%d,"cacheWrite":0,"totalTokens":%d,"cost":{"input":0.01,"output":0.02,"cacheRead":0.001,"cacheWrite":0,"total":%.4f}},"stopReason":"stop"}}`+"\n",
-			j, ts, j, m.provider, m.id, 1000+j, 300+j, 5000+j, 6300+3*j, 0.031+float64(j)*0.0001)
+			j, ts, j, m.provider, m.id, 1000+j, 300+j, 5000+j, 6300+3*j, 0.031+float64(j)*0.0001+float64(len(m.provider+m.id))*0.001)
 	}
 	if err := w.Flush(); err != nil {
 		tb.Fatal(err)
@@ -405,7 +406,7 @@ func TestBenchFixtureDataJSONDump(t *testing.T) {
 	}
 	var lines []string
 	for line := range strings.Lines(string(data)) {
-		if strings.Contains(line, `"lastRefresh`) || strings.Contains(line, `"collectedAt"`) {
+		if strings.Contains(line, `"lastRefresh`) || strings.Contains(line, `"collectedAt"`) || strings.Contains(line, `"attemptedAt"`) {
 			continue
 		}
 		lines = append(lines, line)
