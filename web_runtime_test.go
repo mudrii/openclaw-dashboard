@@ -42,7 +42,13 @@ func TestRuntimeFrontendUnknownAndEscapedStates(t *testing.T) {
 	if start < 0 || end < start {
 		t.Fatal("runtime presentation helpers missing")
 	}
-	js := `const assert=require('node:assert/strict'); const esc=s=>String(s??'').replaceAll('<','&lt;').replaceAll('>','&gt;');
+	// Use the page's own esc so these assertions exercise the real escaping
+	// (including quotes) rather than a test-only stand-in.
+	escLine := regexp.MustCompile(`(?m)^const esc = .*$`).FindString(text)
+	if escLine == "" {
+		t.Fatal("esc helper missing from web/index.html")
+	}
+	js := `const assert=require('node:assert/strict'); ` + escLine + `
 const State={data:{timezone:'UTC'}};` + text[start:end] + `
 assert.equal(runtimeMoney(null),'Unknown');
 assert.equal(runtimeMoney(0),'$0.00');
@@ -69,6 +75,7 @@ assert.equal(runtimeActivity({active:true,activeRunIds:['run']}),'Running (1)');
 assert.equal(filterRuntimeTasks([{id:'a',status:'blocked',runtime:'subagent',task:'<script>'},{id:'b',status:'failed',runtime:'cron'}],'blocked','all','').length,1);
 assert.match(runtimeTable(['Name'], [['<script>']]),/&lt;script&gt;/);
 assert.doesNotMatch(runtimeTable(['Name'], [['<script>']]),/<script>/);
+assert.match(runtimeTable(['Name'], [['" onclick="x']]),/&quot; onclick=&quot;x/);
 `
 	cmd := exec.CommandContext(t.Context(), node, "-e", js)
 	if output, err := cmd.CombinedOutput(); err != nil {

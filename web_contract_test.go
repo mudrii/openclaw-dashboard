@@ -87,22 +87,19 @@ func TestIssue26FrontendFixtureContract(t *testing.T) {
 		t.Fatal(err)
 	}
 	html := string(index)
+	// Rendering behavior (cron diagnostics, channel health colours, runtime health
+	// rows, empty states, sub-agent run counts) is exercised against the real
+	// functions in scripts/frontend-regression.cjs. These snippets guard markup
+	// and wiring that the headless harness cannot observe.
 	for _, snippet := range []string{
+		// The readiness alert must be written with textContent, never innerHTML;
+		// the headless harness cannot distinguish the two.
 		"gwReadyAlertEl.querySelector('.alert-msg').textContent = alertMsg;",
 		"msg.textContent = alertMsg;",
-		"const diagnostics=Array.isArray(c.lastDiagnostics)?c.lastDiagnostics.filter(Boolean).join(' · '):'';",
-		"const flap=c.flapping?",
-		"const healthColor = ['unhealthy','disconnected','offline','error','down','failing'].includes(healthLc) ? 'var(--red)'",
-		"const tasks=ocStatus.tasks, evl=ocStatus.eventLoop, pc=ocStatus.pluginCompatibility, hb=ocStatus.lastHeartbeat;",
 		"data-section=\"runtime\"",
 		"'runtime':false",
-		"Runtime Health unavailable",
-		"No models detected",
-		"SR.provider && SR.provider !== '—'",
-		"No skill entries reported",
 		// Sub-agent panel post-migration: agent/duration/status columns, no cost.
 		"<th>Task</th><th>Agent</th><th class=\"r\">Duration</th><th>Status</th><th>Time</th>",
-		"$('subCostLbl').textContent=runs.length+(runs.length===1?' run':' runs');",
 		// Fetch failures must land in a dedicated always-present banner, not in
 		// #alertsSection, which only re-renders when the alerts payload changes.
 		`<div class="alert-item alert-critical" id="fetchError" role="alert" hidden></div>`,

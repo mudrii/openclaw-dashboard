@@ -18,13 +18,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'SF Pro','Helvetica Neue',sans
 .header-left{display:flex;align-items:center;gap:12px}
 .avatar{width:42px;height:42px;border-radius:12px;background:linear-gradient(135deg,var(--accent),var(--accent2));display:flex;align-items:center;justify-content:center;font-size:20px}
 .header-title{font-size:20px;font-weight:700;color:var(--textStrong)}
-.header-status{display:flex;align-items:center;gap:6px;font-size:12px}
 .dot{width:8px;height:8px;border-radius:50%;display:inline-block}
-.dot-on{background:var(--green);box-shadow:0 0 8px rgba(74,222,128,0.5)}
-.dot-off{background:var(--red);box-shadow:0 0 8px rgba(248,113,113,0.5)}
-.dot-warn{background:var(--yellow);box-shadow:0 0 8px rgba(250,204,21,0.5)}
-@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
-.pulse{animation:pulse 2s ease-in-out infinite}
 .header-right{display:flex;flex-wrap:wrap;align-items:center;gap:12px}
 .countdown{font-size:11px;color:var(--dim);font-variant-numeric:tabular-nums;min-width:24px}
 .refresh-btn{background:var(--surface);border:1px solid var(--border);padding:6px 14px;border-radius:8px;color:var(--muted);font-size:12px;cursor:pointer;transition:all .15s}
@@ -51,7 +45,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'SF Pro','Helvetica Neue',sans
 /* Alerts */
 .alerts-section{margin-bottom:16px}
 .system-topbar{display:flex;align-items:center;gap:8px;padding:6px 16px;flex-wrap:wrap;width:100%;margin-top:4px}
-.sys-pill{padding:3px 10px;border-radius:12px;font-size:12px;font-weight:600;white-space:nowrap;background:var(--panel-bg);color:var(--dim);cursor:default;transition:background .2s}
+.sys-pill{padding:3px 10px;border-radius:12px;font-size:12px;font-weight:600;white-space:nowrap;background:var(--surface);color:var(--dim);cursor:default;transition:background .2s}
 .sys-pill.sys-ok{background:rgba(72,199,142,.15);color:#48c78e}
 .sys-pill.sys-warn{background:rgba(255,193,7,.15);color:#ffc107}
 .sys-pill.sys-crit{background:rgba(241,70,104,.15);color:#f14668}
@@ -187,9 +181,6 @@ body{font-family:-apple-system,BlinkMacSystemFont,'SF Pro','Helvetica Neue',sans
 .type-main{background:var(--tableBg);color:var(--muted)}
 .type-telegram{background:rgba(99,102,241,.12);color:var(--accent)}
 
-.charts-section{margin-bottom:24px}
-.chart-toggle{background:var(--surface);border:1px solid var(--border);padding:6px 14px;border-radius:8px;color:var(--muted);font-size:12px;cursor:pointer;transition:all .15s}
-.chart-toggle:hover{background:var(--surfaceHover);color:var(--textStrong)}
 .chart-container{padding:16px}
 .chart-title{font-size:11px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);margin-bottom:10px}
 .chart-legend{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
@@ -247,7 +238,6 @@ body{font-family:-apple-system,BlinkMacSystemFont,'SF Pro','Helvetica Neue',sans
 .log-line:last-child{border-bottom:none}
 .log-line-sev{font-weight:700;font-size:9px;letter-spacing:.06em;text-transform:uppercase;white-space:nowrap}
 .log-line-source{color:var(--dim);white-space:nowrap}
-.log-line-time{color:var(--dim);white-space:nowrap}
 .log-line-msg{word-break:break-word}
 .log-line-msg mark{background:rgba(250,204,21,.28);color:inherit;border-radius:2px;padding:0 2px}
 .log-empty{padding:24px;text-align:center;color:var(--dim);font-size:11px}
@@ -255,7 +245,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'SF Pro','Helvetica Neue',sans
 .log-warn{color:var(--yellow)}
 .log-info{color:var(--text)}
 .log-debug{color:var(--orange)}
-.diag-badge{cursor:pointer}
+.diag-badge{cursor:pointer;border:1px solid transparent;font-family:inherit;line-height:inherit}
 @media(prefers-reduced-motion:reduce){.oc-chevron{transition:none}}
 </style>
 <script>
@@ -294,7 +284,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'SF Pro','Helvetica Neue',sans
     </a>
     <span class="countdown" id="countdown">60s</span>
     <span class="last-update" id="lastUpdate"></span>
-    <span class="sys-pill diag-badge" id="diagErrorBadge" style="display:none;background:rgba(248,113,113,.12);color:var(--red);border-color:rgba(248,113,113,.25)" onclick="ErrorFeed.jumpToSection()" title="Open diagnostics errors">⚠ 0 errors</span>
+    <button type="button" class="sys-pill diag-badge" id="diagErrorBadge" style="display:none;background:rgba(248,113,113,.12);color:var(--red);border-color:rgba(248,113,113,.25)" onclick="ErrorFeed.jumpToSection()" title="Open diagnostics errors">⚠ 0 errors</button>
     <div class="theme-picker">
       <button class="theme-btn" id="themeBtn" onclick="OCUI.toggleThemeMenu()" title="Change theme">🎨</button>
       <div class="theme-menu" id="themeMenu"></div>
@@ -561,7 +551,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'SF Pro','Helvetica Neue',sans
   </div>
   <div class="oc-section-body" id="oc-body-logs">
     <div class="log-controls">
-      <input class="log-control-input" id="logRegexFilter" placeholder="Filter (regex)" oninput="OCUI.setLogRegex(this.value)" />
+      <input class="log-control-input" id="logRegexFilter" aria-label="Filter log lines by regular expression" placeholder="Filter (regex)" oninput="OCUI.setLogRegex(this.value)" />
       <span id="logStatus" class="log-empty" style="display:none"></span>
       <span id="logCount" class="log-empty" style="margin-left:auto"></span>
     </div>
@@ -789,7 +779,7 @@ function relTime(ts){
   let d;
   if(typeof ts==='number')d=new Date(ts);
   else{d=new Date(ts);if(isNaN(d))return ts}
-  const diff=Math.floor((Date.now()-d)/1000);
+  const diff=Math.max(0,Math.floor((Date.now()-d)/1000));
   if(diff<60)return diff+'s ago';
   if(diff<3600)return Math.floor(diff/60)+'m ago';
   if(diff<86400)return Math.floor(diff/3600)+'h ago';
@@ -1162,7 +1152,7 @@ const LogTail = {
   },
 
   async fetch() {
-    if (this._paused || this._hoverPause) return;
+    if (this._paused || this._hoverPause || document.hidden) return;
     const id = ++this._reqId;
     const source = this._normalizeSource(this._source);
     const qs = new URLSearchParams();
@@ -1292,9 +1282,8 @@ const LogTail = {
     const source = this._normalizeSource(this._source);
     return entries.filter((e) => {
       const eSource = String(e.source || '').toLowerCase();
-      if (source === 'gateway' && !eSource.includes('gateway')) return false;
-      if (source === 'cron' && !eSource.includes('cron')) return false;
-      if (source !== 'all' && source !== 'gateway' && source !== 'cron' && eSource !== source) return false;
+      // Substring match, like the server-side source filter (server_logs.go).
+      if (source !== 'all' && !eSource.includes(source)) return false;
       const sev = (e.severity || 'info').toLowerCase();
       if (this._severity !== 'all' && sev !== this._severity) return false;
       if (this._compiledRegex) {
@@ -1352,13 +1341,9 @@ const ErrorFeed = {
       const r = await fetch('/api/errors?' + qs.toString());
       if (id !== this._reqId) return;
       if (!r.ok) {
-        if (id !== this._reqId) return;
         const payload = await r.json().catch(() => null);
-        const body = $('errorFeedEmpty');
-        if (body) {
-          body.style.display = 'block';
-          body.textContent = payload && payload.error === 'logs disabled' ? 'Error feed disabled in config.' : 'Failed to load error feed.';
-        }
+        if (id !== this._reqId) return;
+        this._showUnavailable(payload && payload.error === 'logs disabled' ? 'Error feed disabled in config.' : 'Failed to load error feed.');
         return;
       }
       const payload = await r.json();
@@ -1368,11 +1353,26 @@ const ErrorFeed = {
       this.render();
     } catch (e) {
       if (id !== this._reqId) return;
-      const body = $('errorFeedEmpty');
-      if (body) {
-        body.style.display = 'block';
-        body.textContent = 'Network error while loading error feed.';
-      }
+      this._showUnavailable('Network error while loading error feed.');
+    }
+  },
+
+  // _showUnavailable replaces the table with a failure message. Rows and the
+  // header badge from the last successful fetch are cleared rather than left
+  // standing as if they were current.
+  _showUnavailable(message) {
+    this._items = [];
+    this._rowKeys = [];
+    const body = $('errorBody');
+    if (body) body.innerHTML = '';
+    const count = $('errorCount');
+    if (count) count.textContent = '—';
+    const badge = $('diagErrorBadge');
+    if (badge) badge.style.display = 'none';
+    const empty = $('errorFeedEmpty');
+    if (empty) {
+      empty.style.display = 'block';
+      empty.textContent = message;
     }
   },
 
@@ -1494,6 +1494,9 @@ const ErrorFeed = {
 
 // === DirtyChecker ===
 const DirtyChecker = {
+  // SESSION_FIELDS lists every session field the sessions table renders; updatedAt
+  // drives the "Last Activity" relative time, so it must dirty the section too.
+  SESSION_FIELDS: ['key','name','model','type','contextPct','totalTokens','active','spawnedBy','label','subject','updatedAt','tokenState','contextState','activeRunIds'],
   sectionChanged(keys, collectionNames) {
     if (!State.prev) return true;
     if (keys.some(k => JSON.stringify(State.data[k]) !== JSON.stringify(State.prev[k]))) return true;
@@ -1523,7 +1526,7 @@ const DirtyChecker = {
       health: true,
       cost: this.sectionChanged(['totalCostToday','totalCostAllTime','projectedMonthly','costBreakdown','tokenUsage','usageToday','usageAll'], ['usageToday','usageAll']),
       crons: this.sectionChanged(['crons'], ['crons']),
-      sessions: !prevD || this.stableSnapshot(D.sessions, ['key','name','model','type','contextPct','totalTokens','active','spawnedBy','label','subject']) !== this.stableSnapshot(prevD.sessions, ['key','name','model','type','contextPct','totalTokens','active','spawnedBy','label','subject']),
+      sessions: !prevD || this.stableSnapshot(D.sessions, this.SESSION_FIELDS) !== this.stableSnapshot(prevD.sessions, this.SESSION_FIELDS),
       usage: this.sectionChanged(['tokenUsage','tokenUsageToday','tokenUsage7d','tokenUsage30d','subagentUsage','subagentUsageToday','subagentUsage7d','subagentUsage30d']) || snap.tabs.usage !== State.prevTabs.usage,
       subRuns: (!prevD || ['subagentRuns','subagentRuns7d','subagentRuns30d','subagentRunsToday'].some(k => this.stableSnapshot(D[k], ['task','agent','status','durationSec','timestamp']) !== this.stableSnapshot((prevD||{})[k], ['task','agent','status','durationSec','timestamp']))) || snap.tabs.subRuns !== State.prevTabs.subRuns,
       subTokens: this.sectionChanged(['tokenUsage','tokenUsageToday','tokenUsage7d','tokenUsage30d','subagentUsage','subagentUsageToday','subagentUsage7d','subagentUsage30d']) || snap.tabs.subTokens !== State.prevTabs.subTokens,
@@ -1706,6 +1709,12 @@ const Renderer = {
     const emptyRows = {cronBody:[7,'No automations reported'],sessBody:[6,'No sessions reported'],srBody:[5,'No sub-agent runs reported']};
     const empty = emptyRows[tbodyId];
     $(tbodyId).innerHTML = rows.map(rowHtmlFn).join('') || (empty ? '<tr><td colspan="'+empty[0]+'">'+empty[1]+'</td></tr>' : '');
+  },
+
+  // chartMoney formats a chart dollar value with a precision chosen from the axis
+  // maximum, so sub-$10 ranges do not collapse every gridline to "$0" or "$1".
+  chartMoney(v, maxY) {
+    return '$' + v.toFixed(maxY < 10 ? 2 : 0);
   },
 
   patchSvg(id, html) {
@@ -2298,14 +2307,9 @@ const Renderer = {
   const cw=W-P.l-P.r,ch=H-P.t-P.b;
   const maxY=Math.max(...data.map(d=>d.total))||1;
   const stepX=cw/(data.length-1||1);
-  // Minimum Y position (50px from bottom) for visibility of tiny values
-  const minY=P.t+ch-50;
-  let pts=data.map((d,i)=>{
-    const linearY=P.t+ch-(d.total/maxY)*ch;
-    // Blend: mostly linear but with minimum for tiny values
-    const y=d.total>0&&linearY>minY?minY+(linearY-minY)*0.3:linearY;
-    return [P.l+i*stepX,y];
-  });
+  // Points stay on the same linear scale as the gridlines; tiny values are kept
+  // visible by the larger marker below rather than by distorting their height.
+  const pts=data.map((d,i)=>[P.l+i*stepX,P.t+ch-(d.total/maxY)*ch]);
   const line=pts.map((p,i)=>(i?'L':'M')+p[0]+','+p[1]).join(' ');
   const area=line+` L${pts[pts.length-1][0]},${P.t+ch} L${pts[0][0]},${P.t+ch} Z`;
   const dots=pts.map((p,i)=>{
@@ -2319,10 +2323,10 @@ const Renderer = {
     const labelColor=isSmall?'var(--textStrong)':'var(--dim)';
     const labelSize=isSmall?10:8;
     const total=d.total||0;
-    const label=data.length<=7?`<text x="${p[0]}" y="${labelY}" text-anchor="middle" fill="${labelColor}" font-size="${labelSize}" font-weight="${isSmall?600:400}">$${total.toFixed(total<1?2:0)}</text>`:'';
+    const label=data.length<=7?`<text x="${p[0]}" y="${labelY}" text-anchor="middle" fill="${labelColor}" font-size="${labelSize}" font-weight="${isSmall?600:400}">${Renderer.chartMoney(total,maxY)}</text>`:'';
     return `<circle cx="${p[0]}" cy="${p[1]}" r="${r}" fill="var(--accent)"${stroke}><title>${esc(d.label)}: $${total.toFixed(2)}</title></circle>${label}`;
   }).join('');
-  const yLabels=Array.from({length:5},(_, i)=>{const v=maxY*i/4;const y=P.t+ch-ch*i/4;return `<text x="${P.l-6}" y="${y+3}" text-anchor="end" fill="var(--dim)" font-size="9">$${v.toFixed(0)}</text><line x1="${P.l}" y1="${y}" x2="${W-P.r}" y2="${y}" stroke="var(--border)" stroke-dasharray="2"/>`}).join('');
+  const yLabels=Array.from({length:5},(_, i)=>{const v=maxY*i/4;const y=P.t+ch-ch*i/4;return `<text x="${P.l-6}" y="${y+3}" text-anchor="end" fill="var(--dim)" font-size="9">${Renderer.chartMoney(v,maxY)}</text><line x1="${P.l}" y1="${y}" x2="${W-P.r}" y2="${y}" stroke="var(--border)" stroke-dasharray="2"/>`}).join('');
   const nth=Math.ceil(data.length/7);
   const xLabels=data.map((d,i)=>i%nth===0?`<text x="${P.l+i*stepX}" y="${H-P.b+16}" text-anchor="middle" fill="var(--dim)" font-size="9">${esc(d.label)}</text>`:'').join('');
   Renderer.patchSvg(id,`<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:350px">${yLabels}${xLabels}<path d="${area}" fill="var(--accent)" opacity="0.15"/><path d="${line}" fill="none" stroke="var(--accent)" stroke-width="2"/>${dots}</svg>`);
@@ -2357,7 +2361,7 @@ const Renderer = {
       cum+=h;
     });
   });
-  const yLabels=Array.from({length:5},(_,i)=>{const v=maxY*i/4;const y=P.t+ch-ch*i/4;return `<text x="${P.l-6}" y="${y+3}" text-anchor="end" fill="var(--dim)" font-size="9">$${v.toFixed(0)}</text><line x1="${P.l}" y1="${y}" x2="${W-P.r}" y2="${y}" stroke="var(--border)" stroke-dasharray="2"/>`}).join('');
+  const yLabels=Array.from({length:5},(_,i)=>{const v=maxY*i/4;const y=P.t+ch-ch*i/4;return `<text x="${P.l-6}" y="${y+3}" text-anchor="end" fill="var(--dim)" font-size="9">${Renderer.chartMoney(v,maxY)}</text><line x1="${P.l}" y1="${y}" x2="${W-P.r}" y2="${y}" stroke="var(--border)" stroke-dasharray="2"/>`}).join('');
   const nth=Math.ceil(data.length/7);
   const xLabels=data.map((d,i)=>i%nth===0?`<text x="${P.l+i*(barW+gap)+gap/2+barW/2}" y="${H-P.b+16}" text-anchor="middle" fill="var(--dim)" font-size="9">${esc(d.label)}</text>`:'').join('');
   const legend=mList.map((m,i)=>`<span class="chart-legend-item"><span class="chart-legend-dot" style="background:${COLORS[i%COLORS.length]}"></span>${esc(m)}</span>`).join('');
@@ -2380,7 +2384,7 @@ const Renderer = {
   const line=pts.map((p,i)=>(i?'L':'M')+p[0]+','+p[1]).join(' ');
   const dots=pts.map((p,i)=>`<circle cx="${p[0]}" cy="${p[1]}" r="3" fill="var(--accent)"><title>${esc(data[i].label)}: $${(data[i].subagentCost||0).toFixed(2)}</title></circle>`).join('');
   const yL=Array.from({length:5},(_,i)=>{const v=maxRuns*i/4;const y=P.t+ch-ch*i/4;return `<text x="${P.l-6}" y="${y+3}" text-anchor="end" fill="var(--dim)" font-size="9">${Math.round(v)}</text><line x1="${P.l}" y1="${y}" x2="${W-P.r}" y2="${y}" stroke="var(--border)" stroke-dasharray="2"/>`}).join('');
-  const yR=Array.from({length:5},(_,i)=>{const v=maxCost*i/4;const y=P.t+ch-ch*i/4;return `<text x="${W-P.r+6}" y="${y+3}" text-anchor="start" fill="var(--accent)" font-size="9">$${v.toFixed(0)}</text>`}).join('');
+  const yR=Array.from({length:5},(_,i)=>{const v=maxCost*i/4;const y=P.t+ch-ch*i/4;return `<text x="${W-P.r+6}" y="${y+3}" text-anchor="start" fill="var(--accent)" font-size="9">${Renderer.chartMoney(v,maxCost)}</text>`}).join('');
   const nth=Math.ceil(data.length/7);
   const xLabels=data.map((d,i)=>i%nth===0?`<text x="${P.l+i*(barW+gap)+gap/2+barW/2}" y="${H-P.b+16}" text-anchor="middle" fill="var(--dim)" font-size="9">${esc(d.label)}</text>`:'').join('');
   Renderer.patchSvg(id,`<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:350px">${yL}${yR}${xLabels}${bars}<path d="${line}" fill="none" stroke="var(--accent)" stroke-width="2"/>${dots}</svg><div class="chart-legend"><span class="chart-legend-item"><span class="chart-legend-dot" style="background:var(--purple)"></span>Runs</span><span class="chart-legend-item"><span class="chart-legend-dot" style="background:var(--accent)"></span>Cost</span></div>`);
@@ -2673,7 +2677,10 @@ const SystemBar = {
       const stateColor=gwUnknownLabel?'var(--yellow)':(gwState.source==='runtime'
         ?(gwLive?'var(--green)':'var(--red)')
         :(gwok?'var(--green)':'var(--red)'));
-      const upTxt=gwState.source==='runtime'?this.fmtDurationMs(gwRuntime.uptimeMs)||gwVersion.uptime||'—':gwVersion.uptime||'—';
+      // fmtDurationMs returns '—' (truthy) when uptime is absent, so compare
+      // explicitly — the same fallback the health row uses above.
+      const rtUp=gwState.source==='runtime'?this.fmtDurationMs(gwRuntime.uptimeMs):'—';
+      const upTxt=rtUp!=='—'?rtUp:(gwVersion.uptime||'—');
       const probeSource=gwState.source==='runtime'?'live probes':'status fallback';
       gwRtEl.innerHTML=[
         this._kv('State', stateLabel, stateColor),
@@ -2750,7 +2757,8 @@ const SystemBar = {
     if(d.pollSeconds&&d.pollSeconds>0&&d.pollSeconds*1000!==this._lastMs)this.start(d.pollSeconds*1000);
   },
   async fetch() {
-    if(this._inflight)return; this._inflight=true;
+    // Hidden tabs do no polling; App.onVisibilityChange fetches once on return.
+    if(this._inflight||document.hidden)return; this._inflight=true;
     // 9000ms client timeout: must exceed the backend cold-path budget
     // (ColdPathTimeoutMs default 8000ms) plus margin for marshal + network
     // jitter, so a healthy-but-slow cold path is not aborted client-side and
@@ -2842,10 +2850,19 @@ const App = {
     LogTail.init();
     ErrorFeed.init();
     setInterval(()=>App.onTick(),1000);
+    document.addEventListener('visibilitychange',()=>App.onVisibilityChange());
     App.refresh();
     SystemBar.start(5000);
   },
+  // onVisibilityChange catches up once when a hidden tab becomes visible again;
+  // refresh and SystemBar.fetch skip their work while the document is hidden.
+  // LogTail owns its own visibility listener for its poll timer.
+  onVisibilityChange() {
+    if(document.hidden)return;
+    return Promise.all([App.refresh(),SystemBar.fetch()]);
+  },
   async refresh() {
+    if(document.hidden)return;
     try{
       const json=await DataLayer.fetch();
       if(json===null)return;
@@ -2855,14 +2872,16 @@ const App = {
         LogTail.applyRuntimeConfig(runtimeLogConfig);
         ErrorFeed.applyRuntimeConfig(runtimeLogConfig);
       }
+      // Clear before rendering so a render failure reported from the frame
+      // callback is not immediately wiped by this successful fetch.
+      App.setFetchError('');
       App.renderNow();
       LogTail.fetch().catch(()=>{});
       ErrorFeed.fetch().catch(()=>{});
       $('lastUpdate').textContent='Updated: '+new Date().toLocaleTimeString();
       State.resetCountdown();
-      App.setFetchError('');
     }catch(e){
-      App.setFetchError('Failed to load data.json: '+(e&&e.message?e.message:'unknown error'));
+      App.setFetchError('Failed to load dashboard data from /api/refresh: '+(e&&e.message?e.message:'unknown error'));
     }
   },
   // setFetchError drives the dedicated #fetchError banner. It is independent of
@@ -2879,12 +2898,29 @@ const App = {
     el.textContent='';
     el.hidden=true;
   },
+  // renderNow keeps only the latest snapshot and schedules at most one frame.
+  // The diff is computed inside the frame against the last committed snapshot,
+  // so coalesced updates are never diffed against a baseline that was skipped.
+  _pendingSnap: null,
+  _frameQueued: false,
   renderNow() {
-    const snap=State.snapshot();
-    const flags=DirtyChecker.diff(snap);
+    App._pendingSnap=State.snapshot();
+    if(App._frameQueued)return;
+    App._frameQueued=true;
     requestAnimationFrame(()=>{
-      Renderer.render(snap,flags);
-      State.commitPrev(snap);
+      App._frameQueued=false;
+      const snap=App._pendingSnap;
+      App._pendingSnap=null;
+      if(!snap)return;
+      try{
+        Renderer.render(snap,DirtyChecker.diff(snap));
+        State.commitPrev(snap);
+      }catch(e){
+        // Leave State.prev uncommitted so the next render retries every section
+        // that was dirty, and surface the failure instead of stalling silently.
+        console.error('dashboard render failed',e);
+        App.setFetchError('Failed to render dashboard data: '+(e&&e.message?e.message:'unknown error'));
+      }
     });
   },
   onTick() {
@@ -2926,9 +2962,9 @@ window.OCUI = {
 <div class="chat-panel" id="chatPanel">
   <div class="chat-header">
     <span class="chat-header-title">🤖 Dashboard AI</span>
-    <button class="chat-close" onclick="OCUI.toggleChat()">✕</button>
+    <button class="chat-close" onclick="OCUI.toggleChat()" aria-label="Close chat">✕</button>
   </div>
-  <div class="chat-messages" id="chatMessages">
+  <div class="chat-messages" id="chatMessages" aria-live="polite">
     <div class="chat-bubble assistant">Hi! Ask me anything about your dashboard — costs, sessions, crons, or configuration.</div>
   </div>
   <div style="padding:8px 14px;font-size:11px"><p id="chatAvailability" role="status">Chat availability has not been checked.</p><a id="nativeChat" target="_blank" rel="noopener noreferrer" style="color:var(--accent)">Open native OpenClaw chat</a></div>
@@ -2940,7 +2976,7 @@ window.OCUI = {
   </div>
   <div class="chat-input-row">
     <textarea class="chat-input" id="chatInput" rows="1" placeholder="Ask about metrics, costs, crons…" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();OCUI.sendChat()}"></textarea>
-    <button class="chat-send" id="chatSend" onclick="OCUI.sendChat()">↑</button>
+    <button class="chat-send" id="chatSend" onclick="OCUI.sendChat()" aria-label="Send message">↑</button>
   </div>
 </div>
 </body>

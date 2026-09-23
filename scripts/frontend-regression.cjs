@@ -36,7 +36,7 @@ const $ = id => {
 // Deterministic fetch stub: tests set fetchResponses to an array of handlers keyed by URL prefix.
 const fetchRoutes = new Map();
 const timers = {intervals:new Map(), nextId:1, setCount:0, clearCount:0};
-const context = vm.createContext({$, console, URL, URLSearchParams, AbortSignal, setTimeout, clearTimeout,
+const context = vm.createContext({$, console, URL, URLSearchParams, AbortSignal, AbortController, setTimeout, clearTimeout,
   window:{},
   COLORS:['red'],
   document:{addEventListener(){},querySelectorAll(){return [];},getElementById:$,createElement(tag){const n=makeNode('');n.tag=tag;return n;}},
@@ -616,7 +616,8 @@ testAsync('fetch failure raises a sticky banner that clears on the next success'
     fetchRoutes.set('/api/refresh',()=>{throw new Error('boom')});
     await App.refresh();
     assert.equal($('fetchError').hidden,false,'banner stays hidden after a failed refresh');
-    assert.match($('fetchError').textContent,/Failed to load/);
+    assert.match($('fetchError').textContent,/Failed to load dashboard data/);
+    assert.match($('fetchError').textContent,/\\/api\\/refresh/,'the banner must name the endpoint that failed, not data.json');
     assert.equal($('alertsSection').innerHTML,'<div class="alert-item">keep me</div>','catch must not overwrite #alertsSection');
     fetchRoutes.set('/api/refresh',()=>({ok:true,status:200,json:async()=>({timezone:'UTC'})}));
     await App.refresh();
@@ -717,6 +718,201 @@ test('the degraded gateway tooltip is cleared once the probe recovers', `
   Renderer.render({data:{gateway:{status:'online'}},tabs:{}},{});
   assert.equal($('hGw').title,'','Renderer must clear the degraded tooltip after recovery');
   window._sysBarActive=false;
+`);
+test('session activity and state changes dirty the sessions table', `
+  const base={key:'k',name:'n',model:'m',type:'main',contextPct:1,totalTokens:2,active:false,spawnedBy:'',label:'',subject:'',updatedAt:1,tokenState:'ok',contextState:'ok',activeRunIds:[]};
+  State.prevTabs={};State.prevChartDays=7;
+  for(const [field,value] of [['updatedAt',2],['tokenState','stale'],['contextState','tokens_stale'],['activeRunIds',['run']]]){
+    State.prev={sessions:[base]};
+    State.data={sessions:[{...base,[field]:value}]};
+    assert.equal(DirtyChecker.diff({data:State.data,tabs:{},chartDays:7}).sessions,true,field+' change must re-render sessions');
+  }
+  State.prev={sessions:[base]};State.data={sessions:[{...base}]};
+  assert.equal(DirtyChecker.diff({data:State.data,tabs:{},chartDays:7}).sessions,false);
+  State.prev=null;
+`);
+test('session and subagent log filters match source substrings like gateway and cron', `
+  const prev=LogTail._source,sev=LogTail._severity,re=LogTail._compiledRegex;
+  try{
+    LogTail._severity='all';LogTail._compiledRegex=null;
+    const entries=[{source:'session:agent:main'},{source:'subagent-runner'},{source:'gateway'}];
+    LogTail._source='session';
+    assert.deepEqual(LogTail._filtered(entries).map(e=>e.source),['session:agent:main']);
+    LogTail._source='subagent';
+    assert.deepEqual(LogTail._filtered(entries).map(e=>e.source),['subagent-runner']);
+  }finally{LogTail._source=prev;LogTail._severity=sev;LogTail._compiledRegex=re;}
+`);
+test('cost chart labels keep cents for small maxima and points sit on the linear scale', `
+  Renderer._svgCache={};
+  Renderer.renderCostChart('smallChart',[{label:'a',total:0.5},{label:'b',total:1.2}]);
+  const svg=$('smallChart').innerHTML;
+  assert.ok(svg.includes('>$0.30<'),'y-axis must show cents when the maximum is small');
+  assert.ok(svg.includes('>$1.20<'));
+  assert.ok(svg.includes('>$0.50<'),'point label follows the same precision rule');
+  // P.t=20, ch=240: 0.5/1.2 of the height is exactly 100px above the baseline.
+  assert.match(svg,/<circle cx="50" cy="160"/,'small values must not be compressed off the linear gridlines');
+  Renderer.renderCostChart('bigChart',[{label:'a',total:5},{label:'b',total:40}]);
+  const big=$('bigChart').innerHTML;
+  assert.ok(big.includes('>$40<'),'large maxima keep whole-dollar labels');
+  assert.ok(big.includes('>$5<'));
+`);
+test('gateway runtime card falls back to reported uptime when the probe has none', `
+  const previous=State.data;
+  try{
+    State.data={timezone:'UTC'};
+    SystemBar.render({cpu:{},ram:{},swap:{},disk:{},versions:{gateway:{status:'online',uptime:'3h 2m'}},openclaw:{gateway:{live:true,ready:true,healthEndpointOk:true,uptimeMs:0}}});
+    assert.match($('gatewayRuntimePanelInner').innerHTML,/3h 2m/);
+  }finally{State.data=previous;window._sysBarActive=false;}
+`);
+testAsync('error feed fetch failure clears stale rows and the error badge', `
+  ErrorFeed._expanded={};
+  ErrorFeed._items=[{severity:'error',source:'gw',count:4,signature:'old',sampleMessage:'old error'}];
+  ErrorFeed.render();
+  assert.equal($('diagErrorBadge').style.display,'inline-block');
+  try{
+    fetchRoutes.set('/api/errors',()=>({ok:false,status:500,json:async()=>({})}));
+    await ErrorFeed.fetch();
+    assert.equal($('errorBody').innerHTML,'','stale rows must not stay under a failure message');
+    assert.equal($('diagErrorBadge').style.display,'none');
+    assert.match($('errorFeedEmpty').textContent,/Failed to load/);
+    ErrorFeed._items=[{severity:'error',source:'gw',count:4,signature:'old',sampleMessage:'old error'}];ErrorFeed.render();
+    fetchRoutes.set('/api/errors',()=>{throw new Error('offline')});
+    await ErrorFeed.fetch();
+    assert.equal($('errorBody').innerHTML,'');
+    assert.equal($('diagErrorBadge').style.display,'none');
+    assert.match($('errorFeedEmpty').textContent,/Network error/);
+  }finally{fetchRoutes.delete('/api/errors');ErrorFeed._items=[];ErrorFeed._expanded={};}
+`);
+test('relative time never reports negative ages for future timestamps', `
+  assert.equal(relTime(Date.now()+120000),'0s ago');
+  assert.equal(relTime(Date.now()-120000),'2m ago');
+`);
+test('esc neutralises attribute injection through both quote styles', `
+  const out=esc('x" onmouseover="alert(1)\\' data-x=\\'<b>&');
+  assert.equal(out,'x&quot; onmouseover=&quot;alert(1)&#39; data-x=&#39;&lt;b&gt;&amp;');
+  assert.doesNotMatch(out,/["'<>]/);
+  assert.equal(esc(null),'');assert.equal(esc(0),'0');
+`);
+test('renderNow coalesces pending snapshots into one frame and diffs inside it', `
+  const raf=requestAnimationFrame,render=Renderer.render,prevData=State.data;
+  const frames=[],seen=[];
+  try{
+    requestAnimationFrame=fn=>{frames.push(fn);return frames.length;};
+    Renderer.render=(snap,flags)=>seen.push({snap,flags});
+    State.prev={sessions:[]};State.prevTabs={...State.tabs};State.prevChartDays=State.chartDays;
+    for(const n of ['one','two','three']){State.data={botName:n,sessions:[{key:n}]};App.renderNow();}
+    assert.equal(frames.length,1,'at most one frame may be queued');
+    frames.shift()();
+    assert.equal(seen.length,1);
+    assert.equal(seen[0].snap.data.botName,'three','only the latest snapshot is rendered');
+    assert.equal(seen[0].flags.sessions,true,'flags are computed against the committed previous state');
+    assert.equal(State.prev.botName,'three','successful frames commit the rendered snapshot');
+    State.data={botName:'four'};App.renderNow();
+    assert.equal(frames.length,1,'a new frame is scheduled after the previous one ran');
+    frames.shift()();
+    assert.equal(seen.length,2);
+  }finally{requestAnimationFrame=raf;Renderer.render=render;State.data=prevData;State.prev=null;}
+`);
+test('a render exception surfaces in the banner and does not commit the snapshot', `
+  const render=Renderer.render,prevData=State.data,err=console.error;
+  try{
+    console.error=()=>{};
+    App.setFetchError('');
+    State.prev={botName:'before'};
+    Renderer.render=()=>{throw new Error('bad field')};
+    State.data={botName:'after'};
+    App.renderNow();
+    assert.equal($('fetchError').hidden,false,'render failures must not be silent');
+    assert.match($('fetchError').textContent,/bad field/);
+    assert.equal(State.prev.botName,'before','a failed render must be retried against the old baseline');
+    Renderer.render=()=>{};
+    App.renderNow();
+    assert.equal(State.prev.botName,'after');
+  }finally{Renderer.render=render;State.data=prevData;State.prev=null;console.error=err;App.setFetchError('');}
+`);
+testAsync('hidden tabs skip polling and refresh once when visible again', `
+  const renderNow=App.renderNow,logFetch=LogTail.fetch,errFetch=ErrorFeed.fetch,sysRender=SystemBar.render;
+  let refreshCalls=0,systemCalls=0,logCalls=0;
+  try{
+    App.renderNow=()=>{};ErrorFeed.fetch=async()=>{};SystemBar.render=()=>{};
+    fetchRoutes.set('/api/refresh',()=>{refreshCalls++;return {ok:true,status:200,json:async()=>({timezone:'UTC'})};});
+    fetchRoutes.set('/api/system',()=>{systemCalls++;return {ok:true,status:200,json:async()=>({})};});
+    fetchRoutes.set('/api/logs',()=>{logCalls++;return {ok:true,status:200,json:async()=>({entries:[]})};});
+    document.hidden=true;
+    await App.refresh();await SystemBar.fetch();await logFetch.call(LogTail);
+    assert.equal(refreshCalls+systemCalls+logCalls,0,'hidden tabs must not poll');
+    document.hidden=false;
+    LogTail.fetch=async()=>{};
+    await App.onVisibilityChange();
+    assert.equal(refreshCalls,1,'becoming visible refreshes the dashboard once');
+    assert.equal(systemCalls,1,'becoming visible refreshes system metrics once');
+  }finally{
+    document.hidden=false;App.renderNow=renderNow;LogTail.fetch=logFetch;ErrorFeed.fetch=errFetch;SystemBar.render=sysRender;
+    for(const r of ['/api/refresh','/api/system','/api/logs'])fetchRoutes.delete(r);
+  }
+`);
+test('interactive controls are keyboard reachable and labelled', `
+  assert.match(html,/<button[^>]*id="diagErrorBadge"/,'error badge must be a real button');
+  assert.match(html,/<button class="chat-close"[^>]*aria-label="[^"]+"/);
+  assert.match(html,/<button class="chat-send"[^>]*aria-label="[^"]+"/);
+  assert.match(html,/id="chatMessages"[^>]*aria-live="polite"/);
+  assert.match(html,/id="logRegexFilter"[^>]*aria-label="[^"]+"/);
+`);
+test('stylesheet has no undefined custom properties', `
+  const css=html.slice(html.indexOf('<style'),html.indexOf('</style>'));
+  const defined=new Set([...html.matchAll(/(--[A-Za-z][\\w-]*)\\s*:/g)].map(m=>m[1]));
+  for(const m of css.matchAll(/var\\((--[A-Za-z][\\w-]*)\\s*\\)/g))
+    assert.ok(defined.has(m[1]),'undefined CSS variable '+m[1]);
+`);
+test('cron rows expose escaped diagnostics and a flapping badge', `
+  const reconcile=Renderer.reconcileRows;
+  try{
+    Renderer.reconcileRows=(id,rows,key,render)=>{$(id).innerHTML=rows.map(render).join('');};
+    Renderer.render({data:{crons:[{id:'c',name:'job',lastStatus:'error',flapping:true,lastDeliveryStatus:'not-delivered',lastDiagnostics:['<b>first</b>','',null,'second']}]},tabs:{}},{crons:true});
+    const out=$('cronBody').innerHTML;
+    assert.match(out,/FLAPPING/);
+    assert.match(out,/data-tip="&lt;b&gt;first&lt;\\/b&gt; · second"/,'diagnostics are joined, filtered and escaped');
+    assert.doesNotMatch(out,/<b>first/);
+    assert.match(out,/data-tip="delivery: not-delivered"/);
+    Renderer.render({data:{crons:[{id:'c',name:'job',lastStatus:'ok',flapping:false}]},tabs:{}},{crons:true});
+    assert.doesNotMatch($('cronBody').innerHTML,/FLAPPING/);
+  }finally{Renderer.reconcileRows=reconcile;}
+`);
+test('channel health colours, search placeholder, and empty model and skill states', `
+  const data={agentConfig:{channelStatus:{slack:{health:'unhealthy',connected:false},tg:{health:'healthy'},x:{health:'mystery'}},search:{provider:'—'}},availableModels:[],skills:[]};
+  Renderer.render({data,tabs:{}},{agentConfig:true,models:true,skills:true});
+  const panel=$('channelConfigPanel').innerHTML;
+  assert.match(panel,/color:var\\(--red\\)">unhealthy</);
+  assert.match(panel,/color:var\\(--green\\)">healthy</);
+  assert.match(panel,/color:var\\(--muted\\)">mystery</);
+  assert.match($('searchPanelInner').innerHTML,/Not configured/,'a placeholder provider is not a configured search provider');
+  assert.match($('modelsGrid').innerHTML,/No models detected/);
+  assert.match($('skillsGrid').innerHTML,/No skill entries reported/);
+`);
+test('sub-agent run counter pluralises and the table has no cost column', `
+  const reconcile=Renderer.reconcileRows;
+  try{
+    Renderer.reconcileRows=(id,rows,key,render)=>{$(id).innerHTML=rows.map(render).join('');};
+    Renderer.render({data:{subagentRuns:[{id:'r',task:'t',agent:'a',status:'succeeded',durationSec:5,cost:9.1234}]},tabs:{subRuns:'all'}},{subRuns:true});
+    assert.equal($('subCostLbl').textContent,'1 run');
+    assert.doesNotMatch($('srBody').innerHTML,/9\\.1234/);
+    Renderer.render({data:{subagentRuns:[{id:'r'},{id:'s'}]},tabs:{subRuns:'all'}},{subRuns:true});
+    assert.equal($('subCostLbl').textContent,'2 runs');
+  }finally{Renderer.reconcileRows=reconcile;}
+`);
+test('system status fills the runtime health card and degrades explicitly', `
+  const previous=State.data;
+  try{
+    State.data={timezone:'UTC'};
+    $('runtimeHealthPanelInner').innerHTML='';
+    SystemBar.render({cpu:{},ram:{},swap:{},disk:{},versions:{gateway:{status:'online'}},openclaw:{status:{tasks:{active:2,total:5},eventLoop:{degraded:true,utilization:0.9},pluginCompatibility:{count:1}}}});
+    const out=$('runtimeHealthPanelInner').innerHTML;
+    assert.match(out,/Tasks \\(active \\/ total\\)2 \\/ 5/);
+    assert.match(out,/Event loopDegraded/);
+    assert.match(out,/Plugin warnings1/);
+    SystemBar.renderGatewayDegraded('timeout');
+    assert.match($('runtimeHealthPanelInner').innerHTML,/Runtime Health unavailable/);
+  }finally{State.data=previous;window._sysBarActive=false;}
 `);
 
 (async () => {
