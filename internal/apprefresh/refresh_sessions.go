@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -157,9 +158,15 @@ func agentModelPrimary(v any) string {
 }
 
 func getSessionModel(basePath, agentName, sessionID string, agentDefaults map[string]string) string {
+	return sessionModelOrDefault(readLastSessionModel, basePath, agentName, sessionID, agentDefaults)
+}
+
+// sessionModelOrDefault returns the transcript's last model_change model as
+// reported by read, else the agent default, else "unknown".
+func sessionModelOrDefault(read func(path string) (string, bool), basePath, agentName, sessionID string, agentDefaults map[string]string) string {
 	if sessionID != "" {
 		jsonlPath := filepath.Join(basePath, agentName, "sessions", sessionID+".jsonl")
-		if model, ok := readLastSessionModel(jsonlPath); ok {
+		if model, ok := read(jsonlPath); ok {
 			return model
 		}
 	}
@@ -170,24 +177,90 @@ func getSessionModel(basePath, agentName, sessionID string, agentDefaults map[st
 }
 
 func readLastSessionModel(path string) (string, bool) {
+	scan, err := scanTranscriptModel(path)
+	return scan.model, err == nil && scan.ok
+}
+
+// transcriptModelScan is the last model_change model of one transcript
+// version, identified by its size and modification time.
+type transcriptModelScan struct {
+	size    int64
+	modTime time.Time
+	model   string
+	ok      bool
+}
+
+func scanTranscriptModel(path string) (transcriptModelScan, error) {
 	f, err := os.Open(path)
 	if err != nil {
-		return "", false
+		return transcriptModelScan{}, err
 	}
 	defer func() { _ = f.Close() }()
 
 	info, err := f.Stat()
 	if err != nil {
+		return transcriptModelScan{}, err
+	}
+	model, ok, err := scanLastSessionModel(f, info.Size())
+	if err != nil {
+		return transcriptModelScan{}, err
+	}
+	return transcriptModelScan{size: info.Size(), modTime: info.ModTime(), model: model, ok: ok}, nil
+}
+
+// transcriptModelScans holds the scans made by the previous collectSessions
+// pass so an unchanged transcript costs a stat instead of an open and a
+// backwards read. Transcripts are append-only JSONL; an unchanged size and
+// modification time is the same change signal the token-usage cache trusts for
+// these files. Each pass republishes only the transcripts it looked up, so
+// deleted sessions drop out.
+var transcriptModelScans struct {
+	mu     sync.Mutex
+	byPath map[string]transcriptModelScan
+}
+
+// transcriptModelReader serves one collectSessions pass from the previous
+// pass's scans and records this pass's scans for the next one.
+type transcriptModelReader struct {
+	prev, next map[string]transcriptModelScan
+}
+
+func newTranscriptModelReader() *transcriptModelReader {
+	transcriptModelScans.mu.Lock()
+	prev := transcriptModelScans.byPath
+	transcriptModelScans.mu.Unlock()
+	return &transcriptModelReader{prev: prev, next: map[string]transcriptModelScan{}}
+}
+
+func (r *transcriptModelReader) read(path string) (string, bool) {
+	if scan, ok := r.next[path]; ok {
+		return scan.model, scan.ok
+	}
+	info, err := os.Stat(path)
+	if err != nil {
 		return "", false
 	}
-	return scanLastSessionModel(f, info.Size())
+	scan, hit := r.prev[path]
+	if !hit || scan.size != info.Size() || !scan.modTime.Equal(info.ModTime()) {
+		if scan, err = scanTranscriptModel(path); err != nil {
+			return "", false
+		}
+	}
+	r.next[path] = scan
+	return scan.model, scan.ok
+}
+
+func (r *transcriptModelReader) publish() {
+	transcriptModelScans.mu.Lock()
+	transcriptModelScans.byPath = r.next
+	transcriptModelScans.mu.Unlock()
 }
 
 // scanLastSessionModel walks the first size bytes of r backwards in fixed
 // chunks and returns the model of the last model_change record. The chunk
 // buffer is reused, and a line split across chunks is carried over to the next
 // (earlier) chunk before it is inspected.
-func scanLastSessionModel(r io.ReaderAt, size int64) (string, bool) {
+func scanLastSessionModel(r io.ReaderAt, size int64) (string, bool, error) {
 	const chunkSize int64 = 64 * 1024
 	var buf, carry []byte
 	for end := size; end > 0; {
@@ -195,7 +268,7 @@ func scanLastSessionModel(r io.ReaderAt, size int64) (string, bool) {
 		n := int(end - start)
 		buf = slices.Grow(buf[:0], n+len(carry))[:n]
 		if _, err := r.ReadAt(buf, start); err != nil {
-			return "", false
+			return "", false, err
 		}
 		buf = append(buf, carry...)
 
@@ -205,18 +278,19 @@ func scanLastSessionModel(r io.ReaderAt, size int64) (string, bool) {
 				continue
 			}
 			if model, ok := sessionModelFromBytes(buf[i+1 : lineEnd]); ok {
-				return model, true
+				return model, true, nil
 			}
 			lineEnd = i
 		}
 		if start == 0 {
-			return sessionModelFromBytes(buf[:lineEnd])
+			model, ok := sessionModelFromBytes(buf[:lineEnd])
+			return model, ok, nil
 		}
 		// The first line may begin in an earlier chunk.
 		carry = append(carry[:0], buf[:lineEnd]...)
 		end = start
 	}
-	return "", false
+	return "", false, nil
 }
 
 // sessionModelMarker is the literal every model_change record carries. JSON
@@ -257,6 +331,8 @@ func collectSessions(ctx context.Context, stores []SessionStoreFile, basePath st
 	agentDefaults := loadAgentDefaultModels(basePath)
 
 	gatewayModelMap := getLiveSessionModels(ctx, now, liveModelTTL)
+	transcripts := newTranscriptModelReader()
+	defer transcripts.publish()
 
 	var sessionsList []map[string]any
 	for _, sf := range stores {
@@ -355,15 +431,12 @@ func collectSessions(ctx context.Context, stores []SessionStoreFile, basePath st
 			case provOverride != "" && modelOverride != "":
 				resolvedModel = provOverride + "/" + modelOverride
 			default:
-				m, _ := val["model"].(string)
-				if m != "" {
-					resolvedModel = m
-				} else {
-					resolvedModel = getSessionModel(basePath, agentName, sid, agentDefaults)
-				}
+				resolvedModel, _ = val["model"].(string)
 			}
+			// A missing store model falls through to the transcript here, so a
+			// transcript is scanned at most once per session.
 			if resolvedModel == "" || resolvedModel == "unknown" {
-				resolvedModel = getSessionModel(basePath, agentName, sid, agentDefaults)
+				resolvedModel = sessionModelOrDefault(transcripts.read, basePath, agentName, sid, agentDefaults)
 			}
 			// Prettify through ModelName so the session model matches the Token
 			// Usage panel's display (full version, e.g. "GLM-5.2" not the raw

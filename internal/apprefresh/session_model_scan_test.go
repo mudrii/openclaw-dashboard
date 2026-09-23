@@ -4,9 +4,12 @@ import (
 	"bytes"
 	"fmt"
 	"math/rand/v2"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
+	"time"
 )
 
 // referenceLastSessionModel is the original string-splitting, decode-every-line
@@ -62,7 +65,7 @@ func TestScanLastSessionModelMatchesReference(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			data := []byte(content)
 			wantModel, wantOK := referenceLastSessionModel(data)
-			gotModel, gotOK := scanLastSessionModel(bytes.NewReader(data), int64(len(data)))
+			gotModel, gotOK := scanLastSessionModelOK(t, data)
 			if gotModel != wantModel || gotOK != wantOK {
 				t.Fatalf("scan = (%q, %v), reference = (%q, %v)", gotModel, gotOK, wantModel, wantOK)
 			}
@@ -71,8 +74,8 @@ func TestScanLastSessionModelMatchesReference(t *testing.T) {
 }
 
 func TestScanLastSessionModelDecodesEscapedType(t *testing.T) {
-	data := []byte(`{"type":"model_change","provider":"p","modelId":"m"}` + "\n" + `{"type":"message"}`)
-	got, ok := scanLastSessionModel(bytes.NewReader(data), int64(len(data)))
+	data := []byte(`{"type":"model\u005fchange","provider":"p","modelId":"m"}` + "\n" + `{"type":"message"}`)
+	got, ok := scanLastSessionModelOK(t, data)
 	if !ok || got != "p/m" {
 		t.Fatalf("scan = (%q, %v), want (\"p/m\", true)", got, ok)
 	}
@@ -108,9 +111,75 @@ func TestScanLastSessionModelRandomizedMatchesReference(t *testing.T) {
 			data = data[:len(data)-1]
 		}
 		wantModel, wantOK := referenceLastSessionModel(data)
-		gotModel, gotOK := scanLastSessionModel(bytes.NewReader(data), int64(len(data)))
+		gotModel, gotOK := scanLastSessionModelOK(t, data)
 		if gotModel != wantModel || gotOK != wantOK {
 			t.Fatalf("case %d: scan = (%q, %v), reference = (%q, %v)", i, gotModel, gotOK, wantModel, wantOK)
 		}
 	}
+}
+
+func TestTranscriptModelReaderReusesUnchangedScans(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "s.jsonl")
+	write := func(content string, mtime time.Time) {
+		t.Helper()
+		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chtimes(path, mtime, mtime); err != nil {
+			t.Fatal(err)
+		}
+	}
+	pass := func(prev map[string]transcriptModelScan) (*transcriptModelReader, string, bool) {
+		t.Helper()
+		r := &transcriptModelReader{prev: prev, next: map[string]transcriptModelScan{}}
+		model, ok := r.read(path)
+		return r, model, ok
+	}
+	mtime := time.Date(2026, 9, 1, 10, 0, 0, 0, time.UTC)
+
+	write(`{"type":"model_change","provider":"a","modelId":"one"}`, mtime)
+	first, model, ok := pass(nil)
+	if !ok || model != "a/one" {
+		t.Fatalf("first pass = (%q, %v), want (\"a/one\", true)", model, ok)
+	}
+
+	// Same size and mtime: the previous scan stands in for the file.
+	write(`{"type":"model_change","provider":"a","modelId":"two"}`, mtime)
+	second, model, ok := pass(first.next)
+	if !ok || model != "a/one" {
+		t.Fatalf("unchanged pass = (%q, %v), want cached (\"a/one\", true)", model, ok)
+	}
+
+	// A size or mtime change rescans.
+	write(`{"type":"model_change","provider":"a","modelId":"three"}`, mtime)
+	third, model, ok := pass(second.next)
+	if !ok || model != "a/three" {
+		t.Fatalf("grown pass = (%q, %v), want (\"a/three\", true)", model, ok)
+	}
+	write(`{"type":"model_change","provider":"b","modelId":"three"}`, mtime.Add(time.Second))
+	fourth, model, ok := pass(third.next)
+	if !ok || model != "b/three" {
+		t.Fatalf("touched pass = (%q, %v), want (\"b/three\", true)", model, ok)
+	}
+
+	// A deleted transcript misses and is not carried forward.
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	fifth, model, ok := pass(fourth.next)
+	if ok || model != "" {
+		t.Fatalf("deleted pass = (%q, %v), want (\"\", false)", model, ok)
+	}
+	if len(fifth.next) != 0 {
+		t.Fatalf("deleted transcript carried into next pass: %v", fifth.next)
+	}
+}
+
+func scanLastSessionModelOK(t *testing.T, data []byte) (string, bool) {
+	t.Helper()
+	model, ok, err := scanLastSessionModel(bytes.NewReader(data), int64(len(data)))
+	if err != nil {
+		t.Fatalf("scanLastSessionModel error = %v", err)
+	}
+	return model, ok
 }
